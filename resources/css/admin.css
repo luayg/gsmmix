@@ -1,0 +1,265 @@
+/* ==========================================================================
+   admin.css
+   ملاحظات:
+   - هذا الملف مخصص لتنسيقات بسيطة/تجميلية لا تغيّر بنية التخطيط.
+   - تخطيط الـ Navbar/Sidebar والمسافات العامة موجودة في admin-theme.css
+   ========================================================================== */
+
+/* ------------------------------
+   Base
+------------------------------ */
+html, body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body.bg-light {
+  background-color: #f8f9fa !important;
+}
+
+a, .btn-link {
+  text-decoration: none;
+}
+
+/* عناوين البطاقات */
+.card-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+/* مسافات افتراضية بسيطة داخل البطاقات */
+.card-body > :where(h1,h2,h3,h4,h5,h6),
+.card-body > .row,
+.card-body > .table-responsive,
+.card-body > .dataTables_wrapper {
+  margin-bottom: .75rem;
+}
+
+/* ------------------------------
+   Navbar (تحسينات طفيفة)
+------------------------------ */
+#smartSearch.form-control {
+  height: 34px;
+  line-height: 34px;
+  font-size: .925rem;
+  border-radius: .375rem;
+}
+
+/* على الشاشات الصغيرة، حدد عرض معقول لحقل البحث */
+@media (max-width: 575.98px) {
+  #smartSearch.form-control {
+    width: 180px;
+  }
+}
+
+/* ------------------------------
+   Sidebar (لمسات عامة غير بنيوية)
+------------------------------ */
+.admin-sidebar .nav-link.active {
+  background-color: rgba(255,255,255,.08);
+  border-left: 3px solid #0d6efd;
+  color: #fff !important;
+}
+
+.admin-sidebar .collapse .nav-link {
+  padding-left: 2.25rem; /* إزاحة بسيطة لعناصر المستوى الثاني */
+}
+
+/* ------------------------------
+   Content helpers
+------------------------------ */
+.content-wrapper .page-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+/* ------------------------------
+   DataTables
+------------------------------ */
+.dataTable,
+table.dataTable {
+  width: 100% !important;
+}
+
+table.dataTable thead th,
+table.dataTable tbody td {
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.dataTables_length .form-select,
+.dataTables_filter .form-control {
+  height: 34px;
+  padding-top: .15rem;
+  padding-bottom: .15rem;
+  font-size: .925rem;
+}
+
+.dataTables_wrapper .btn-sm {
+  padding: .2rem .45rem;
+  font-size: .8rem;
+  border-radius: .35rem;
+}
+
+.dataTables_wrapper .dropdown-menu .dropdown-item {
+  font-size: .9rem;
+}
+
+/* ------------------------------
+   Select2 (مطابقة لارتفاع Bootstrap)
+------------------------------ */
+.select2-container--bootstrap-5 .select2-selection {
+  min-height: 38px;
+  height: 38px;
+  padding: .375rem .5rem;
+  border-radius: .375rem;
+}
+
+.select2-container--bootstrap-5 .select2-selection--multiple .select2-selection__choice {
+  margin-top: .1rem;
+  padding: .15rem .5rem;
+  font-size: .85rem;
+}
+
+/* Dropdown داخل مودال */
+.select2-container {
+  width: 100% !important;
+}
+.select2-container .select2-dropdown {
+  z-index: 1065; /* أعلى من .modal-backdrop (1045) وأقل من .modal (1050) – نرفعه قليلاً */
+}
+
+/* ------------------------------
+   Modal tweaks
+------------------------------ */
+.modal-header .modal-title {
+  font-weight: 600;
+}
+.modal .form-control,
+.modal .form-select {
+  font-size: .95rem;
+}
+
+/* أزرار المودال */
+.modal .btn {
+  min-width: 84px;
+}
+
+/* ------------------------------
+   Toasts (أعلى يمين)
+------------------------------ */
+.toast-container {
+  z-index: 2000; /* أعلى من المودالات الاعتيادية */
+}
+.toast {
+  opacity: 0.98;
+}
+.toast .toast-body {
+  font-size: .95rem;
+}
+
+/* ------------------------------
+   Utilities
+------------------------------ */
+.cursor-pointer { cursor: pointer; }
+.text-muted-70  { color: rgba(0,0,0,.7) !important; }
+.text-muted-60  { color: rgba(0,0,0,.6) !important; }
+.rounded-2xl    { border-radius: 1rem !important; }
+
+/* أزرار أيقونية صغيرة */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  padding-inline: .5rem;
+}
+
+/* ------------------------------
+   RTL دعم سريع (اختياري)
+   فعّل عند الحاجة: html[dir="rtl"] {...}
+------------------------------ */
+html[dir="rtl"] .admin-sidebar .collapse .nav-link {
+  padding-left: .75rem;
+  padding-right: 2.25rem;
+}
+html[dir="rtl"] .admin-sidebar .nav-link.active {
+  border-left: 0;
+  border-right: 3px solid #0d6efd;
+}
+
+
+
+
+  /* شريط الأدوات */
+  #usersToolbar{
+    background: #fff;
+    border: 1px solid var(--bs-border-color,#e5e7eb);
+    padding: .6rem .8rem;
+    border-radius: .75rem;
+    box-shadow: 0 1px 2px rgba(16,24,40,.06);
+  }
+  #usersToolbar .dt-buttons .btn,
+  #usersToolbar > .btn,
+  #usersToolbar #btnResetCols {
+    margin-right: .4rem;
+  }
+  #usersToolbar .form-control{ min-width:240px; }
+
+  /* درجات ألوان ناعمة */
+  .btn-soft-secondary{
+    background:#eef2f7; color:#334155; border-color:#d6dbe3;
+  }
+  .btn-soft-primary{
+    background:#5794e9; color:#f6f6f7; border-color:#bcd6ff;
+  }
+  .btn-soft-warning{
+    background:#fff7e6; color:#b25800; border-color:#ffe0a3;
+  }
+  .btn-soft-success{
+    background:#15ad45; color:#fcfcfc; border-color:#96cea8;
+  }
+
+/* ===== Fix: APIs index (no inner vertical scroll + dropdown always visible) ===== */
+
+/* امنع أي سكرول عمودي داخلي داخل المحتوى/الكارد/الجدول.
+   الصفحة نفسها فقط هي التي تتمرّر. */
+.wrapper,
+.content-wrapper,
+.content,
+.page-content,
+.main-content,
+.app-content,
+.card,
+.card-body,
+.table-responsive,
+.apis-scroll {
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+
+/* اسم الحاوية التي لَفّينا بها الجدول في الصفحة – إبقِ التمرير الأفقي فقط عند الحاجة */
+.table-responsive,
+.apis-scroll {
+  overflow-x: auto !important;
+}
+
+/* اجعل قائمة Services فوق الكل ولا تُقصّ داخل أي حاوية */
+.apis-table .btn-group.position-static,
+.apis-table .dropdown.position-static {
+  position: static !important;
+}
+.apis-table .dropdown-menu {
+  z-index: 3000 !important;   /* أعلى من أي عنصر بالصفحة */
+}
+/* لا سكرول عمودي داخلي */
+.wrapper, .content-wrapper, .content, .page-content, .main-content, .app-content,
+.card, .card-body, .table-responsive, .apis-scroll {
+  max-height: none !important;
+  overflow-y: visible !important;
+}
+.table-responsive, .apis-scroll { overflow-x: auto !important; }
+
+/* قائمة Services فوق الكل ولا تُقصّ */
+.apis-table .btn-group.position-static,
+.apis-table .dropdown.position-static { position: static !important; }
+.apis-table .dropdown-menu { z-index: 3000 !important; }

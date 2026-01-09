@@ -1,0 +1,12 @@
+@import 'tailwindcss';
+
+/* resources/css/app.css */
+
+/* Bootstrap */
+@import "bootstrap/dist/css/bootstrap.min.css";
+
+/* DataTables + BS5 */
+@import "datatables.net-bs5/css/dataTables.bootstrap5.min.css";
+
+/* (اختياري) Toastr */
+/* @import "toastr/build/toastr.min.css"; */

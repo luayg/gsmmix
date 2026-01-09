@@ -1,0 +1,180 @@
+/* =========================
+   Variables
+========================= */
+:root{
+  --admin-navbar-h: 56px;
+  --admin-sidebar-w: 260px;
+  --admin-z-navbar:   1040;  /* أعلى من المودال الخلفي */
+  --admin-z-sidebar:  1035;
+  --admin-z-backdrop: 1032;
+}
+
+/* =========================
+   Base
+========================= */
+html, body { height: 100%; overflow-x: hidden; }
+
+/* =========================
+   Navbar
+========================= */
+.admin-navbar{
+  position: fixed;
+  inset: 0 0 auto 0;                 /* top:0; left:0; right:0 */
+  height: var(--admin-navbar-h);
+  z-index: var(--admin-z-navbar);
+}
+.admin-navbar > * { height: 100%; }
+
+/* =========================
+   Sidebar (Desktop default)
+========================= */
+.admin-sidebar{
+  position: fixed;
+  top: var(--admin-navbar-h);
+  left: 0;
+  width: var(--admin-sidebar-w);
+  height: calc(100vh - var(--admin-navbar-h));
+  overflow: hidden auto;              /* تمربر رأسي فقط */
+  z-index: var(--admin-z-sidebar);
+  background: #212529;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* مظهر روابط السايدبار */
+.admin-sidebar .nav-link,
+.admin-sidebar a{
+  color: rgba(255,255,255,.9) !important;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .55rem .9rem;
+  text-decoration: none;
+}
+.admin-sidebar .nav-link:hover{ color:#fff !important; }
+.admin-sidebar .nav-link.active{
+  color:#fff !important;
+  background: rgba(255,255,255,.08);
+  border-radius: .375rem;
+}
+.admin-sidebar i,.admin-sidebar .fa,.admin-sidebar .fas,.admin-sidebar .bi{
+  width: 1.1rem; text-align:center;
+}
+
+/* مسافة أكبر لعناصر المستوى الثاني داخل collapses */
+.admin-sidebar .collapse .nav-link { padding-left: 2.25rem; }
+
+/* سهم صغير على اليمين */
+.admin-sidebar .fa-chevron-down { opacity:.7; }
+
+/* =========================
+   Backdrop (mobile only)
+========================= */
+.sidebar-backdrop{
+  position: fixed;
+  top: var(--admin-navbar-h);
+  left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,.45);
+  z-index: var(--admin-z-backdrop);
+  display: none;
+}
+
+/* =========================
+   Content
+========================= */
+.content-wrapper{
+  padding: 1rem;
+  padding-top: calc(var(--admin-navbar-h) + 1rem);
+  margin-left: var(--admin-sidebar-w);
+  min-height: 100vh;
+  background: #f8f9fa;
+}
+.content-wrapper .card { margin-bottom: 1rem; }
+
+/* DataTables width */
+#usersTable, .dataTable { width: 100% !important; }
+
+/* =========================
+   Mobile (lg-)
+========================= */
+@media (max-width: 991.98px){
+  /* السايدبار يطفو فوق المحتوى بالانزلاق */
+  .admin-sidebar{
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+    width: 280px;                     /* عرض أريح للموبايل */
+  }
+  .admin-sidebar.is-open{ transform: translateX(0); }
+
+  /* نوقف تمرير الصفحة عند فتح السايدبار */
+  body.sidebar-open { overflow: hidden; }
+
+  /* الخلفية تظهر فقط عند الفتح */
+  .sidebar-backdrop.show { display: block; }
+
+  /* المحتوى يأخذ عرض الصفحة بالكامل */
+  .content-wrapper{ margin-left: 0; }
+}
+
+/* =========================
+   Modal vs Layers
+========================= */
+.modal{ z-index: 1050; }
+.modal-backdrop{ z-index: 1045; }
+
+/* =========================
+   “تطبيع” عرض عناصر قد تكون مخفية ببوتستراب على الموبايل
+========================= */
+@media (max-width: 991.98px){
+  .admin-sidebar .d-none      { display: block !important; }
+  .admin-sidebar .d-lg-block  { display: block !important; }
+}
+
+/* (اختياري) شريط تمرير أنيق داخل السايدبار */
+.admin-sidebar::-webkit-scrollbar{ width: 8px; }
+.admin-sidebar::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,.15);
+  border-radius: 4px;
+}
+.admin-sidebar:hover::-webkit-scrollbar-thumb{
+  background: rgba(255,255,255,.25);
+}
+/* Toast stack pinned inside content area */
+.toast-stack{
+  position: fixed;
+  top: 1rem;
+  right: 1rem;       /* سيتم تعديلها بالـJS ليطابق يمين المحتوى */
+  z-index: 2000;
+  pointer-events: none; /* حتى لا تمنع التفاعل أسفلها */
+}
+.toast-stack .toast{
+  pointer-events: auto;
+  margin-bottom: .5rem;
+}
+
+
+/* ===== APIs index: kill any inner scrollbars & ensure dropdown is on top ===== */
+.page-apis-index .content-wrapper,
+.page-apis-index .card,
+.page-apis-index .card-body,
+.page-apis-index .table-responsive {
+  height: auto !important;
+  max-height: none !important;
+  overflow: visible !important;         /* لا سكرول داخلي */
+}
+
+/* القوائم المنسدلة فوق كل شيء ولا تُقص */
+.page-apis-index .btn-group.position-static,
+.page-apis-index .dropdown.position-static { position: static !important; }
+.page-apis-index .dropdown-menu {
+  z-index: 4000 !important;
+  max-height: none !important;          /* ألغِ أي حد ارتفاع مفروض */
+  overflow: visible !important;          /* ومنع سكرول داخل القائمة نفسها */
+}
+
+/* (اختياري) أخفِ أي شريط تمرير داخلي في WebKit لو ظهر بصريًا */
+.page-apis-index .card::-webkit-scrollbar,
+.page-apis-index .card-body::-webkit-scrollbar,
+.page-apis-index .table-responsive::-webkit-scrollbar { width: 0 !important; height: 0 !important; }
+.page-apis-index .card,
+.page-apis-index .card-body,
+.page-apis-index .table-responsive { scrollbar-width: none; }
