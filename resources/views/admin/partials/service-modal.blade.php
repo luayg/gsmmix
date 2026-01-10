@@ -1,6 +1,6 @@
 {{-- resources/views/admin/partials/service-modal.blade.php --}}
 @once
-@push('styles')
+  @push('styles')
 <style>
   #serviceModal .modal-dialog{width:96vw;max-width:min(1400px,96vw);margin:1rem auto}
   #serviceModal .modal-content{display:flex;flex-direction:column;max-height:96dvh;border-radius:.6rem;overflow:hidden}
@@ -20,9 +20,9 @@
   #serviceModal .pricing-title{background:#f3f3f3;padding:.55rem .75rem;font-weight:600}
   #serviceModal .pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.65rem .75rem}
 </style>
-@endpush
+  @endpush
 
-@push('modals')
+  @push('modals')
 <div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
@@ -51,9 +51,9 @@
     </div>
   </div>
 </div>
-@endpush
+  @endpush
 
-@push('scripts')
+  @push('scripts')
 <script>
 (function(){
 
@@ -404,5 +404,5 @@
 
 })();
 </script>
-@endpush
+  @endpush
 @endonce
