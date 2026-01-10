@@ -39,156 +39,147 @@ class ImeiServiceController extends Controller
     }
 
     public function store(Request $r)
-    {
-        $data = $r->validate([
-            'supplier_id' => 'required|integer',
-            'remote_id'   => 'required',
-            'group_name'  => 'nullable|string',
-            'name'        => 'required|string',
-            'alias'       => 'nullable|string',
-            'time'        => 'nullable|string',
-            'info'        => 'nullable|string',
+{
+    $data = $r->validate([
+        'supplier_id' => 'required|integer',
+        'remote_id'   => 'required',
+        'group_name'  => 'nullable|string',
+        'name'        => 'required|string',
+        'alias'       => 'nullable|string',
+        'time'        => 'nullable|string',
+        'info'        => 'nullable|string',
 
-            // Pricing
-            'cost'        => 'required|numeric|min:0',
-            'profit'      => 'nullable|numeric|min:0',
-            'profit_type' => 'nullable|integer|in:1,2',
+        // Pricing
+        'cost'        => 'required|numeric|min:0',
+        'profit'      => 'nullable|numeric|min:0',
+        'profit_type' => 'nullable|integer|in:1,2',
 
-            // ✅ switches المطلوبة
-            'active'              => 'nullable|boolean',
-            'allow_bulk'          => 'nullable|boolean',
-            'allow_duplicates'    => 'nullable|boolean',
-            'reply_with_latest'   => 'nullable|boolean',
+        // switches
+        'active'              => 'nullable|boolean',
+        'allow_bulk'          => 'nullable|boolean',
+        'allow_duplicates'    => 'nullable|boolean',
+        'reply_with_latest'   => 'nullable|boolean',
+        'allow_report'        => 'nullable|boolean',
+        'allow_report_time'   => 'nullable|integer|min:0',
+        'allow_cancel'        => 'nullable|boolean',
+        'allow_cancel_time'   => 'nullable|integer|min:0',
+        'use_remote_cost'     => 'nullable|boolean',
+        'use_remote_price'    => 'nullable|boolean',
+        'stop_on_api_change'  => 'nullable|boolean',
+        'needs_approval'      => 'nullable|boolean',
+        'reply_expiration'    => 'nullable|integer|min:0',
+        'expiration_text'     => 'nullable|string',
 
-            'allow_report'        => 'nullable|boolean',
-            'allow_report_time'   => 'nullable|integer|min:0',
+        // Source + Group + Type
+        'source'              => 'nullable|integer',
+        'type'                => 'nullable|string',
+        'group_id'            => 'nullable|integer',
+        'device_based'        => 'nullable|boolean',
+        'reject_on_missing_reply' => 'nullable|boolean',
+        'ordering'            => 'nullable|integer|min:1',
 
-            'allow_cancel'        => 'nullable|boolean',
-            'allow_cancel_time'   => 'nullable|integer|min:0',
+        // ✅ Pricing Table JSON
+        'pricing_table'       => 'nullable|string',
+    ]);
 
-            'use_remote_cost'     => 'nullable|boolean',
-            'use_remote_price'    => 'nullable|boolean',
-            'stop_on_api_change'  => 'nullable|boolean',
-            'needs_approval'      => 'nullable|boolean',
+    $sourceInt = $r->has('source') ? (int)$r->input('source') : null;
 
-            'reply_expiration'    => 'nullable|integer|min:0',
-            'expiration_text'     => 'nullable|string',
+    // ✅ Auto group by API group name
+    $groupName = trim((string)($data['group_name'] ?? 'Uncategorized'));
+    if ($groupName === '') $groupName = 'Uncategorized';
 
-            // Source + Group + Type
-            'source'              => 'nullable|integer',
-            'type'                => 'nullable|string',
-            'group_id'            => 'nullable|integer',
+    $group = ServiceGroup::firstOrCreate([
+        'type' => 'imei',
+        'name' => $groupName,
+    ], [
+        'active' => 1
+    ]);
 
-            // extra
-            'device_based'        => 'nullable|boolean',
-            'reject_on_missing_reply' => 'nullable|boolean',
+    // ✅ Find existing by supplier_id + remote_id
+    $exists = ImeiService::query()
+        ->where('supplier_id', $data['supplier_id'])
+        ->where('remote_id', $data['remote_id'])
+        ->first();
 
-            // ordering
-            'ordering'            => 'nullable|integer|min:1',
+    $payload = [
+        'supplier_id' => (int)$data['supplier_id'],
+        'group_id'    => $group->id,
+        'remote_id'   => (int)$data['remote_id'],
+        'alias'       => $data['alias'] ?: Str::slug($data['name']),
+        'name'        => $data['name'],
+        'time'        => $data['time'] ?? null,
+        'info'        => $data['info'] ?? null,
+        'cost'        => (float)$data['cost'],
+        'profit'      => (float)($data['profit'] ?? 0),
+        'profit_type' => (int)($data['profit_type'] ?? 1),
 
-            // ✅ Additional Tab Pricing
-            'group_prices'        => 'nullable|array',
-            'group_prices.*.price'    => 'nullable|numeric|min:0',
-            'group_prices.*.discount' => 'nullable|numeric|min:0',
-        ]);
+        // switches
+        'active'            => (int)($data['active'] ?? 1),
+        'allow_bulk'        => (int)($data['allow_bulk'] ?? 0),
+        'allow_duplicates'  => (int)($data['allow_duplicates'] ?? 0),
+        'reply_with_latest' => (int)($data['reply_with_latest'] ?? 0),
 
-        // ✅ Fix: تعريف sourceInt حتى لا يسبب Undefined variable
-        $sourceInt = $r->has('source') ? (int)$r->input('source') : null;
+        'allow_report'      => (int)($data['allow_report'] ?? 0),
+        'allow_report_time' => (int)($data['allow_report_time'] ?? 0),
 
-        // ✅ احصل على الجروب أو أنشئه تلقائياً (بدون تكرار)
-        $groupName = trim((string)($data['group_name'] ?? 'Uncategorized'));
-        if ($groupName === '') $groupName = 'Uncategorized';
+        'allow_cancel'      => (int)($data['allow_cancel'] ?? 0),
+        'allow_cancel_time' => (int)($data['allow_cancel_time'] ?? 0),
 
-        $group = ServiceGroup::firstOrCreate([
-            'type' => 'imei',
-            'name' => $groupName,
-        ], [
-            'active' => 1
-        ]);
+        'use_remote_cost'   => (int)($data['use_remote_cost'] ?? 0),
+        'use_remote_price'  => (int)($data['use_remote_price'] ?? 0),
+        'stop_on_api_change'=> (int)($data['stop_on_api_change'] ?? 0),
+        'needs_approval'    => (int)($data['needs_approval'] ?? 0),
 
-        // ✅ منع التكرار: إذا موجودة بنفس supplier_id + remote_id
-        $exists = ImeiService::query()
-            ->where('supplier_id', $data['supplier_id'])
-            ->where('remote_id', $data['remote_id'])
-            ->first();
+        'reply_expiration'  => (int)($data['reply_expiration'] ?? 0),
+        'expiration_text'   => $data['expiration_text'] ?? null,
 
-        $payload = [
-            'supplier_id' => (int)$data['supplier_id'],
-            'group_id'    => $group->id,
-            'remote_id'   => (int)$data['remote_id'],
+        'device_based'      => (int)($data['device_based'] ?? 0),
+        'reject_on_missing_reply' => (int)($data['reject_on_missing_reply'] ?? 0),
 
-            // ✅ Alias: إذا لم يرسل من الفورم نولده تلقائياً من الاسم
-            'alias'       => $data['alias'] ?? Str::slug($data['name']),
+        'ordering'          => (int)($data['ordering'] ?? 1),
+        'source'            => $sourceInt,
+    ];
 
-            'name'        => $data['name'],
-            'time'        => $data['time'] ?? null,
-            'info'        => $data['info'] ?? null,
+    if ($exists) {
+        $exists->update($payload);
+        $service = $exists;
+        $updated = true;
+    } else {
+        $service = ImeiService::create($payload);
+        $updated = false;
+    }
 
-            'cost'        => (float)$data['cost'],
-            'profit'      => (float)($data['profit'] ?? 0),
-            'profit_type' => (int)($data['profit_type'] ?? 1),
+    // ✅ Save pricing table
+    if (!empty($data['pricing_table'])) {
+        $rows = json_decode($data['pricing_table'], true);
 
-            // ✅ switches
-            'active'            => (int)($data['active'] ?? 1),
-            'allow_bulk'        => (int)($data['allow_bulk'] ?? 0),
-            'allow_duplicates'  => (int)($data['allow_duplicates'] ?? 0),
-            'reply_with_latest' => (int)($data['reply_with_latest'] ?? 0),
+        if (is_array($rows)) {
 
-            'allow_report'      => (int)($data['allow_report'] ?? 0),
-            'allow_report_time' => (int)($data['allow_report_time'] ?? 0),
+            foreach ($rows as $row) {
+                $groupId = (int)($row['group_id'] ?? 0);
+                if (!$groupId) continue;
 
-            'allow_cancel'      => (int)($data['allow_cancel'] ?? 0),
-            'allow_cancel_time' => (int)($data['allow_cancel_time'] ?? 0),
-
-            'use_remote_cost'   => (int)($data['use_remote_cost'] ?? 0),
-            'use_remote_price'  => (int)($data['use_remote_price'] ?? 0),
-            'stop_on_api_change'=> (int)($data['stop_on_api_change'] ?? 0),
-            'needs_approval'    => (int)($data['needs_approval'] ?? 0),
-
-            'reply_expiration'  => (int)($data['reply_expiration'] ?? 0),
-            'expiration_text'   => $data['expiration_text'] ?? null,
-
-            'device_based'      => (int)($data['device_based'] ?? 0),
-            'reject_on_missing_reply' => (int)($data['reject_on_missing_reply'] ?? 0),
-
-            'ordering'          => (int)($data['ordering'] ?? 1),
-
-            // ✅ FIX:
-            'source'            => $sourceInt,
-        ];
-
-        // ✅ حفظ الخدمة + الأسعار داخل Transaction
-        return DB::transaction(function () use ($exists, $payload, $data) {
-
-            // ✅ Update existing
-            if ($exists) {
-                $exists->update($payload);
-
-                // ✅ Save Additional pricing for groups
-                $this->saveGroupPrices($exists->id, $data['group_prices'] ?? []);
-
-                return response()->json([
-                    'ok' => true,
-                    'updated' => true,
-                    'id' => $exists->id,
-                    'msg' => '✅ Service updated successfully'
+                \App\Models\ServiceGroupPrice::updateOrCreate([
+                    'service_type' => 'imei',
+                    'service_id'   => $service->id,
+                    'group_id'     => $groupId,
+                ], [
+                    'price'         => (float)($row['price'] ?? 0),
+                    'discount'      => (float)($row['discount'] ?? 0),
+                    'discount_type' => (int)($row['discount_type'] ?? 1),
                 ]);
             }
-
-            // ✅ Create new
-            $row = ImeiService::create($payload);
-
-            // ✅ Save Additional pricing for groups
-            $this->saveGroupPrices($row->id, $data['group_prices'] ?? []);
-
-            return response()->json([
-                'ok' => true,
-                'updated' => false,
-                'id' => $row->id,
-                'msg' => '✅ Service added successfully'
-            ]);
-        });
+        }
     }
+
+    return response()->json([
+        'ok' => true,
+        'updated' => $updated,
+        'id' => $service->id,
+        'msg' => $updated ? '✅ Service updated successfully' : '✅ Service added successfully'
+    ]);
+}
+
 
     /**
      * ✅ Save pricing values in service_group_prices table

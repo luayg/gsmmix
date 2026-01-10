@@ -6,7 +6,7 @@
       data-ajax="1">
   @csrf
 
-  {{-- ✅ Header info is injected by service-modal.js --}}
+  {{-- ✅ Injected by service-modal.js --}}
   <input type="hidden" name="supplier_id" value="">
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
@@ -145,8 +145,8 @@
               </select>
             </div>
 
-            {{-- ✅ API block --}}
-            <div class="col-12 js-api-block">
+            {{-- ✅ API block (hidden unless Source=API) --}}
+            <div class="col-12 js-api-block d-none">
               <div class="border rounded p-3 bg-light">
                 <div class="row g-2">
                   <div class="col-md-6">
@@ -187,7 +187,7 @@
                          name="{{ $name }}"
                          value="1"
                          id="sw_{{ $name }}"
-                         @checked(in_array($name,['active']) ? true : false)>
+                         @checked(in_array($name,['active','allow_bulk']) ? true : false)>
                   <label class="form-check-label" for="sw_{{ $name }}">{{ $label }}</label>
                 </div>
               @endforeach
@@ -226,7 +226,10 @@
         {{-- RIGHT SIDE (INFO = SUMMERNOTE) --}}
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
-          <textarea id="infoEditor" class="form-control"></textarea>
+
+          {{-- ✅ Must be hidden + initialized by JS --}}
+          <textarea id="infoEditor" class="form-control d-none"></textarea>
+
           <input type="hidden" name="info" id="infoHidden">
           <small class="text-muted">Description, notes, terms…</small>
         </div>
@@ -234,28 +237,39 @@
     </div>
 
     {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
-    <div class="tab-pane" data-tab="additional">
+<div class="tab-pane" data-tab="additional">
 
-      <div class="d-flex justify-content-between mb-3">
-        <div class="fw-bold">Fields</div>
-        <div class="text-primary small cursor-pointer" id="btnAddField">Add field</div>
+  {{-- ✅ hidden JSON for pricing table --}}
+  <input type="hidden" name="pricing_table" id="pricingTableHidden">
+
+  <div class="row g-3">
+
+    {{-- ✅ LEFT: Fields --}}
+    <div class="col-md-5">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="fw-bold">Custom fields</div>
+        <a href="javascript:void(0)" class="text-primary small" id="btnAddField">Add field</a>
       </div>
 
-      <div class="border rounded p-3 bg-white" style="min-height:200px">
-        <div class="text-muted small">Fields UI will be implemented here (same system as original).</div>
-      </div>
-
-      <hr class="my-4">
-
-      <div class="fw-bold mb-2">Groups</div>
-      <div id="groupsPricingWrap" class="border rounded p-3 bg-white">
-        <div class="text-muted small">Groups pricing table will be generated here.</div>
+      <div class="border rounded p-3 bg-white" style="min-height:260px;">
+        <div class="text-muted small">Fields UI will be implemented later (same old system).</div>
       </div>
     </div>
 
+    {{-- ✅ RIGHT: Groups Pricing --}}
+    <div class="col-md-7">
+      <div class="fw-bold mb-2">Groups</div>
+
+      <div id="groupsPricingWrap" class="border rounded bg-white">
+        {{-- Filled by JS --}}
+      </div>
+    </div>
+
+  </div>
+</div>
+
     {{-- ===================== ✅ META TAB ===================== --}}
     <div class="tab-pane" data-tab="meta">
-
       <div class="row g-3">
 
         <div class="col-md-6">
@@ -297,4 +311,5 @@
     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
     <button type="submit" class="btn btn-success">Create</button>
   </div>
+
 </form>

@@ -50,5 +50,14 @@ public function api()
 }
 
 
+
+public function groupPrices()
+{
+    return $this->hasMany(\App\Models\ServiceGroupPrice::class, 'service_id')
+                ->where('service_type', 'imei');
+}
+
+
+
     public function group(){ return $this->belongsTo(ServiceGroup::class,'group_id'); }
 }

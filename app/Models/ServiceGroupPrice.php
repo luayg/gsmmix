@@ -6,11 +6,19 @@ use Illuminate\Database\Eloquent\Model;
 
 class ServiceGroupPrice extends Model
 {
-  protected $fillable = [
-    'service_id',
-    'service_kind',
-    'group_id',
-    'price',
-    'discount',
-  ];
+    protected $table = 'service_group_prices';
+
+    protected $fillable = [
+        'service_id',
+        'service_type',
+        'group_id',
+        'price',
+        'discount',
+        'discount_type',
+    ];
+
+    public function group()
+    {
+        return $this->belongsTo(ServiceGroup::class, 'group_id');
+    }
 }
