@@ -241,11 +241,18 @@
 
         <div class="col-xl-6">
           <div class="fw-bold mb-2">Groups</div>
-          <div id="groupsPricingWrap" class="border rounded bg-white"></div>
-        </div>
+
+<div id="groupsPricingWrap" class="border rounded p-3 bg-white">
+  <div id="groupsPricingList"></div>
+</div>
+
       </div>
 
     </div>
+
+          <input type="hidden" name="group_prices" id="groupPricesJson">
+    
+
 
     {{-- ===================== ✅ META TAB ===================== --}}
     <div class="tab-pane" data-tab="meta">

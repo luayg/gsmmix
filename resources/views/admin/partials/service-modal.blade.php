@@ -216,6 +216,82 @@
 
     body.innerHTML = tpl.innerHTML;
 
+    async function loadPricingGroups(serviceType){
+  const wrap = body.querySelector('#groupsPricingList');
+  if(!wrap) return;
+
+  wrap.innerHTML = `<div class="text-muted small">Loading groups...</div>`;
+
+  try{
+    const res = await fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(serviceType));
+    const groups = await res.json();
+
+    if(!Array.isArray(groups) || groups.length === 0){
+      wrap.innerHTML = `<div class="text-danger small">No groups found</div>`;
+      return;
+    }
+
+    // ✅ build pricing UI
+    wrap.innerHTML = groups.map(g => `
+      <div class="mb-3 border rounded">
+        <div class="bg-light px-3 py-2 fw-bold">${g.name}</div>
+
+        <div class="p-3">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label mb-1">Price</label>
+              <div class="input-group">
+                <input type="number" step="0.0001"
+                       class="form-control grp-price"
+                       data-group-id="${g.id}"
+                       value="0.0000">
+                <span class="input-group-text">Credits</span>
+              </div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label mb-1">Discount</label>
+              <div class="input-group">
+                <input type="number" step="0.0001"
+                       class="form-control grp-discount"
+                       data-group-id="${g.id}"
+                       value="0.0000">
+                <select class="form-select grp-discount-type"
+                        data-group-id="${g.id}"
+                        style="max-width:120px">
+                  <option value="1">Credits</option>
+                  <option value="2">Percent</option>
+                </select>
+                <button type="button" class="btn btn-light btn-sm grp-reset"
+                        data-group-id="${g.id}">
+                  Reset
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    `).join('');
+
+    // reset buttons
+    wrap.querySelectorAll('.grp-reset').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const gid = btn.dataset.groupId;
+        wrap.querySelector(`.grp-price[data-group-id="${gid}"]`).value = "0.0000";
+        wrap.querySelector(`.grp-discount[data-group-id="${gid}"]`).value = "0.0000";
+        wrap.querySelector(`.grp-discount-type[data-group-id="${gid}"]`).value = "1";
+      });
+    });
+
+  }catch(e){
+    console.error(e);
+    wrap.innerHTML = `<div class="text-danger small">Failed to load groups</div>`;
+  }
+}
+
+
+
     initTabs(body);
 
     await ensureSummernote();
