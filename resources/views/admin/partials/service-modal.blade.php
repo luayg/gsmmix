@@ -83,6 +83,111 @@
       activate('general');
     }
 
+    // ✅ Load groups + build pricing table + fill dropdown
+function loadGroups(body, serviceType, defaultPrice){
+
+  fetch("{{ route('admin.services.groups.options') }}?type=" + encodeURIComponent(serviceType))
+    .then(r => r.json())
+    .then(rows => {
+
+      // ✅ 1) fill group dropdown
+      const sel = body.querySelector('[name="group_id"]');
+      if(sel){
+        sel.innerHTML =
+          `<option value="">Group</option>` +
+          rows.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+      }
+
+      // ✅ 2) build pricing table in Additional tab
+      const wrap = body.querySelector('#groupsPricingWrap');
+      if(!wrap) return;
+
+      const html = rows.map(g => `
+        <div class="p-3 border-bottom">
+          <div class="fw-bold bg-light border rounded px-3 py-2 mb-2">${g.name}</div>
+
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label small">Price</label>
+              <div class="input-group">
+                <input type="number" step="0.0001"
+                       class="form-control group-price"
+                       data-group="${g.id}"
+                       value="${Number(defaultPrice||0).toFixed(4)}">
+                <span class="input-group-text">Credits</span>
+              </div>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label small">Discount</label>
+              <div class="input-group">
+                <input type="number" step="0.0001"
+                       class="form-control group-discount"
+                       data-group="${g.id}"
+                       value="0.0000">
+
+                <select class="form-select group-discount-type"
+                        data-group="${g.id}"
+                        style="max-width:110px;">
+                  <option value="1" selected>Credits</option>
+                  <option value="2">%</option>
+                </select>
+
+                <button type="button" class="btn btn-light btn-reset" data-group="${g.id}">
+                  Reset
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      `).join('');
+
+      wrap.innerHTML = html;
+
+      // ✅ update hidden json
+      const hid = body.querySelector('#pricingTableHidden');
+
+      function updatePricingHidden(){
+        const pricing = rows.map(g=>{
+          const gid = g.id;
+          return {
+            group_id: gid,
+            price: Number(wrap.querySelector(`.group-price[data-group="${gid}"]`).value || 0),
+            discount: Number(wrap.querySelector(`.group-discount[data-group="${gid}"]`).value || 0),
+            discount_type: Number(wrap.querySelector(`.group-discount-type[data-group="${gid}"]`).value || 1),
+          };
+        });
+
+        if(hid) hid.value = JSON.stringify(pricing);
+      }
+
+      wrap.querySelectorAll('input,select').forEach(el=>{
+        el.addEventListener('input', updatePricingHidden);
+        el.addEventListener('change', updatePricingHidden);
+      });
+
+      // ✅ reset
+      wrap.querySelectorAll('.btn-reset').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const gid = btn.dataset.group;
+          wrap.querySelector(`.group-price[data-group="${gid}"]`).value = Number(defaultPrice||0).toFixed(4);
+          wrap.querySelector(`.group-discount[data-group="${gid}"]`).value = "0.0000";
+          wrap.querySelector(`.group-discount-type[data-group="${gid}"]`).value = "1";
+          updatePricingHidden();
+        });
+      });
+
+      updatePricingHidden();
+    })
+    .catch(err=>{
+      console.error("loadGroups error:", err);
+    });
+}
+
+
+
+
+
     /* ✅ Helpers */
     const loadCssOnce=(id,href)=>{
       if(document.getElementById(id)) return;
@@ -181,6 +286,17 @@
         time: btn.dataset.time || '',
         serviceType: btn.dataset.serviceType || 'imei'
       };
+
+      // ✅ Add field button
+const addBtn = body.querySelector('#btnAddField');
+if(addBtn){
+  addBtn.addEventListener('click', ()=>{
+    alert("✅ Add field clicked — next step: implement fields UI (old system).");
+  });
+}
+
+
+
 
       // header info
       document.getElementById('serviceModalSubtitle').innerText =
