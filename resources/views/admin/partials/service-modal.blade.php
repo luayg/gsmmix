@@ -1,294 +1,311 @@
 {{-- resources/views/admin/partials/service-modal.blade.php --}}
 @once
-@push('styles')
-<style>
-  #serviceModal .modal-dialog{width:96vw;max-width:1400px;margin:1rem auto}
-  #serviceModal .modal-content{max-height:96dvh;border-radius:.75rem;overflow:hidden}
-  #serviceModal .modal-header{
-    background:#3cb878;color:#fff;border:0;
-    display:flex;align-items:center;justify-content:space-between;
-    padding:.8rem 1rem;
-  }
-  #serviceModal .modal-header .left-info{
-    line-height:1.2
-  }
-  #serviceModal .modal-title{font-weight:700;font-size:1.05rem;margin:0}
-  #serviceModal .modal-subtitle{opacity:.9;font-size:.85rem}
-  #serviceModal .modal-body{padding:0 !important;background:#fff;overflow:auto}
-  #serviceModal .nav-tabs{
-    border:0;
-    gap:.35rem;
-  }
-  #serviceModal .nav-tabs .nav-link{
-    background:rgba(255,255,255,.12);
-    color:#fff;border:0;border-radius:.35rem;
-    padding:.28rem .7rem;font-size:.85rem;
-  }
-  #serviceModal .nav-tabs .nav-link.active{
-    background:#fff;color:#333;font-weight:700;
-  }
-  #serviceModal .badge-chip{
-    background:#111;color:#fff;border-radius:.35rem;
-    padding:.3rem .55rem;font-size:.8rem;
-    margin-left:.35rem;
-  }
-  #serviceModal .badge-chip.green{background:#1b8f5a;}
-  #serviceModal .tab-pane{padding:1rem;}
-  #serviceModal .note-editor.note-frame .note-editable{min-height:320px}
-  #serviceModal .select2-container{width:100%!important;z-index:2055}
-  #serviceModal .select2-dropdown{z-index:2056}
-</style>
-@endpush
+  @push('styles')
+    <style>
+      #serviceModal .modal-dialog{width:96vw;max-width:min(1400px,96vw);margin:1rem auto}
+      #serviceModal .modal-content{display:flex;flex-direction:column;max-height:96dvh;border-radius:.6rem;overflow:hidden}
+      #serviceModal .modal-header{background:#3bb37a;color:#fff;padding:.75rem 1rem;border:0}
+      #serviceModal .modal-title{font-weight:600}
+      #serviceModal .modal-body{flex:1 1 auto;overflow:auto;padding:1rem;background:#fff}
+      #serviceModal .tabs-top{display:flex;gap:.5rem;margin-left:auto}
+      #serviceModal .tabs-top button{border:0;background:#ffffff22;color:#fff;padding:.35rem .8rem;border-radius:.35rem}
+      #serviceModal .tabs-top button.active{background:#fff;color:#000}
+      #serviceModal .badge-box{display:flex;gap:.4rem;align-items:center;margin-left:1rem}
+      #serviceModal .badge-box .badge{background:#111;color:#fff;padding:.35rem .55rem;border-radius:.35rem;font-size:.75rem}
+      #serviceModal .tab-pane{display:none}
+      #serviceModal .tab-pane.active{display:block}
+    </style>
+  @endpush
 
-@push('modals')
-<div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content">
+  @push('modals')
+  <div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
 
-      <div class="modal-header">
-
-        <div class="left-info">
-          <h5 class="modal-title">Create service</h5>
-          <div class="modal-subtitle">
-            Provider: <span id="cloneProviderName">—</span> • Remote ID: <span id="cloneRemoteIdLabel">—</span>
+          <div>
+            <div class="modal-title">Create service</div>
+            <div class="small opacity-75" id="serviceModalSubtitle">Provider: — | Remote ID: —</div>
           </div>
+
+          <div class="tabs-top">
+            <button type="button" class="tab-btn active" data-tab="general">General</button>
+            <button type="button" class="tab-btn" data-tab="additional">Additional</button>
+            <button type="button" class="tab-btn" data-tab="meta">Meta</button>
+          </div>
+
+          <div class="badge-box">
+            <span class="badge" id="badgeType">Type: —</span>
+            <span class="badge" id="badgePrice">Price: —</span>
+          </div>
+
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
 
-        <div class="d-flex align-items-center gap-2">
-
-          {{-- Tabs only here ✅ --}}
-          <ul class="nav nav-tabs" id="svcTabs" role="tablist">
-            <li class="nav-item">
-              <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tabGeneral" type="button">General</button>
-            </li>
-            <li class="nav-item">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabAdditional" type="button">Additional</button>
-            </li>
-            <li class="nav-item">
-              <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tabMeta" type="button">Meta</button>
-            </li>
-          </ul>
-
-          {{-- badges --}}
-          <span class="badge-chip" id="cloneTypeBadge">Type: —</span>
-          <span class="badge-chip green" id="clonePriceBadge">Price: 0.0000 Credits</span>
-
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-        </div>
+        <div class="modal-body" id="serviceModalBody"></div>
       </div>
-
-      <div class="modal-body">
-        <div class="tab-content">
-
-          <div class="tab-pane fade show active" id="tabGeneral">
-            <div id="serviceModalGeneral"></div>
-          </div>
-
-          <div class="tab-pane fade" id="tabAdditional">
-            <div id="serviceModalAdditional"></div>
-          </div>
-
-          <div class="tab-pane fade" id="tabMeta">
-            <div id="serviceModalMeta"></div>
-          </div>
-
-        </div>
-      </div>
-
     </div>
   </div>
-</div>
-@endpush
+  @endpush
 
-@push('scripts')
-<script>
-(function(){
 
-  const loadCssOnce=(id,href)=>{
-    if(document.getElementById(id)) return;
-    const l=document.createElement('link');
-    l.id=id; l.rel='stylesheet'; l.href=href;
-    document.head.appendChild(l);
-  };
+  @push('scripts')
+  <script>
+  (function(){
 
-  const loadScriptOnce=(id,src)=>new Promise((res,rej)=>{
-    if(document.getElementById(id)) return res();
-    const s=document.createElement('script');
-    s.id=id; s.src=src; s.async=false;
-    s.onload=res; s.onerror=rej;
-    document.body.appendChild(s);
-  });
+    // ---------- ✅ Tabs ----------
+    function initTabs(scope){
+      const btns = document.querySelectorAll('#serviceModal .tab-btn');
+      btns.forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          btns.forEach(b=>b.classList.remove('active'));
+          btn.classList.add('active');
 
-  async function ensureSummernote(){
-    loadCssOnce('sn-css','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css');
-    if(!window.jQuery) await loadScriptOnce('jq','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
-    if(!window.jQuery.fn.summernote){
-      await loadScriptOnce('sn-js','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
+          scope.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+          scope.querySelector(`.tab-pane[data-tab="${btn.dataset.tab}"]`)?.classList.add('active');
+        });
+      });
     }
-  }
 
-  async function ensureSelect2(){
-    if(!window.jQuery) await loadScriptOnce('jq','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
-    if(!$.fn.select2){
-      loadCssOnce('s2-css','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css');
-      await loadScriptOnce('s2-js','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js');
-    }
-  }
-
-  // slug helper
-  function slugify(text){
-    return String(text||'')
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g,'-')
-      .replace(/(^-|-$)/g,'');
-  }
-
-  // ✅ init select2 pickers
-  async function initApiPickers(scope){
-    await ensureSelect2();
-    const $=window.jQuery;
-    const $modal=$('#serviceModal');
-
-    const $prov=$(scope).find('.js-api-provider');
-    const $svc=$(scope).find('.js-api-service');
-    const $source=$(scope).find('[name="source"]');
-    const $type=$(scope).find('[name="type"]');
-
-    // toggle api block
-    const apiBlock=scope.querySelector('.js-api-block');
-    const toggle=()=>{
-      if(!apiBlock) return;
-      apiBlock.classList.toggle('d-none', ($source.val()||'')!=='api');
+    // ---------- ✅ Summernote ----------
+    const loadCssOnce=(id,href)=>{ if(document.getElementById(id)) return;
+      const l=document.createElement('link'); l.id=id; l.rel='stylesheet'; l.href=href; document.head.appendChild(l);
     };
-    toggle();
-    $source.on('change',toggle);
+    const loadScriptOnce=(id,src)=>new Promise((res,rej)=>{
+      if(document.getElementById(id)) return res();
+      const s=document.createElement('script'); s.id=id; s.src=src; s.async=false;
+      s.onload=res; s.onerror=rej; document.body.appendChild(s);
+    });
 
-    // providers
-    $prov.select2({
-      dropdownParent:$modal,
-      width:'100%',
-      placeholder:'API connection',
-      ajax:{
-        url:"{{ route('admin.apis.options') }}",
-        delay:150,
-        data:(params)=>({q:params.term||''}),
-        processResults:(rows)=>({results:rows.map(r=>({id:r.id,text:r.name}))})
+    async function ensureSummernote(){
+      loadCssOnce('sn-css','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css');
+      if(!window.jQuery || !window.jQuery.fn?.summernote){
+        await loadScriptOnce('jq','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
+        window.$=window.jQuery;
+        await loadScriptOnce('sn','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
+      }
+    }
+
+    async function ensureSelect2(){
+      if(!window.jQuery) await loadScriptOnce('jq','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
+      if(!$.fn?.select2){
+        loadCssOnce('sel2-css','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css');
+        await loadScriptOnce('sel2','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js');
+      }
+    }
+
+    // ---------- ✅ Price calc ----------
+    function initPrice(scope){
+      const cost = scope.querySelector('[name="cost"]');
+      const profit = scope.querySelector('[name="profit"]');
+      const pType = scope.querySelector('[name="profit_type"]');
+      const pricePreview = scope.querySelector('#pricePreview');
+      const convertedPreview = scope.querySelector('#convertedPricePreview');
+
+      function recalc(){
+        const c = Number(cost.value||0);
+        const p = Number(profit.value||0);
+        const isPercent = (pType.value == '2');
+        const price = isPercent ? (c + (c*p/100)) : (c+p);
+        pricePreview.value = price.toFixed(4);
+        convertedPreview.value = price.toFixed(4);
+        document.getElementById('badgePrice').innerText = 'Price: ' + price.toFixed(4) + ' Credits';
+      }
+
+      [cost,profit,pType].forEach(el=> el && el.addEventListener('input', recalc));
+      recalc();
+
+      return {
+        setCost(v){
+          cost.value = Number(v||0).toFixed(4);
+          recalc();
+        }
+      };
+    }
+
+    // ---------- ✅ Init API providers/services ----------
+    async function initApi(scope, cloneData){
+      await ensureSelect2();
+      const $ = window.jQuery;
+      const $modal = $('#serviceModal');
+
+      const $prov = $(scope).find('.js-api-provider');
+      const $srv  = $(scope).find('.js-api-service');
+
+      $prov.select2({
+        dropdownParent:$modal,
+        width:'100%',
+        placeholder:'API connection',
+        ajax:{
+          url:"{{ route('admin.apis.options') }}",
+          delay:150,
+          data:(p)=>({q:p.term||''}),
+          processResults:(rows)=>({results:rows.map(r=>({id:r.id,text:r.name}))})
+        }
+      });
+
+      $srv.select2({
+        dropdownParent:$modal,
+        width:'100%',
+        placeholder:'API service',
+        ajax:{
+          url:"{{ route('admin.services.clone.provider_services') }}",
+          delay:150,
+          data:(p)=>({
+            provider_id:$prov.val()||'',
+            type:(cloneData.serviceType||'imei'),
+            q:p.term||''
+          }),
+          processResults:(rows)=>({
+            results:rows.map(x=>({
+              id:x.id,
+              text:(x.text||x.name||'Service') + ' — ' + Number(x.credit||0).toFixed(4),
+              credit:Number(x.credit||0)
+            }))
+          })
+        }
+      });
+
+      return { $prov, $srv };
+    }
+
+    // ---------- ✅ Alias from name ----------
+    function slugify(text){
+      return String(text||'')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g,'-')
+        .replace(/^-+|-+$/g,'');
+    }
+
+    // ---------- ✅ Open modal on Clone ----------
+    document.addEventListener('click', async (e)=>{
+      const btn = e.target.closest('[data-create-service]');
+      if(!btn) return;
+
+      e.preventDefault();
+
+      const body = document.getElementById('serviceModalBody');
+      const tpl = document.getElementById('serviceCreateTpl');
+      if(!tpl) return alert('Template not found');
+
+      body.innerHTML = tpl.innerHTML;
+
+      // Tabs
+      initTabs(body);
+
+      // Ensure libs
+      await ensureSummernote();
+      await ensureSelect2();
+
+      // Init Summernote
+      jQuery(body).find('#infoEditor').summernote({
+        placeholder:'Description, notes, terms…',
+        height:320
+      });
+
+      // Clone data
+      const cloneData = {
+        providerId: btn.dataset.providerId,
+        providerName: btn.dataset.providerName,
+        remoteId: btn.dataset.remoteId,
+        name: btn.dataset.name,
+        credit: Number(btn.dataset.credit||0),
+        time: btn.dataset.time,
+        serviceType: btn.dataset.serviceType
+      };
+
+      // Header
+      document.getElementById('serviceModalSubtitle').innerText =
+        `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`;
+
+      document.getElementById('badgeType').innerText =
+        `Type: ${cloneData.serviceType.toUpperCase()}`;
+
+      // Fill fields
+      body.querySelector('[name="supplier_id"]').value = cloneData.providerId;
+      body.querySelector('[name="remote_id"]').value = cloneData.remoteId;
+      body.querySelector('[name="name"]').value = cloneData.name;
+      body.querySelector('[name="time"]').value = cloneData.time;
+      body.querySelector('[name="cost"]').value = cloneData.credit.toFixed(4);
+      body.querySelector('[name="profit"]').value = '0.0000';
+      body.querySelector('[name="source"]').value = 2;
+      body.querySelector('[name="type"]').value = cloneData.serviceType;
+
+      // Alias auto
+      body.querySelector('[name="alias"]').value = slugify(cloneData.name);
+
+      // Price helper
+      const priceHelper = initPrice(body);
+      priceHelper.setCost(cloneData.credit);
+
+      // Load Groups
+      fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
+        .then(r=>r.json())
+        .then(rows=>{
+          const sel = body.querySelector('[name="group_id"]');
+          sel.innerHTML = `<option value="">Group</option>` + rows.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+        });
+
+      // Init API dropdowns
+      const api = await initApi(body, cloneData);
+
+      // ✅ preselect provider
+      const optProv = new Option(cloneData.providerName, cloneData.providerId, true, true);
+      api.$prov.append(optProv).trigger('change');
+
+      // ✅ preselect service (remote_id)
+      const srvText = `${cloneData.name} — ${cloneData.credit.toFixed(4)}`;
+      const optSrv = new Option(srvText, cloneData.remoteId, true, true);
+      api.$srv.append(optSrv).trigger('change');
+
+      // Show modal
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
+    });
+
+    // ---------- ✅ Ajax submit ----------
+    document.addEventListener('submit', async (ev)=>{
+      const form = ev.target.closest('#serviceModal form[data-ajax="1"]');
+      if(!form) return;
+      ev.preventDefault();
+
+      const html = jQuery(form).find('#infoEditor').summernote('code');
+      form.querySelector('#infoHidden').value = html;
+
+      const btn = form.querySelector('[type="submit"]');
+      btn.disabled = true;
+
+      try{
+        const res = await fetch(form.action,{
+          method: form.method,
+          headers:{
+            'X-Requested-With':'XMLHttpRequest',
+            'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content
+          },
+          body: new FormData(form)
+        });
+
+        btn.disabled = false;
+
+        if(res.status === 422){
+          const json = await res.json();
+          alert(Object.values(json.errors).flat().join("\n"));
+          return;
+        }
+
+        if(res.ok){
+          bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
+          location.reload();
+        }else{
+          alert('Failed to save service');
+        }
+
+      }catch(e){
+        btn.disabled = false;
+        alert('Network error');
       }
     });
 
-    // services
-    $svc.select2({
-      dropdownParent:$modal,
-      width:'100%',
-      placeholder:'API service',
-      minimumInputLength:0,
-      ajax:{
-        url:"{{ route('admin.services.clone.provider_services') }}",
-        delay:200,
-        data:(params)=>({
-          type:($type.val()||'imei'),
-          provider_id:$prov.val()||'',
-          q:params.term||''
-        }),
-        processResults:(rows)=>({
-          results:rows.map(s=>({
-            id:s.id,
-            text:`${(s.text||s.name||'Service')} — ${Number(s.credit||0).toFixed(4)} Credits`,
-            credit:Number(s.credit||0)
-          }))
-        })
-      }
-    });
-
-    return {$prov,$svc};
-  }
-
-  // open clone modal
-  document.addEventListener('click', async (e)=>{
-    const btn=e.target.closest('[data-create-service]');
-    if(!btn) return;
-    e.preventDefault();
-
-    // close any open modal
-    document.querySelectorAll('.modal.show').forEach(m=>{
-      bootstrap.Modal.getInstance(m)?.hide();
-    });
-
-    const tpl=document.getElementById('serviceCreateTpl');
-    if(!tpl){ alert('Template not found'); return; }
-
-    // insert template into General only ✅
-    document.getElementById('serviceModalGeneral').innerHTML = tpl.innerHTML;
-
-    // Additional + Meta placeholders
-    document.getElementById('serviceModalAdditional').innerHTML = `
-      <div class="text-center text-muted py-4">
-        Loading Additional (Fields + Groups)…
-      </div>
-    `;
-
-    document.getElementById('serviceModalMeta').innerHTML = `
-      <div class="text-center text-muted py-4">
-        Loading Meta fields…
-      </div>
-    `;
-
-    const body=document.getElementById('serviceModalGeneral');
-
-    // ensure editors
-    await ensureSummernote();
-    await ensureSelect2();
-
-    // init summernote
-    if(window.initModalCreateSummernote) window.initModalCreateSummernote(body);
-
-    const pickers=await initApiPickers(body);
-
-    // values
-    const providerId = btn.dataset.providerId || '';
-    const providerName = btn.dataset.providerName || '—';
-    const remoteId = btn.dataset.remoteId || '';
-    const name = btn.dataset.name || '';
-    const credit = Number(btn.dataset.credit||0);
-    const type = btn.dataset.serviceType || 'imei';
-
-    // top header info
-    document.getElementById('cloneProviderName').innerText = providerName;
-    document.getElementById('cloneRemoteIdLabel').innerText = remoteId;
-    document.getElementById('cloneTypeBadge').innerText = 'Type: ' + type.toUpperCase();
-    document.getElementById('clonePriceBadge').innerText = 'Price: ' + credit.toFixed(4) + ' Credits';
-
-    // fill form
-    body.querySelector('[name="name"]').value = name;
-    body.querySelector('[name="alias"]').value = slugify(name);
-    body.querySelector('[name="type"]').value = type;
-    body.querySelector('[name="cost"]').value = credit.toFixed(4);
-    body.querySelector('[name="source"]').value = 'api';
-
-    // hidden remote fields
-    const supplier = body.querySelector('#cloneSupplierId');
-    const remote = body.querySelector('#cloneRemoteId');
-    if(supplier) supplier.value = providerId;
-    if(remote) remote.value = remoteId;
-
-    // select provider in select2
-    if(providerId){
-      const opt = new Option(providerName, providerId, true, true);
-      pickers.$prov.append(opt).trigger('change');
-    }
-
-    // select service in select2
-    if(remoteId){
-      const txt = `${name} — ${credit.toFixed(4)} Credits`;
-      const optS = new Option(txt, remoteId, true, true);
-      pickers.$svc.append(optS).trigger('change');
-    }
-
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
-  });
-
-})();
-</script>
-@endpush
+  })();
+  </script>
+  @endpush
 @endonce
