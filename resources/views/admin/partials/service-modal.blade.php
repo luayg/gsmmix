@@ -4,11 +4,11 @@
     <style>
       #serviceModal .modal-dialog{width:96vw;max-width:min(1400px,96vw);margin:1rem auto}
       #serviceModal .modal-content{display:flex;flex-direction:column;max-height:96dvh;border-radius:.6rem;overflow:hidden}
-      #serviceModal .modal-header{background:#3bb37a;color:#fff;padding:.75rem 1rem;border:0}
+      #serviceModal .modal-header{background:#3bb37a;color:#fff;padding:.75rem 1rem;border:0;display:flex;align-items:center;gap:1rem}
       #serviceModal .modal-title{font-weight:600}
       #serviceModal .modal-body{flex:1 1 auto;overflow:auto;padding:1rem;background:#fff}
       #serviceModal .tabs-top{display:flex;gap:.5rem;margin-left:auto}
-      #serviceModal .tabs-top button{border:0;background:#ffffff22;color:#fff;padding:.35rem .8rem;border-radius:.35rem}
+      #serviceModal .tabs-top button{border:0;background:#ffffff22;color:#fff;padding:.35rem .8rem;border-radius:.35rem;font-size:.85rem}
       #serviceModal .tabs-top button.active{background:#fff;color:#000}
       #serviceModal .badge-box{display:flex;gap:.4rem;align-items:center;margin-left:1rem}
       #serviceModal .badge-box .badge{background:#111;color:#fff;padding:.35rem .55rem;border-radius:.35rem;font-size:.75rem}
@@ -18,53 +18,64 @@
   @endpush
 
   @push('modals')
-  <div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header">
+    <div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
 
-          <div>
-            <div class="modal-title">Create service</div>
-            <div class="small opacity-75" id="serviceModalSubtitle">Provider: — | Remote ID: —</div>
+          <div class="modal-header">
+            <div>
+              <div class="modal-title">Create service</div>
+              <div class="small opacity-75" id="serviceModalSubtitle">Provider: — | Remote ID: —</div>
+            </div>
+
+            <div class="tabs-top">
+              <button type="button" class="tab-btn active" data-tab="general">General</button>
+              <button type="button" class="tab-btn" data-tab="additional">Additional</button>
+              <button type="button" class="tab-btn" data-tab="meta">Meta</button>
+            </div>
+
+            <div class="badge-box">
+              <span class="badge" id="badgeType">Type: —</span>
+              <span class="badge" id="badgePrice">Price: —</span>
+            </div>
+
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
 
-          <div class="tabs-top">
-            <button type="button" class="tab-btn active" data-tab="general">General</button>
-            <button type="button" class="tab-btn" data-tab="additional">Additional</button>
-            <button type="button" class="tab-btn" data-tab="meta">Meta</button>
-          </div>
+          <div class="modal-body" id="serviceModalBody"></div>
 
-          <div class="badge-box">
-            <span class="badge" id="badgeType">Type: —</span>
-            <span class="badge" id="badgePrice">Price: —</span>
-          </div>
-
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
-
-        <div class="modal-body" id="serviceModalBody"></div>
       </div>
     </div>
-  </div>
   @endpush
-
 
   @push('scripts')
   <script>
   (function(){
 
-    // ---------- ✅ Tabs ----------
+    // ✅ Tabs logic (FIXED: always keep one pane active)
     function initTabs(scope){
       const btns = document.querySelectorAll('#serviceModal .tab-btn');
-      btns.forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          btns.forEach(b=>b.classList.remove('active'));
-          btn.classList.add('active');
 
-          scope.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-          scope.querySelector(`.tab-pane[data-tab="${btn.dataset.tab}"]`)?.classList.add('active');
-        });
+      function activate(tab){
+        btns.forEach(b=>b.classList.toggle('active', b.dataset.tab === tab));
+        const panes = scope.querySelectorAll('.tab-pane');
+        panes.forEach(p=>p.classList.toggle('active', p.dataset.tab === tab));
+
+        // ✅ fallback: إذا لم يجد pane للتاب، خلي general فعال
+        const anyActive = Array.from(panes).some(p=>p.classList.contains('active'));
+        if(!anyActive){
+          panes.forEach(p=>p.classList.toggle('active', p.dataset.tab === 'general'));
+          btns.forEach(b=>b.classList.toggle('active', b.dataset.tab === 'general'));
+        }
+      }
+
+      btns.forEach(btn=>{
+        btn.onclick = ()=> activate(btn.dataset.tab);
       });
+
+      // default
+      activate('general');
     }
 
     // ---------- ✅ Summernote ----------
@@ -94,7 +105,7 @@
       }
     }
 
-    // ---------- ✅ Price calc ----------
+    // ✅ Price calc
     function initPrice(scope){
       const cost = scope.querySelector('[name="cost"]');
       const profit = scope.querySelector('[name="profit"]');
@@ -103,12 +114,12 @@
       const convertedPreview = scope.querySelector('#convertedPricePreview');
 
       function recalc(){
-        const c = Number(cost.value||0);
-        const p = Number(profit.value||0);
-        const isPercent = (pType.value == '2');
+        const c = Number(cost?.value||0);
+        const p = Number(profit?.value||0);
+        const isPercent = (pType?.value == '2');
         const price = isPercent ? (c + (c*p/100)) : (c+p);
-        pricePreview.value = price.toFixed(4);
-        convertedPreview.value = price.toFixed(4);
+        if(pricePreview) pricePreview.value = price.toFixed(4);
+        if(convertedPreview) convertedPreview.value = price.toFixed(4);
         document.getElementById('badgePrice').innerText = 'Price: ' + price.toFixed(4) + ' Credits';
       }
 
@@ -117,13 +128,23 @@
 
       return {
         setCost(v){
-          cost.value = Number(v||0).toFixed(4);
+          if(cost){
+            cost.value = Number(v||0).toFixed(4);
+          }
           recalc();
         }
       };
     }
 
-    // ---------- ✅ Init API providers/services ----------
+    // ✅ Alias from name
+    function slugify(text){
+      return String(text||'')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g,'-')
+        .replace(/^-+|-+$/g,'');
+    }
+
+    // ✅ Init API dropdowns
     async function initApi(scope, cloneData){
       await ensureSelect2();
       const $ = window.jQuery;
@@ -169,15 +190,18 @@
       return { $prov, $srv };
     }
 
-    // ---------- ✅ Alias from name ----------
-    function slugify(text){
-      return String(text||'')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g,'-')
-        .replace(/^-+|-+$/g,'');
+    // ✅ Load groups
+    function loadGroups(scope, type){
+      fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(type))
+        .then(r=>r.json())
+        .then(rows=>{
+          const sel = scope.querySelector('[name="group_id"]');
+          if(!sel) return;
+          sel.innerHTML = `<option value="">Group</option>` + rows.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+        });
     }
 
-    // ---------- ✅ Open modal on Clone ----------
+    // ✅ Open modal on Clone
     document.addEventListener('click', async (e)=>{
       const btn = e.target.closest('[data-create-service]');
       if(!btn) return;
@@ -190,20 +214,15 @@
 
       body.innerHTML = tpl.innerHTML;
 
-      // Tabs
+      // ✅ Init tabs AFTER template loaded
       initTabs(body);
 
-      // Ensure libs
       await ensureSummernote();
       await ensureSelect2();
 
-      // Init Summernote
-      jQuery(body).find('#infoEditor').summernote({
-        placeholder:'Description, notes, terms…',
-        height:320
-      });
+      // ✅ Summernote always on Info tab
+      jQuery(body).find('#infoEditor').summernote({ placeholder:'Description, notes, terms…', height:320 });
 
-      // Clone data
       const cloneData = {
         providerId: btn.dataset.providerId,
         providerName: btn.dataset.providerName,
@@ -211,7 +230,7 @@
         name: btn.dataset.name,
         credit: Number(btn.dataset.credit||0),
         time: btn.dataset.time,
-        serviceType: btn.dataset.serviceType
+        serviceType: btn.dataset.serviceType || 'imei'
       };
 
       // Header
@@ -238,38 +257,31 @@
       const priceHelper = initPrice(body);
       priceHelper.setCost(cloneData.credit);
 
-      // Load Groups
-      fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
-        .then(r=>r.json())
-        .then(rows=>{
-          const sel = body.querySelector('[name="group_id"]');
-          sel.innerHTML = `<option value="">Group</option>` + rows.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
-        });
+      // Groups
+      loadGroups(body, cloneData.serviceType);
 
       // Init API dropdowns
       const api = await initApi(body, cloneData);
 
-      // ✅ preselect provider
+      // preselect provider
       const optProv = new Option(cloneData.providerName, cloneData.providerId, true, true);
       api.$prov.append(optProv).trigger('change');
 
-      // ✅ preselect service (remote_id)
+      // preselect service
       const srvText = `${cloneData.name} — ${cloneData.credit.toFixed(4)}`;
       const optSrv = new Option(srvText, cloneData.remoteId, true, true);
       api.$srv.append(optSrv).trigger('change');
 
-      // Show modal
       bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
     });
 
-    // ---------- ✅ Ajax submit ----------
+    // ✅ Ajax submit
     document.addEventListener('submit', async (ev)=>{
       const form = ev.target.closest('#serviceModal form[data-ajax="1"]');
       if(!form) return;
       ev.preventDefault();
 
-      const html = jQuery(form).find('#infoEditor').summernote('code');
-      form.querySelector('#infoHidden').value = html;
+      form.querySelector('#infoHidden').value = jQuery(form).find('#infoEditor').summernote('code');
 
       const btn = form.querySelector('[type="submit"]');
       btn.disabled = true;
