@@ -16,8 +16,6 @@
         ->toArray();
 @endphp
 
-{{-- ✅ مودال موحد لإنشاء الخدمة (الموجود مسبقًا في المشروع) --}}
-@include('admin.partials.service-modal')
 
 <div class="modal-header">
   <h5 class="modal-title">
@@ -45,7 +43,8 @@
       <div>
         ✅ <strong id="importResultText"></strong>
       </div>
-      <button type="button" class="btn-close" onclick="document.getElementById('importResultWrap').style.display='none'"></button>
+      <button type="button" class="btn-close"
+              onclick="document.getElementById('importResultWrap').style.display='none'"></button>
     </div>
   </div>
 
@@ -84,14 +83,11 @@
             <td>{!! $time !!}</td>
 
             <td class="text-end">
-
-              {{-- ✅ If already added => Add ✅ --}}
               @if($isAdded)
                 <button type="button" class="btn btn-secondary btn-sm" disabled>
                   Add ✅
                 </button>
               @else
-                {{-- ✅ Clone => opens the unified serviceModal --}}
                 <button type="button"
                         class="btn btn-success btn-sm clone-btn"
                         data-create-service
@@ -106,11 +102,11 @@
                   Clone
                 </button>
               @endif
-
             </td>
           </tr>
 
         @endforeach
+
       </tbody>
     </table>
   </div>
@@ -120,7 +116,6 @@
 <div class="modal-footer">
   <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
 </div>
-
 
 {{-- ✅ template of create form (required by service-modal.js) --}}
 <template id="serviceCreateTpl">
@@ -132,7 +127,6 @@
     @include('admin.services.file._modal_create')
   @endif
 </template>
-
 
 
 {{-- ✅ Wizard Modal --}}
@@ -224,7 +218,6 @@
     </div>
   </div>
 </div>
-
 
 {{-- ✅ Import wizard script (unchanged) --}}
 <script>

@@ -2,35 +2,94 @@
 @once
   @push('styles')
     <style>
-      #serviceModal .modal-dialog{width:96vw;max-width:min(1200px,96vw);margin:1rem auto}
-      #serviceModal .modal-content{display:flex;flex-direction:column;max-height:96dvh;border-radius:.8rem;overflow:hidden;box-shadow:0 10px 35px rgba(0,0,0,.18)}
-      #serviceModal .modal-header{background:#0d6efd;color:#fff;padding:.65rem .95rem;border:0}
-      #serviceModal .modal-title{font-weight:600}
+      #serviceModal .modal-dialog{width:96vw;max-width:min(1400px,96vw);margin:1rem auto}
+      #serviceModal .modal-content{display:flex;flex-direction:column;max-height:96dvh;border-radius:.6rem;overflow:hidden;box-shadow:0 10px 35px rgba(0,0,0,.18)}
+      #serviceModal .modal-header{
+        background:#37b37e;
+        color:#fff;
+        padding:.8rem 1rem;
+        border:0;
+        display:flex;
+        align-items:center;
+        justify-content:space-between
+      }
+
+      #serviceModal .modal-title{font-weight:600;margin:0}
       #serviceModal .btn-close{filter:invert(1);opacity:.9}
-      #serviceModal .modal-body{flex:1 1 auto;padding:14px !important;overflow-y:auto !important;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;touch-action:pan-y;scrollbar-width:none}
-      #serviceModal .modal-body::-webkit-scrollbar{width:0;height:0}
-      #serviceModal .modal-body .row{margin-left:0 !important;margin-right:0 !important}
-      #serviceModal .modal-body .col,#serviceModal .modal-body [class^="col-"]{padding-left:.35cm;padding-right:.35cm}
-      #serviceModal .note-editor.note-frame .note-editable{min-height:320px}
+
+      #serviceModal .modal-body{
+        flex:1 1 auto;
+        padding:14px !important;
+        overflow-y:auto !important;
+        overflow-x:hidden;
+      }
+
+      #serviceModal .service-tabs .btn{
+        background:rgba(255,255,255,.12);
+        border:0;
+        color:#fff;
+        font-weight:600;
+        margin-left:6px;
+        padding:.35rem .8rem;
+        border-radius:.35rem;
+      }
+      #serviceModal .service-tabs .btn.active{
+        background:#fff;
+        color:#37b37e;
+      }
+
+      #serviceModal .badge-pill{
+        background:#111;
+        padding:.4rem .8rem;
+        border-radius:.4rem;
+        font-weight:600;
+        color:#fff;
+        margin-left:8px;
+      }
+
       #serviceModal .select2-container{width:100% !important;z-index:2055}
       #serviceModal .select2-dropdown{z-index:2056}
-      #serviceModal .select2-container--open .select2-dropdown--above{top:100% !important;bottom:auto !important}
+      #serviceModal .note-editor.note-frame .note-editable{min-height:340px}
     </style>
   @endpush
 
   @push('modals')
   <div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-xl">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
       <div class="modal-content">
+
+        {{-- ✅ Header Green Bar --}}
         <div class="modal-header">
-          <h5 class="modal-title">Create service</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+
+          <div>
+            <h5 class="modal-title" id="serviceModalTitle">Create service</h5>
+            <small id="serviceModalSubTitle" style="opacity:.85; font-size:12px;">
+              Provider: — • Remote ID: —
+            </small>
+          </div>
+
+          <div class="d-flex align-items-center">
+            <div class="service-tabs">
+              <button type="button" class="btn active" data-tab="general">General</button>
+              <button type="button" class="btn" data-tab="additional">Additional</button>
+              <button type="button" class="btn" data-tab="meta">Meta</button>
+            </div>
+
+            <span class="badge-pill" id="serviceModalTypeBadge">Type: IMEI</span>
+            <span class="badge-pill" id="serviceModalPriceBadge">Price: 0.0000 Credits</span>
+
+            <button type="button" class="btn-close ms-3" data-bs-dismiss="modal"></button>
+          </div>
+
         </div>
+
         <div class="modal-body" id="serviceModalBody"></div>
+
       </div>
     </div>
   </div>
   @endpush
+
 
   @push('scripts')
   <script>
@@ -69,42 +128,27 @@
       }
     }
 
-    // ✅ تعبئة من الخدمة المنسوخة
-    window.prefillFromRemote=function(rootEl,data){
-      const root=rootEl instanceof HTMLElement?rootEl:document;
-      const qs=(sel)=>root.querySelector(sel);
-      const setVal=(name,val)=>{
-        const el=qs(`[name="${name}"]`);
-        if(el){
-          el.value=(val??'');
-          el.dispatchEvent(new Event('change'));
-        }
-      };
+    function initTabs(scope){
+      const tabs = document.querySelectorAll('#serviceModal .service-tabs .btn');
+      const panes = scope.querySelectorAll('.service-tab-pane');
 
-      setVal('name',data.name);
-      setVal('alias',data.remote_id);
-      setVal('time',data.time);
-      setVal('type',data.service_type || 'imei');
-      setVal('cost',data.credit ?? 0);
-      setVal('profit',0);
-      setVal('source','api');
+      tabs.forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          tabs.forEach(b=>b.classList.remove('active'));
+          btn.classList.add('active');
 
-      // ✅ اجبار تفعيل
-      const active=qs('[name="active"]');
-      if(active) active.checked=true;
+          const target = btn.dataset.tab;
+          panes.forEach(p=>{
+            p.classList.toggle('d-none', p.dataset.tab !== target);
+          });
+        });
+      });
 
-      // ✅ Summernote Info
-      if(data.info!=null){
-        if(window.jQuery?.fn?.summernote && jQuery('#infoEditor').length){
-          jQuery('#infoEditor').summernote('code',data.info);
-          const hid=qs('#infoHidden'); if(hid) hid.value=data.info;
-        }else{
-          const infoEl=qs('[name="info"]'); if(infoEl) infoEl.value=data.info;
-        }
-      }
-    };
+      // show default
+      panes.forEach(p=>p.classList.toggle('d-none', p.dataset.tab!=='general'));
+    }
 
-    // ✅ السعر = cost + profit
+    // ✅ price = cost + profit
     function initPriceAuto(scope){
       const toNum=(v)=>Number(String(v||'').replace(/[^0-9.\-]/g,''))||0;
       const fmt=(n)=> (Number.isFinite(n)?n.toFixed(4):'0.0000');
@@ -117,39 +161,29 @@
       const recalc=()=>{
         const c=toNum(cost?.value);
         const p=toNum(profit?.value);
-        const perc=(pType?.value=='2'||(pType?.value||'').toLowerCase()==='percent');
+        const perc=(pType?.value=='2');
         const price= perc?(c+(c*p/100)):(c+p);
         if(pricePreview) pricePreview.value=fmt(price);
         if(convPreview)  convPreview.value=fmt(price);
+
+        document.getElementById('serviceModalPriceBadge').innerText = 'Price: '+fmt(price)+' Credits';
       };
 
       [cost,profit,pType].forEach(el=>el && el.addEventListener('input',recalc));
       recalc();
 
-      return {
-        recalc,
-        setCost:(v)=>{
-          if(cost){
-            cost.value=(v??0);
-            cost.dispatchEvent(new Event('input'));
-          }
-        }
-      };
+      return { recalc };
     }
 
-    // ✅ Select2 + API + Groups
+
     async function initApiPickers(scope){
       await ensureSelect2();
       const $=window.jQuery;
       const $modal=$('#serviceModal');
 
-      const $kind=$(scope).find('[name="type"]');
       const $prov=$(scope).find('.js-api-provider');
       const $service=$(scope).find('.js-api-service');
-      const $groupSel=$(scope).find('[name="group_id"]');
       const $source=$(scope).find('[name="source"]');
-
-      // API block
       let apiBlockEl=scope.querySelector('.js-api-block');
 
       function toggleApiBlock(){
@@ -161,7 +195,6 @@
       toggleApiBlock();
       $source.on('change',toggleApiBlock);
 
-      // ✅ Providers
       $prov.select2({
         dropdownParent:$modal,
         width:'100%',
@@ -174,64 +207,22 @@
         }
       });
 
-      // ✅ Groups
-      function loadGroups(){
-        const kind=($kind.val()||'').toLowerCase();
-        fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(kind))
-          .then(r=>r.json()).then(rows=>{
-            const html=['<option value="">Group</option>'].concat(
-              rows.map(g=>`<option value="${g.id}">${g.name}</option>`)
-            ).join('');
-            $groupSel.html(html);
-          }).catch(()=>{});
-      }
-      loadGroups();
-      $kind.on('change',loadGroups);
-
-      // ✅ Services
-      const priceHelper=initPriceAuto(scope);
-
       $service.select2({
         dropdownParent:$modal,
         width:'100%',
-        placeholder:'API service',
-        minimumInputLength:0,
-        ajax:{
-          url:"{{ route('admin.services.clone.provider_services') }}",
-          delay:200,
-          data:(params)=>({
-            type:($kind.val()||'imei'),
-            provider_id:$prov.val()||'',
-            q:params?.term||''
-          }),
-          processResults:(rows)=>({
-            results:rows.map(s=>({
-              id:s.id,
-              text:`${(s.text||s.name||'Service')}${(s.credit!=null?` — ${Number(s.credit).toFixed(4)}`:'')}`,
-              price:Number(s.credit||0)
-            }))
-          })
-        }
+        placeholder:'API service'
       });
 
-      $service.on('select2:select',function(e){
-        const data=e.params.data;
-        if(typeof data?.price==='number'){
-          priceHelper.setCost(data.price.toFixed(4));
-        }
-      });
-
-      $prov.on('select2:select',()=>{ $service.val(null).trigger('change'); });
+      return { $prov, $service };
     }
 
-    // ✅ فتح مودال الإنشاء (Clone) + ✅ اغلاق أي مودال مفتوح أولاً
+
     document.addEventListener('click', async (e)=>{
       const btn=e.target.closest('[data-create-service]');
       if(!btn) return;
 
       e.preventDefault();
 
-      // ✅ اغلق أي مودال مفتوح قبل فتح مودال الخدمة (حل الواجهتين)
       document.querySelectorAll('.modal.show').forEach(m=>{
         const inst = bootstrap.Modal.getInstance(m);
         if(inst) inst.hide();
@@ -239,7 +230,6 @@
 
       const body=document.getElementById('serviceModalBody');
       const tpl=document.getElementById('serviceCreateTpl');
-
       if(!body || !tpl){
         alert('Create modal template not found');
         return;
@@ -247,51 +237,59 @@
 
       body.innerHTML=tpl.innerHTML;
 
-      try{
-        await ensureSummernote();
-        await ensureSelect2();
+      await ensureSummernote();
+      await ensureSelect2();
 
-        if(typeof window.initModalCreateSummernote==='function'){
-          window.initModalCreateSummernote(body);
-        }
-
-        await initApiPickers(body);
-
-      }catch(err){
-        console.error(err);
-        alert('Failed to load editor');
+      if(typeof window.initModalCreateSummernote==='function'){
+        window.initModalCreateSummernote(body);
       }
 
-      const prefill={
-        service_type:btn.dataset.serviceType||'imei',
-        provider_id :btn.dataset.providerId||'',
-        remote_id   :btn.dataset.remoteId||'',
-        name        :btn.dataset.name||'',
-        credit      :btn.dataset.credit||btn.dataset.price||'0',
-        time        :btn.dataset.time||'',
-        info        :btn.dataset.info||''
-      };
+      initTabs(body);
+      const priceHelper = initPriceAuto(body);
+      const pickers = await initApiPickers(body);
 
-      window.prefillFromRemote(body, prefill);
+      // fill fields
+      const name   = btn.dataset.name || '';
+      const remote = btn.dataset.remoteId || '';
+      const time   = btn.dataset.time || '';
+      const credit = Number(btn.dataset.credit || 0);
+      const providerId = btn.dataset.providerId || '';
+      const providerName = btn.dataset.providerName || '';
 
-      const modalEl=document.getElementById('serviceModal');
-      bootstrap.Modal.getOrCreateInstance(modalEl).show();
+      document.getElementById('serviceModalSubTitle').innerText =
+        "Provider: "+providerName+" • Remote ID: "+remote;
+
+      body.querySelector('[name="name"]').value = name;
+      body.querySelector('[name="alias"]').value = remote;
+      body.querySelector('[name="time"]').value = time;
+      body.querySelector('[name="cost"]').value = credit.toFixed(4);
+      body.querySelector('[name="source"]').value = 'api';
+
+      document.getElementById('serviceModalTypeBadge').innerText = "Type: "+(btn.dataset.serviceType||'imei').toUpperCase();
+      document.getElementById('serviceModalPriceBadge').innerText = "Price: "+credit.toFixed(4)+" Credits";
+
+      // set provider selected
+      if(providerId){
+        const opt = new Option(providerName, providerId, true, true);
+        pickers.$prov.append(opt).trigger('change');
+      }
+
+      // set service selected (remote id)
+      const optS = new Option(name+" — "+credit.toFixed(4), remote, true, true);
+      pickers.$service.append(optS).trigger('change');
+
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
     });
 
-    // ✅ Ajax Submit Create
+
     document.addEventListener('submit', async (ev)=>{
       const form=ev.target.closest('#serviceModal form[data-ajax="1"]');
       if(!form) return;
-
       ev.preventDefault();
-
-      form.querySelectorAll('.is-invalid').forEach(el=>el.classList.remove('is-invalid'));
-      form.querySelectorAll('.invalid-feedback').forEach(el=>el.remove());
 
       if(window.jQuery?.fn?.summernote && jQuery('#infoEditor').length){
         const html=jQuery('#infoEditor').summernote('code');
-        const hid=form.querySelector('#infoHidden');
-        if(hid) hid.value=html;
+        form.querySelector('#infoHidden').value=html;
       }
 
       const btn=form.querySelector('[type="submit"]');
@@ -309,20 +307,6 @@
 
         btn?.removeAttribute('disabled');
 
-        if(res.status===422){
-          const {errors}=await res.json();
-          for(const [field,msgs] of Object.entries(errors||{})){
-            const el=form.querySelector(`[name="${field}"]`);
-            if(!el) continue;
-            el.classList.add('is-invalid');
-            const fb=document.createElement('div');
-            fb.className='invalid-feedback';
-            fb.innerText=(msgs||[]).join(' ');
-            el.insertAdjacentElement('afterend',fb);
-          }
-          return;
-        }
-
         if(res.ok){
           bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
           location.reload();
@@ -332,7 +316,7 @@
 
       }catch(e){
         btn?.removeAttribute('disabled');
-        alert('Network error, please try again.');
+        alert('Network error');
       }
     });
 
