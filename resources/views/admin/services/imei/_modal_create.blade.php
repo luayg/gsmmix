@@ -6,20 +6,21 @@
       data-ajax="1">
   @csrf
 
-  {{-- ✅ Injected by service-modal.js --}}
   <input type="hidden" name="supplier_id" value="">
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
 
-  {{-- ✅ Tabs content wrappers --}}
+  {{-- ✅ hidden JSON --}}
+  <input type="hidden" name="pricing_table" id="pricingTableHidden">
+  <input type="hidden" name="custom_fields" id="customFieldsHidden">
+
   <div class="service-tabs-content">
 
     {{-- ===================== ✅ GENERAL TAB ===================== --}}
     <div class="tab-pane active" data-tab="general">
-
       <div class="row g-3">
 
-        {{-- LEFT SIDE --}}
+        {{-- LEFT --}}
         <div class="col-xl-7">
           <div class="row g-3">
 
@@ -32,12 +33,12 @@
               <label class="form-label mb-1">
                 Alias (Unique name containing only latin lowercase characters and dashes)
               </label>
-              <input name="alias" type="text" class="form-control" placeholder="unique-alias-like-this">
+              <input name="alias" type="text" class="form-control">
             </div>
 
             <div class="col-md-6">
               <label class="form-label mb-1">Delivery time</label>
-              <input name="time" type="text" class="form-control" placeholder="e.g. 1-24h">
+              <input name="time" type="text" class="form-control">
             </div>
 
             <div class="col-md-6">
@@ -67,38 +68,14 @@
               </select>
             </div>
 
-            <div class="col-md-6">
-              <label class="form-label mb-1">Main field label</label>
-              <input name="main_field_label" type="text" class="form-control" value="IMEI">
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Allowed characters</label>
-              <select name="allowed_characters" class="form-select">
-                <option value="numbers" selected>Numbers</option>
-                <option value="any">Any</option>
-                <option value="hex">HEX</option>
-              </select>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Minimum</label>
-              <input name="min" type="number" class="form-control" value="15">
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Maximum</label>
-              <input name="max" type="number" class="form-control" value="15">
-            </div>
-
-            {{-- Price --}}
+            {{-- Price Preview --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Price</label>
               <div class="input-group">
                 <input id="pricePreview" type="text" class="form-control" value="0.0000" disabled>
                 <span class="input-group-text">Credits</span>
               </div>
-              <small class="text-muted d-block mt-1">Price = Cost + Profit</small>
+              <small class="text-muted">Price = Cost + Profit</small>
             </div>
 
             <div class="col-md-6">
@@ -134,35 +111,7 @@
               </select>
             </div>
 
-            {{-- Source --}}
-            <div class="col-12">
-              <label class="form-label mb-1">Source</label>
-              <select name="source" class="form-select">
-                <option value="1">Manual</option>
-                <option value="2" selected>API</option>
-                <option value="3">Supplier</option>
-                <option value="4">Local source</option>
-              </select>
-            </div>
-
-            {{-- ✅ API block (hidden unless Source=API) --}}
-            <div class="col-12 js-api-block d-none">
-              <div class="border rounded p-3 bg-light">
-                <div class="row g-2">
-                  <div class="col-md-6">
-                    <label class="form-label mb-1">API connection</label>
-                    <select class="form-select js-api-provider" name="api_provider_id"></select>
-                  </div>
-                  <div class="col-12">
-                    <label class="form-label mb-1">API service</label>
-                    <select class="form-select js-api-service" name="api_service_remote_id"></select>
-                    <small class="text-muted">Search directly inside list.</small>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {{-- ✅ Required Switches --}}
+            {{-- switches (General) --}}
             @php
               $toggles = [
                 'use_remote_cost'    => 'Sync the cost of this service with price of remote API service',
@@ -182,25 +131,20 @@
               @foreach($toggles as $name => $label)
                 <input type="hidden" name="{{ $name }}" value="0">
                 <div class="form-check form-switch mb-1">
-                  <input class="form-check-input"
-                         type="checkbox"
-                         name="{{ $name }}"
-                         value="1"
-                         id="sw_{{ $name }}"
-                         @checked(in_array($name,['active','allow_bulk']) ? true : false)>
+                  <input class="form-check-input" type="checkbox"
+                         name="{{ $name }}" value="1" id="sw_{{ $name }}"
+                         @checked(in_array($name,['active']) ? true : false)>
                   <label class="form-check-label" for="sw_{{ $name }}">{{ $label }}</label>
                 </div>
               @endforeach
             </div>
 
-            {{-- Reporting / Cancel timeouts --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Reporting deny timeout</label>
               <div class="input-group">
                 <input name="allow_report_time" type="number" class="form-control" value="0">
                 <span class="input-group-text">Minutes</span>
               </div>
-              <small class="text-muted">Leave blank or set to 0 for unlimited</small>
             </div>
 
             <div class="col-md-6">
@@ -209,7 +153,6 @@
                 <input name="allow_cancel_time" type="number" class="form-control" value="0">
                 <span class="input-group-text">Minutes</span>
               </div>
-              <small class="text-muted">Leave blank or set to 0 for unlimited</small>
             </div>
 
             <div class="col-md-6">
@@ -223,68 +166,57 @@
           </div>
         </div>
 
-        {{-- RIGHT SIDE (INFO = SUMMERNOTE) --}}
+        {{-- RIGHT (Info Summernote) --}}
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
-
-          {{-- ✅ Must be hidden + initialized by JS --}}
           <textarea id="infoEditor" class="form-control d-none"></textarea>
-
           <input type="hidden" name="info" id="infoHidden">
-          <small class="text-muted">Description, notes, terms…</small>
         </div>
+
       </div>
     </div>
 
-    {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
-<div class="tab-pane" data-tab="additional">
+    {{-- ===================== ✅ ADDITIONAL TAB (FULL UI) ===================== --}}
+    <div class="tab-pane" data-tab="additional">
 
-  {{-- ✅ hidden JSON for pricing table --}}
-  <input type="hidden" name="pricing_table" id="pricingTableHidden">
+      <div class="row g-3">
 
-  <div class="row g-3">
+        {{-- LEFT: Custom fields --}}
+        <div class="col-md-5">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-bold">Custom fields</div>
+            <a href="javascript:void(0)" class="text-primary small" id="btnAddField">Add field</a>
+          </div>
 
-    {{-- ✅ LEFT: Fields --}}
-    <div class="col-md-5">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <div class="fw-bold">Custom fields</div>
-        <a href="javascript:void(0)" class="text-primary small" id="btnAddField">Add field</a>
+          <div id="fieldsWrap"></div>
+        </div>
+
+        {{-- RIGHT: Groups pricing --}}
+        <div class="col-md-7">
+          <div class="fw-bold mb-2">Groups</div>
+          <div id="groupsPricingWrap" class="border rounded bg-white"></div>
+        </div>
+
       </div>
 
-      <div class="border rounded p-3 bg-white" style="min-height:260px;">
-        <div class="text-muted small">Fields UI will be implemented later (same old system).</div>
-      </div>
     </div>
-
-    {{-- ✅ RIGHT: Groups Pricing --}}
-    <div class="col-md-7">
-      <div class="fw-bold mb-2">Groups</div>
-
-      <div id="groupsPricingWrap" class="border rounded bg-white">
-        {{-- Filled by JS --}}
-      </div>
-    </div>
-
-  </div>
-</div>
 
     {{-- ===================== ✅ META TAB ===================== --}}
     <div class="tab-pane" data-tab="meta">
       <div class="row g-3">
-
         <div class="col-md-6">
           <label class="form-label">Meta keywords</label>
           <input type="text" class="form-control" name="meta_keywords">
         </div>
 
-        <div class="col-md-6">
-          <label class="form-label">After "head" tag opening</label>
-          <textarea class="form-control" rows="3" name="meta_after_head"></textarea>
-        </div>
-
         <div class="col-12">
           <label class="form-label">Meta description</label>
           <textarea class="form-control" rows="3" name="meta_description"></textarea>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">After "head" tag opening</label>
+          <textarea class="form-control" rows="3" name="meta_after_head"></textarea>
         </div>
 
         <div class="col-md-6">
@@ -301,7 +233,6 @@
           <label class="form-label">Before "body" tag closing</label>
           <textarea class="form-control" rows="3" name="meta_before_body"></textarea>
         </div>
-
       </div>
     </div>
 
@@ -311,5 +242,4 @@
     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
     <button type="submit" class="btn btn-success">Create</button>
   </div>
-
 </form>

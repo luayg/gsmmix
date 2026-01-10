@@ -48,6 +48,7 @@ class ImeiServiceController extends Controller
         'alias'       => 'nullable|string',
         'time'        => 'nullable|string',
         'info'        => 'nullable|string',
+        'custom_fields' => 'nullable|string',
 
         // Pricing
         'cost'        => 'required|numeric|min:0',
@@ -112,6 +113,7 @@ class ImeiServiceController extends Controller
         'cost'        => (float)$data['cost'],
         'profit'      => (float)($data['profit'] ?? 0),
         'profit_type' => (int)($data['profit_type'] ?? 1),
+        'params' => $data['custom_fields'] ?? null,
 
         // switches
         'active'            => (int)($data['active'] ?? 1),
