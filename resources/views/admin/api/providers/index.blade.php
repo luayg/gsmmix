@@ -33,8 +33,7 @@
             </div>
 
             {{-- Add --}}
-            <a href="{{ route('admin.apis.create') }}"
-               class="btn btn-success btn-sm js-open-modal"
+            <a href="#" class="btn btn-success btn-sm js-api-modal"
                data-url="{{ route('admin.apis.create') }}">Add API</a>
 
             {{-- Export --}}
@@ -124,11 +123,12 @@
 
                 <td class="text-end">
                   <div class="btn-group btn-group-sm" role="group" aria-label="API actions">
+
                     {{-- View --}}
-                    <a href="#" class="btn btn-primary js-open-modal"
+                    <a href="#" class="btn btn-primary js-api-modal"
                        data-url="{{ route('admin.apis.view', $p) }}">View</a>
 
-                    {{-- Services (DropDown Bootstrap قياسي) --}}
+                    {{-- Services --}}
                     <div class="btn-group position-static" role="group">
                       <button type="button"
                               class="btn btn-secondary dropdown-toggle"
@@ -137,9 +137,9 @@
                         Services
                       </button>
                       <ul class="dropdown-menu dropdown-menu-end shadow">
-                        <li><a class="dropdown-item js-open-modal" href="#" data-url="{{ route('admin.apis.services.imei', $p) }}">IMEI</a></li>
-                        <li><a class="dropdown-item js-open-modal" href="#" data-url="{{ route('admin.apis.services.server', $p) }}">Server</a></li>
-                        <li><a class="dropdown-item js-open-modal" href="#" data-url="{{ route('admin.apis.services.file', $p) }}">File</a></li>
+                        <li><a class="dropdown-item js-api-modal js-close-dropdown" href="#" data-url="{{ route('admin.apis.services.imei', $p) }}">IMEI</a></li>
+                        <li><a class="dropdown-item js-api-modal js-close-dropdown" href="#" data-url="{{ route('admin.apis.services.server', $p) }}">Server</a></li>
+                        <li><a class="dropdown-item js-api-modal js-close-dropdown" href="#" data-url="{{ route('admin.apis.services.file', $p) }}">File</a></li>
                       </ul>
                     </div>
 
@@ -150,15 +150,19 @@
                     </form>
 
                     {{-- Edit --}}
-                    <a href="#" class="btn btn-warning js-open-modal"
+                    <a href="#" class="btn btn-warning js-api-modal"
                        data-url="{{ route('admin.apis.edit', $p) }}">Edit</a>
 
                     {{-- Delete --}}
-                    <form action="{{ route('admin.apis.destroy', $p) }}" method="POST" class="d-inline-block"
-                          onsubmit="return confirm('Delete this API?')">
+                    <form action="{{ route('admin.apis.destroy', $p) }}" method="POST" class="d-inline-block js-delete-form">
                       @csrf @method('DELETE')
-                      <button type="submit" class="btn btn-danger">Delete</button>
+                      <button type="button"
+                              class="btn btn-danger js-confirm-delete"
+                              data-name="{{ $p->name }}">
+                        Delete
+                      </button>
                     </form>
+
                   </div>
                 </td>
               </tr>
@@ -169,7 +173,7 @@
         </table>
       </div>
 
-      {{-- ===== التذييل (عدد العناصر والصفحات) ===== --}}
+      {{-- ===== التذييل ===== --}}
       <div class="d-flex align-items-center justify-content-between flex-wrap p-3 gap-2">
         <div class="text-muted small">
           Showing {{ $rows->firstItem() ?? 0 }} to {{ $rows->lastItem() ?? 0 }} of {{ $rows->total() }} items
@@ -182,15 +186,55 @@
   </div>
 
 </div><!-- /.page-apis-index -->
+
+{{-- ✅ مودال واحد فقط لهذه الصفحة --}}
+<div class="modal fade" id="apiModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:95vw;">
+
+    <div class="modal-content" id="apiModalContent">
+      <div class="p-4 text-center text-muted">Loading...</div>
+    </div>
+  </div>
+</div>
+
+{{-- ✅ Delete Confirmation Modal --}}
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title">Confirm Delete</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <p class="mb-0">
+          Are you sure you want to delete:
+          <strong id="deleteApiName"></strong> ?
+        </p>
+        <small class="text-muted d-block mt-2">
+          This action cannot be undone.
+        </small>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="deleteConfirmBtn">
+          Yes, Delete
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
 @endsection
 
 
 @push('styles')
 <style>
-  /* ===== ضبط أعمدة الدِّسكتوب كما هي ===== */
-  :root{
-    --apis-name-col: 280px; /* عدّل الرقم لتكبير/تصغير عمود الاسم على الدِّسكتوب */
-  }
+  :root{ --apis-name-col: 280px; }
 
   .page-apis-index .apis-table th:nth-child(2),
   .page-apis-index .apis-table td:nth-child(2){
@@ -205,26 +249,16 @@
   }
 
   .page-apis-index .apis-table th:nth-child(3),
-  .page-apis-index .apis-table td:nth-child(3){ width: 110px; } /* Type */
+  .page-apis-index .apis-table td:nth-child(3){ width: 110px; }
   .page-apis-index .apis-table th:nth-child(4),
-  .page-apis-index .apis-table td:nth-child(4){ width: 80px; }  /* Synced */
+  .page-apis-index .apis-table td:nth-child(4){ width: 80px; }
   .page-apis-index .apis-table th:nth-child(5),
-  .page-apis-index .apis-table td:nth-child(5){ width: 100px; } /* Auto sync */
+  .page-apis-index .apis-table td:nth-child(5){ width: 100px; }
   .page-apis-index .apis-table th:nth-child(6),
-  .page-apis-index .apis-table td:nth-child(6){ width: 120px; } /* Balance */
+  .page-apis-index .apis-table td:nth-child(6){ width: 120px; }
   .page-apis-index .apis-table th:nth-child(7),
-  .page-apis-index .apis-table td:nth-child(7){ width: 360px; } /* Actions */
+  .page-apis-index .apis-table td:nth-child(7){ width: 360px; }
 
-  /* منع أي سكرول عمودي داخلي يقطع القوائم */
-  .page-apis-index .content-wrapper,
-  .page-apis-index .card,
-  .page-apis-index .card-body,
-  .page-apis-index .table-responsive{
-    max-height: none !important;
-    overflow: visible !important;
-  }
-
-  /* قوائم الدروبداون فوق الكل على الدِّسكتوب */
   .page-apis-index .btn-group.position-static,
   .page-apis-index .dropdown.position-static{
     position: static !important;
@@ -232,150 +266,126 @@
   .page-apis-index .dropdown-menu{
     z-index: 2050 !important;
   }
-
-  /* تحسينات شكلية بسيطة */
-  .apis-table .apis-id{font-family:ui-monospace,Menlo,Consolas,monospace}
-  .apis-table thead th{user-select:none}
-  .apis-table thead th .sort-icon{margin-left:.35rem;opacity:.6}
-  .apis-table thead th.sort-asc .sort-icon::after{content:"▲";font-size:.7rem}
-  .apis-table thead th.sort-desc .sort-icon::after{content:"▼";font-size:.7rem}
-
-  /* =========================================================
-     موبايل (sm-) — تحويل الجدول إلى كروت قابلة للقراءة بلا سكرول
-     ========================================================= */
-  @media (max-width: 575.98px){
-
-    /* ألغِ التمرير الأفقي من الحاوية الجدولية على الجوال */
-    .page-apis-index .apis-scroll{ overflow-x: visible !important; }
-
-    /* تجاهل جميع قيود العرض الخاصة بالدِّسكتوب */
-    .page-apis-index .apis-table th,
-    .page-apis-index .apis-table td{
-      width:auto !important;
-      max-width:none !important;
-      white-space: normal !important;
-    }
-
-    /* اخفِ الهيدر، وحوّل عناصر الجدول إلى بلوكات */
-    .apis-table thead{ display:none; }
-    .apis-table,
-    .apis-table tbody,
-    .apis-table tr,
-    .apis-table td{ display:block; width:100%; }
-
-    /* الكارت لكل صف */
-    .apis-table tr{
-      margin: .65rem .25rem;
-      border: 1px solid #e9ecef;
-      border-radius: .6rem;
-      box-shadow: 0 2px 8px rgba(0,0,0,.04);
-      background: #fff;
-      overflow: hidden; /* يمنع أي نتوء عند الأزرار */
-    }
-
-    /* كل خلية = سطر من عمودين: وسم ثابت + قيمة */
-    .apis-table td{
-      display: grid;
-      grid-template-columns: 92px 1fr; /* قلّلها/كبّرها لو حاب تقرّب/تبعد الوسم */
-      gap: .35rem;
-      align-items: center;
-      padding: .6rem .75rem;
-      border-bottom: 1px solid #f1f3f5;
-    }
-    .apis-table td:last-child{ border-bottom: none; }
-
-    /* الوسم قبل القيمة – نحاول أولًا من data-label،
-       وإن لم توجد نضع نصًا حسب العمود */
-    .apis-table td::before{
-      content: attr(data-label);
-      font-weight: 600;
-      color: #6c757d;
-    }
-    .apis-table td:nth-child(1)::before{ content:"ID"; }
-    .apis-table td:nth-child(2)::before{ content:"Name"; }
-    .apis-table td:nth-child(3)::before{ content:"Type"; }
-    .apis-table td:nth-child(4)::before{ content:"Synced"; }
-    .apis-table td:nth-child(5)::before{ content:"Auto sync"; }
-    .apis-table td:nth-child(6)::before{ content:"Balance"; }
-    .apis-table td:nth-child(7)::before{ content:"Actions"; }
-
-    /* اسم الـAPI يلتف بسلاسة */
-    .page-apis-index .apis-table td:nth-child(2){
-      white-space: normal !important;
-      overflow: visible !important;
-      text-overflow: clip !important;
-    }
-
-    /* الشارات (Yes/No) بحجم طبيعي */
-    .page-apis-index .badge{
-      display: inline-block !important;
-      min-width: 2.2rem;
-      padding: .35em .55em;
-      font-size: .85em;
-    }
-
-    /* زر الإجراءات ياخذ عرض البطاقة بالكامل */
-    .page-apis-index .apis-table td:nth-child(7) .btn-group{
-      display: block;
-      width: 100%;
-    }
-    .page-apis-index .apis-table td:nth-child(7) .btn-group > *{
-      width: 100%;
-      margin-bottom: .35rem;
-    }
-    .page-apis-index .apis-table td:nth-child(7) .btn-group > *:last-child{
-      margin-bottom: 0;
-    }
-  }
 </style>
 @endpush
-
 
 
 @push('scripts')
 <script>
 (function(){
-  /* فرز بسيط في الواجهة */
-  const tbody = document.getElementById('apis-tbody');
-  const table = document.getElementById('apis-table');
-  if (tbody && table){
-    let currentSort = { key:null, dir:'asc' };
-    function cmp(a,b,key,dir){
-      const m = dir==='asc'?1:-1;
-      if(key==='balance'){ const x=+a.dataset.balance||0, y=+b.dataset.balance||0; return (x<y?-1:x>y?1:0)*m; }
-      if(key==='id'){ const x=+a.dataset.id||0, y=+b.dataset.id||0; return (x-y)*m; }
-      return ((a.dataset[key]||'').localeCompare(b.dataset[key]||''))*m;
+
+  // ✅ افتح مودال واحد فقط (apiModal)
+  async function openApiModal(url){
+    const modalEl   = document.getElementById('apiModal');
+    const contentEl = document.getElementById('apiModalContent');
+
+    // ✅ أغلق أي مودال مفتوح
+    document.querySelectorAll('.modal.show').forEach(el => {
+      const inst = bootstrap.Modal.getInstance(el);
+      if (inst) inst.hide();
+    });
+
+    contentEl.innerHTML = `<div class="p-4 text-center text-muted">Loading...</div>`;
+
+    const modal = new bootstrap.Modal(modalEl, { backdrop: true, keyboard: true });
+    modal.show();
+
+    try{
+      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const html = await res.text();
+      contentEl.innerHTML = html;
+
+      // ✅ تشغيل السكربتات داخل المودال
+      executeScripts(contentEl);
+
+    }catch(e){
+      contentEl.innerHTML = `
+        <div class="modal-header">
+          <h5 class="modal-title">Error</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-danger">Failed to load content.</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      `;
     }
-    function setIcon(th,dir){
-      table.querySelectorAll('thead th').forEach(el=>el.classList.remove('sort-asc','sort-desc'));
-      th.classList.add(dir==='asc'?'sort-asc':'sort-desc');
-    }
-    table.querySelectorAll('thead th.sortable').forEach(th=>{
-      th.addEventListener('click', ()=>{
-        const key = th.getAttribute('data-sort');
-        currentSort.dir = (currentSort.key===key && currentSort.dir==='asc') ? 'desc' : 'asc';
-        currentSort.key = key;
-        Array.from(tbody.querySelectorAll('tr')).sort((r1,r2)=>cmp(r1,r2,key,currentSort.dir)).forEach(r=>tbody.appendChild(r));
-        setIcon(th,currentSort.dir);
-      });
+  }
+
+  // ✅ تشغيل <script> داخل HTML المحمل
+  function executeScripts(container){
+    const scripts = container.querySelectorAll("script");
+    scripts.forEach(oldScript => {
+      const newScript = document.createElement("script");
+      for (let i = 0; i < oldScript.attributes.length; i++) {
+        const attr = oldScript.attributes[i];
+        newScript.setAttribute(attr.name, attr.value);
+      }
+      newScript.appendChild(document.createTextNode(oldScript.innerHTML));
+      oldScript.parentNode.replaceChild(newScript, oldScript);
     });
   }
 
-  /* تصدير CSV للعرض الحالي */
-  document.getElementById('btn-export')?.addEventListener('click', ()=>{
-    const headers=['ID','Name','Type','Synced','Auto sync','Balance'];
-    const lines=[headers.join(',')];
-    document.querySelectorAll('#apis-tbody tr').forEach(tr=>{
-      const td=tr.querySelectorAll('td'); if(td.length<6) return;
-      const id=td[0].innerText.trim(), name=td[1].innerText.trim().replace(/\s+/g,' '),
-            type=td[2].innerText.trim(), synced=td[3].innerText.trim(),
-            auto=td[4].innerText.trim(), bal=td[5].innerText.trim().replace(/[$,]/g,'');
-      lines.push([id,name,type,synced,auto,bal].map(v=>`"${v.replace(/"/g,'""')}"`).join(','));
-    });
-    const blob=new Blob([lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='apis_current_view.csv';
-    document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove();
-  });
+  // ✅ أهم تعديل: اغلاق dropdown عند الضغط على IMEI/Server/File
+  document.addEventListener('click', function(e){
+    const item = e.target.closest('.js-close-dropdown');
+    if(item){
+      const dropdown = item.closest('.btn-group');
+      if(dropdown){
+        const toggle = dropdown.querySelector('[data-bs-toggle="dropdown"]');
+        const inst = bootstrap.Dropdown.getInstance(toggle);
+        if(inst) inst.hide();
+      }
+    }
+  }, true);
+
+  // ✅ فتح المودال عند الضغط على js-api-modal
+  document.addEventListener('click', function(e){
+    const btn = e.target.closest('.js-api-modal');
+    if (!btn) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+
+    const url = btn.getAttribute('data-url');
+    if (!url) return;
+
+    openApiModal(url);
+  }, true);
+
 })();
 </script>
+
+<script>
+(function(){
+
+  let deleteForm = null;
+
+  document.addEventListener('click', function(e){
+
+    const btn = e.target.closest('.js-confirm-delete');
+    if (!btn) return;
+
+    e.preventDefault();
+
+    deleteForm = btn.closest('form');
+
+    document.getElementById('deleteApiName').innerText = btn.getAttribute('data-name') || '';
+
+    const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
+  });
+
+  document.getElementById('deleteConfirmBtn')?.addEventListener('click', function(){
+    if (deleteForm) {
+      deleteForm.submit();
+    }
+  });
+
+})();
+</script>
+
 @endpush

@@ -6,6 +6,10 @@
       data-ajax="1">
   @csrf
 
+  {{-- ✅ Required for API Clone --}}
+  <input type="hidden" name="supplier_id" id="cloneSupplierId" value="">
+  <input type="hidden" name="remote_id" id="cloneRemoteId" value="">
+
   <div class="row g-3">
     <div class="col-xl-7">
       <div class="row g-3">
@@ -197,6 +201,12 @@
     scope.querySelector('#serviceCreateForm')?.addEventListener('submit', ()=> {
       scope.querySelector('#infoHidden').value = $ed.summernote('code');
     });
+  }
+
+  // ✅ Fill supplier_id + remote_id (important)
+  window.fillCloneFields = function(data){
+    document.getElementById('cloneSupplierId').value = data.supplier_id || '';
+    document.getElementById('cloneRemoteId').value   = data.remote_id || '';
   }
 </script>
 @endpush

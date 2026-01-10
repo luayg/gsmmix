@@ -1,272 +1,535 @@
 {{-- resources/views/admin/api/providers/modals/services.blade.php --}}
-{{-- مودال عرض خدمات مزوّد الـ API + زر Clone يفتح المودال الموحّد مع تعبئة مسبقة --}}
 
 @php
-    // نحدّد نوع الخدمة المستهدَف للإنشاء من هذا المودال: imei | server | file
-    // يأتي من الكنترولر أو من بارامتر الطلب، والافتراضي imei
-    $kind = $kind ?? request('kind') ?? ($type ?? null);
-    $kind = in_array($kind, ['imei','server','file']) ? $kind : 'imei';
-@endphp
+    $localModel = match($kind){
+        'server' => \App\Models\ServerService::class,
+        'file'   => \App\Models\FileService::class,
+        default  => \App\Models\ImeiService::class,
+    };
 
-<style>
-  .svc-scroll { max-height: 70vh; overflow: auto; }
-  .svc-table thead th { position: sticky; top: 0; z-index: 2; background: #f8f9fa; }
-  .svc-id { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-  .svc-name, .svc-group { max-width: 520px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .svc-group { max-width: 360px; color: #6c757d; }
-  .svc-credit, .svc-time { white-space: nowrap; }
-  .svc-toolbar { gap: .75rem; }
-  .svc-pagination .page-link { min-width: 2.25rem; text-align: center; }
-  .svc-details pre { max-height: 260px; overflow: auto; }
-  .svc-wrap-on .svc-name, .svc-wrap-on .svc-group { white-space: normal; overflow: visible; text-overflow: clip; }
-</style>
+    $existing = $localModel::query()
+        ->where('supplier_id', $provider->id)
+        ->pluck('id', 'remote_id')
+        ->mapWithKeys(fn($id,$remote)=>[(string)$remote => (int)$id])
+        ->toArray();
+@endphp
 
 <div class="modal-header">
   <h5 class="modal-title">
-    Services
-    @isset($provider)
-      <small class="text-muted">for Provider #{{ $provider->id }} — {{ $provider->name ?? $provider->url ?? 'API' }}</small>
-    @endisset
+    Services for Provider #{{ $provider->id }} — {{ $provider->name }}
   </h5>
-  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
 </div>
 
-@php
-  // نحاول توحيد شكل البيانات القادمة (مصفوفة صفوف)
-  $__candidates = [
-      $rows ?? null,
-      $services ?? null,
-      $items ?? null,
-      $list ?? null,
-      (isset($data) && is_array($data) && array_key_exists('data', $data)) ? $data['data'] : null,
-      $data ?? null,
-  ];
-  $rows = [];
-  foreach ($__candidates as $__cand) {
-      if (empty($__cand)) continue;
-      if ($__cand instanceof \Illuminate\Support\Collection) $__cand = $__cand->toArray();
-      if (is_array($__cand)) {
-          $rows = (array_key_exists('data', $__cand) && is_array($__cand['data'])) ? $__cand['data'] : $__cand;
-          break;
-      }
-  }
-@endphp
+<div class="modal-body p-0">
 
-<div class="modal-body">
-  @if(empty($rows))
-    <div class="alert alert-warning mb-3">لا توجد خدمات للعرض.</div>
-    <ul class="mb-0">
-      <li>تأكد من مزامنة المزوّد أولًا.</li>
-      <li>أو جرّب التبديل بين الأنواع (IMEI/Server/File) من الصفحة.</li>
-    </ul>
-  @else
-    <div class="d-flex justify-content-between align-items-center flex-wrap svc-toolbar mb-3">
-      <div class="input-group" style="max-width: 360px;">
-        <span class="input-group-text">Search</span>
-        <input id="svc-search" type="text" class="form-control" placeholder="Name / Group / ID">
+  {{-- ✅ Toolbar --}}
+  <div class="p-3 border-bottom bg-light d-flex justify-content-between align-items-center">
+    <button type="button" class="btn btn-dark btn-sm" id="btnOpenImportWizard">
+      Import Services With Categories
+    </button>
+
+    <span class="text-muted small">
+      Select services → Profit → Finish
+    </span>
+  </div>
+
+  {{-- ✅ Alert Result (Hidden by default) --}}
+  <div class="px-3 pt-3" id="importResultWrap" style="display:none;">
+    <div class="alert alert-success d-flex align-items-center justify-content-between mb-0">
+      <div>
+        ✅ <strong id="importResultText"></strong>
       </div>
-
-      <div class="d-flex align-items-center gap-2">
-        <div class="form-check me-2">
-          <input class="form-check-input" type="checkbox" id="svc-wrap">
-          <label class="form-check-label" for="svc-wrap">Wrap</label>
-        </div>
-
-        <div class="text-muted small me-1">
-          <span id="svc-range">0–0</span> of <span id="svc-total">0</span>
-        </div>
-
-        <select id="svc-page-size" class="form-select form-select-sm">
-          <option value="10" selected>10 / page</option>
-          <option value="25">25 / page</option>
-          <option value="50">50 / page</option>
-        </select>
-      </div>
+      <button type="button" class="btn-close" onclick="document.getElementById('importResultWrap').style.display='none'"></button>
     </div>
+  </div>
 
-    <div class="table-responsive svc-scroll">
-      <table class="table table-sm table-striped align-middle svc-table mb-0">
-        <thead>
-          <tr>
-            <th style="width:110px;">ID</th>
-            <th>Name</th>
-            <th style="width:360px;">Group</th>
-            <th class="text-end" style="width:130px;">Credit</th>
-            <th class="text-end" style="width:120px;">Time</th>
-            <th style="width:110px;">Details</th>
-            <th class="text-end" style="width:120px;">Action</th> {{-- زر الاستنساخ --}}
+  {{-- ✅ Services Table --}}
+  <div class="table-responsive" style="max-height:70vh; overflow:auto;">
+    <table class="table table-sm table-striped mb-0 align-middle">
+      <thead class="bg-white position-sticky top-0" style="z-index:1;">
+        <tr>
+          <th style="width:110px">ID</th>
+          <th style="min-width:420px;">Name</th>
+          <th style="min-width:260px;">Group</th>
+          <th style="width:110px">Credit</th>
+          <th style="width:140px">Time</th>
+          <th class="text-end" style="width:140px">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+
+        @foreach($services as $s)
+
+          @php
+            $rid   = (string)($s['SERVICEID'] ?? '');
+            $name  = $s['SERVICENAME'] ?? '';
+            $group = $s['GROUPNAME'] ?? '';
+            $credit= $s['CREDIT'] ?? 0;
+            $time  = $s['TIME'] ?? '';
+
+            $isAdded = array_key_exists($rid, $existing);
+          @endphp
+
+          <tr data-remote-id="{{ $rid }}">
+            <td><code>{{ $rid }}</code></td>
+            <td style="min-width:520px">{!! $name !!}</td>
+            <td>{!! $group !!}</td>
+            <td>{{ $credit }}</td>
+            <td>{!! $time !!}</td>
+
+            <td class="text-end">
+
+              {{-- ✅ If already added => Add ✅ --}}
+              @if($isAdded)
+                <button type="button"
+                        class="btn btn-secondary btn-sm"
+                        disabled>
+                  Add ✅
+                </button>
+              @else
+                {{-- ✅ If not added => Clone (opens modal create) --}}
+                <button type="button"
+                        class="btn btn-success btn-sm clone-btn"
+                        data-remote-id="{{ $rid }}"
+                        data-name="{{ e(strip_tags($name)) }}"
+                        data-credit="{{ $credit }}"
+                        data-time="{{ e(strip_tags($time)) }}"
+                        data-group="{{ e(strip_tags($group)) }}">
+                  Clone
+                </button>
+              @endif
+
+            </td>
           </tr>
-        </thead>
-        <tbody id="svc-tbody"></tbody>
-      </table>
-    </div>
 
-    <nav class="mt-3">
-      <ul class="pagination justify-content-center flex-wrap svc-pagination" id="svc-pager"></ul>
-    </nav>
-  @endif
+        @endforeach
+      </tbody>
+    </table>
+  </div>
+
 </div>
 
 <div class="modal-footer">
   <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
 </div>
 
-@if(!empty($rows))
+
+{{-- ✅ مودال Create الوحيد (مهم: سنستخدمه مرة واحدة فقط) --}}
+<div class="modal fade" id="serviceCreateModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width:95vw;">
+    <div class="modal-content">
+
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title">Create service</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body" id="serviceCreateModalBody">
+        {{-- يتم ملؤه ديناميكياً --}}
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+{{-- ✅ Wizard Modal --}}
+<div class="modal fade" id="importWizardModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width:95vw;">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">Import Services With Categories</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+
+        {{-- ✅ STEP 1 --}}
+        <div id="wizStep1">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Step 1 — Select Services</h6>
+
+            <div class="d-flex gap-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm" id="wizSelectAll">Select All</button>
+              <button type="button" class="btn btn-outline-danger btn-sm" id="wizUnselectAll">Unselect</button>
+            </div>
+          </div>
+
+          <div class="table-responsive border rounded" style="max-height:55vh; overflow:auto;">
+            <table class="table table-sm table-striped mb-0 align-middle">
+              <thead class="bg-white position-sticky top-0" style="z-index:1;">
+                <tr>
+                  <th style="width:40px"></th>
+                  <th style="width:120px">ID</th>
+                  <th>Name</th>
+                  <th style="width:280px">Group</th>
+                  <th style="width:120px">Credit</th>
+                  <th style="width:140px">Time</th>
+                </tr>
+              </thead>
+              <tbody id="wizBody"></tbody>
+            </table>
+          </div>
+
+          <div class="small text-muted mt-2">
+            Selected: <strong id="wizSelectedCount">0</strong>
+          </div>
+        </div>
+
+        {{-- ✅ STEP 2 --}}
+        <div id="wizStep2" style="display:none;">
+          <h6 class="mb-3">Step 2 — Pricing & Finish</h6>
+
+          <div class="row g-3">
+            <div class="col-md-4">
+              <label class="form-label">Profit Mode</label>
+              <select class="form-select" id="wizPricingMode">
+                <option value="percent">Add Profit %</option>
+                <option value="fixed">Add Fixed Credit</option>
+              </select>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Profit Value</label>
+              <input type="number" step="0.01" class="form-control" id="wizPricingValue" value="0">
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Summary</label>
+              <div class="border rounded p-2 bg-light">
+                <div>Selected: <strong id="wizSummaryCount">0</strong></div>
+                <div>Type: <strong class="text-uppercase">{{ $kind }}</strong></div>
+                <div>Group: <strong>Auto (by category)</strong></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="alert alert-info mt-3 mb-0">
+            ✅ سيتم إنشاء الجروبات تلقائياً حسب اسم Category القادمة من الـ API  
+            وإذا كانت الجروب موجودة مسبقاً سيتم وضع الخدمات داخلها بدون تكرار.
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" id="wizBackBtn" style="display:none;">Back</button>
+        <button type="button" class="btn btn-primary" id="wizNextBtn">Next</button>
+        <button type="button" class="btn btn-success" id="wizFinishBtn" style="display:none;">Finish</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
 <script>
 (function(){
-  const RAW  = @json($rows, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-  const KIND = @json($kind); // imei | server | file
-  const PROVIDER_ID = @json($provider->id ?? null);
 
-  const mapRow = (r) => ({
-    id:      r.SERVICEID ?? r.remote_id ?? r.id ?? '-',
-    name:    r.SERVICENAME ?? r.name ?? '-',
-    group:   r.GROUPNAME  ?? r.group ?? r.group_name ?? '-',
-    credit:  r.CREDIT     ?? r.price ?? null,
-    time:    r.TIME       ?? r.time ?? null,
-    info:    r.INFO       ?? r.info ?? null,
-    add:     r.ADDITIONAL_FIELDS ?? r.additional_fields ?? null,
-    exts:    r.ALLOWED_EXTENSIONS ?? r.allowed_extensions ?? null,
-    groups:  r.CREDIT_GROUPS ?? r.credit_groups ?? null,
-    min_qty: r.MIN_QTY ?? r.min_qty ?? null,
-    max_qty: r.MAX_QTY ?? r.max_qty ?? null,
-  });
+  const kind       = @json($kind);
+  const csrfToken  = @json(csrf_token());
+  const importUrl  = @json(route('admin.apis.services.import_wizard', $provider));
+  const servicesData = @json($services);
+  const providerId = @json($provider->id);
+  const providerName = @json($provider->name);
 
-  const dataAll = RAW.map(mapRow);
-  let pageSize = 10, page = 1, query = '';
+  const btnOpenWizard = document.getElementById('btnOpenImportWizard');
+  const wizardModalEl = document.getElementById('importWizardModal');
 
-  const $tbody = document.getElementById('svc-tbody');
-  const $pager = document.getElementById('svc-pager');
-  const $range = document.getElementById('svc-range');
-  const $total = document.getElementById('svc-total');
-  const $pageSize = document.getElementById('svc-page-size');
-  const $search = document.getElementById('svc-search');
-  const $wrap = document.getElementById('svc-wrap');
+  const step1 = document.getElementById('wizStep1');
+  const step2 = document.getElementById('wizStep2');
 
-  const esc = (s) => (s==null?'':String(s).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'));
-  const fmtCredit = (v) => {
-    if (v===null || v===undefined || v==='') return '—';
-    const num = Number(String(v).replace(/[^0-9.\-]/g,''));
-    if (Number.isFinite(num)) return num.toFixed(3);
-    return esc(v);
-  };
-  const hasDetails = (r) => !!(r.info || r.add || r.groups || r.exts || r.min_qty || r.max_qty);
+  const wizBody = document.getElementById('wizBody');
+  const btnSelectAll   = document.getElementById('wizSelectAll');
+  const btnUnselectAll = document.getElementById('wizUnselectAll');
 
-  const filtered = () => {
-    if (!query) return dataAll;
-    const q = query.toLowerCase();
-    return dataAll.filter(r =>
-      (r.name && r.name.toLowerCase().includes(q)) ||
-      (r.group && r.group.toLowerCase().includes(q)) ||
-      (String(r.id).toLowerCase().includes(q))
-    );
-  };
+  const btnBack   = document.getElementById('wizBackBtn');
+  const btnNext   = document.getElementById('wizNextBtn');
+  const btnFinish = document.getElementById('wizFinishBtn');
 
-  function render() {
-    const rows = filtered();
-    const total = rows.length;
-    const lastPage = Math.max(1, Math.ceil(total / pageSize));
-    if (page > lastPage) page = lastPage;
+  const selectedCount = document.getElementById('wizSelectedCount');
+  const summaryCount  = document.getElementById('wizSummaryCount');
 
-    const startIdx = (page - 1) * pageSize;
-    const endIdx = Math.min(startIdx + pageSize, total);
-    const slice = rows.slice(startIdx, endIdx);
+  const createModalEl = document.getElementById('serviceCreateModal');
+  const createModalBody = document.getElementById('serviceCreateModalBody');
 
-    $tbody.innerHTML = slice.map((r, idx) => {
-      const detailId = `svc-detail-${page}-${idx}-${r.id}`;
-      const name = esc(r.name);
-      const group = esc(r.group);
-      const time = esc(r.time ?? '—');
+  let selected = new Set();
 
-      // زر الاستنساخ: يعتمد على المودال الموحّد (service-modal.blade) الذي يستمع لأي عنصر data-create-service
-      const cloneBtn = `
-        <button type="button" class="btn btn-success btn-sm"
-          data-create-service
-          data-service-type="${esc(KIND)}"
-          data-provider-id="${esc(PROVIDER_ID ?? '')}"
-          data-remote-id="${esc(r.id)}"
-          data-name="${name}"
-          data-credit="${esc(r.credit ?? '')}"
-          data-time="${time}">
-          Clone
-        </button>`;
-
-      return `
-        <tr>
-          <td class="svc-id"><code>${esc(r.id)}</code></td>
-          <td class="svc-name" dir="auto" title="${name}">${name}</td>
-          <td class="svc-group" dir="auto" title="${group}">${group}</td>
-          <td class="svc-credit text-end">${fmtCredit(r.credit)}</td>
-          <td class="svc-time text-end"><span class="badge bg-light text-dark">${time}</span></td>
-          <td>
-            ${hasDetails(r) ? `<button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#${detailId}" aria-expanded="false" aria-controls="${detailId}">View</button>` : '<span class="text-muted">—</span>'}
-          </td>
-          <td class="text-end">${cloneBtn}</td>
-        </tr>
-        ${hasDetails(r) ? `
-          <tr class="table-active">
-            <td colspan="7" class="p-0">
-              <div id="${detailId}" class="collapse">
-                <div class="p-3 svc-details">
-                  <div class="row g-3">
-                    ${r.info ? `<div class="col-12"><div><strong>Info</strong></div><pre class="mb-0 small bg-light p-2 rounded border">${esc(typeof r.info==='string'?r.info:JSON.stringify(r.info,null,2))}</pre></div>` : ''}
-                    ${r.add ? `<div class="col-12"><div><strong>Additional Fields</strong></div><pre class="mb-0 small bg-light p-2 rounded border">${esc(typeof r.add==='string'?r.add:JSON.stringify(r.add,null,2))}</pre></div>` : ''}
-                    ${r.groups ? `<div class="col-12 col-md-6"><div><strong>Credit Groups</strong></div><pre class="mb-0 small bg-light p-2 rounded border">${esc(typeof r.groups==='string'?r.groups:JSON.stringify(r.groups,null,2))}</pre></div>` : ''}
-                    ${r.exts ? `<div class="col-12 col-md-6"><div><strong>Allowed Extensions</strong></div><pre class="mb-0 small bg-light p-2 rounded border">${esc(typeof r.exts==='string'?r.exts:JSON.stringify(r.exts,null,2))}</pre></div>` : ''}
-                    ${(r.min_qty||r.max_qty) ? `<div class="col-12 col-md-6"><div><strong>Quantity Limits</strong></div><div class="small">Min: <code>${esc(r.min_qty??'—')}</code> | Max: <code>${esc(r.max_qty??'—')}</code></div></div>` : ''}
-                  </div>
-                </div>
-              </div>
-            </td>
-          </tr>` : ''}`;
-    }).join('');
-
-    // range & total
-    $range.textContent = total ? `${startIdx+1}–${endIdx}` : '0–0';
-    $total.textContent = total;
-
-    // pagination
-    $pager.innerHTML = '';
-    function pageItem(label, targetPage, disabled=false, active=false) {
-      const li = document.createElement('li');
-      li.className = `page-item ${disabled?'disabled':''} ${active?'active':''}`;
-      const a = document.createElement('a');
-      a.className = 'page-link';
-      a.href = '#';
-      a.textContent = label;
-      a.addEventListener('click', (e)=>{
-        e.preventDefault();
-        if (disabled || active) return;
-        page = targetPage; render();
-      });
-      li.appendChild(a); return li;
+  function showStep(n){
+    if(n === 1){
+      step1.style.display = '';
+      step2.style.display = 'none';
+      btnBack.style.display = 'none';
+      btnNext.style.display = '';
+      btnFinish.style.display = 'none';
+    }else{
+      step1.style.display = 'none';
+      step2.style.display = '';
+      btnBack.style.display = '';
+      btnNext.style.display = 'none';
+      btnFinish.style.display = '';
     }
-    const lastPageNum = Math.max(1, Math.ceil(total / pageSize));
-    $pager.appendChild(pageItem('«', Math.max(1, page-1), page===1));
-    const windowSize = 7;
-    let start = Math.max(1, page - Math.floor(windowSize/2));
-    let end = Math.min(lastPageNum, start + windowSize - 1);
-    start = Math.max(1, end - windowSize + 1);
-    for (let p = start; p <= end; p++) $pager.appendChild(pageItem(String(p), p, false, p===page));
-    $pager.appendChild(pageItem('»', Math.min(lastPageNum, page+1), page===lastPageNum));
   }
 
-  $pageSize.addEventListener('change', ()=>{ pageSize = parseInt($pageSize.value, 10) || 10; page = 1; render(); });
-  $search.addEventListener('input', ()=>{ query = $search.value.trim(); page = 1; render(); });
-  $wrap.addEventListener('change', (e)=>{ document.body.classList.toggle('svc-wrap-on', e.target.checked); });
+  function updateCount(){
+    selectedCount.innerText = selected.size;
+    summaryCount.innerText  = selected.size;
+  }
 
-  render();
+  function escapeHtml(str){
+    return String(str).replace(/[&<>"']/g, function(m){
+      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]);
+    });
+  }
+
+  function decodeEntities(text){
+    const txt = document.createElement("textarea");
+    txt.innerHTML = text;
+    return txt.value;
+  }
+
+  function renderTable(){
+    wizBody.innerHTML = '';
+    selected.clear();
+
+    servicesData.forEach(s=>{
+      const id    = String(s.SERVICEID ?? '');
+      const name  = decodeEntities(String(s.SERVICENAME ?? ''));
+      const group = decodeEntities(String(s.GROUPNAME ?? ''));
+      const credit= String(s.CREDIT ?? '');
+      const time  = decodeEntities(String(s.TIME ?? ''));
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><input type="checkbox" class="wiz-check" value="${id}"></td>
+        <td><code>${id}</code></td>
+        <td>${escapeHtml(name)}</td>
+        <td>${escapeHtml(group)}</td>
+        <td>${escapeHtml(credit)}</td>
+        <td>${escapeHtml(time)}</td>
+      `;
+      wizBody.appendChild(tr);
+    });
+
+    wizBody.querySelectorAll('.wiz-check').forEach(cb=>{
+      cb.addEventListener('change', ()=>{
+        if(cb.checked) selected.add(cb.value);
+        else selected.delete(cb.value);
+        updateCount();
+      });
+    });
+
+    updateCount();
+  }
+
+  btnSelectAll.addEventListener('click', ()=>{
+    wizBody.querySelectorAll('.wiz-check').forEach(cb=>{
+      cb.checked = true;
+      selected.add(cb.value);
+    });
+    updateCount();
+  });
+
+  btnUnselectAll.addEventListener('click', ()=>{
+    selected.clear();
+    wizBody.querySelectorAll('.wiz-check').forEach(cb=> cb.checked = false);
+    updateCount();
+  });
+
+
+  // ✅ ============ فتح مودال Create الصحيح (نسخة واحدة فقط) ============
+  document.addEventListener('click', async function(e){
+
+    const btn = e.target.closest('.clone-btn');
+    if(!btn) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    // ✅ تحميل الـ Create Form الصحيح من السيرفر (الكود القديم الكامل)
+    const url = (kind === 'imei')
+      ? "{{ route('admin.services.imei.modal.create') }}"
+      : (kind === 'server')
+        ? "{{ route('admin.services.server.modal.create') }}"
+        : "{{ route('admin.services.file.modal.create') }}";
+
+    createModalBody.innerHTML = `<div class="p-4 text-center text-muted">Loading...</div>`;
+    const modal = new bootstrap.Modal(createModalEl);
+    modal.show();
+
+    const res = await fetch(url, { headers: { 'X-Requested-With':'XMLHttpRequest' } });
+    const html = await res.text();
+    createModalBody.innerHTML = html;
+
+    // ✅ ملء البيانات تلقائياً
+    const rid   = btn.getAttribute('data-remote-id');
+    const name  = btn.getAttribute('data-name');
+    const credit= btn.getAttribute('data-credit');
+    const time  = btn.getAttribute('data-time');
+
+    const form = createModalBody.querySelector('#serviceCreateForm');
+    if(form){
+      // 🔥 حقول أساسية
+      form.querySelector('[name="name"]')?.value = name || '';
+      form.querySelector('[name="alias"]')?.value = rid || '';
+      form.querySelector('[name="time"]')?.value = time || '';
+
+      // 🔥 التكلفة
+      form.querySelector('[name="cost"]')?.value = credit || 0;
+
+      // ✅ supplier_id مهم جداً حتى لا يفشل الحفظ
+      if(!form.querySelector('[name="supplier_id"]')){
+        const hid = document.createElement('input');
+        hid.type = 'hidden';
+        hid.name = 'supplier_id';
+        hid.value = providerId;
+        form.appendChild(hid);
+      }else{
+        form.querySelector('[name="supplier_id"]').value = providerId;
+      }
+
+      // ✅ source API ثابت
+      if(form.querySelector('[name="source"]')){
+        form.querySelector('[name="source"]').value = 'api';
+      }
+
+      // ✅ تفعيل Summernote إذا موجود
+      if(typeof window.initModalCreateSummernote === 'function'){
+        window.initModalCreateSummernote(createModalBody);
+      }
+
+      // ✅ حفظ AJAX
+      form.addEventListener('submit', async function(ev){
+        ev.preventDefault();
+
+        const fd = new FormData(form);
+
+        try{
+          const resp = await fetch(form.action, {
+            method: 'POST',
+            headers: { 'X-Requested-With':'XMLHttpRequest' },
+            body: fd
+          });
+
+          const data = await resp.json();
+
+          if(!resp.ok || !data.ok){
+            alert(data.message || 'Failed to save');
+            return;
+          }
+
+          // ✅ غلق مودال Create
+          bootstrap.Modal.getInstance(createModalEl).hide();
+
+          // ✅ تحويل زر Clone إلى Add ✅ Disabled
+          const row = document.querySelector(`tr[data-remote-id="${CSS.escape(rid)}"]`);
+          if(row){
+            const b = row.querySelector('.clone-btn');
+            if(b){
+              b.classList.remove('btn-success');
+              b.classList.add('btn-secondary');
+              b.innerText = 'Add ✅';
+              b.disabled = true;
+            }
+          }
+
+        }catch(err){
+          alert("Error: " + err.message);
+        }
+
+      }, { once:true });
+
+    }
+
+  }, true);
+
+
+
+  // ✅ ============ Import Wizard ============
+  async function finishImport(applyAll=false){
+
+    const pricing_mode  = document.getElementById('wizPricingMode').value;
+    const pricing_value = document.getElementById('wizPricingValue').value;
+
+    const payload = {
+      kind,
+      apply_all: applyAll,
+      service_ids: applyAll ? [] : Array.from(selected),
+      pricing_mode,
+      pricing_value
+    };
+
+    btnFinish.disabled = true;
+    btnFinish.innerText = 'Importing...';
+
+    try{
+      const res = await fetch(importUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type':'application/json',
+          'X-CSRF-TOKEN': csrfToken,
+          'X-Requested-With':'XMLHttpRequest'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if(!res.ok || !data?.ok){
+        alert(data?.msg || 'Import failed');
+        return;
+      }
+
+      // ✅ Show alert in services modal
+      document.getElementById('importResultWrap').style.display = '';
+      document.getElementById('importResultText').innerText =
+        `Imported: ${data.count ?? 0}, Updated: ${data.updated ?? 0}`;
+
+      // ✅ Turn Clone -> Add ✅
+      const idsToMark = applyAll ? servicesData.map(x=>String(x.SERVICEID)) : Array.from(selected);
+
+      idsToMark.forEach(id=>{
+        const row = document.querySelector(`tr[data-remote-id="${CSS.escape(id)}"]`);
+        if(!row) return;
+        const btn = row.querySelector('.clone-btn');
+        if(btn){
+          btn.classList.remove('btn-success');
+          btn.classList.add('btn-secondary');
+          btn.innerText = 'Add ✅';
+          btn.disabled = true;
+        }
+      });
+
+      bootstrap.Modal.getInstance(wizardModalEl).hide();
+
+    }finally{
+      btnFinish.disabled = false;
+      btnFinish.innerText = 'Finish';
+    }
+  }
+
+  btnOpenWizard.addEventListener('click', ()=>{
+    renderTable();
+    showStep(1);
+    new bootstrap.Modal(wizardModalEl).show();
+  });
+
+  btnNext.addEventListener('click', ()=>{
+    if(selected.size === 0){
+      alert("اختر خدمات أولاً أو استخدم Select All ✅");
+      return;
+    }
+    showStep(2);
+  });
+
+  btnBack.addEventListener('click', ()=> showStep(1));
+
+  btnFinish.addEventListener('click', ()=>{
+    const applyAll = selected.size === servicesData.length;
+    finishImport(applyAll);
+  });
+
 })();
 </script>
-@endif
-
-{{-- نضع قالب إنشاء الخدمة الذي سيقرأه السكربت في service-modal --}}
-<template id="serviceCreateTpl">
-  @if($kind==='server')
-    @include('admin.services.server._modal_create')
-  @elseif($kind==='file')
-    @include('admin.services.file._modal_create')
-  @else
-    @include('admin.services.imei._modal_create')
-  @endif
-</template>
