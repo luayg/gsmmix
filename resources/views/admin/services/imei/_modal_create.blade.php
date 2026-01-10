@@ -10,17 +10,15 @@
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
 
-  {{-- ✅ hidden JSON --}}
-  <input type="hidden" name="pricing_table" id="pricingTableHidden">
-  <input type="hidden" name="custom_fields" id="customFieldsHidden">
+  {{-- ✅ Pricing table json (service_group_prices) --}}
+  <input type="hidden" name="pricing_table" id="pricingTableHidden" value="[]">
 
   <div class="service-tabs-content">
 
     {{-- ===================== ✅ GENERAL TAB ===================== --}}
     <div class="tab-pane active" data-tab="general">
-      <div class="row g-3">
 
-        {{-- LEFT --}}
+      <div class="row g-3">
         <div class="col-xl-7">
           <div class="row g-3">
 
@@ -68,14 +66,37 @@
               </select>
             </div>
 
-            {{-- Price Preview --}}
+            <div class="col-md-6">
+              <label class="form-label mb-1">Main field label</label>
+              <input name="main_field_label" type="text" class="form-control" value="IMEI">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Allowed characters</label>
+              <select name="allowed_characters" class="form-select">
+                <option value="numbers" selected>Numbers</option>
+                <option value="any">Any</option>
+                <option value="hex">HEX</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Minimum</label>
+              <input name="min" type="number" class="form-control" value="15">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Maximum</label>
+              <input name="max" type="number" class="form-control" value="15">
+            </div>
+
             <div class="col-md-6">
               <label class="form-label mb-1">Price</label>
               <div class="input-group">
                 <input id="pricePreview" type="text" class="form-control" value="0.0000" disabled>
                 <span class="input-group-text">Credits</span>
               </div>
-              <small class="text-muted">Price = Cost + Profit</small>
+              <small class="text-muted d-block mt-1">Price = Cost + Profit</small>
             </div>
 
             <div class="col-md-6">
@@ -86,7 +107,6 @@
               </div>
             </div>
 
-            {{-- Cost/Profit --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Cost</label>
               <div class="input-group">
@@ -111,7 +131,33 @@
               </select>
             </div>
 
-            {{-- switches (General) --}}
+            <div class="col-12">
+              <label class="form-label mb-1">Source</label>
+              <select name="source" class="form-select">
+                <option value="1">Manual</option>
+                <option value="2" selected>API</option>
+                <option value="3">Supplier</option>
+                <option value="4">Local source</option>
+              </select>
+            </div>
+
+            {{-- ✅ API block --}}
+            <div class="col-12 js-api-block">
+              <div class="border rounded p-3 bg-light">
+                <div class="row g-2">
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">API connection</label>
+                    <select class="form-select js-api-provider" name="api_provider_id"></select>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label mb-1">API service</label>
+                    <select class="form-select js-api-service" name="api_service_remote_id"></select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {{-- ✅ switches --}}
             @php
               $toggles = [
                 'use_remote_cost'    => 'Sync the cost of this service with price of remote API service',
@@ -131,9 +177,12 @@
               @foreach($toggles as $name => $label)
                 <input type="hidden" name="{{ $name }}" value="0">
                 <div class="form-check form-switch mb-1">
-                  <input class="form-check-input" type="checkbox"
-                         name="{{ $name }}" value="1" id="sw_{{ $name }}"
-                         @checked(in_array($name,['active']) ? true : false)>
+                  <input class="form-check-input"
+                         type="checkbox"
+                         name="{{ $name }}"
+                         value="1"
+                         id="sw_{{ $name }}"
+                         @checked($name === 'active')>
                   <label class="form-check-label" for="sw_{{ $name }}">{{ $label }}</label>
                 </div>
               @endforeach
@@ -166,37 +215,34 @@
           </div>
         </div>
 
-        {{-- RIGHT (Info Summernote) --}}
+        {{-- ✅ Summernote --}}
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
-          <textarea id="infoEditor" class="form-control d-none"></textarea>
+          <textarea id="infoEditor" class="form-control"></textarea>
           <input type="hidden" name="info" id="infoHidden">
         </div>
-
       </div>
     </div>
 
-    {{-- ===================== ✅ ADDITIONAL TAB (FULL UI) ===================== --}}
+    {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
     <div class="tab-pane" data-tab="additional">
 
+      <div class="d-flex justify-content-between mb-3">
+        <div class="fw-bold">Custom fields</div>
+        <button type="button" class="btn btn-link p-0" id="btnAddField">Add field</button>
+      </div>
+
       <div class="row g-3">
-
-        {{-- LEFT: Custom fields --}}
-        <div class="col-md-5">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <div class="fw-bold">Custom fields</div>
-            <a href="javascript:void(0)" class="text-primary small" id="btnAddField">Add field</a>
+        <div class="col-xl-6">
+          <div class="border rounded p-3 bg-white" id="fieldsWrap" style="min-height:220px">
+            <div class="text-muted small">Fields UI will be implemented here.</div>
           </div>
-
-          <div id="fieldsWrap"></div>
         </div>
 
-        {{-- RIGHT: Groups pricing --}}
-        <div class="col-md-7">
+        <div class="col-xl-6">
           <div class="fw-bold mb-2">Groups</div>
           <div id="groupsPricingWrap" class="border rounded bg-white"></div>
         </div>
-
       </div>
 
     </div>
@@ -209,14 +255,14 @@
           <input type="text" class="form-control" name="meta_keywords">
         </div>
 
-        <div class="col-12">
-          <label class="form-label">Meta description</label>
-          <textarea class="form-control" rows="3" name="meta_description"></textarea>
-        </div>
-
         <div class="col-md-6">
           <label class="form-label">After "head" tag opening</label>
           <textarea class="form-control" rows="3" name="meta_after_head"></textarea>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">Meta description</label>
+          <textarea class="form-control" rows="3" name="meta_description"></textarea>
         </div>
 
         <div class="col-md-6">
