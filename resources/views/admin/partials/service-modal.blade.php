@@ -4,231 +4,102 @@
     <style>
       #serviceModal .modal-dialog{width:96vw;max-width:min(1400px,96vw);margin:1rem auto}
       #serviceModal .modal-content{display:flex;flex-direction:column;max-height:96dvh;border-radius:.6rem;overflow:hidden}
-      #serviceModal .modal-header{background:#3bb37a;color:#fff;padding:.75rem 1rem;border:0;display:flex;align-items:center;gap:1rem}
+      #serviceModal .modal-header{background:#3bb37a;color:#fff;padding:.75rem 1rem;border:0}
       #serviceModal .modal-title{font-weight:600}
       #serviceModal .modal-body{flex:1 1 auto;overflow:auto;padding:1rem;background:#fff}
-
       #serviceModal .tabs-top{display:flex;gap:.5rem;margin-left:auto}
-      #serviceModal .tabs-top button{
-        border:0;background:#ffffff22;color:#fff;
-        padding:.35rem .8rem;border-radius:.35rem;font-size:.85rem
-      }
+      #serviceModal .tabs-top button{border:0;background:#ffffff22;color:#fff;padding:.35rem .8rem;border-radius:.35rem}
       #serviceModal .tabs-top button.active{background:#fff;color:#000}
-
       #serviceModal .badge-box{display:flex;gap:.4rem;align-items:center;margin-left:1rem}
       #serviceModal .badge-box .badge{background:#111;color:#fff;padding:.35rem .55rem;border-radius:.35rem;font-size:.75rem}
-
       #serviceModal .tab-pane{display:none}
       #serviceModal .tab-pane.active{display:block}
+      #serviceModal .pricing-row{padding:.75rem;border-bottom:1px solid #eee}
+      #serviceModal .pricing-title{background:#f3f3f3;padding:.55rem .75rem;font-weight:600}
+      #serviceModal .pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.65rem .75rem}
+      #serviceModal .pricing-inputs .input-group{width:100%}
+      #serviceModal .pricing-inputs label{font-size:.85rem;font-weight:600;margin-bottom:.25rem}
     </style>
   @endpush
 
   @push('modals')
-    <div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
+  <div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
 
-          <div class="modal-header">
-            <div>
-              <div class="modal-title">Create service</div>
-              <div class="small opacity-75" id="serviceModalSubtitle">Provider: — | Remote ID: —</div>
-            </div>
-
-            <div class="tabs-top">
-              <button type="button" class="tab-btn active" data-tab="general">General</button>
-              <button type="button" class="tab-btn" data-tab="additional">Additional</button>
-              <button type="button" class="tab-btn" data-tab="meta">Meta</button>
-            </div>
-
-            <div class="badge-box">
-              <span class="badge" id="badgeType">Type: —</span>
-              <span class="badge" id="badgePrice">Price: —</span>
-            </div>
-
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          <div>
+            <div class="modal-title">Create service</div>
+            <div class="small opacity-75" id="serviceModalSubtitle">Provider: — | Remote ID: —</div>
           </div>
 
-          <div class="modal-body" id="serviceModalBody"></div>
+          <div class="tabs-top">
+            <button type="button" class="tab-btn active" data-tab="general">General</button>
+            <button type="button" class="tab-btn" data-tab="additional">Additional</button>
+            <button type="button" class="tab-btn" data-tab="meta">Meta</button>
+          </div>
 
+          <div class="badge-box">
+            <span class="badge" id="badgeType">Type: —</span>
+            <span class="badge" id="badgePrice">Price: —</span>
+          </div>
+
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
+
+        <div class="modal-body" id="serviceModalBody"></div>
       </div>
     </div>
+  </div>
   @endpush
+
 
   @push('scripts')
   <script>
   (function(){
 
-    /* ✅ Tabs (FIXED 100%) */
+    // ✅ Tabs
     function initTabs(scope){
-      const btns  = document.querySelectorAll('#serviceModal .tab-btn');
-      const panes = scope.querySelectorAll('.tab-pane');
-
-      function activate(tab){
-        btns.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
-        panes.forEach(p => p.classList.toggle('active', p.dataset.tab === tab));
-
-        // fallback always show general
-        const any = Array.from(panes).some(p => p.classList.contains('active'));
-        if(!any){
-          btns.forEach(b => b.classList.toggle('active', b.dataset.tab === 'general'));
-          panes.forEach(p => p.classList.toggle('active', p.dataset.tab === 'general'));
-        }
-      }
-
+      const btns = document.querySelectorAll('#serviceModal .tab-btn');
       btns.forEach(btn=>{
-        btn.onclick = ()=> activate(btn.dataset.tab);
-      });
+        btn.addEventListener('click', ()=>{
+          btns.forEach(b=>b.classList.remove('active'));
+          btn.classList.add('active');
 
-      activate('general');
+          scope.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+          scope.querySelector(`.tab-pane[data-tab="${btn.dataset.tab}"]`)?.classList.add('active');
+        });
+      });
     }
 
-    // ✅ Load groups + build pricing table + fill dropdown
-function loadGroups(body, serviceType, defaultPrice){
-
-  fetch("{{ route('admin.services.groups.options') }}?type=" + encodeURIComponent(serviceType))
-    .then(r => r.json())
-    .then(rows => {
-
-      // ✅ 1) fill group dropdown
-      const sel = body.querySelector('[name="group_id"]');
-      if(sel){
-        sel.innerHTML =
-          `<option value="">Group</option>` +
-          rows.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
-      }
-
-      // ✅ 2) build pricing table in Additional tab
-      const wrap = body.querySelector('#groupsPricingWrap');
-      if(!wrap) return;
-
-      const html = rows.map(g => `
-        <div class="p-3 border-bottom">
-          <div class="fw-bold bg-light border rounded px-3 py-2 mb-2">${g.name}</div>
-
-          <div class="row g-2">
-            <div class="col-md-6">
-              <label class="form-label small">Price</label>
-              <div class="input-group">
-                <input type="number" step="0.0001"
-                       class="form-control group-price"
-                       data-group="${g.id}"
-                       value="${Number(defaultPrice||0).toFixed(4)}">
-                <span class="input-group-text">Credits</span>
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label small">Discount</label>
-              <div class="input-group">
-                <input type="number" step="0.0001"
-                       class="form-control group-discount"
-                       data-group="${g.id}"
-                       value="0.0000">
-
-                <select class="form-select group-discount-type"
-                        data-group="${g.id}"
-                        style="max-width:110px;">
-                  <option value="1" selected>Credits</option>
-                  <option value="2">%</option>
-                </select>
-
-                <button type="button" class="btn btn-light btn-reset" data-group="${g.id}">
-                  Reset
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      `).join('');
-
-      wrap.innerHTML = html;
-
-      // ✅ update hidden json
-      const hid = body.querySelector('#pricingTableHidden');
-
-      function updatePricingHidden(){
-        const pricing = rows.map(g=>{
-          const gid = g.id;
-          return {
-            group_id: gid,
-            price: Number(wrap.querySelector(`.group-price[data-group="${gid}"]`).value || 0),
-            discount: Number(wrap.querySelector(`.group-discount[data-group="${gid}"]`).value || 0),
-            discount_type: Number(wrap.querySelector(`.group-discount-type[data-group="${gid}"]`).value || 1),
-          };
-        });
-
-        if(hid) hid.value = JSON.stringify(pricing);
-      }
-
-      wrap.querySelectorAll('input,select').forEach(el=>{
-        el.addEventListener('input', updatePricingHidden);
-        el.addEventListener('change', updatePricingHidden);
-      });
-
-      // ✅ reset
-      wrap.querySelectorAll('.btn-reset').forEach(btn=>{
-        btn.addEventListener('click', ()=>{
-          const gid = btn.dataset.group;
-          wrap.querySelector(`.group-price[data-group="${gid}"]`).value = Number(defaultPrice||0).toFixed(4);
-          wrap.querySelector(`.group-discount[data-group="${gid}"]`).value = "0.0000";
-          wrap.querySelector(`.group-discount-type[data-group="${gid}"]`).value = "1";
-          updatePricingHidden();
-        });
-      });
-
-      updatePricingHidden();
-    })
-    .catch(err=>{
-      console.error("loadGroups error:", err);
-    });
-}
-
-
-
-
-
-    /* ✅ Helpers */
-    const loadCssOnce=(id,href)=>{
-      if(document.getElementById(id)) return;
-      const l=document.createElement('link');
-      l.id=id; l.rel='stylesheet'; l.href=href;
-      document.head.appendChild(l);
+    // ✅ loaders
+    const loadCssOnce=(id,href)=>{ if(document.getElementById(id)) return;
+      const l=document.createElement('link'); l.id=id; l.rel='stylesheet'; l.href=href; document.head.appendChild(l);
     };
     const loadScriptOnce=(id,src)=>new Promise((res,rej)=>{
       if(document.getElementById(id)) return res();
-      const s=document.createElement('script');
-      s.id=id; s.src=src; s.async=false;
-      s.onload=res; s.onerror=rej;
-      document.body.appendChild(s);
+      const s=document.createElement('script'); s.id=id; s.src=src; s.async=false;
+      s.onload=res; s.onerror=rej; document.body.appendChild(s);
     });
 
     async function ensureSummernote(){
       loadCssOnce('sn-css','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css');
       if(!window.jQuery || !window.jQuery.fn?.summernote){
-        await loadScriptOnce('jq-371','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
+        await loadScriptOnce('jq','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
         window.$=window.jQuery;
-        await loadScriptOnce('sn-js','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
+        await loadScriptOnce('sn','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
       }
     }
 
     async function ensureSelect2(){
-      if(!window.jQuery) await loadScriptOnce('jq-371','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
+      if(!window.jQuery) await loadScriptOnce('jq','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
       if(!$.fn?.select2){
         loadCssOnce('sel2-css','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css');
-        await loadScriptOnce('sel2-js','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js');
+        await loadScriptOnce('sel2','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js');
       }
     }
 
-    /* ✅ Slug alias */
-    function slugify(text){
-      return String(text||'')
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g,'-')
-        .replace(/^-+|-+$/g,'');
-    }
-
-    /* ✅ Price calc */
+    // ✅ Price calc
     function initPrice(scope){
       const cost = scope.querySelector('[name="cost"]');
       const profit = scope.querySelector('[name="profit"]');
@@ -237,22 +108,106 @@ function loadGroups(body, serviceType, defaultPrice){
       const convertedPreview = scope.querySelector('#convertedPricePreview');
 
       function recalc(){
-        const c = Number(cost?.value||0);
-        const p = Number(profit?.value||0);
-        const isPercent = (pType?.value == '2');
+        const c = Number(cost.value||0);
+        const p = Number(profit.value||0);
+        const isPercent = (pType.value == '2');
         const price = isPercent ? (c + (c*p/100)) : (c+p);
+
         if(pricePreview) pricePreview.value = price.toFixed(4);
         if(convertedPreview) convertedPreview.value = price.toFixed(4);
+
         document.getElementById('badgePrice').innerText = 'Price: ' + price.toFixed(4) + ' Credits';
       }
 
       [cost,profit,pType].forEach(el=> el && el.addEventListener('input', recalc));
       recalc();
 
-      return { setCost(v){ if(cost) cost.value=Number(v||0).toFixed(4); recalc(); } };
+      return {
+        setCost(v){
+          cost.value = Number(v||0).toFixed(4);
+          recalc();
+        }
+      };
     }
 
-    /* ✅ OPEN modal from Clone */
+    // ✅ Groups pricing UI (Full)
+    function buildPricingTable(scope, groups){
+      const wrap = scope.querySelector('#groupsPricingWrap');
+      if(!wrap) return;
+
+      wrap.innerHTML = '';
+      const hidden = scope.querySelector('#pricingTableHidden');
+
+      function updateHidden(){
+        const rows = [];
+        wrap.querySelectorAll('.pricing-row').forEach(row=>{
+          rows.push({
+            group_id: row.dataset.groupId,
+            price: row.querySelector('[data-price]')?.value || 0,
+            discount: row.querySelector('[data-discount]')?.value || 0,
+            discount_type: row.querySelector('[data-discount-type]')?.value || 1
+          });
+        });
+        hidden.value = JSON.stringify(rows);
+      }
+
+      groups.forEach(g=>{
+        const row = document.createElement('div');
+        row.className = 'pricing-row';
+        row.dataset.groupId = g.id;
+
+        row.innerHTML = `
+          <div class="pricing-title">${g.name}</div>
+          <div class="pricing-inputs">
+            <div>
+              <label>Price</label>
+              <div class="input-group">
+                <input type="number" step="0.0001" class="form-control" data-price value="0.0000">
+                <span class="input-group-text">Credits</span>
+              </div>
+            </div>
+
+            <div>
+              <label>Discount</label>
+              <div class="input-group">
+                <input type="number" step="0.0001" class="form-control" data-discount value="0.0000">
+                <select class="form-select" style="max-width:110px" data-discount-type>
+                  <option value="1" selected>Credits</option>
+                  <option value="2">Percent</option>
+                </select>
+                <button type="button" class="btn btn-light btn-reset">Reset</button>
+              </div>
+            </div>
+          </div>
+        `;
+
+        row.querySelector('.btn-reset').addEventListener('click', ()=>{
+          row.querySelector('[data-price]').value = "0.0000";
+          row.querySelector('[data-discount]').value = "0.0000";
+          row.querySelector('[data-discount-type]').value = "1";
+          updateHidden();
+        });
+
+        row.querySelectorAll('input,select').forEach(el=>{
+          el.addEventListener('input', updateHidden);
+          el.addEventListener('change', updateHidden);
+        });
+
+        wrap.appendChild(row);
+      });
+
+      updateHidden();
+    }
+
+    // ✅ Alias from name
+    function slugify(text){
+      return String(text||'')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g,'-')
+        .replace(/^-+|-+$/g,'');
+    }
+
+    // ✅ Open modal on Clone
     document.addEventListener('click', async (e)=>{
       const btn = e.target.closest('[data-create-service]');
       if(!btn) return;
@@ -260,65 +215,117 @@ function loadGroups(body, serviceType, defaultPrice){
       e.preventDefault();
 
       const body = document.getElementById('serviceModalBody');
-      const tpl  = document.getElementById('serviceCreateTpl');
+      const tpl = document.getElementById('serviceCreateTpl');
       if(!tpl) return alert('Template not found');
 
       body.innerHTML = tpl.innerHTML;
 
       initTabs(body);
-
       await ensureSummernote();
       await ensureSelect2();
 
-      // summernote
+      // ✅ Init Summernote
       jQuery(body).find('#infoEditor').summernote({
-        placeholder:'Write description, rules, terms...',
+        placeholder:'Description, notes, terms…',
         height:320
       });
 
-      // clone data
       const cloneData = {
-        providerId: btn.dataset.providerId || '',
-        providerName: btn.dataset.providerName || '',
-        remoteId: btn.dataset.remoteId || '',
-        name: btn.dataset.name || '',
+        providerId: btn.dataset.providerId,
+        providerName: btn.dataset.providerName,
+        remoteId: btn.dataset.remoteId,
+        name: btn.dataset.name,
         credit: Number(btn.dataset.credit||0),
-        time: btn.dataset.time || '',
-        serviceType: btn.dataset.serviceType || 'imei'
+        time: btn.dataset.time,
+        serviceType: btn.dataset.serviceType
       };
 
-      // ✅ Add field button
-const addBtn = body.querySelector('#btnAddField');
-if(addBtn){
-  addBtn.addEventListener('click', ()=>{
-    alert("✅ Add field clicked — next step: implement fields UI (old system).");
-  });
-}
-
-
-
-
-      // header info
       document.getElementById('serviceModalSubtitle').innerText =
         `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`;
       document.getElementById('badgeType').innerText =
         `Type: ${cloneData.serviceType.toUpperCase()}`;
 
-      // fill fields
+      // Fill form fields
       body.querySelector('[name="supplier_id"]').value = cloneData.providerId;
-      body.querySelector('[name="remote_id"]').value   = cloneData.remoteId;
-      body.querySelector('[name="name"]').value        = cloneData.name;
-      body.querySelector('[name="time"]').value        = cloneData.time;
-      body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
-      body.querySelector('[name="profit"]').value      = '0.0000';
-      body.querySelector('[name="alias"]').value       = slugify(cloneData.name);
-      body.querySelector('[name="type"]').value        = cloneData.serviceType;
+      body.querySelector('[name="remote_id"]').value = cloneData.remoteId;
+      body.querySelector('[name="name"]').value = cloneData.name;
+      body.querySelector('[name="time"]').value = cloneData.time;
+      body.querySelector('[name="cost"]').value = cloneData.credit.toFixed(4);
+      body.querySelector('[name="profit"]').value = '0.0000';
+      body.querySelector('[name="source"]').value = 2;
+      body.querySelector('[name="type"]').value = cloneData.serviceType;
+
+      // Alias auto
+      body.querySelector('[name="alias"]').value = slugify(cloneData.name);
 
       const priceHelper = initPrice(body);
       priceHelper.setCost(cloneData.credit);
 
+      // ✅ Load Groups select + Pricing table
+      fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
+        .then(r=>r.json())
+        .then(rows=>{
+          // dropdown
+          const sel = body.querySelector('[name="group_id"]');
+          if(sel){
+            sel.innerHTML = `<option value="">Group</option>` +
+              rows.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+          }
+
+          // pricing table
+          buildPricingTable(body, rows);
+        });
+
+      // ✅ Add field button (placeholder until old system)
+      body.querySelector('#btnAddField')?.addEventListener('click', ()=>{
+        alert("✅ Add field clicked — next step: implement fields UI (old system).");
+      });
+
       bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
-    }, true); // ✅ capture = solves “modal closes before click”
+    });
+
+    // ✅ Ajax submit
+    document.addEventListener('submit', async (ev)=>{
+      const form = ev.target.closest('#serviceModal form[data-ajax="1"]');
+      if(!form) return;
+      ev.preventDefault();
+
+      const html = jQuery(form).find('#infoEditor').summernote('code');
+      form.querySelector('#infoHidden').value = html;
+
+      const btn = form.querySelector('[type="submit"]');
+      btn.disabled = true;
+
+      try{
+        const res = await fetch(form.action,{
+          method: form.method,
+          headers:{
+            'X-Requested-With':'XMLHttpRequest',
+            'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content
+          },
+          body: new FormData(form)
+        });
+
+        btn.disabled = false;
+
+        if(res.status === 422){
+          const json = await res.json();
+          alert(Object.values(json.errors).flat().join("\n"));
+          return;
+        }
+
+        if(res.ok){
+          bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
+          location.reload();
+        }else{
+          alert('Failed to save service');
+        }
+
+      }catch(e){
+        btn.disabled = false;
+        alert('Network error');
+      }
+    });
 
   })();
   </script>
