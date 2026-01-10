@@ -49,42 +49,51 @@ class ImeiServiceController extends Controller
         'time'        => 'nullable|string',
         'info'        => 'nullable|string',
 
-        // Pricing
+        // Pricing (main)
         'cost'        => 'required|numeric|min:0',
         'profit'      => 'nullable|numeric|min:0',
         'profit_type' => 'nullable|integer|in:1,2',
 
-        // switches
-        'active'            => 'nullable|boolean',
-        'allow_bulk'        => 'nullable|boolean',
-        'allow_duplicates'  => 'nullable|boolean',
-        'reply_with_latest' => 'nullable|boolean',
-        'allow_report'      => 'nullable|boolean',
-        'allow_report_time' => 'nullable|integer|min:0',
-        'allow_cancel'      => 'nullable|boolean',
-        'allow_cancel_time' => 'nullable|integer|min:0',
-        'use_remote_cost'   => 'nullable|boolean',
-        'use_remote_price'  => 'nullable|boolean',
-        'stop_on_api_change'=> 'nullable|boolean',
-        'needs_approval'    => 'nullable|boolean',
-        'reply_expiration'  => 'nullable|integer|min:0',
-        'expiration_text'   => 'nullable|string',
-        'device_based'      => 'nullable|boolean',
+        // ✅ switches
+        'active'              => 'nullable|boolean',
+        'allow_bulk'          => 'nullable|boolean',
+        'allow_duplicates'    => 'nullable|boolean',
+        'reply_with_latest'   => 'nullable|boolean',
+
+        'allow_report'        => 'nullable|boolean',
+        'allow_report_time'   => 'nullable|integer|min:0',
+
+        'allow_cancel'        => 'nullable|boolean',
+        'allow_cancel_time'   => 'nullable|integer|min:0',
+
+        'use_remote_cost'     => 'nullable|boolean',
+        'use_remote_price'    => 'nullable|boolean',
+        'stop_on_api_change'  => 'nullable|boolean',
+        'needs_approval'      => 'nullable|boolean',
+
+        'reply_expiration'    => 'nullable|integer|min:0',
+        'expiration_text'     => 'nullable|string',
+
+        // Source + Group + Type
+        'source'              => 'nullable|integer',
+        'type'                => 'nullable|string',
+        'group_id'            => 'nullable|integer',
+
+        // extra
+        'device_based'        => 'nullable|boolean',
         'reject_on_missing_reply' => 'nullable|boolean',
 
-        'source'    => 'nullable|integer',
-        'type'      => 'nullable|string',
-        'group_id'  => 'nullable|integer',
-        'ordering'  => 'nullable|integer|min:1',
+        // ordering
+        'ordering'            => 'nullable|integer|min:1',
 
-        // ✅ Pricing rows coming from Additional tab
-        'group_prices' => 'nullable|string', // JSON
+        // ✅ pricing table json
+        'pricing_table'       => 'nullable|string',
     ]);
 
-    // source
+    // ✅ source as int
     $sourceInt = $r->has('source') ? (int)$r->input('source') : null;
 
-    // ✅ group auto-create from group_name
+    // ✅ Auto create group from API group_name
     $groupName = trim((string)($data['group_name'] ?? 'Uncategorized'));
     if ($groupName === '') $groupName = 'Uncategorized';
 
@@ -95,7 +104,7 @@ class ImeiServiceController extends Controller
         'active' => 1
     ]);
 
-    // ✅ prevent duplicates
+    // ✅ check duplicate
     $exists = ImeiService::query()
         ->where('supplier_id', $data['supplier_id'])
         ->where('remote_id', $data['remote_id'])
@@ -115,6 +124,7 @@ class ImeiServiceController extends Controller
         'profit'      => (float)($data['profit'] ?? 0),
         'profit_type' => (int)($data['profit_type'] ?? 1),
 
+        // ✅ switches
         'active'            => (int)($data['active'] ?? 1),
         'allow_bulk'        => (int)($data['allow_bulk'] ?? 0),
         'allow_duplicates'  => (int)($data['allow_duplicates'] ?? 0),
@@ -138,61 +148,58 @@ class ImeiServiceController extends Controller
         'reject_on_missing_reply' => (int)($data['reject_on_missing_reply'] ?? 0),
 
         'ordering'          => (int)($data['ordering'] ?? 1),
+
         'source'            => $sourceInt,
-        'type'              => 'imei',
     ];
 
-    // ✅ save service
+    // ✅ create or update
     if ($exists) {
         $exists->update($payload);
         $service = $exists;
-        $updated = true;
     } else {
         $service = ImeiService::create($payload);
-        $updated = false;
     }
 
-    // ✅ ===============================
-    // ✅ Save Pricing (service_group_prices)
-    // ✅ ===============================
-    $pricingJson = $data['group_prices'] ?? null;
+    // ✅ ✅ ✅ SAVE GROUP PRICING (FINAL PRICE ONLY)
+    // pricing_table comes as JSON: [{group_id,price,discount,discount_type}]
+    // but we will save ONLY price (final) and ignore discount
+    $pricingJson = $r->input('pricing_table', '[]');
+    $pricingRows = json_decode($pricingJson, true);
 
-    if ($pricingJson) {
-        $pricingRows = json_decode($pricingJson, true);
+    if (!is_array($pricingRows)) {
+        $pricingRows = [];
+    }
 
-        if (is_array($pricingRows)) {
+    foreach ($pricingRows as $row) {
+        $gid = (int)($row['group_id'] ?? 0);
+        if ($gid <= 0) continue;
 
-            foreach ($pricingRows as $row) {
+        $finalPrice = (float)($row['price'] ?? 0);
 
-                $groupId = (int)($row['group_id'] ?? 0);
-                if ($groupId <= 0) continue;
-
-                $price = (float)($row['price'] ?? 0);
-                $discount = (float)($row['discount'] ?? 0);
-                $discountType = (int)($row['discount_type'] ?? 1);
-
-                ServiceGroupPrice::updateOrCreate([
-                    'service_type' => 'imei',
-                    'service_id'   => $service->id,
-                    'group_id'     => $groupId,
-                ], [
-                    'price'         => $price,
-                    'discount'      => $discount,
-                    'discount_type' => $discountType,
-                ]);
-            }
-        }
+        ServiceGroupPrice::updateOrCreate(
+            [
+                'service_type' => 'imei',
+                'service_id'   => $service->id,
+                'group_id'     => $gid,
+            ],
+            [
+                'price'         => $finalPrice,
+                'discount'      => 0,
+                'discount_type' => 1,
+            ]
+        );
     }
 
     return response()->json([
-        'ok'      => true,
-        'updated' => $updated,
-        'id'      => $service->id,
-        'msg'     => $updated
-            ? '✅ Service updated successfully (pricing saved)'
-            : '✅ Service added successfully (pricing saved)'
+        'ok' => true,
+        'updated' => $exists ? true : false,
+        'id' => $service->id,
+        'msg' => $exists
+            ? '✅ Service updated + pricing saved'
+            : '✅ Service added + pricing saved'
     ]);
 }
+
 
 
     /**

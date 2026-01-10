@@ -6,19 +6,23 @@
       data-ajax="1">
   @csrf
 
+  {{-- ✅ يتم تعبئتها تلقائياً من service-modal.js عند الضغط Clone --}}
   <input type="hidden" name="supplier_id" value="">
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
 
-  {{-- ✅ Pricing table json (service_group_prices) --}}
+  {{-- ✅ سيتم تعبئتها من Additional Tab (pricing table) --}}
   <input type="hidden" name="pricing_table" id="pricingTableHidden" value="[]">
 
+  {{-- ✅ Tabs --}}
   <div class="service-tabs-content">
 
     {{-- ===================== ✅ GENERAL TAB ===================== --}}
     <div class="tab-pane active" data-tab="general">
 
       <div class="row g-3">
+
+        {{-- LEFT SIDE --}}
         <div class="col-xl-7">
           <div class="row g-3">
 
@@ -31,12 +35,12 @@
               <label class="form-label mb-1">
                 Alias (Unique name containing only latin lowercase characters and dashes)
               </label>
-              <input name="alias" type="text" class="form-control">
+              <input name="alias" type="text" class="form-control" placeholder="unique-alias-like-this">
             </div>
 
             <div class="col-md-6">
               <label class="form-label mb-1">Delivery time</label>
-              <input name="time" type="text" class="form-control">
+              <input name="time" type="text" class="form-control" placeholder="e.g. 1-24h">
             </div>
 
             <div class="col-md-6">
@@ -90,6 +94,7 @@
               <input name="max" type="number" class="form-control" value="15">
             </div>
 
+            {{-- Price Preview --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Price</label>
               <div class="input-group">
@@ -107,6 +112,7 @@
               </div>
             </div>
 
+            {{-- Cost / Profit --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Cost</label>
               <div class="input-group">
@@ -131,6 +137,7 @@
               </select>
             </div>
 
+            {{-- Source --}}
             <div class="col-12">
               <label class="form-label mb-1">Source</label>
               <select name="source" class="form-select">
@@ -152,12 +159,13 @@
                   <div class="col-12">
                     <label class="form-label mb-1">API service</label>
                     <select class="form-select js-api-service" name="api_service_remote_id"></select>
+                    <small class="text-muted">Search directly inside list.</small>
                   </div>
                 </div>
               </div>
             </div>
 
-            {{-- ✅ switches --}}
+            {{-- ✅ Switches --}}
             @php
               $toggles = [
                 'use_remote_cost'    => 'Sync the cost of this service with price of remote API service',
@@ -188,12 +196,14 @@
               @endforeach
             </div>
 
+            {{-- Timeouts --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Reporting deny timeout</label>
               <div class="input-group">
                 <input name="allow_report_time" type="number" class="form-control" value="0">
                 <span class="input-group-text">Minutes</span>
               </div>
+              <small class="text-muted">Leave blank or set to 0 for unlimited</small>
             </div>
 
             <div class="col-md-6">
@@ -202,6 +212,7 @@
                 <input name="allow_cancel_time" type="number" class="form-control" value="0">
                 <span class="input-group-text">Minutes</span>
               </div>
+              <small class="text-muted">Leave blank or set to 0 for unlimited</small>
             </div>
 
             <div class="col-md-6">
@@ -215,11 +226,12 @@
           </div>
         </div>
 
-        {{-- ✅ Summernote --}}
+        {{-- RIGHT SIDE (INFO = SUMMERNOTE) --}}
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
           <textarea id="infoEditor" class="form-control"></textarea>
           <input type="hidden" name="info" id="infoHidden">
+          <small class="text-muted">Description, notes, terms…</small>
         </div>
       </div>
     </div>
@@ -227,36 +239,41 @@
     {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
     <div class="tab-pane" data-tab="additional">
 
-      <div class="d-flex justify-content-between mb-3">
-        <div class="fw-bold">Custom fields</div>
-        <button type="button" class="btn btn-link p-0" id="btnAddField">Add field</button>
-      </div>
-
       <div class="row g-3">
+        {{-- Custom fields --}}
         <div class="col-xl-6">
-          <div class="border rounded p-3 bg-white" id="fieldsWrap" style="min-height:220px">
-            <div class="text-muted small">Fields UI will be implemented here.</div>
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-bold">Custom fields</div>
+            <a href="javascript:void(0)" class="text-primary small" id="btnAddField">Add field</a>
+          </div>
+
+          <div class="border rounded bg-white p-3" style="min-height:220px">
+            <div class="text-muted small">
+              Fields UI will be implemented later (same old system).
+            </div>
           </div>
         </div>
 
+        {{-- Groups Pricing --}}
         <div class="col-xl-6">
           <div class="fw-bold mb-2">Groups</div>
 
-<div id="groupsPricingWrap" class="border rounded p-3 bg-white">
-  <div id="groupsPricingList"></div>
-</div>
+          <div id="groupsPricingWrap" class="border rounded bg-white p-2" style="min-height:220px">
+            <div class="text-muted small">Loading groups...</div>
+          </div>
 
+          <small class="text-muted d-block mt-2">
+            ✅ Pricing saved per service + group inside <code>service_group_prices</code>.
+          </small>
+        </div>
       </div>
-
     </div>
-
-          <input type="hidden" name="group_prices" id="groupPricesJson">
-    
-
 
     {{-- ===================== ✅ META TAB ===================== --}}
     <div class="tab-pane" data-tab="meta">
+
       <div class="row g-3">
+
         <div class="col-md-6">
           <label class="form-label">Meta keywords</label>
           <input type="text" class="form-control" name="meta_keywords">
@@ -286,6 +303,7 @@
           <label class="form-label">Before "body" tag closing</label>
           <textarea class="form-control" rows="3" name="meta_before_body"></textarea>
         </div>
+
       </div>
     </div>
 
