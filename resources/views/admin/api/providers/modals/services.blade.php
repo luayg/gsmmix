@@ -1,6 +1,8 @@
 {{-- resources/views/admin/api/providers/modals/services.blade.php --}}
 
 @php
+    use Illuminate\Support\Str;
+
     $localModel = match($kind){
         'server' => \App\Models\ServerService::class,
         'file'   => \App\Models\FileService::class,
@@ -13,6 +15,9 @@
         ->mapWithKeys(fn($id,$remote)=>[(string)$remote => (int)$id])
         ->toArray();
 @endphp
+
+{{-- ✅ مودال موحد لإنشاء الخدمة (الموجود مسبقًا في المشروع) --}}
+@include('admin.partials.service-modal')
 
 <div class="modal-header">
   <h5 class="modal-title">
@@ -82,15 +87,17 @@
 
               {{-- ✅ If already added => Add ✅ --}}
               @if($isAdded)
-                <button type="button"
-                        class="btn btn-secondary btn-sm"
-                        disabled>
+                <button type="button" class="btn btn-secondary btn-sm" disabled>
                   Add ✅
                 </button>
               @else
-                {{-- ✅ If not added => Clone (opens modal create) --}}
+                {{-- ✅ Clone => opens the unified serviceModal --}}
                 <button type="button"
                         class="btn btn-success btn-sm clone-btn"
+                        data-create-service
+                        data-service-type="{{ $kind }}"
+                        data-provider-id="{{ $provider->id }}"
+                        data-provider-name="{{ $provider->name }}"
                         data-remote-id="{{ $rid }}"
                         data-name="{{ e(strip_tags($name)) }}"
                         data-credit="{{ $credit }}"
@@ -115,23 +122,17 @@
 </div>
 
 
-{{-- ✅ مودال Create الوحيد (مهم: سنستخدمه مرة واحدة فقط) --}}
-<div class="modal fade" id="serviceCreateModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width:95vw;">
-    <div class="modal-content">
+{{-- ✅ template of create form (required by service-modal.js) --}}
+<template id="serviceCreateTpl">
+  @if($kind === 'imei')
+    @include('admin.services.imei._modal_create')
+  @elseif($kind === 'server')
+    @include('admin.services.server._modal_create')
+  @else
+    @include('admin.services.file._modal_create')
+  @endif
+</template>
 
-      <div class="modal-header bg-primary text-white">
-        <h5 class="modal-title">Create service</h5>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body" id="serviceCreateModalBody">
-        {{-- يتم ملؤه ديناميكياً --}}
-      </div>
-
-    </div>
-  </div>
-</div>
 
 
 {{-- ✅ Wizard Modal --}}
@@ -225,6 +226,7 @@
 </div>
 
 
+{{-- ✅ Import wizard script (unchanged) --}}
 <script>
 (function(){
 
@@ -232,8 +234,6 @@
   const csrfToken  = @json(csrf_token());
   const importUrl  = @json(route('admin.apis.services.import_wizard', $provider));
   const servicesData = @json($services);
-  const providerId = @json($provider->id);
-  const providerName = @json($provider->name);
 
   const btnOpenWizard = document.getElementById('btnOpenImportWizard');
   const wizardModalEl = document.getElementById('importWizardModal');
@@ -251,9 +251,6 @@
 
   const selectedCount = document.getElementById('wizSelectedCount');
   const summaryCount  = document.getElementById('wizSummaryCount');
-
-  const createModalEl = document.getElementById('serviceCreateModal');
-  const createModalBody = document.getElementById('serviceCreateModalBody');
 
   let selected = new Set();
 
@@ -338,116 +335,6 @@
     updateCount();
   });
 
-
-  // ✅ ============ فتح مودال Create الصحيح (نسخة واحدة فقط) ============
-  document.addEventListener('click', async function(e){
-
-    const btn = e.target.closest('.clone-btn');
-    if(!btn) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    // ✅ تحميل الـ Create Form الصحيح من السيرفر (الكود القديم الكامل)
-    const url = (kind === 'imei')
-      ? "{{ route('admin.services.imei.modal.create') }}"
-      : (kind === 'server')
-        ? "{{ route('admin.services.server.modal.create') }}"
-        : "{{ route('admin.services.file.modal.create') }}";
-
-    createModalBody.innerHTML = `<div class="p-4 text-center text-muted">Loading...</div>`;
-    const modal = new bootstrap.Modal(createModalEl);
-    modal.show();
-
-    const res = await fetch(url, { headers: { 'X-Requested-With':'XMLHttpRequest' } });
-    const html = await res.text();
-    createModalBody.innerHTML = html;
-
-    // ✅ ملء البيانات تلقائياً
-    const rid   = btn.getAttribute('data-remote-id');
-    const name  = btn.getAttribute('data-name');
-    const credit= btn.getAttribute('data-credit');
-    const time  = btn.getAttribute('data-time');
-
-    const form = createModalBody.querySelector('#serviceCreateForm');
-    if(form){
-      // 🔥 حقول أساسية
-      form.querySelector('[name="name"]')?.value = name || '';
-      form.querySelector('[name="alias"]')?.value = rid || '';
-      form.querySelector('[name="time"]')?.value = time || '';
-
-      // 🔥 التكلفة
-      form.querySelector('[name="cost"]')?.value = credit || 0;
-
-      // ✅ supplier_id مهم جداً حتى لا يفشل الحفظ
-      if(!form.querySelector('[name="supplier_id"]')){
-        const hid = document.createElement('input');
-        hid.type = 'hidden';
-        hid.name = 'supplier_id';
-        hid.value = providerId;
-        form.appendChild(hid);
-      }else{
-        form.querySelector('[name="supplier_id"]').value = providerId;
-      }
-
-      // ✅ source API ثابت
-      if(form.querySelector('[name="source"]')){
-        form.querySelector('[name="source"]').value = 'api';
-      }
-
-      // ✅ تفعيل Summernote إذا موجود
-      if(typeof window.initModalCreateSummernote === 'function'){
-        window.initModalCreateSummernote(createModalBody);
-      }
-
-      // ✅ حفظ AJAX
-      form.addEventListener('submit', async function(ev){
-        ev.preventDefault();
-
-        const fd = new FormData(form);
-
-        try{
-          const resp = await fetch(form.action, {
-            method: 'POST',
-            headers: { 'X-Requested-With':'XMLHttpRequest' },
-            body: fd
-          });
-
-          const data = await resp.json();
-
-          if(!resp.ok || !data.ok){
-            alert(data.message || 'Failed to save');
-            return;
-          }
-
-          // ✅ غلق مودال Create
-          bootstrap.Modal.getInstance(createModalEl).hide();
-
-          // ✅ تحويل زر Clone إلى Add ✅ Disabled
-          const row = document.querySelector(`tr[data-remote-id="${CSS.escape(rid)}"]`);
-          if(row){
-            const b = row.querySelector('.clone-btn');
-            if(b){
-              b.classList.remove('btn-success');
-              b.classList.add('btn-secondary');
-              b.innerText = 'Add ✅';
-              b.disabled = true;
-            }
-          }
-
-        }catch(err){
-          alert("Error: " + err.message);
-        }
-
-      }, { once:true });
-
-    }
-
-  }, true);
-
-
-
-  // ✅ ============ Import Wizard ============
   async function finishImport(applyAll=false){
 
     const pricing_mode  = document.getElementById('wizPricingMode').value;
@@ -482,12 +369,10 @@
         return;
       }
 
-      // ✅ Show alert in services modal
       document.getElementById('importResultWrap').style.display = '';
       document.getElementById('importResultText').innerText =
         `Imported: ${data.count ?? 0}, Updated: ${data.updated ?? 0}`;
 
-      // ✅ Turn Clone -> Add ✅
       const idsToMark = applyAll ? servicesData.map(x=>String(x.SERVICEID)) : Array.from(selected);
 
       idsToMark.forEach(id=>{

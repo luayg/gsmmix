@@ -190,7 +190,6 @@
 {{-- ✅ مودال واحد فقط لهذه الصفحة --}}
 <div class="modal fade" id="apiModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" style="max-width:95vw;">
-
     <div class="modal-content" id="apiModalContent">
       <div class="p-4 text-center text-muted">Loading...</div>
     </div>
@@ -227,7 +226,6 @@
     </div>
   </div>
 </div>
-
 
 @endsection
 
@@ -282,7 +280,7 @@
     // ✅ أغلق أي مودال مفتوح
     document.querySelectorAll('.modal.show').forEach(el => {
       const inst = bootstrap.Modal.getInstance(el);
-      if (inst) inst.hide();
+      if(inst) inst.hide();
     });
 
     contentEl.innerHTML = `<div class="p-4 text-center text-muted">Loading...</div>`;
@@ -293,9 +291,10 @@
     try{
       const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       const html = await res.text();
+
       contentEl.innerHTML = html;
 
-      // ✅ تشغيل السكربتات داخل المودال
+      // ✅ شغل scripts الموجودة داخل HTML المحمل
       executeScripts(contentEl);
 
     }catch(e){
@@ -314,46 +313,52 @@
     }
   }
 
-  // ✅ تشغيل <script> داخل HTML المحمل
+  // ✅ تشغيل scripts داخل HTML المحمل ديناميكيًا
   function executeScripts(container){
     const scripts = container.querySelectorAll("script");
     scripts.forEach(oldScript => {
       const newScript = document.createElement("script");
-      for (let i = 0; i < oldScript.attributes.length; i++) {
+
+      for(let i=0; i<oldScript.attributes.length; i++){
         const attr = oldScript.attributes[i];
         newScript.setAttribute(attr.name, attr.value);
       }
+
       newScript.appendChild(document.createTextNode(oldScript.innerHTML));
       oldScript.parentNode.replaceChild(newScript, oldScript);
     });
   }
 
-  // ✅ أهم تعديل: اغلاق dropdown عند الضغط على IMEI/Server/File
+  // ✅ إغلاق dropdown فور الضغط على IMEI/Server/File
   document.addEventListener('click', function(e){
     const item = e.target.closest('.js-close-dropdown');
-    if(item){
-      const dropdown = item.closest('.btn-group');
-      if(dropdown){
-        const toggle = dropdown.querySelector('[data-bs-toggle="dropdown"]');
-        const inst = bootstrap.Dropdown.getInstance(toggle);
-        if(inst) inst.hide();
-      }
-    }
+    if(!item) return;
+
+    const dropdownWrap = item.closest('.btn-group');
+    if(!dropdownWrap) return;
+
+    const toggle = dropdownWrap.querySelector('[data-bs-toggle="dropdown"]');
+    if(!toggle) return;
+
+    const inst = bootstrap.Dropdown.getOrCreateInstance(toggle);
+    inst.hide();
+
   }, true);
 
-  // ✅ فتح المودال عند الضغط على js-api-modal
+  // ✅ فتح مودال من js-api-modal
   document.addEventListener('click', function(e){
     const btn = e.target.closest('.js-api-modal');
-    if (!btn) return;
+    if(!btn) return;
 
     e.preventDefault();
     e.stopPropagation();
-    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    if(typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
 
     const url = btn.getAttribute('data-url');
-    if (!url) return;
+    if(!url) return;
 
     openApiModal(url);
+
   }, true);
 
 })();
@@ -365,12 +370,10 @@
   let deleteForm = null;
 
   document.addEventListener('click', function(e){
-
     const btn = e.target.closest('.js-confirm-delete');
-    if (!btn) return;
+    if(!btn) return;
 
     e.preventDefault();
-
     deleteForm = btn.closest('form');
 
     document.getElementById('deleteApiName').innerText = btn.getAttribute('data-name') || '';
@@ -380,12 +383,11 @@
   });
 
   document.getElementById('deleteConfirmBtn')?.addEventListener('click', function(){
-    if (deleteForm) {
+    if(deleteForm){
       deleteForm.submit();
     }
   });
 
 })();
 </script>
-
 @endpush

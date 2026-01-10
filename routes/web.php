@@ -59,7 +59,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/{user}/modal/edit',     [UserController::class, 'modalEdit'])->name('modal.edit');
         Route::get('/{user}/modal/delete',   [UserController::class, 'modalDelete'])->name('modal.delete');
         Route::get('/{user}/modal/services', [UserController::class, 'modalServices'])->name('modal.services');
-
+        
         // Roles attach
         Route::get ('/{user}/roles', [UserRoleController::class, 'edit'])->name('roles.edit');
         Route::post('/{user}/roles', [UserRoleController::class, 'sync'])->name('roles.sync');
