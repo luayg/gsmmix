@@ -6,15 +6,12 @@
       data-ajax="1">
   @csrf
 
-  {{-- ✅ يتم تعبئتها تلقائياً من service-modal.js عند الضغط Clone --}}
+  {{-- ✅ Injected by service-modal.js --}}
   <input type="hidden" name="supplier_id" value="">
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
 
-  {{-- ✅ سيتم تعبئتها من Additional Tab (pricing table) --}}
-  <input type="hidden" name="pricing_table" id="pricingTableHidden" value="[]">
-
-  {{-- ✅ Tabs --}}
+  {{-- ✅ Tabs content wrappers --}}
   <div class="service-tabs-content">
 
     {{-- ===================== ✅ GENERAL TAB ===================== --}}
@@ -94,7 +91,7 @@
               <input name="max" type="number" class="form-control" value="15">
             </div>
 
-            {{-- Price Preview --}}
+            {{-- Price --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Price</label>
               <div class="input-group">
@@ -112,7 +109,7 @@
               </div>
             </div>
 
-            {{-- Cost / Profit --}}
+            {{-- Cost/Profit --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Cost</label>
               <div class="input-group">
@@ -148,8 +145,8 @@
               </select>
             </div>
 
-            {{-- ✅ API block --}}
-            <div class="col-12 js-api-block">
+            {{-- ✅ API block (hidden unless Source=API) --}}
+            <div class="col-12 js-api-block d-none">
               <div class="border rounded p-3 bg-light">
                 <div class="row g-2">
                   <div class="col-md-6">
@@ -165,7 +162,7 @@
               </div>
             </div>
 
-            {{-- ✅ Switches --}}
+            {{-- ✅ Required Switches --}}
             @php
               $toggles = [
                 'use_remote_cost'    => 'Sync the cost of this service with price of remote API service',
@@ -190,13 +187,13 @@
                          name="{{ $name }}"
                          value="1"
                          id="sw_{{ $name }}"
-                         @checked($name === 'active')>
+                         @checked(in_array($name,['active','allow_bulk']) ? true : false)>
                   <label class="form-check-label" for="sw_{{ $name }}">{{ $label }}</label>
                 </div>
               @endforeach
             </div>
 
-            {{-- Timeouts --}}
+            {{-- Reporting / Cancel timeouts --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Reporting deny timeout</label>
               <div class="input-group">
@@ -229,7 +226,10 @@
         {{-- RIGHT SIDE (INFO = SUMMERNOTE) --}}
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
-          <textarea id="infoEditor" class="form-control"></textarea>
+
+          {{-- ✅ Must be hidden + initialized by JS --}}
+          <textarea id="infoEditor" class="form-control d-none"></textarea>
+
           <input type="hidden" name="info" id="infoHidden">
           <small class="text-muted">Description, notes, terms…</small>
         </div>
@@ -238,40 +238,25 @@
 
     {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
     <div class="tab-pane" data-tab="additional">
+      <div class="d-flex justify-content-between mb-3">
+        <div class="fw-bold">Fields</div>
+        <div class="text-primary small cursor-pointer" id="btnAddField">Add field</div>
+      </div>
 
-      <div class="row g-3">
-        {{-- Custom fields --}}
-        <div class="col-xl-6">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <div class="fw-bold">Custom fields</div>
-            <a href="javascript:void(0)" class="text-primary small" id="btnAddField">Add field</a>
-          </div>
+      <div class="border rounded p-3 bg-white" style="min-height:200px">
+        <div class="text-muted small">Fields UI will be implemented here (same system as original).</div>
+      </div>
 
-          <div class="border rounded bg-white p-3" style="min-height:220px">
-            <div class="text-muted small">
-              Fields UI will be implemented later (same old system).
-            </div>
-          </div>
-        </div>
+      <hr class="my-4">
 
-        {{-- Groups Pricing --}}
-        <div class="col-xl-6">
-          <div class="fw-bold mb-2">Groups</div>
-
-          <div id="groupsPricingWrap" class="border rounded bg-white p-2" style="min-height:220px">
-            <div class="text-muted small">Loading groups...</div>
-          </div>
-
-          <small class="text-muted d-block mt-2">
-            ✅ Pricing saved per service + group inside <code>service_group_prices</code>.
-          </small>
-        </div>
+      <div class="fw-bold mb-2">Groups</div>
+      <div id="groupsPricingWrap" class="border rounded p-3 bg-white">
+        <div class="text-muted small">Groups pricing table will be generated here.</div>
       </div>
     </div>
 
     {{-- ===================== ✅ META TAB ===================== --}}
     <div class="tab-pane" data-tab="meta">
-
       <div class="row g-3">
 
         <div class="col-md-6">
@@ -313,4 +298,5 @@
     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
     <button type="submit" class="btn btn-success">Create</button>
   </div>
+
 </form>

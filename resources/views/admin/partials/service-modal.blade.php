@@ -15,7 +15,7 @@
   #serviceModal .tab-pane{display:none}
   #serviceModal .tab-pane.active{display:block}
 
-  /* Pricing style */
+  /* Pricing layout */
   #serviceModal .pricing-row{border-bottom:1px solid #eee}
   #serviceModal .pricing-title{background:#f3f3f3;padding:.55rem .75rem;font-weight:600}
   #serviceModal .pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.65rem .75rem}
@@ -57,7 +57,7 @@
 <script>
 (function(){
 
-  // ✅ Tabs (fixed scope)
+  // ✅ Tabs
   function initTabs(scope){
     const btns = document.querySelectorAll('#serviceModal .tab-btn');
     btns.forEach(btn=>{
@@ -72,6 +72,7 @@
     });
   }
 
+  // ✅ Load libs once
   const loadCssOnce=(id,href)=>{ if(document.getElementById(id)) return;
     const l=document.createElement('link'); l.id=id; l.rel='stylesheet'; l.href=href; document.head.appendChild(l);
   };
@@ -98,6 +99,7 @@
     }
   }
 
+  // ✅ slugify
   function slugify(text){
     return String(text||'')
       .toLowerCase()
@@ -105,7 +107,7 @@
       .replace(/^-+|-+$/g,'');
   }
 
-  // ✅ Price calc
+  // ✅ Price
   function initPrice(scope){
     const cost = scope.querySelector('[name="cost"]');
     const profit = scope.querySelector('[name="profit"]');
@@ -134,7 +136,7 @@
     };
   }
 
-  // ✅ Pricing UI => writes into hidden pricing_table
+  // ✅ Build pricing table from USER GROUPS
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
     const hidden = scope.querySelector('#pricingTableHidden');
@@ -203,7 +205,15 @@
     updateHidden();
   }
 
-  // ✅ Open modal
+  // ✅ Load USER GROUPS (Basic/VIP/Reseller..)
+  async function loadUserGroups(){
+    const res = await fetch("{{ route('admin.groups.options') }}");
+    const rows = await res.json();
+    if(!Array.isArray(rows)) return [];
+    return rows;
+  }
+
+  // ✅ open modal
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-create-service]');
     if(!btn) return;
@@ -216,93 +226,16 @@
 
     body.innerHTML = tpl.innerHTML;
 
-    async function loadPricingGroups(serviceType){
-  const wrap = body.querySelector('#groupsPricingList');
-  if(!wrap) return;
-
-  wrap.innerHTML = `<div class="text-muted small">Loading groups...</div>`;
-
-  try{
-    const res = await fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(serviceType));
-    const groups = await res.json();
-
-    if(!Array.isArray(groups) || groups.length === 0){
-      wrap.innerHTML = `<div class="text-danger small">No groups found</div>`;
-      return;
-    }
-
-    // ✅ build pricing UI
-    wrap.innerHTML = groups.map(g => `
-      <div class="mb-3 border rounded">
-        <div class="bg-light px-3 py-2 fw-bold">${g.name}</div>
-
-        <div class="p-3">
-          <div class="row g-2 align-items-end">
-            <div class="col-md-4">
-              <label class="form-label mb-1">Price</label>
-              <div class="input-group">
-                <input type="number" step="0.0001"
-                       class="form-control grp-price"
-                       data-group-id="${g.id}"
-                       value="0.0000">
-                <span class="input-group-text">Credits</span>
-              </div>
-            </div>
-
-            <div class="col-md-4">
-              <label class="form-label mb-1">Discount</label>
-              <div class="input-group">
-                <input type="number" step="0.0001"
-                       class="form-control grp-discount"
-                       data-group-id="${g.id}"
-                       value="0.0000">
-                <select class="form-select grp-discount-type"
-                        data-group-id="${g.id}"
-                        style="max-width:120px">
-                  <option value="1">Credits</option>
-                  <option value="2">Percent</option>
-                </select>
-                <button type="button" class="btn btn-light btn-sm grp-reset"
-                        data-group-id="${g.id}">
-                  Reset
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      </div>
-    `).join('');
-
-    // reset buttons
-    wrap.querySelectorAll('.grp-reset').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const gid = btn.dataset.groupId;
-        wrap.querySelector(`.grp-price[data-group-id="${gid}"]`).value = "0.0000";
-        wrap.querySelector(`.grp-discount[data-group-id="${gid}"]`).value = "0.0000";
-        wrap.querySelector(`.grp-discount-type[data-group-id="${gid}"]`).value = "1";
-      });
-    });
-
-  }catch(e){
-    console.error(e);
-    wrap.innerHTML = `<div class="text-danger small">Failed to load groups</div>`;
-  }
-}
-
-
-
     initTabs(body);
-
     await ensureSummernote();
     await ensureSelect2();
 
+    // ✅ Summernote
     jQuery(body).find('#infoEditor').summernote({
       placeholder:'Description, notes, terms…',
       height:320
     });
 
-    // ✅ normalize type
     const serviceType = (btn.dataset.serviceType || 'imei').toLowerCase();
 
     const cloneData = {
@@ -315,13 +248,14 @@
       serviceType
     };
 
+    // header
     document.getElementById('serviceModalSubtitle').innerText =
       `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`;
 
     document.getElementById('badgeType').innerText =
       `Type: ${cloneData.serviceType.toUpperCase()}`;
 
-    // Fill fields
+    // fill fields
     body.querySelector('[name="supplier_id"]').value = cloneData.providerId;
     body.querySelector('[name="remote_id"]').value   = cloneData.remoteId;
     body.querySelector('[name="name"]').value        = cloneData.name;
@@ -336,29 +270,29 @@
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-    // ✅ Load groups + build pricing
+    // ✅ Load service groups dropdown (service_groups)
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
       .then(r=>r.json())
       .then(rows=>{
-        // dropdown
         const sel = body.querySelector('[name="group_id"]');
         if(sel){
           sel.innerHTML = `<option value="">Group</option>` + rows.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
         }
-
-        // pricing table
-        buildPricingTable(body, rows);
       });
 
-    // ✅ Add field handler (next: implement old system)
+    // ✅ Load USER GROUPS for pricing table
+    const userGroups = await loadUserGroups();
+    buildPricingTable(body, userGroups);
+
+    // ✅ Add field handler (next)
     body.querySelector('#btnAddField')?.addEventListener('click', ()=>{
-      alert("✅ Add field clicked — implement old custom fields system next.");
+      alert("✅ Add field clicked — implement full custom fields system next.");
     });
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
   });
 
-  // ✅ Ajax submit => summernote content -> hidden
+  // ✅ Submit
   document.addEventListener('submit', async (ev)=>{
     const form = ev.target.closest('#serviceModal form[data-ajax="1"]');
     if(!form) return;

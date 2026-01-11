@@ -121,6 +121,22 @@ class GroupController extends Controller
         return response()->json(['ok'=>true,'msg'=>'Group updated']);
     }
 
+    public function options(Request $r)
+{
+    $q = trim((string)$r->input('q', ''));
+
+    $rows = Group::query()
+        ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
+        ->orderBy('id', 'asc')
+        ->limit(200)
+        ->get(['id','name']);
+
+    return response()->json($rows);
+}
+
+
+
+
     public function destroy(Group $group)
     {
         $group->delete();
