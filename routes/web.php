@@ -145,6 +145,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::resource('file-services', FileServiceController::class)->except(['show'])->names('file');
         Route::get('file-services/{service}/json',    [FileServiceController::class, 'showJson'])->name('file.show.json');
         Route::post('file-services/{service}/toggle', [FileServiceController::class, 'toggle'])->name('file.toggle');
+        
+        Route::get('/admin/groups/options', function () {
+    return \App\Models\Group::query()
+        ->select('id','name')
+        ->orderBy('id')
+        ->get();
+})->name('admin.groups.options');
+
 
         // ===== Clone from API =====
         Route::get('clone/modal',               [CloneController::class, 'modal'])->name('clone.modal');

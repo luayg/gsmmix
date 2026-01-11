@@ -18,7 +18,8 @@ class ServiceGroupPrice extends Model
     ];
 
     public function group()
-    {
-        return $this->belongsTo(ServiceGroup::class, 'group_id');
-    }
+{
+    return $this->belongsTo(\App\Models\Group::class, 'group_id');
+}
+
 }
