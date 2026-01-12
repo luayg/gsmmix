@@ -116,23 +116,26 @@
     const convertedPreview = scope.querySelector('#convertedPricePreview');
 
     function recalc(){
-      const c = Number(cost.value||0);
-      const p = Number(profit.value||0);
-      const isPercent = (pType.value == '2');
+      const c = Number(cost?.value||0);
+      const p = Number(profit?.value||0);
+      const isPercent = (pType?.value == '2');
       const price = isPercent ? (c + (c*p/100)) : (c+p);
 
       if(pricePreview) pricePreview.value = price.toFixed(4);
       if(convertedPreview) convertedPreview.value = price.toFixed(4);
 
-      document.getElementById('badgePrice').innerText =
-        'Price: ' + price.toFixed(4) + ' Credits';
+      const badge = document.getElementById('badgePrice');
+      if(badge) badge.innerText = 'Price: ' + price.toFixed(4) + ' Credits';
     }
 
     [cost,profit,pType].forEach(el=> el && el.addEventListener('input', recalc));
     recalc();
 
     return {
-      setCost(v){ cost.value = Number(v||0).toFixed(4); recalc(); }
+      setCost(v){
+        if(cost) cost.value = Number(v||0).toFixed(4);
+        recalc();
+      }
     };
   }
 
@@ -213,6 +216,74 @@
     return rows;
   }
 
+  // ✅ Insert API Provider dropdown near Source (if not in template)
+  function ensureApiProviderUI(scope){
+    const sourceSel = scope.querySelector('[name="source"]');
+    if(!sourceSel) return;
+
+    // If already exists, skip
+    if(scope.querySelector('#apiProviderWrap')) return;
+
+    const wrap = document.createElement('div');
+    wrap.id = 'apiProviderWrap';
+    wrap.className = 'mt-2';
+    wrap.style.display = 'none';
+    wrap.innerHTML = `
+      <label class="form-label">API Provider</label>
+      <select class="form-select" name="api_provider_id">
+        <option value="">-- Choose API Provider --</option>
+        @php
+          $providers = \App\Models\ApiProvider::orderBy('id')->get();
+        @endphp
+        @foreach($providers as $p)
+          @php
+            $nm = $p->name;
+            if (is_string($nm)) {
+              $decoded = json_decode($nm, true);
+              if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $nm = $decoded['en'] ?? ($decoded['fallback'] ?? $p->id);
+              }
+            } elseif (is_array($nm)) {
+              $nm = $nm['en'] ?? ($nm['fallback'] ?? $p->id);
+            }
+          @endphp
+          <option value="{{ $p->id }}">{{ $nm }}</option>
+        @endforeach
+      </select>
+      <div class="form-text">
+        إذا كنت تعمل Clone من Remote Service سيتم تعبئته تلقائياً.
+        إذا اخترت API يدويًا، اختر المزود ثم (اختياريًا) ضع Remote ID من الريموت.
+      </div>
+    `;
+
+    // place it right after source select container
+    const container = sourceSel.closest('.mb-3') || sourceSel.closest('.form-group') || sourceSel.parentElement;
+    if(container && container.parentElement){
+      container.parentElement.insertBefore(wrap, container.nextSibling);
+    }else{
+      sourceSel.parentElement.appendChild(wrap);
+    }
+  }
+
+  function updateSourceUI(scope){
+    const sourceSel = scope.querySelector('[name="source"]');
+    const apiWrap = scope.querySelector('#apiProviderWrap');
+    if(!sourceSel || !apiWrap) return;
+
+    const isApi = String(sourceSel.value) === '2';
+    apiWrap.style.display = isApi ? 'block' : 'none';
+
+    // if switching to manual, clear api-related hidden fields to avoid bad values
+    if(!isApi){
+      const sup = scope.querySelector('[name="supplier_id"]');
+      const rem = scope.querySelector('[name="remote_id"]');
+      const ap  = scope.querySelector('[name="api_provider_id"]');
+      if(sup) sup.value = '';
+      if(rem) rem.value = '';
+      if(ap)  ap.value = '';
+    }
+  }
+
   // ✅ open modal
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-create-service]');
@@ -236,21 +307,28 @@
       height:320
     });
 
-    const serviceType = (btn.dataset.serviceType || 'imei').toLowerCase();
+    const providerId = btn.dataset.providerId;
+    const remoteId   = btn.dataset.remoteId;
+
+    const isClone =
+      providerId !== undefined && providerId !== '' && providerId !== 'undefined' &&
+      remoteId   !== undefined && remoteId   !== '' && remoteId   !== 'undefined';
 
     const cloneData = {
-      providerId: btn.dataset.providerId,
-      providerName: btn.dataset.providerName,
-      remoteId: btn.dataset.remoteId,
-      name: btn.dataset.name,
-      credit: Number(btn.dataset.credit||0),
-      time: btn.dataset.time,
-      serviceType
+      providerId: isClone ? providerId : '',
+      providerName: btn.dataset.providerName || '—',
+      remoteId: isClone ? remoteId : '',
+      name: btn.dataset.name || '',
+      credit: Number(btn.dataset.credit || 0),
+      time: btn.dataset.time || '',
+      serviceType: (btn.dataset.serviceType || 'imei').toLowerCase()
     };
 
-    // header
+    // header + badges
     document.getElementById('serviceModalSubtitle').innerText =
-      `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`;
+      isClone
+        ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`
+        : `Provider: — | Remote ID: —`;
 
     document.getElementById('badgeType').innerText =
       `Type: ${cloneData.serviceType.toUpperCase()}`;
@@ -262,13 +340,29 @@
     body.querySelector('[name="time"]').value        = cloneData.time || '';
     body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
     body.querySelector('[name="profit"]').value      = '0.0000';
-    body.querySelector('[name="source"]').value      = 2;
-    body.querySelector('[name="type"]').value        = cloneData.serviceType;
 
-    body.querySelector('[name="alias"]').value = slugify(cloneData.name);
+    // ✅ Manual = 1, API = 2
+    body.querySelector('[name="source"]').value      = isClone ? 2 : 1;
+
+    body.querySelector('[name="type"]').value        = cloneData.serviceType;
+    body.querySelector('[name="alias"]').value       = slugify(cloneData.name || '');
 
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
+
+    // ✅ Ensure API Provider selector exists
+    ensureApiProviderUI(body);
+
+    // bind change
+    const sourceSel = body.querySelector('[name="source"]');
+    if(sourceSel){
+      sourceSel.addEventListener('change', ()=> updateSourceUI(body));
+    }
+    updateSourceUI(body);
+
+    // if clone, preselect provider in dropdown
+    const apiSel = body.querySelector('[name="api_provider_id"]');
+    if(apiSel && isClone) apiSel.value = String(cloneData.providerId);
 
     // ✅ Load service groups dropdown (service_groups)
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
@@ -299,11 +393,13 @@
 
     ev.preventDefault();
 
+    // push summernote html
     const html = jQuery(form).find('#infoEditor').summernote('code');
-    form.querySelector('#infoHidden').value = html;
+    const infoHidden = form.querySelector('#infoHidden');
+    if(infoHidden) infoHidden.value = html;
 
     const btn = form.querySelector('[type="submit"]');
-    btn.disabled = true;
+    if(btn) btn.disabled = true;
 
     try{
       const res = await fetch(form.action,{
@@ -315,7 +411,7 @@
         body: new FormData(form)
       });
 
-      btn.disabled = false;
+      if(btn) btn.disabled = false;
 
       if(res.status === 422){
         const json = await res.json();
@@ -327,11 +423,13 @@
         bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
         location.reload();
       }else{
-        alert('Failed to save service');
+        // ✅ Show server response snippet for debugging
+        const text = await res.text();
+        alert('Failed to save service\n\n' + text.slice(0, 800));
       }
 
     }catch(e){
-      btn.disabled = false;
+      if(btn) btn.disabled = false;
       alert('Network error');
     }
   });

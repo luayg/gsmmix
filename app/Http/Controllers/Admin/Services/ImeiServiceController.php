@@ -65,6 +65,16 @@ class ImeiServiceController extends Controller
 
     public function store(Request $request)
 {
+
+foreach (['remote_id','supplier_id','api_provider_id','api_service_remote_id'] as $k) {
+    $v = $request->input($k);
+    if ($v === 'undefined' || $v === '') {
+        $request->merge([$k => null]);
+    }
+}
+
+
+
     // 1) استقبل كل حقول المودال (حالياً كثير منها يُتجاهل) 
     $v = $request->validate([
         'alias'        => 'nullable|string|max:255',
@@ -72,8 +82,9 @@ class ImeiServiceController extends Controller
         'type'         => 'required|string|max:255',
 
         'source'       => 'nullable|integer',
-        'remote_id'    => 'nullable|integer',
-        'supplier_id'  => 'nullable|integer',
+        'remote_id'   => 'nullable',
+        'supplier_id' => 'nullable',
+
 
         // حقول المودال الأساسية
         'name'         => 'required|string',
