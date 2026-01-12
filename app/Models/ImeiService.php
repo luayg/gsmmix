@@ -45,8 +45,8 @@ protected $casts = [
 ];
 public function api()
 {
-    // إن كان اسم العمود provider_id أو supplier_id غيّره هنا
-    return $this->belongsTo(\App\Models\ApiProvider::class, 'api_id');
+    // مصدر الخدمة الأساسي (الذي أحيانًا يخزن في العمود source)
+    return $this->belongsTo(ApiProvider::class, 'source');
 }
 
 
@@ -57,7 +57,11 @@ public function groupPrices()
                 ->where('service_type', 'imei');
 }
 
-
+public function supplier()
+{
+    // المقصود بها api_providers (التي تأتي من جدول api_providers)
+    return $this->belongsTo(ApiProvider::class, 'supplier_id');
+}
 
     public function group(){ return $this->belongsTo(ServiceGroup::class,'group_id'); }
 }
