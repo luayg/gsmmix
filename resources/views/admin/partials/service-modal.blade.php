@@ -132,10 +132,7 @@
     recalc();
 
     return {
-      setCost(v){
-        if(cost) cost.value = Number(v||0).toFixed(4);
-        recalc();
-      }
+      setCost(v){ if(cost){ cost.value = Number(v||0).toFixed(4); recalc(); } }
     };
   }
 
@@ -216,72 +213,32 @@
     return rows;
   }
 
-  // ✅ Insert API Provider dropdown near Source (if not in template)
-  function ensureApiProviderUI(scope){
-    const sourceSel = scope.querySelector('[name="source"]');
-    if(!sourceSel) return;
-
-    // If already exists, skip
-    if(scope.querySelector('#apiProviderWrap')) return;
-
-    const wrap = document.createElement('div');
-    wrap.id = 'apiProviderWrap';
-    wrap.className = 'mt-2';
-    wrap.style.display = 'none';
-    wrap.innerHTML = `
-      <label class="form-label">API Provider</label>
-      <select class="form-select" name="api_provider_id">
-        <option value="">-- Choose API Provider --</option>
-        @php
-          $providers = \App\Models\ApiProvider::orderBy('id')->get();
-        @endphp
-        @foreach($providers as $p)
-          @php
-            $nm = $p->name;
-            if (is_string($nm)) {
-              $decoded = json_decode($nm, true);
-              if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-                $nm = $decoded['en'] ?? ($decoded['fallback'] ?? $p->id);
-              }
-            } elseif (is_array($nm)) {
-              $nm = $nm['en'] ?? ($nm['fallback'] ?? $p->id);
-            }
-          @endphp
-          <option value="{{ $p->id }}">{{ $nm }}</option>
-        @endforeach
-      </select>
-      <div class="form-text">
-        إذا كنت تعمل Clone من Remote Service سيتم تعبئته تلقائياً.
-        إذا اخترت API يدويًا، اختر المزود ثم (اختياريًا) ضع Remote ID من الريموت.
-      </div>
-    `;
-
-    // place it right after source select container
-    const container = sourceSel.closest('.mb-3') || sourceSel.closest('.form-group') || sourceSel.parentElement;
-    if(container && container.parentElement){
-      container.parentElement.insertBefore(wrap, container.nextSibling);
-    }else{
-      sourceSel.parentElement.appendChild(wrap);
-    }
+  // ✅ Load SERVICE GROUPS for select (ServiceGroup table)
+  async function loadServiceGroups(type){
+    const url = "{{ route('admin.services.groups.options') }}" + "?type=" + encodeURIComponent(type || 'imei');
+    const res = await fetch(url);
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : [];
   }
 
-  function updateSourceUI(scope){
-    const sourceSel = scope.querySelector('[name="source"]');
-    const apiWrap = scope.querySelector('#apiProviderWrap');
-    if(!sourceSel || !apiWrap) return;
+  // ✅ Load API providers
+  async function loadApiProviders(){
+    const res = await fetch("{{ route('admin.apis.options') }}");
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : [];
+  }
 
-    const isApi = String(sourceSel.value) === '2';
-    apiWrap.style.display = isApi ? 'block' : 'none';
+  // ✅ Load provider services list (remote services)
+  async function loadProviderServices(providerId, type, q=''){
+    if(!providerId) return [];
+    const url = "{{ route('admin.services.clone.provider_services') }}"
+      + "?provider_id=" + encodeURIComponent(providerId)
+      + "&type=" + encodeURIComponent(type || 'imei')
+      + "&q=" + encodeURIComponent(q || '');
 
-    // if switching to manual, clear api-related hidden fields to avoid bad values
-    if(!isApi){
-      const sup = scope.querySelector('[name="supplier_id"]');
-      const rem = scope.querySelector('[name="remote_id"]');
-      const ap  = scope.querySelector('[name="api_provider_id"]');
-      if(sup) sup.value = '';
-      if(rem) rem.value = '';
-      if(ap)  ap.value = '';
-    }
+    const res = await fetch(url);
+    const rows = await res.json();
+    return Array.isArray(rows) ? rows : [];
   }
 
   // ✅ open modal
@@ -307,6 +264,9 @@
       height:320
     });
 
+    // ✅ detect type + clone
+    const serviceType = (btn.dataset.serviceType || 'imei').toLowerCase();
+
     const providerId = btn.dataset.providerId;
     const remoteId   = btn.dataset.remoteId;
 
@@ -321,10 +281,10 @@
       name: btn.dataset.name || '',
       credit: Number(btn.dataset.credit || 0),
       time: btn.dataset.time || '',
-      serviceType: (btn.dataset.serviceType || 'imei').toLowerCase()
+      serviceType
     };
 
-    // header + badges
+    // header
     document.getElementById('serviceModalSubtitle').innerText =
       isClone
         ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`
@@ -334,49 +294,163 @@
       `Type: ${cloneData.serviceType.toUpperCase()}`;
 
     // fill fields
-    body.querySelector('[name="supplier_id"]').value = cloneData.providerId;
-    body.querySelector('[name="remote_id"]').value   = cloneData.remoteId;
-    body.querySelector('[name="name"]').value        = cloneData.name;
-    body.querySelector('[name="time"]').value        = cloneData.time || '';
-    body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
-    body.querySelector('[name="profit"]').value      = '0.0000';
+    const elSupplier = body.querySelector('[name="supplier_id"]');
+    const elRemote   = body.querySelector('[name="remote_id"]');
+    const elName     = body.querySelector('[name="name"]');
+    const elTime     = body.querySelector('[name="time"]');
+    const elCost     = body.querySelector('[name="cost"]');
+    const elProfit   = body.querySelector('[name="profit"]');
+    const elSource   = body.querySelector('[name="source"]');
+    const elType     = body.querySelector('[name="type"]');
+    const elAlias    = body.querySelector('[name="alias"]');
 
-    // ✅ Manual = 1, API = 2
-    body.querySelector('[name="source"]').value      = isClone ? 2 : 1;
+    if(elSupplier) elSupplier.value = cloneData.providerId || '';
+    if(elRemote)   elRemote.value   = cloneData.remoteId   || '';
+    if(elName)     elName.value     = cloneData.name || '';
+    if(elTime)     elTime.value     = cloneData.time || '';
+    if(elCost)     elCost.value     = Number(cloneData.credit || 0).toFixed(4);
+    if(elProfit)   elProfit.value   = '0.0000';
+    if(elType)     elType.value     = cloneData.serviceType;
 
-    body.querySelector('[name="type"]').value        = cloneData.serviceType;
-    body.querySelector('[name="alias"]').value       = slugify(cloneData.name || '');
+    // ✅ default source:
+    // clone => API (2)
+    // manual add => Manual (1)
+    if(elSource) elSource.value = isClone ? 2 : 1;
+
+    // ✅ alias: initial + auto-update (if user keeps it empty)
+    if(elAlias) elAlias.value = slugify(cloneData.name || '');
+    if(elName && elAlias){
+      elName.addEventListener('input', ()=>{
+        if(!elAlias.value) elAlias.value = slugify(elName.value);
+      });
+    }
 
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-    // ✅ Ensure API Provider selector exists
-    ensureApiProviderUI(body);
-
-    // bind change
-    const sourceSel = body.querySelector('[name="source"]');
-    if(sourceSel){
-      sourceSel.addEventListener('change', ()=> updateSourceUI(body));
+    // ✅ Fill SERVICE GROUPS dropdown
+    try{
+      const groups = await loadServiceGroups(cloneData.serviceType);
+      const sel = body.querySelector('[name="group_id"]');
+      if(sel){
+        sel.innerHTML =
+          `<option value="">Group</option>` +
+          groups.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+      }
+    }catch(err){
+      console.error('Failed to load service groups', err);
     }
-    updateSourceUI(body);
 
-    // if clone, preselect provider in dropdown
-    const apiSel = body.querySelector('[name="api_provider_id"]');
-    if(apiSel && isClone) apiSel.value = String(cloneData.providerId);
+    // ✅ API block logic
+    const apiBlock    = body.querySelector('.js-api-block');
+    const apiProvider = body.querySelector('.js-api-provider');
+    const apiService  = body.querySelector('.js-api-service');
 
-    // ✅ Load service groups dropdown (service_groups)
-    fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
-      .then(r=>r.json())
-      .then(rows=>{
-        const sel = body.querySelector('[name="group_id"]');
-        if(sel){
-          sel.innerHTML = `<option value="">Group</option>` + rows.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+    let servicesCache = new Map(); // id -> row
+
+    async function fillApiProviders(selectedId=''){
+      if(!apiProvider) return;
+      const rows = await loadApiProviders();
+      apiProvider.innerHTML =
+        `<option value="">Select provider</option>` +
+        rows.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
+      if(selectedId) apiProvider.value = selectedId;
+
+      // select2 (optional)
+      try{
+        jQuery(apiProvider).select2({ dropdownParent: jQuery('#serviceModal') });
+      }catch(e){}
+    }
+
+    async function fillApiServices(providerId, selectedRemoteId=''){
+      if(!apiService) return;
+
+      servicesCache.clear();
+      apiService.innerHTML = `<option value="">Select service</option>`;
+
+      if(!providerId) return;
+
+      const rows = await loadProviderServices(providerId, cloneData.serviceType);
+      rows.forEach(r=> servicesCache.set(String(r.id), r));
+
+      apiService.innerHTML =
+        `<option value="">Select service</option>` +
+        rows.map(r=>`<option value="${r.id}">${r.name}</option>`).join('');
+
+      if(selectedRemoteId) apiService.value = String(selectedRemoteId);
+
+      try{
+        jQuery(apiService).select2({ dropdownParent: jQuery('#serviceModal') });
+      }catch(e){}
+    }
+
+    function toggleApiUI(){
+      if(!apiBlock || !elSource) return;
+      const isApi = String(elSource.value) === '2';
+
+      apiBlock.classList.toggle('d-none', !isApi);
+
+      if(isApi){
+        // load providers first time
+        fillApiProviders(isClone ? String(cloneData.providerId) : '');
+        if(isClone){
+          // load services and preselect remote service
+          fillApiServices(String(cloneData.providerId), String(cloneData.remoteId));
+        }
+      }else{
+        // clear API selects when not API
+        if(apiProvider) apiProvider.innerHTML = '';
+        if(apiService) apiService.innerHTML = '';
+      }
+    }
+
+    if(elSource){
+      elSource.addEventListener('change', async ()=>{
+        toggleApiUI();
+      });
+    }
+
+    if(apiProvider){
+      apiProvider.addEventListener('change', async ()=>{
+        await fillApiServices(apiProvider.value, '');
+      });
+    }
+
+    if(apiService){
+      apiService.addEventListener('change', ()=>{
+        const row = servicesCache.get(String(apiService.value));
+        if(!row) return;
+
+        // (Optional) auto-fill basic fields when selecting API service
+        if(elName && !elName.value) elName.value = row.name || '';
+        if(elTime && !elTime.value) elTime.value = row.time || '';
+        if(elCost) {
+          const c = Number(row.credit || 0);
+          elCost.value = c.toFixed(4);
+          priceHelper.setCost(c);
+        }
+
+        // ✅ ensure hidden fields also updated (not required, backend maps api_* anyway)
+        if(elSupplier) elSupplier.value = apiProvider?.value || '';
+        if(elRemote)   elRemote.value   = apiService.value || '';
+
+        // alias if empty
+        if(elAlias && !elAlias.value && elName?.value){
+          elAlias.value = slugify(elName.value);
         }
       });
+    }
+
+    // run initial toggle
+    toggleApiUI();
 
     // ✅ Load USER GROUPS for pricing table
-    const userGroups = await loadUserGroups();
-    buildPricingTable(body, userGroups);
+    try{
+      const userGroups = await loadUserGroups();
+      buildPricingTable(body, userGroups);
+    }catch(err){
+      console.error('Failed to load user groups', err);
+    }
 
     // ✅ Add field handler (next)
     body.querySelector('#btnAddField')?.addEventListener('click', ()=>{
@@ -393,13 +467,11 @@
 
     ev.preventDefault();
 
-    // push summernote html
     const html = jQuery(form).find('#infoEditor').summernote('code');
-    const infoHidden = form.querySelector('#infoHidden');
-    if(infoHidden) infoHidden.value = html;
+    form.querySelector('#infoHidden').value = html;
 
     const btn = form.querySelector('[type="submit"]');
-    if(btn) btn.disabled = true;
+    btn.disabled = true;
 
     try{
       const res = await fetch(form.action,{
@@ -411,7 +483,7 @@
         body: new FormData(form)
       });
 
-      if(btn) btn.disabled = false;
+      btn.disabled = false;
 
       if(res.status === 422){
         const json = await res.json();
@@ -423,13 +495,11 @@
         bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
         location.reload();
       }else{
-        // ✅ Show server response snippet for debugging
-        const text = await res.text();
-        alert('Failed to save service\n\n' + text.slice(0, 800));
+        alert('Failed to save service');
       }
 
     }catch(e){
-      if(btn) btn.disabled = false;
+      btn.disabled = false;
       alert('Network error');
     }
   });

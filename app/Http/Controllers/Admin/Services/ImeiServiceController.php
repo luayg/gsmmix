@@ -134,6 +134,26 @@ foreach (['remote_id','supplier_id','api_provider_id','api_service_remote_id'] a
         'api_service_remote_id'=> 'nullable|integer',
     ]);
 
+
+        // ✅ FIX: alias must never be null (ConvertEmptyStringsToNull makes "" => null)
+$alias = $v['alias'] ?? null;
+
+if (!$alias) {
+    $alias = Str::slug($v['name'] ?? '');
+}
+if (!$alias) {
+    $alias = 'service-' . Str::random(8);
+}
+
+// ✅ ensure unique
+$base = $alias;
+$i = 1;
+while (ImeiService::where('alias', $alias)->exists()) {
+    $alias = $base . '-' . $i++;
+}
+
+$v['alias'] = $alias;
+
     // 2) طابق main_field_type إلى صيغة ثابتة (يمكن تعديلها لاحقاً حسب نظامك)
     $map = [
         'IMEI'   => 'imei',
@@ -180,7 +200,8 @@ foreach (['remote_id','supplier_id','api_provider_id','api_service_remote_id'] a
 
     // 5) احفظ كل شيء بالأعمدة الصحيحة (المشكلة الحالية أنها لا تُحفظ) :contentReference[oaicite:6]{index=6}
     ImeiService::create([
-        'alias'      => $v['alias'] ?? null,
+        'alias' => $v['alias'],
+
         'group_id'   => $v['group_id'] ?? null,
         'type'       => $v['type'],
 
