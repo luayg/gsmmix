@@ -109,18 +109,37 @@ class ServiceGroupController extends Controller
     /**
      * AJAX: إرجاع الخيارات بحسب النوع (imei|server|file)
      */
-    public function options(\Illuminate\Http\Request $request)
-{
-    $type = strtolower($request->get('type',''));
-    $q = \DB::table('service_groups')->select('id','name');
-    if (in_array($type,['imei','server','file'])) {
-        $map = ['imei'=>'imei_service','server'=>'server_service','file'=>'file_service'];
-        $q->where('type', $map[$type]);
+    public function options(Request $request)
+    {
+        $type = strtolower((string) $request->get('type', ''));
+
+        // خريطة الأنواع المعتمدة
+        $map = [
+            'imei'   => 'imei',
+            'server' => 'server',
+            'file'   => 'file',
+        ];
+
+        // إن لم يرسل type صحيح، رجع كل شيء
+        $q = ServiceGroup::query();
+
+        if (isset($map[$type])) {
+            // Case-insensitive match
+            $q->whereRaw('LOWER(type) = ?', [$map[$type]]);
+        }
+
+        $rows = $q->orderBy('ordering')->orderBy('id')->get(['id', 'name', 'type']);
+
+        return response()->json(
+            $rows->map(fn ($g) => [
+                'id'   => $g->id,
+                'name' => $g->name,
+                'type' => $g->type,
+            ])->values()
+        );
     }
-    $rows = $q->orderBy('ordering')->orderBy('name')->get();
-    return response()->json($rows);
 }
 
 
 
-}
+
