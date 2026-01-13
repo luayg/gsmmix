@@ -244,14 +244,12 @@
             <select class="form-select" id="apiServiceSelect">
               <option value="">Select service...</option>
             </select>
-            <div class="form-text">ابحث داخل القائمة أو اختر الخدمة ثم سيتم تعبئة Remote ID + Provider تلقائياً.</div>
+            <div class="form-text">اختر الخدمة وسيظهر السعر بجانب اسمها، ثم سيتم تعبئة Remote ID + Provider تلقائياً.</div>
           </div>
         </div>
       `;
 
-      // نحط الصندوق بعد source مباشرة
       sourceSel.closest('.mb-3, .form-group, div')?.appendChild(box);
-      // لو لم نجد container مناسب:
       if(!box.parentElement) scope.appendChild(box);
     }
 
@@ -259,6 +257,7 @@
     box.style.display = show ? '' : 'none';
   }
 
+  // ✅ Providers dropdown (بدون أسعار)
   async function loadApiProviders(scope){
     const sel = scope.querySelector('#apiProviderSelect');
     if(!sel) return;
@@ -268,44 +267,58 @@
 
     const rows = await res.json();
     sel.innerHTML = `<option value="">Select provider...</option>` +
-      (Array.isArray(rows) ? rows.map(p=>`<option value="${p.id}">${p.name}</option>`).join('') : '');
+      (Array.isArray(rows)
+        ? rows.map(r=>`<option value="${r.id}">${r.name}</option>`).join('')
+        : ''
+      );
   }
 
+  // ✅ Services dropdown (مع السعر بجانب الاسم)
   async function loadProviderServices(scope, providerId, type){
-    const sel = scope.querySelector('#apiServiceSelect');
-    if(!sel) return;
+  const sel = scope.querySelector('#apiServiceSelect');
+  if(!sel) return;
 
-    sel.innerHTML = `<option value="">Loading...</option>`;
+  sel.innerHTML = `<option value="">Loading...</option>`;
 
-    const url = new URL("{{ route('admin.services.clone.provider_services') }}", window.location.origin);
-    url.searchParams.set('provider_id', providerId);
-    url.searchParams.set('type', type);
+  const url = new URL("{{ route('admin.services.clone.provider_services') }}", window.location.origin);
+  url.searchParams.set('provider_id', providerId);
+  url.searchParams.set('type', type);
 
-    const res = await fetch(url.toString());
-    if(!res.ok){
-      sel.innerHTML = `<option value="">Failed to load</option>`;
-      return;
-    }
-
-    const rows = await res.json();
-    if(!Array.isArray(rows) || rows.length === 0){
-      sel.innerHTML = `<option value="">No services found</option>`;
-      return;
-    }
-
-    // ✅✅ هنا التعديل: عرض السعر بجانب اسم الخدمة
-    sel.innerHTML = `<option value="">Select service...</option>` +
-      rows.map(s=>{
-        const creditNum = Number(s.credit || 0);
-        const creditTxt = isNaN(creditNum) ? '0.0000' : creditNum.toFixed(4);
-
-        return `<option value="${s.remote_id}"
-          data-name="${(s.name||'').replaceAll('"','&quot;')}"
-          data-credit="${creditTxt}"
-          data-time="${(s.time||'').replaceAll('"','&quot;')}"
-        >${s.name} — ${creditTxt} Credits (#${s.remote_id})</option>`;
-      }).join('');
+  const res = await fetch(url.toString());
+  if(!res.ok){
+    sel.innerHTML = `<option value="">Failed to load</option>`;
+    return;
   }
+
+  const rows = await res.json();
+  if(!Array.isArray(rows) || rows.length === 0){
+    sel.innerHTML = `<option value="">No services found</option>`;
+    return;
+  }
+
+  sel.innerHTML = `<option value="">Select service...</option>` + rows.map(s=>{
+    // ✅ حماية من undefined + دعم أسماء حقول مختلفة
+    const rid = (s.remote_id ?? s.service_id ?? s.id ?? '');
+    const name = (s.name ?? '').toString();
+    const time = (s.time ?? s.delivery_time ?? '').toString();
+
+    const creditNum = Number(s.credit ?? s.cost ?? 0);
+    const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
+
+    const ridTxt  = (rid !== '' && rid !== null && rid !== undefined) ? ` (#${rid})` : '';
+    const timeTxt = time ? ` — ${time}` : '';
+
+    // ✅ لو rid غير موجود نمنع بناء option خاطئ
+    const valueRid = (rid !== '' && rid !== null && rid !== undefined) ? rid : '';
+
+    return `<option value="${valueRid}"
+      data-name="${name.replaceAll('"','&quot;')}"
+      data-credit="${creditTxt}"
+      data-time="${time.replaceAll('"','&quot;')}"
+    >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
+  }).join('');
+}
+
 
   // ✅ open modal
   document.addEventListener('click', async (e)=>{
@@ -324,7 +337,6 @@
     await ensureSummernote();
     await ensureSelect2();
 
-    // ✅ Summernote
     jQuery(body).find('#infoEditor').summernote({
       placeholder:'Description, notes, terms…',
       height:320
@@ -346,7 +358,6 @@
       serviceType: (btn.dataset.serviceType || 'imei').toLowerCase()
     };
 
-    // header
     document.getElementById('serviceModalSubtitle').innerText =
       isClone
         ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`
@@ -363,7 +374,7 @@
     body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
     body.querySelector('[name="profit"]').value      = '0.0000';
 
-    // ✅ source: Manual=1 ، API/Clone=2
+    // source: Manual=1 ، API/Clone=2
     body.querySelector('[name="source"]').value      = isClone ? 2 : 1;
 
     body.querySelector('[name="type"]').value        = cloneData.serviceType;
@@ -372,7 +383,7 @@
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-    // ✅ Service groups dropdown
+    // groups
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
       .then(r=>r.json())
       .then(rows=>{
@@ -384,44 +395,40 @@
         }
       });
 
-    // ✅ Load USER GROUPS for pricing table
+    // user group pricing table
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
 
-    // ✅ API UI
+    // API UI
     ensureApiUI(body);
-
-    // عند تغيير Source: إظهار/إخفاء apiBox
     body.querySelector('[name="source"]')?.addEventListener('change', ()=>{
       ensureApiUI(body);
     });
 
-    // حمّل الـ providers ثم اربط events
-    try{
-      await loadApiProviders(body);
-    }catch(e){}
+    // load providers
+    try{ await loadApiProviders(body); }catch(e){}
 
     const apiProviderSel = body.querySelector('#apiProviderSelect');
     const apiServiceSel  = body.querySelector('#apiServiceSelect');
 
     apiProviderSel?.addEventListener('change', async ()=>{
-      const providerId = apiProviderSel.value;
-      if(!providerId){
+      const pid = apiProviderSel.value;
+      if(!pid){
         apiServiceSel.innerHTML = `<option value="">Select service...</option>`;
         return;
       }
-      await loadProviderServices(body, providerId, cloneData.serviceType);
+      await loadProviderServices(body, pid, cloneData.serviceType);
     });
 
     apiServiceSel?.addEventListener('change', ()=>{
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
 
-      // عند اختيار خدمة API: عبّي supplier_id و remote_id
+      // map provider/service to hidden fields
       body.querySelector('[name="supplier_id"]').value = apiProviderSel.value;
       body.querySelector('[name="remote_id"]').value   = opt.value;
 
-      // عبّي الاسم والتكلفة والوقت
+      // autofill
       const name = opt.dataset.name || '';
       const credit = Number(opt.dataset.credit || 0);
       const time = opt.dataset.time || '';
@@ -431,6 +438,7 @@
         body.querySelector('[name="alias"]').value = slugify(name);
       }
       if(time) body.querySelector('[name="time"]').value = time;
+
       if(!isNaN(credit) && credit >= 0){
         body.querySelector('[name="cost"]').value = credit.toFixed(4);
         priceHelper.setCost(credit);
