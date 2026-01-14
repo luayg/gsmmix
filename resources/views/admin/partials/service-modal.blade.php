@@ -15,7 +15,6 @@
   #serviceModal .tab-pane{display:none}
   #serviceModal .tab-pane.active{display:block}
 
-  /* Pricing layout */
   #serviceModal .pricing-row{border-bottom:1px solid #eee}
   #serviceModal .pricing-title{background:#f3f3f3;padding:.55rem .75rem;font-weight:600}
   #serviceModal .pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.65rem .75rem}
@@ -64,8 +63,15 @@
   @push('scripts')
 <script>
 (function(){
-  // نحفظ رابط الصفحة الحالية قبل فتح المودال (لمنع الرجوع للداشبورد بعد create)
-  let __serviceModalReturnUrl = null;
+
+  // ✅ helper: يمنع ظهور undefined/null كنص
+  const clean = (v) => {
+    if (v === undefined || v === null) return '';
+    const s = String(v);
+    if (s === 'undefined' || s === 'null') return '';
+    return s;
+  };
+  const escAttr = (s) => clean(s).replaceAll('"','&quot;');
 
   // ✅ Tabs
   function initTabs(scope){
@@ -82,7 +88,7 @@
     });
   }
 
-  // ✅ helpers
+  // ✅ Load libs once
   const loadCssOnce=(id,href)=>{ if(document.getElementById(id)) return;
     const l=document.createElement('link'); l.id=id; l.rel='stylesheet'; l.href=href; document.head.appendChild(l);
   };
@@ -125,27 +131,25 @@
     const convertedPreview = scope.querySelector('#convertedPricePreview');
 
     function recalc(){
-      const c = Number(cost?.value||0);
-      const p = Number(profit?.value||0);
-      const isPercent = (String(pType?.value||'1') == '2');
+      const c = Number(cost.value||0);
+      const p = Number(profit.value||0);
+      const isPercent = (pType.value == '2');
       const price = isPercent ? (c + (c*p/100)) : (c+p);
 
       if(pricePreview) pricePreview.value = price.toFixed(4);
       if(convertedPreview) convertedPreview.value = price.toFixed(4);
 
-      const badge = document.getElementById('badgePrice');
-      if(badge) badge.innerText = 'Price: ' + price.toFixed(4) + ' Credits';
+      document.getElementById('badgePrice').innerText =
+        'Price: ' + price.toFixed(4) + ' Credits';
     }
 
     [cost,profit,pType].forEach(el=> el && el.addEventListener('input', recalc));
     recalc();
 
-    return {
-      setCost(v){ if(cost){ cost.value = Number(v||0).toFixed(4); } recalc(); }
-    };
+    return { setCost(v){ cost.value = Number(v||0).toFixed(4); recalc(); } };
   }
 
-  // ✅ Build pricing table from USER GROUPS
+  // ✅ USER GROUPS pricing table
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
     const hidden = scope.querySelector('#pricingTableHidden');
@@ -221,82 +225,7 @@
     return rows;
   }
 
-  // ✅ Main Field: sync label + build main_field JSON
-  function initMainFieldSync(scope){
-    const typeSel = scope.querySelector('[name="main_field_type"]');
-    const labelIn = scope.querySelector('[name="main_field_label"]');
-    const allowedSel = scope.querySelector('[name="allowed_characters"]');
-    const minIn = scope.querySelector('[name="minimum"]');
-    const maxIn = scope.querySelector('[name="maximum"]');
-    const hidden = scope.querySelector('[name="main_field"]');
-
-    if(labelIn){
-      labelIn.addEventListener('input', ()=>{ labelIn.dataset.userEdited = '1'; });
-    }
-
-    function labelFromType(v){
-      const val = String(v||'').toLowerCase();
-      const map = {
-        imei: 'IMEI',
-        serial: 'Serial',
-        number: 'Number',
-        email: 'Email',
-        text: 'Text'
-      };
-      return map[val] || (val ? (val.charAt(0).toUpperCase()+val.slice(1)) : 'IMEI');
-    }
-
-    function syncLabel(){
-      if(!typeSel || !labelIn) return;
-      // إذا المستخدم لم يعدّل الليبل يدويًا، غيّره حسب النوع
-      if(!labelIn.value || labelIn.dataset.userEdited !== '1'){
-        labelIn.value = labelFromType(typeSel.value);
-      }
-    }
-
-    function syncHiddenJson(){
-      if(!hidden) return; // إذا غير موجود، تجاهل
-      const t = String(typeSel?.value || 'imei').toLowerCase();
-      const allowed = String(allowedSel?.value || 'numbers');
-      const min = (minIn && minIn.value !== '') ? Number(minIn.value) : null;
-      const max = (maxIn && maxIn.value !== '') ? Number(maxIn.value) : null;
-      const lbl = String(labelIn?.value || labelFromType(t));
-
-      const obj = {
-        type: t,
-        rules: {
-          allowed: allowed
-        },
-        label: {
-          en: lbl,
-          fallback: lbl
-        }
-      };
-      if(Number.isFinite(min)) obj.rules.minimum = min;
-      if(Number.isFinite(max)) obj.rules.maximum = max;
-
-      hidden.value = JSON.stringify(obj);
-    }
-
-    // initial
-    syncLabel();
-    syncHiddenJson();
-
-    // events
-    typeSel?.addEventListener('change', ()=>{ syncLabel(); syncHiddenJson(); });
-    [labelIn, allowedSel, minIn, maxIn].forEach(el=>{
-      el?.addEventListener('input', syncHiddenJson);
-      el?.addEventListener('change', syncHiddenJson);
-    });
-  }
-
-  // ✅ API UI + Load services
-  function insertAfter(ref, el){
-    if(!ref || !ref.parentNode) return;
-    if(ref.nextSibling) ref.parentNode.insertBefore(el, ref.nextSibling);
-    else ref.parentNode.appendChild(el);
-  }
-
+  // ✅ API UI
   function ensureApiUI(scope){
     const sourceSel = scope.querySelector('[name="source"]');
     if(!sourceSel) return;
@@ -323,32 +252,25 @@
           </div>
         </div>
       `;
-
-      const wrap = sourceSel.closest('.mb-3') || sourceSel.closest('.form-group') || sourceSel.parentElement;
-      if(wrap) insertAfter(wrap, box);
-      else scope.appendChild(box);
+      sourceSel.closest('.mb-3, .form-group, div')?.appendChild(box);
+      if(!box.parentElement) scope.appendChild(box);
     }
 
-    const show = (Number(sourceSel.value) === 2);
-    box.style.display = show ? '' : 'none';
+    box.style.display = (Number(sourceSel.value) === 2) ? '' : 'none';
   }
 
   async function loadApiProviders(scope){
     const sel = scope.querySelector('#apiProviderSelect');
     if(!sel) return;
 
-    const res = await fetch("{{ route('admin.apis.options') ?? '' }}");
+    const res = await fetch("{{ route('admin.apis.options') }}");
     if(!res.ok) return;
 
     const rows = await res.json();
     sel.innerHTML = `<option value="">Select provider...</option>` +
-      (Array.isArray(rows)
-        ? rows.map(r=>`<option value="${r.id}">${r.name}</option>`).join('')
-        : ''
-      );
+      (Array.isArray(rows) ? rows.map(r=>`<option value="${r.id}">${clean(r.name)}</option>`).join('') : '');
   }
 
-  // ✅ Services dropdown (مع السعر + بدون undefined)
   async function loadProviderServices(scope, providerId, type){
     const sel = scope.querySelector('#apiServiceSelect');
     if(!sel) return;
@@ -371,29 +293,22 @@
       return;
     }
 
-    sel.innerHTML =
-      `<option value="">Select service...</option>` +
-      rows.map(s=>{
-        // حماية من اختلاف أسماء الحقول
-        const rid = (s.remote_id ?? s.service_id ?? s.id ?? null);
-        const name = (s.name ?? '').toString();
-        const time = (s.time ?? s.delivery_time ?? '').toString();
+    sel.innerHTML = `<option value="">Select service...</option>` + rows.map(s=>{
+      const rid  = clean(s.remote_id ?? s.id ?? s.service_id);
+      const name = clean(s.name);
+      const time = clean(s.time ?? s.delivery_time);
+      const creditNum = Number(s.credit ?? s.cost ?? 0);
+      const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
 
-        const creditNum = Number(s.credit ?? s.cost ?? 0);
-        const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
+      const timeTxt = time ? ` — ${time}` : '';
+      const ridTxt  = rid ? ` (#${rid})` : '';
 
-        const ridTxt  = (rid !== null && rid !== undefined && rid !== '') ? ` (#${rid})` : '';
-        const timeTxt = time ? ` — ${time}` : '';
-
-        // إذا remote id غير موجود: نخلي value فاضي (وبالتالي لن يختارها)
-        const valueRid = (rid !== null && rid !== undefined && rid !== '') ? rid : '';
-
-        return `<option value="${valueRid}"
-          data-name="${name.replaceAll('"','&quot;')}"
-          data-credit="${creditTxt}"
-          data-time="${time.replaceAll('"','&quot;')}"
-        >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
-      }).join('');
+      return `<option value="${rid}"
+        data-name="${escAttr(name)}"
+        data-credit="${creditTxt}"
+        data-time="${escAttr(time)}"
+      >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
+    }).join('');
   }
 
   // ✅ open modal
@@ -403,8 +318,8 @@
 
     e.preventDefault();
 
-    // حفظ رابط الصفحة الحالية (مع الفلاتر) قبل فتح المودال
-    __serviceModalReturnUrl = window.location.href;
+    // حفظ رابط الصفحة الحالية (عشان ما يوديك للداشبورد)
+    window.__serviceReturnUrl = window.location.href;
 
     const body = document.getElementById('serviceModalBody');
     const tpl  = document.getElementById('serviceCreateTpl');
@@ -416,10 +331,7 @@
     await ensureSummernote();
     await ensureSelect2();
 
-    jQuery(body).find('#infoEditor').summernote({
-      placeholder:'Description, notes, terms…',
-      height:320
-    });
+    jQuery(body).find('#infoEditor').summernote({ placeholder:'Description, notes, terms…', height:320 });
 
     const providerId = btn.dataset.providerId;
     const remoteId   = btn.dataset.remoteId;
@@ -438,56 +350,54 @@
     };
 
     document.getElementById('serviceModalSubtitle').innerText =
-      isClone
-        ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`
-        : `Provider: — | Remote ID: —`;
+      isClone ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`
+              : `Provider: — | Remote ID: —`;
 
-    document.getElementById('badgeType').innerText =
-      `Type: ${cloneData.serviceType.toUpperCase()}`;
+    document.getElementById('badgeType').innerText = `Type: ${cloneData.serviceType.toUpperCase()}`;
 
-    // fill fields
-    body.querySelector('[name="supplier_id"]') && (body.querySelector('[name="supplier_id"]').value = isClone ? cloneData.providerId : '');
-    body.querySelector('[name="remote_id"]') && (body.querySelector('[name="remote_id"]').value   = isClone ? cloneData.remoteId : '');
-    body.querySelector('[name="name"]') && (body.querySelector('[name="name"]').value        = cloneData.name);
-    body.querySelector('[name="time"]') && (body.querySelector('[name="time"]').value        = cloneData.time || '');
-    body.querySelector('[name="cost"]') && (body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4));
-    body.querySelector('[name="profit"]') && (body.querySelector('[name="profit"]').value      = '0.0000');
+    body.querySelector('[name="supplier_id"]').value = isClone ? cloneData.providerId : '';
+    body.querySelector('[name="remote_id"]').value   = isClone ? cloneData.remoteId : '';
+    body.querySelector('[name="name"]').value        = cloneData.name;
+    body.querySelector('[name="time"]').value        = cloneData.time || '';
+    body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
+    body.querySelector('[name="profit"]').value      = '0.0000';
 
-    // source: Manual=1 ، API/Clone=2
-    body.querySelector('[name="source"]') && (body.querySelector('[name="source"]').value      = isClone ? 2 : 1);
-
-    body.querySelector('[name="type"]') && (body.querySelector('[name="type"]').value        = cloneData.serviceType);
-    body.querySelector('[name="alias"]') && (body.querySelector('[name="alias"]').value       = slugify(cloneData.name || ''));
+    body.querySelector('[name="source"]').value      = isClone ? 2 : 1;
+    body.querySelector('[name="type"]').value        = cloneData.serviceType;
+    body.querySelector('[name="alias"]').value       = slugify(cloneData.name || '');
 
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-    // ✅ sync main field (Serial/IMEI..)
-    initMainFieldSync(body);
+    // ✅ (ملاحظة 2) ربط main_field_type بتحديث main_field_label
+    const mainTypeSel  = body.querySelector('[name="main_field_type"]');
+    const mainLabelInp = body.querySelector('[name="main_field_label"]');
+    if(mainTypeSel && mainLabelInp){
+      const syncLabel = ()=>{
+        const txt = mainTypeSel.selectedOptions?.[0]?.textContent || mainTypeSel.value;
+        mainLabelInp.value = clean(txt) || clean(mainTypeSel.value);
+      };
+      mainTypeSel.addEventListener('change', syncLabel);
+      syncLabel(); // initial
+    }
 
-    // ✅ Service groups dropdown
+    // groups dropdown
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
       .then(r=>r.json())
       .then(rows=>{
         const sel = body.querySelector('[name="group_id"]');
         if(sel){
-          sel.innerHTML =
-            `<option value="">Group</option>` +
-            (Array.isArray(rows) ? rows.map(g=>`<option value="${g.id}">${g.name}</option>`).join('') : '');
+          sel.innerHTML = `<option value="">Group</option>` +
+            (Array.isArray(rows) ? rows.map(g=>`<option value="${g.id}">${clean(g.name)}</option>`).join('') : '');
         }
       });
 
-    // ✅ Load USER GROUPS for pricing table
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
 
-    // ✅ API UI
     ensureApiUI(body);
-    body.querySelector('[name="source"]')?.addEventListener('change', ()=>{
-      ensureApiUI(body);
-    });
+    body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
 
-    // load providers
     try{ await loadApiProviders(body); }catch(e){}
 
     const apiProviderSel = body.querySelector('#apiProviderSelect');
@@ -506,26 +416,20 @@
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
 
-      // map provider/service to hidden fields
-      body.querySelector('[name="supplier_id"]') && (body.querySelector('[name="supplier_id"]').value = apiProviderSel.value);
-      body.querySelector('[name="remote_id"]') && (body.querySelector('[name="remote_id"]').value   = opt.value);
+      body.querySelector('[name="supplier_id"]').value = apiProviderSel.value;
+      body.querySelector('[name="remote_id"]').value   = opt.value;
 
-      // autofill
-      const name = opt.dataset.name || '';
+      const name = clean(opt.dataset.name);
       const credit = Number(opt.dataset.credit || 0);
-      const time = opt.dataset.time || '';
+      const time = clean(opt.dataset.time);
 
-      if(name && body.querySelector('[name="name"]')) {
+      if(name){
         body.querySelector('[name="name"]').value = name;
-      }
-      if(name && body.querySelector('[name="alias"]')) {
         body.querySelector('[name="alias"]').value = slugify(name);
       }
-      if(time && body.querySelector('[name="time"]')) {
-        body.querySelector('[name="time"]').value = time;
-      }
+      if(time) body.querySelector('[name="time"]').value = time;
 
-      if(!isNaN(credit) && credit >= 0 && body.querySelector('[name="cost"]')){
+      if(Number.isFinite(credit) && credit >= 0){
         body.querySelector('[name="cost"]').value = credit.toFixed(4);
         priceHelper.setCost(credit);
       }
@@ -534,16 +438,15 @@
     bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
   });
 
-  // ✅ Submit
+  // ✅ Submit (ملاحظة 3) اعترض أي فورم داخل المودال حتى لو بدون data-ajax
   document.addEventListener('submit', async (ev)=>{
-    const form = ev.target.closest('#serviceModal form[data-ajax="1"]');
-    if(!form) return;
+    const form = ev.target;
+    if(!form || !form.matches('#serviceModal form')) return;
 
     ev.preventDefault();
 
     const html = jQuery(form).find('#infoEditor').summernote('code');
-    const infoHidden = form.querySelector('#infoHidden');
-    if(infoHidden) infoHidden.value = html;
+    form.querySelector('#infoHidden').value = html;
 
     const btn = form.querySelector('[type="submit"]');
     if(btn) btn.disabled = true;
@@ -553,7 +456,7 @@
         method: form.method,
         headers:{
           'X-Requested-With':'XMLHttpRequest',
-          'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]')?.content || ''
+          'X-CSRF-TOKEN':document.querySelector('meta[name="csrf-token"]').content
         },
         body: new FormData(form)
       });
@@ -567,11 +470,9 @@
       }
 
       if(res.ok){
-        bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
-
-        // ✅ ارجع لنفس الصفحة بدل الداشبورد
-        const back = __serviceModalReturnUrl || window.location.href;
-        window.location.href = back;
+        bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
+        // ارجع لنفس الصفحة (نفس الفلاتر/الباجينيشن)
+        window.location.href = window.__serviceReturnUrl || window.location.href;
       }else{
         const t = await res.text();
         alert('Failed to save service\n\n' + t);

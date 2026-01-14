@@ -87,7 +87,6 @@ class CloneController extends Controller
     $type       = strtolower($request->get('type','imei'));
     $q          = trim((string)$request->get('q',''));
 
-    // استخدم نفس الموديلات الموجودة عندك لضمان الجدول والأعمدة الصحيحة
     $model = match ($type) {
         'server' => \App\Models\RemoteServerService::class,
         'file'   => \App\Models\RemoteFileService::class,
@@ -95,12 +94,13 @@ class CloneController extends Controller
     };
 
     $rows = $model::query()
-        ->where('api_id', $providerId)       // مشروعك يستخدم api_id
+        ->where('api_id', $providerId)
         ->when($q !== '', fn($qq)=>$qq->where('name','like',"%{$q}%"))
         ->orderBy('name')
         ->limit(500)
         ->get([
-            'remote_id as id',
+            'remote_id',
+            'remote_id as id',     // مهم لبعض الـ plugins
             'name',
             'price as credit',
             'time',
@@ -109,6 +109,7 @@ class CloneController extends Controller
 
     return response()->json($rows);
 }
+
 
 
 
