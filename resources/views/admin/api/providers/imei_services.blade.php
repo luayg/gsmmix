@@ -84,29 +84,23 @@
         </thead>
 
         <tbody>
-        @forelse($groups as $g)
-          @foreach(($g['SERVICES'] ?? []) as $rid => $svc)
-            @php
-              $remoteId = $svc['SERVICEID'] ?? $rid;
-              $name     = $svc['SERVICENAME'] ?? '';
-              $credit   = $svc['CREDIT'] ?? 0;
-              $time     = $svc['TIME'] ?? '';
-            @endphp
-            <tr data-remote-id="{{ $remoteId }}">
-              <td>
-                <input type="checkbox" class="svc-check"
-                       value="{{ $remoteId }}"
-                       data-group="{{ $g['GROUPNAME'] ?? '' }}"
-                       data-name="{{ $name }}"
-                       data-credit="{{ $credit }}"
-                       data-time="{{ $time }}">
-              </td>
+        @forelse($groups as $groupName => $items)
+  @foreach($items as $svc)
+    @php
+      $remoteId = $svc->remote_id;
+      $name     = $svc->name ?? '';
+      $credit   = $svc->credit ?? 0;
+      $time     = $svc->time ?? '';
+    @endphp
+    <tr data-remote-id="{{ $remoteId }}">
+      ...
+      <td>{{ $groupName }}</td>
+      <td><code>{{ $remoteId }}</code></td>
+      <td style="min-width:520px;">{{ $name }}</td>
+      <td>{{ $credit }}</td>
+      <td>{{ $time }}</td>
+      ...
 
-              <td>{{ $g['GROUPNAME'] ?? '' }}</td>
-              <td><code>{{ $remoteId }}</code></td>
-              <td style="min-width:520px;">{{ $name }}</td>
-              <td>{{ $credit }}</td>
-              <td>{{ $time }}</td>
 
               <td class="text-end">
                 {{-- Clone single service (existing behavior) --}}

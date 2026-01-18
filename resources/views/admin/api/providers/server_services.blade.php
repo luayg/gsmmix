@@ -3,21 +3,34 @@
 
 @section('content')
 <div class="card">
-  <div class="card-header"><h5 class="mb-0">{{ $provider->name }} | SERVER services</h5></div>
+  <div class="card-header">
+    <h5 class="mb-0">{{ $provider->name }} | SERVER services</h5>
+  </div>
+
   <div class="card-body p-0">
     <table class="table table-sm table-striped mb-0">
-      <thead><tr><th>Group</th><th>Remote ID</th><th>Name</th><th>Credits</th><th>Time</th><th class="text-end">Action</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Group</th>
+          <th style="width:110px">Remote ID</th>
+          <th>Name</th>
+          <th style="width:90px">Credits</th>
+          <th style="width:110px">Time</th>
+          <th class="text-end">Action</th>
+        </tr>
+      </thead>
+
       <tbody>
-      @forelse($groups as $g)
-        @foreach(($g['SERVICES'] ?? []) as $rid => $svc)
+      @forelse($groups as $groupName => $items)
+        @foreach($items as $svc)
           @php
-            $remoteId = $svc['SERVICEID'] ?? $rid;
-            $name     = $svc['SERVICENAME'] ?? '';
-            $credit   = $svc['CREDIT'] ?? 0;
-            $time     = $svc['TIME'] ?? '';
+            $remoteId = $svc->remote_id;
+            $name     = $svc->name ?? '';
+            $credit   = $svc->credit ?? 0;
+            $time     = $svc->time ?? '';
           @endphp
           <tr>
-            <td>{{ $g['GROUPNAME'] ?? '' }}</td>
+            <td>{{ $groupName }}</td>
             <td>{{ $remoteId }}</td>
             <td>{{ $name }}</td>
             <td>{{ $credit }}</td>
