@@ -3,13 +3,18 @@
 namespace App\Services\Providers\Adapters;
 
 use App\Models\ApiProvider;
+use App\Models\RemoteFileService;
+use App\Models\RemoteImeiService;
+use App\Models\RemoteServerService;
 use App\Services\Providers\ProviderAdapterInterface;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 class GsmhubAdapter implements ProviderAdapterInterface
 {
-    public function type(): string { return 'gsmhub'; }
+    public function type(): string
+    {
+        return 'gsmhub';
+    }
 
     public function supportsCatalog(string $serviceType): bool
     {
@@ -17,13 +22,18 @@ class GsmhubAdapter implements ProviderAdapterInterface
     }
 
     /**
-     * ✅ Fix endpoint:
-     * imei.us يطلب منك وضع base URL = https://imei.us/public
-     * لكن API endpoint الحقيقي يكون عادةً: https://imei.us/api/index.php (بدون /public)
+     * imei.us يطلب base URL = https://imei.us/public
+     * لكن endpoint الحقيقي للـ API عادةً: https://imei.us/api/index.php
+     *
+     * ✅ يدعم الحالات:
+     * - https://imei.us/public
+     * - https://imei.us
+     * - https://imei.us/api/index.php
+     * - أي رابط ينتهي بملف php يعتبر endpoint جاهز.
      */
     protected function endpoint(ApiProvider $p): string
     {
-        $base = rtrim((string)$p->url, '/');
+        $base = rtrim((string) $p->url, '/');
 
         // إذا المستخدم كتب ملف php مباشرة
         if (preg_match('~/[^/]+\.php$~i', $base)) {
@@ -31,10 +41,9 @@ class GsmhubAdapter implements ProviderAdapterInterface
         }
 
         // إذا انتهى بـ /public -> احذف public من المسار
-        // https://imei.us/public => https://imei.us
         if (preg_match('~/public$~i', $base)) {
             $base = preg_replace('~/public$~i', '', $base);
-            $base = rtrim((string)$base, '/');
+            $base = rtrim((string) $base, '/');
         }
 
         return $base . '/api/index.php';
@@ -46,8 +55,8 @@ class GsmhubAdapter implements ProviderAdapterInterface
 
         $xml = '<PARAMETERS>';
         foreach ($params as $k => $v) {
-            $tag = strtoupper((string)$k);
-            $val = htmlspecialchars((string)$v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $tag = strtoupper((string) $k);
+            $val = htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $xml .= "<{$tag}>{$val}</{$tag}>";
         }
         $xml .= '</PARAMETERS>';
@@ -71,7 +80,7 @@ class GsmhubAdapter implements ProviderAdapterInterface
             ->timeout(60)
             ->post($url, $payload);
 
-        // ✅ Debug: HTTP
+        // Debug HTTP
         logger()->info('GSMHUB HTTP', [
             'provider_id'   => $p->id,
             'url'           => $url,
@@ -91,16 +100,20 @@ class GsmhubAdapter implements ProviderAdapterInterface
         ];
     }
 
+    /**
+     * بعض المزودين حساسون لحالة اسم action (lower/upper)
+     * هنا نعمل fallback بسيط.
+     */
     protected function callWithFallback(ApiProvider $p, string $action, array $params = []): array
     {
         $raw = $this->call($p, $action, $params);
 
+        // Non-JSON response
         if (isset($raw['_body'])) return $raw;
 
         $err  = data_get($raw, 'ERROR.0.MESSAGE');
         $list = $this->extractList($raw);
 
-        // بعض السيرفرات حساسة لحالة الأحرف في action
         if ($err || (is_array($list) && count($list) === 0)) {
             $alt = ucfirst(strtolower($action));
             if ($alt !== $action) {
@@ -116,6 +129,9 @@ class GsmhubAdapter implements ProviderAdapterInterface
         return $raw;
     }
 
+    /**
+     * استخراج LIST من أكثر من شكل شائع.
+     */
     protected function extractList(array $raw)
     {
         $candidates = [
@@ -154,11 +170,12 @@ class GsmhubAdapter implements ProviderAdapterInterface
             return 0.0;
         }
 
+        // حسب ما يظهر في response عندك: SUCCESS[0].AccoutInfo.credit
         $creditraw = data_get($raw, 'SUCCESS.0.AccoutInfo.creditraw');
-        if ($creditraw !== null) return (float)$creditraw;
+        if ($creditraw !== null) return (float) $creditraw;
 
         $credit = data_get($raw, 'SUCCESS.0.AccoutInfo.credit');
-        return $credit !== null ? (float)$credit : 0.0;
+        return $credit !== null ? (float) $credit : 0.0;
     }
 
     public function syncCatalog(ApiProvider $provider, string $serviceType): int
@@ -184,10 +201,10 @@ class GsmhubAdapter implements ProviderAdapterInterface
 
         if (isset($raw['_body'])) {
             logger()->error("GSMHUB {$action} NON_JSON_RESPONSE", [
-                'provider_id'  => $provider->id,
-                'http'         => $raw['_http'] ?? null,
-                'content_type' => $raw['_content_type'] ?? null,
-                'body_head'    => substr((string)($raw['_body'] ?? ''), 0, 500),
+                'provider_id'   => $provider->id,
+                'http'          => $raw['_http'] ?? null,
+                'content_type'  => $raw['_content_type'] ?? null,
+                'body_head'     => substr((string)($raw['_body'] ?? ''), 0, 500),
             ]);
             return 0;
         }
@@ -209,70 +226,32 @@ class GsmhubAdapter implements ProviderAdapterInterface
             return 0;
         }
 
-        // LIST قد تكون:
-        // 1) Groups: [ {GROUPNAME:..., SERVICES:[...]}, ...]
-        // 2) Map خدمات مباشر: LIST[serviceId] = {...SERVICEID...}
-        // 3) List خدمات مباشر: [ {...SERVICEID...}, {...} ]
-        if ($this->looksLikeServiceMapOrFlatList($list)) {
-            return $this->bulkUpsertServicesFlat($provider->id, $serviceType, $list);
+        // LIST قد يكون:
+        // 1) Groups: LIST[groupName] = {GROUPNAME, SERVICES{...}}
+        // 2) Map خدمات مباشر: LIST[serviceId] = {SERVICEID,...}
+        if ($this->looksLikeServiceMap($list)) {
+            return $this->upsertServiceMap($provider->id, $serviceType, $list);
         }
 
-        return $this->bulkUpsertServicesGrouped($provider->id, $serviceType, $list);
+        return $this->upsertGroupedList($provider->id, $serviceType, $list);
     }
 
-    protected function looksLikeServiceMapOrFlatList(array $list): bool
+    protected function looksLikeServiceMap(array $list): bool
     {
         $first = reset($list);
-        if (is_array($first) && (isset($first['SERVICEID']) || isset($first['SERVICENAME']) || isset($first['CREDIT']))) {
-            return true;
-        }
-        return false;
+        return is_array($first) && (isset($first['SERVICEID']) || isset($first['SERVICENAME']));
     }
 
-    protected function tableFor(string $serviceType): ?string
+    protected function upsertServiceMap(int $apiId, string $serviceType, array $map): int
     {
-        return match ($serviceType) {
-            'imei'   => 'remote_imei_services',
-            'server' => 'remote_server_services',
-            'file'   => 'remote_file_services',
-            default  => null,
-        };
-    }
-
-    protected function updateColumnsFor(string $serviceType): array
-    {
-        return match ($serviceType) {
-            'imei'   => ['name','group_name','price','time','info','additional_data','updated_at'],
-            'server' => ['name','group_name','price','time','info','additional_data','updated_at'],
-            'file'   => ['name','group_name','price','time','info','allowed_extensions','additional_data','updated_at'],
-            default  => ['updated_at'],
-        };
-    }
-
-    /**
-     * ✅ أسرع بكثير من updateOrCreate (يحميك من timeout في الويب)
-     * يدعم Map و Flat list:
-     * - Map: [ "143" => {...}, "560" => {...} ]
-     * - Flat list: [ {...}, {...} ]
-     */
-    protected function bulkUpsertServicesFlat(int $apiId, string $serviceType, array $list, int $chunkSize = 500): int
-    {
-        $table = $this->tableFor($serviceType);
-        if (!$table) return 0;
-
-        $updateColumns = $this->updateColumnsFor($serviceType);
-
-        $now = now()->toDateTimeString();
-        $buffer = [];
-        $count = 0;
-
-        foreach ($list as $srv) {
+        $rows = [];
+        foreach ($map as $srv) {
             if (!is_array($srv)) continue;
 
             $remoteId = (string)($srv['SERVICEID'] ?? $srv['id'] ?? '');
             if ($remoteId === '') continue;
 
-            $row = [
+            $rows[] = [
                 'api_id'          => $apiId,
                 'remote_id'       => $remoteId,
                 'name'            => (string)($srv['SERVICENAME'] ?? $srv['name'] ?? ''),
@@ -281,53 +260,25 @@ class GsmhubAdapter implements ProviderAdapterInterface
                 'time'            => (string)($srv['TIME'] ?? $srv['time'] ?? ''),
                 'info'            => (string)($srv['INFO'] ?? $srv['info'] ?? ''),
                 'additional_data' => json_encode($srv, JSON_UNESCAPED_UNICODE),
-                'created_at'      => $now,
-                'updated_at'      => $now,
+                'updated_at'      => now(),
+                'created_at'      => now(),
             ];
-
-            if ($serviceType === 'file') {
-                $row['allowed_extensions'] = (string)($srv['ALLOW_EXTENSION'] ?? $srv['allowed_extensions'] ?? '');
-            }
-
-            $buffer[] = $row;
-            $count++;
-
-            if (count($buffer) >= $chunkSize) {
-                DB::table($table)->upsert($buffer, ['api_id','remote_id'], $updateColumns);
-                $buffer = [];
-            }
         }
 
-        if ($buffer) {
-            DB::table($table)->upsert($buffer, ['api_id','remote_id'], $updateColumns);
-        }
-
-        return $count;
+        return $this->bulkUpsert($serviceType, $rows);
     }
 
-    /**
-     * ✅ Groups mode:
-     * [ {GROUPNAME:..., SERVICES:[...]}, ...]
-     */
-    protected function bulkUpsertServicesGrouped(int $apiId, string $serviceType, array $groups, int $chunkSize = 500): int
+    protected function upsertGroupedList(int $apiId, string $serviceType, array $groups): int
     {
-        $table = $this->tableFor($serviceType);
-        if (!$table) return 0;
-
-        $updateColumns = $this->updateColumnsFor($serviceType);
-
-        $now = now()->toDateTimeString();
-        $buffer = [];
-        $count = 0;
+        $rows = [];
 
         foreach ($groups as $group) {
             if (!is_array($group)) continue;
 
             $groupName = (string)($group['GROUPNAME'] ?? $group['group'] ?? '');
 
+            // بعض الردود: group['SERVICES'] = {id => srv}
             $services = $group['SERVICES'] ?? $group['LIST'] ?? $group['services'] ?? $group['list'] ?? [];
-
-            // أحيانًا يرجع group نفسه كـ service (نادر) — نتأكد
             if (!is_array($services)) continue;
 
             foreach ($services as $srv) {
@@ -336,7 +287,7 @@ class GsmhubAdapter implements ProviderAdapterInterface
                 $remoteId = (string)($srv['SERVICEID'] ?? $srv['id'] ?? '');
                 if ($remoteId === '') continue;
 
-                $row = [
+                $rows[] = [
                     'api_id'          => $apiId,
                     'remote_id'       => $remoteId,
                     'name'            => (string)($srv['SERVICENAME'] ?? $srv['name'] ?? ''),
@@ -345,26 +296,40 @@ class GsmhubAdapter implements ProviderAdapterInterface
                     'time'            => (string)($srv['TIME'] ?? $srv['time'] ?? ''),
                     'info'            => (string)($srv['INFO'] ?? $srv['info'] ?? ''),
                     'additional_data' => json_encode($srv, JSON_UNESCAPED_UNICODE),
-                    'created_at'      => $now,
-                    'updated_at'      => $now,
+                    'updated_at'      => now(),
+                    'created_at'      => now(),
                 ];
-
-                if ($serviceType === 'file') {
-                    $row['allowed_extensions'] = (string)($srv['ALLOW_EXTENSION'] ?? $srv['allowed_extensions'] ?? '');
-                }
-
-                $buffer[] = $row;
-                $count++;
-
-                if (count($buffer) >= $chunkSize) {
-                    DB::table($table)->upsert($buffer, ['api_id','remote_id'], $updateColumns);
-                    $buffer = [];
-                }
             }
         }
 
-        if ($buffer) {
-            DB::table($table)->upsert($buffer, ['api_id','remote_id'], $updateColumns);
+        return $this->bulkUpsert($serviceType, $rows);
+    }
+
+    /**
+     * ✅ Upsert دفعات لتسريع المزامنة ومنع timeout
+     * يفترض وجود unique على (api_id, remote_id) أو على الأقل الاعتماد عليه منطقياً.
+     */
+    protected function bulkUpsert(string $serviceType, array $rows): int
+    {
+        if (empty($rows)) return 0;
+
+        $model = match ($serviceType) {
+            'imei'   => new RemoteImeiService(),
+            'server' => new RemoteServerService(),
+            'file'   => new RemoteFileService(),
+            default  => null,
+        };
+
+        if (!$model) return 0;
+
+        $count = 0;
+        foreach (array_chunk($rows, 300) as $chunk) {
+            $model->newQuery()->upsert(
+                $chunk,
+                ['api_id', 'remote_id'],
+                ['name', 'group_name', 'price', 'time', 'info', 'additional_data', 'updated_at']
+            );
+            $count += count($chunk);
         }
 
         return $count;

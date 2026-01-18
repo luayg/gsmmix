@@ -3,120 +3,163 @@
 namespace App\Services\Providers\Adapters;
 
 use App\Models\ApiProvider;
+use App\Models\RemoteFileService;
+use App\Models\RemoteImeiService;
+use App\Models\RemoteServerService;
 use App\Services\Providers\ProviderAdapterInterface;
-use App\Services\Api\DhruClient; // ✅ الصحيح (بدون Dhru\)
-use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 class DhruAdapter implements ProviderAdapterInterface
 {
-    public function type(): string { return 'dhru'; }
-
-    protected function client(ApiProvider $p): DhruClient
+    public function type(): string
     {
-        return new DhruClient($p->url, (string)$p->username, (string)$p->api_key);
+        return 'dhru';
     }
 
     public function supportsCatalog(string $serviceType): bool
     {
-        $serviceType = strtolower($serviceType);
-        return in_array($serviceType, ['imei','server','file'], true);
+        return in_array(strtolower($serviceType), ['imei', 'server', 'file'], true);
+    }
+
+    protected function endpoint(ApiProvider $p): string
+    {
+        // مثال شائع: https://example.com/dhru/api/index.php
+        // إذا المستخدم وضع endpoint كامل نستخدمه كما هو.
+        $base = rtrim((string)$p->url, '/');
+        if (preg_match('~/[^/]+\.php$~i', $base)) return $base;
+
+        // الافتراضي - عدّل حسب مشروعك إن كان مختلف
+        return $base . '/api/index.php';
+    }
+
+    protected function call(ApiProvider $p, string $action, array $params = []): array
+    {
+        $url = $this->endpoint($p);
+
+        // DHru غالبًا يستخدم form-data أو application/x-www-form-urlencoded
+        $payload = array_merge([
+            'username' => (string)($p->username ?? ''),
+            'api_key'  => (string)($p->api_key ?? ''),
+            'action'   => $action,
+        ], $params);
+
+        $res = Http::asForm()
+            ->timeout(120)
+            ->post($url, $payload);
+
+        logger()->info('DHRU HTTP', [
+            'provider_id'  => $p->id,
+            'url'          => $url,
+            'action'       => $action,
+            'http'         => $res->status(),
+            'content_type' => $res->header('content-type'),
+            'body_head'    => substr($res->body(), 0, 500),
+        ]);
+
+        $json = $res->json();
+        if (is_array($json)) return $json;
+
+        return [
+            '_http' => $res->status(),
+            '_body' => $res->body(),
+        ];
     }
 
     public function fetchBalance(ApiProvider $provider): float
     {
-        $acc = $this->client($provider)->accountInfo();
-        return (float)($acc['credits'] ?? 0);
+        // عدّل اسم الأكشن حسب DHru الحقيقي في مشروعك إن كان مختلف
+        $raw = $this->call($provider, 'accountinfo');
+
+        if (isset($raw['_body'])) return 0.0;
+
+        // حاول استخراج الرصيد من أكثر من مسار محتمل
+        $bal = data_get($raw, 'SUCCESS.balance')
+            ?? data_get($raw, 'SUCCESS.0.balance')
+            ?? data_get($raw, 'balance')
+            ?? data_get($raw, 'SUCCESS.0.AccoutInfo.credit')
+            ?? null;
+
+        return $bal !== null ? (float)$bal : 0.0;
     }
 
     public function syncCatalog(ApiProvider $provider, string $serviceType): int
     {
         $serviceType = strtolower($serviceType);
-        $c = $this->client($provider);
 
-        if ($serviceType === 'imei') {
-            $items = $c->imeiServices();
-            return $this->bulkUpsert($provider->id, 'remote_imei_services', $items, [
-                // أعمدة موجودة عادة في remote_imei_services
-                'name','group_name','price','time','info','min_qty','max_qty',
-                'credit_groups','additional_fields','additional_data','params','updated_at'
+        // عدّل الأكشن حسب مزود DHru الحقيقي عندك
+        $action = match ($serviceType) {
+            'imei'   => 'imeiservicelist',
+            'server' => 'serverservicelist',
+            'file'   => 'fileservicelist',
+            default  => null,
+        };
+
+        if (!$action) return 0;
+
+        $raw = $this->call($provider, $action);
+
+        if (isset($raw['_body'])) return 0;
+
+        // استخراج LIST شائع
+        $list = data_get($raw, 'SUCCESS.0.LIST')
+            ?? data_get($raw, 'SUCCESS.LIST')
+            ?? data_get($raw, 'LIST')
+            ?? null;
+
+        if (!is_array($list)) {
+            logger()->error('DHRU INVALID_LIST', [
+                'provider_id' => $provider->id,
+                'action'      => $action,
             ]);
+            return 0;
         }
 
-        if ($serviceType === 'server') {
-            $items = $c->serverServices();
-            return $this->bulkUpsert($provider->id, 'remote_server_services', $items, [
-                'name','group_name','price','time','info','min_qty','max_qty',
-                'credit_groups','additional_fields','additional_data','params','updated_at'
-            ]);
-        }
-
-        if ($serviceType === 'file') {
-            $items = $c->fileServices();
-            return $this->bulkUpsert($provider->id, 'remote_file_services', $items, [
-                'name','group_name','price','time','info','allowed_extensions',
-                'additional_fields','additional_data','params','updated_at'
-            ]);
-        }
-
-        return 0;
-    }
-
-    /**
-     * ✅ Bulk upsert لتفادي timeouts في الويب (Sync now)
-     * يفترض أن $items تكون array خدمات (كل عنصر فيه SERVICEID/SERVICENAME...)
-     */
-    protected function bulkUpsert(int $apiId, string $table, array $items, array $updateColumns, int $chunkSize = 500): int
-    {
-        $now = now()->toDateTimeString();
-        $buffer = [];
-        $count = 0;
-
-        foreach ($items as $srv) {
+        // قد يكون list = [ [..], [..] ] أو map
+        $rows = [];
+        foreach ($list as $k => $srv) {
             if (!is_array($srv)) continue;
 
-            $remoteId = (string)($srv['SERVICEID'] ?? '');
+            $remoteId = (string)($srv['SERVICEID'] ?? $srv['service_id'] ?? $srv['id'] ?? $k);
             if ($remoteId === '') continue;
 
-            $row = [
-                'api_id'    => $apiId,
-                'remote_id' => $remoteId,
-
-                'name'       => (string)($srv['SERVICENAME'] ?? ''),
-                'group_name' => (string)($srv['group'] ?? ''),
-
-                'price' => (float)($srv['CREDIT'] ?? 0),
-                'time'  => (string)($srv['TIME'] ?? ''),
-                'info'  => (string)($srv['INFO'] ?? ''),
-
-                // حقول إضافية (قد تكون موجودة حسب migration عندك)
-                'min_qty' => isset($srv['MINQNT']) ? (string)$srv['MINQNT'] : null,
-                'max_qty' => isset($srv['MAXQNT']) ? (string)$srv['MAXQNT'] : null,
-
-                'credit_groups'     => isset($srv['CREDITGROUPS']) ? json_encode($srv['CREDITGROUPS'], JSON_UNESCAPED_UNICODE) : null,
-                'additional_fields' => isset($srv['ADDFIELDS']) ? json_encode($srv['ADDFIELDS'], JSON_UNESCAPED_UNICODE) : null,
-                'additional_data'   => isset($srv['ADDDATA']) ? json_encode($srv['ADDDATA'], JSON_UNESCAPED_UNICODE) : null,
-                'params'            => isset($srv['PARAMS']) ? json_encode($srv['PARAMS'], JSON_UNESCAPED_UNICODE) : null,
-
-                'created_at' => $now,
-                'updated_at' => $now,
+            $rows[] = [
+                'api_id'          => $provider->id,
+                'remote_id'       => $remoteId,
+                'name'            => (string)($srv['SERVICENAME'] ?? $srv['name'] ?? ''),
+                'group_name'      => (string)($srv['GROUPNAME'] ?? $srv['group'] ?? ''),
+                'price'           => (float)($srv['CREDIT'] ?? $srv['price'] ?? 0),
+                'time'            => (string)($srv['TIME'] ?? $srv['time'] ?? ''),
+                'info'            => (string)($srv['INFO'] ?? $srv['info'] ?? ''),
+                'additional_data' => json_encode($srv, JSON_UNESCAPED_UNICODE),
+                'updated_at'      => now(),
+                'created_at'      => now(),
             ];
-
-            // خاص بالـ File
-            if ($table === 'remote_file_services') {
-                $row['allowed_extensions'] = (string)($srv['ALLOW_EXTENSION'] ?? '');
-            }
-
-            $buffer[] = $row;
-            $count++;
-
-            if (count($buffer) >= $chunkSize) {
-                DB::table($table)->upsert($buffer, ['api_id','remote_id'], $updateColumns);
-                $buffer = [];
-            }
         }
 
-        if ($buffer) {
-            DB::table($table)->upsert($buffer, ['api_id','remote_id'], $updateColumns);
+        return $this->bulkUpsert($serviceType, $rows);
+    }
+
+    protected function bulkUpsert(string $serviceType, array $rows): int
+    {
+        if (empty($rows)) return 0;
+
+        $model = match ($serviceType) {
+            'imei'   => new RemoteImeiService(),
+            'server' => new RemoteServerService(),
+            'file'   => new RemoteFileService(),
+            default  => null,
+        };
+
+        if (!$model) return 0;
+
+        $count = 0;
+        foreach (array_chunk($rows, 300) as $chunk) {
+            $model->newQuery()->upsert(
+                $chunk,
+                ['api_id', 'remote_id'],
+                ['name', 'group_name', 'price', 'time', 'info', 'additional_data', 'updated_at']
+            );
+            $count += count($chunk);
         }
 
         return $count;
