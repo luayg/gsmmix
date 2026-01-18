@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\ApiProvider;
+use App\Services\Providers\ProviderFactory;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -13,41 +14,62 @@ class SyncProviderJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public int $timeout = 300; // 5 minutes
+    public int $timeout = 1200; // 20 دقيقة (بدل 60 ثانية)
+    public int $tries = 1;
 
-    public function __construct(public int $providerId) {}
+    public function __construct(
+        public int $providerId,
+        public ?string $mode = null // null = full sync, 'balance' = balance only
+    ) {}
 
     public function handle(): void
     {
-        $provider = ApiProvider::find($this->providerId);
-        if (!$provider || !$provider->active) {
-            return;
+        $p = ApiProvider::query()->findOrFail($this->providerId);
+
+        $adapter = ProviderFactory::make($p);
+
+        try {
+            // ✅ رصيد فقط
+            if ($this->mode === 'balance') {
+                $bal = $adapter->fetchBalance($p);
+                $p->update([
+                    'balance'  => $bal,
+                    'synced'   => 1,
+                    'syncing'  => 0,
+                ]);
+                return;
+            }
+
+            $total = 0;
+
+            // ✅ مزامنة حسب الفلاغات
+            $types = [];
+            if ($p->sync_imei)   $types[] = 'imei';
+            if ($p->sync_server) $types[] = 'server';
+            if ($p->sync_file)   $types[] = 'file';
+
+            foreach ($types as $t) {
+                if ($adapter->supportsCatalog($t)) {
+                    $total += (int)$adapter->syncCatalog($p, $t);
+                }
+            }
+
+            // ✅ تحديث الرصيد بعد الخدمات
+            $bal = $adapter->fetchBalance($p);
+
+            $p->update([
+                'balance' => $bal,
+                'synced'  => 1,
+                'syncing' => 0,
+            ]);
+
+        } catch (\Throwable $e) {
+            // ❌ فشل: رجّع syncing=0 وخلي synced=0
+            $p->update([
+                'synced'  => 0,
+                'syncing' => 0,
+            ]);
+            throw $e;
         }
-
-        $adapter = app()->make(
-            \App\Services\Providers\ProviderManager::class
-        )->adapter($provider);
-
-        $total = 0;
-
-        if ($provider->sync_imei) {
-            $total += $adapter->syncCatalog($provider, 'imei');
-        }
-
-        if ($provider->sync_server) {
-            $total += $adapter->syncCatalog($provider, 'server');
-        }
-
-        if ($provider->sync_file) {
-            $total += $adapter->syncCatalog($provider, 'file');
-        }
-
-        // تحديث الرصيد
-        $provider->balance = $adapter->fetchBalance($provider);
-
-        // ✅ هذا السطر هو سبب Synced = No سابقاً
-        $provider->synced = $total > 0;
-
-        $provider->save();
     }
 }
