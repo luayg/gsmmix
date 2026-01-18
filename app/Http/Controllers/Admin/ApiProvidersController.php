@@ -10,6 +10,19 @@ use App\Models\RemoteServerService;
 use App\Models\RemoteFileService;
 use Illuminate\Http\Request;
 
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+
+// Models
+use App\Models\ServiceGroup;
+use App\Models\ImeiService;
+use App\Models\ServerService;
+use App\Models\FileService;
+
+
+
+
+
 class ApiProvidersController extends Controller
 {
     public function index(Request $request)
@@ -169,45 +182,195 @@ class ApiProvidersController extends Controller
      */
     public function servicesImei(ApiProvider $provider)
     {
-        $groups = RemoteImeiService::query()
-            ->where('api_id', $provider->id)   // ✅ FIX
+        $services = RemoteImeiService::where('api_provider_id', $provider->id)
             ->orderBy('group_name')
-            ->orderBy('remote_id')
+            ->orderBy('name')
             ->get()
-            ->groupBy('group_name');
+            ->map(fn ($s) => [
+                'GROUPNAME'  => (string)($s->group_name ?? ''),
+                'REMOTEID'   => (string)($s->remote_id ?? ''),
+                'NAME'       => (string)($s->name ?? ''),
+                'CREDIT'     => (float)($s->credit ?? $s->cost ?? 0),
+                'TIME'       => (string)($s->time ?? ''),
+            ])
+            ->values()
+            ->all();
 
-        return view('admin.api.providers.imei_services', compact('provider', 'groups'));
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind'     => 'imei',
+            'services' => $services,
+        ]);
     }
 
-    /**
-     * ✅ عرض خدمات SERVER من جدول remote_server_services
-     */
     public function servicesServer(ApiProvider $provider)
     {
-        $groups = RemoteServerService::query()
-            ->where('api_id', $provider->id)   // ✅ FIX
+        $services = RemoteServerService::where('api_provider_id', $provider->id)
             ->orderBy('group_name')
-            ->orderBy('remote_id')
+            ->orderBy('name')
             ->get()
-            ->groupBy('group_name');
+            ->map(fn ($s) => [
+                'GROUPNAME'  => (string)($s->group_name ?? ''),
+                'REMOTEID'   => (string)($s->remote_id ?? ''),
+                'NAME'       => (string)($s->name ?? ''),
+                'CREDIT'     => (float)($s->credit ?? $s->cost ?? 0),
+                'TIME'       => (string)($s->time ?? ''),
+            ])
+            ->values()
+            ->all();
 
-        return view('admin.api.providers.server_services', compact('provider', 'groups'));
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind'     => 'server',
+            'services' => $services,
+        ]);
     }
 
-    /**
-     * ✅ عرض خدمات FILE من جدول remote_file_services
-     */
     public function servicesFile(ApiProvider $provider)
     {
-        $groups = RemoteFileService::query()
-            ->where('api_id', $provider->id)   // ✅ FIX
+        $services = RemoteFileService::where('api_provider_id', $provider->id)
             ->orderBy('group_name')
-            ->orderBy('remote_id')
+            ->orderBy('name')
             ->get()
-            ->groupBy('group_name');
+            ->map(fn ($s) => [
+                'GROUPNAME'  => (string)($s->group_name ?? ''),
+                'REMOTEID'   => (string)($s->remote_id ?? ''),
+                'NAME'       => (string)($s->name ?? ''),
+                'CREDIT'     => (float)($s->credit ?? $s->cost ?? 0),
+                'TIME'       => (string)($s->time ?? ''),
+            ])
+            ->values()
+            ->all();
 
-        return view('admin.api.providers.file_services', compact('provider', 'groups'));
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind'     => 'file',
+            'services' => $services,
+        ]);
     }
 
-    // إن كان عندك importServices/importServicesWizard خليهم كما هم عندك (لم ألمسهم هنا)
+    /* =========================================================
+     * Import (Legacy endpoint exists in routes) — keep safe
+     * ========================================================= */
+
+    public function importServices(Request $request, ApiProvider $provider)
+    {
+        // هذا المسار ما نحتاجه فعليًا بعد wizard
+        // نخليه يرجع خطأ واضح بدل 500
+        return response()->json([
+            'ok'  => false,
+            'msg' => 'Legacy import is disabled. Use Import Wizard.',
+        ], 422);
+    }
+
+    /* =========================================================
+     * Import Wizard (Standard for all providers)
+     * ========================================================= */
+
+    public function importServicesWizard(Request $request, ApiProvider $provider)
+    {
+        $data = $request->validate([
+            'kind'         => 'required|in:imei,server,file',
+            'service_ids'  => 'array',
+            'service_ids.*'=> 'string',
+            'apply_all'    => 'boolean',
+            'pricing_mode' => 'required|in:percent,fixed',
+            'pricing_value'=> 'nullable|numeric|min:0',
+        ]);
+
+        $kind         = $data['kind'];
+        $applyAll     = (bool)($data['apply_all'] ?? false);
+        $pricingMode  = $data['pricing_mode'];
+        $pricingValue = (float)($data['pricing_value'] ?? 0);
+
+        // اختر Remote model حسب النوع
+        $remoteQ = match ($kind) {
+            'imei'   => RemoteImeiService::query(),
+            'server' => RemoteServerService::query(),
+            'file'   => RemoteFileService::query(),
+        };
+
+        $remoteQ->where('api_provider_id', $provider->id);
+
+        if (!$applyAll) {
+            $ids = collect($data['service_ids'] ?? [])->filter()->values()->all();
+            if (!count($ids)) {
+                return response()->json(['ok'=>false,'msg'=>'No services selected'], 422);
+            }
+            $remoteQ->whereIn('remote_id', $ids);
+        }
+
+        $remoteRows = $remoteQ->get();
+
+        // اختر Local model حسب النوع
+        $localModel = match ($kind) {
+            'imei'   => ImeiService::class,
+            'server' => ServerService::class,
+            'file'   => FileService::class,
+        };
+
+        $addedRemoteIds = [];
+        $count = 0;
+
+        foreach ($remoteRows as $r) {
+            $groupName = (string)($r->group_name ?? 'Uncategorized');
+
+            // Group per type بدون تكرار
+            $group = ServiceGroup::firstOrCreate(
+                ['type' => $kind, 'name' => $groupName],
+                ['slug' => Str::slug($groupName)]
+            );
+
+            $cost = (float)($r->credit ?? $r->cost ?? 0);
+            $profit = 0.0;
+            $profitType = 1; // 1 credits, 2 percent
+
+            if ($pricingMode === 'percent') {
+                $profitType = 2;
+                $profit = $pricingValue;
+            } else {
+                $profitType = 1;
+                $profit = $pricingValue;
+            }
+
+            $payload = [
+                'name'        => (string)($r->name ?? ''),
+                'alias'       => Str::slug((string)($r->name ?? 'service')),
+
+                // ربط بالخدمة الريموت
+                'supplier_id' => $provider->id,      // نفس hidden input عندك
+                'remote_id'   => (string)($r->remote_id ?? ''),
+
+                // group local
+                'group_id'    => $group->id,
+
+                // pricing
+                'cost'        => $cost,
+                'profit'      => $profit,
+                'profit_type' => $profitType,
+
+                // misc defaults (خفيفة وآمنة)
+                'time'        => (string)($r->time ?? ''),
+                'source'      => 2, // API
+                'active'      => 1,
+            ];
+
+            // Upsert آمن على (supplier_id + remote_id)
+            /** @var \Illuminate\Database\Eloquent\Model $localModel */
+            $row = $localModel::updateOrCreate(
+                ['supplier_id' => $provider->id, 'remote_id' => (string)($r->remote_id ?? '')],
+                $payload
+            );
+
+            $addedRemoteIds[] = (string)($r->remote_id ?? '');
+            $count++;
+        }
+
+        return response()->json([
+            'ok'               => true,
+            'count'            => $count,
+            'added_remote_ids' => $addedRemoteIds,
+        ]);
+    }
 }
+

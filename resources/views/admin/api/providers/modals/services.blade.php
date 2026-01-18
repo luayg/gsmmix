@@ -1,412 +1,342 @@
 {{-- resources/views/admin/api/providers/modals/services.blade.php --}}
 
 @php
-    use Illuminate\Support\Str;
+  // kind: imei | server | file
+  $kindLabel = strtoupper($kind);
+  $importUrl = route('admin.apis.services.import_wizard', $provider);
 
-    $localModel = match($kind){
-        'server' => \App\Models\ServerService::class,
-        'file'   => \App\Models\FileService::class,
-        default  => \App\Models\ImeiService::class,
-    };
-
-    $existing = $localModel::query()
-        ->where('supplier_id', $provider->id)
-        ->pluck('id', 'remote_id')
-        ->mapWithKeys(fn($id,$remote)=>[(string)$remote => (int)$id])
-        ->toArray();
+  // خدمات موجودة محليًا لمنع إعادة الإضافة
+  $existing = match ($kind) {
+    'imei'   => \App\Models\ImeiService::where('supplier_id',$provider->id)->pluck('remote_id')->map(fn($v)=>(string)$v)->flip()->all(),
+    'server' => \App\Models\ServerService::where('supplier_id',$provider->id)->pluck('remote_id')->map(fn($v)=>(string)$v)->flip()->all(),
+    'file'   => \App\Models\FileService::where('supplier_id',$provider->id)->pluck('remote_id')->map(fn($v)=>(string)$v)->flip()->all(),
+    default  => [],
+  };
 @endphp
 
+<div class="modal-header align-items-center" style="background:#3bb37a;color:#fff;">
+  <div>
+    <div class="h6 mb-0">{{ $provider->name }} | {{ $kindLabel }} services</div>
+    <div class="small opacity-75">Remote services list</div>
+  </div>
 
-<div class="modal-header">
-  <h5 class="modal-title">
-    Services for Provider #{{ $provider->id }} — {{ $provider->name }}
-  </h5>
-  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  <div class="d-flex gap-2 align-items-center ms-auto">
+    <input id="svcSearch"
+           type="text"
+           class="form-control form-control-sm"
+           placeholder="Search service (name / group / remote id)..."
+           style="width:min(420px, 46vw);">
+
+    <button type="button" class="btn btn-dark btn-sm" id="btnOpenImportWizard">
+      Import Services with Group
+    </button>
+
+    {{-- ✅ X close أعلى اليمين --}}
+    <button type="button" class="btn-close btn-close-white ms-1" data-bs-dismiss="modal" aria-label="Close"></button>
+  </div>
 </div>
 
 <div class="modal-body p-0">
-
-  {{-- ✅ Toolbar --}}
-  <div class="p-3 border-bottom bg-light d-flex justify-content-between align-items-center">
-    <button type="button" class="btn btn-dark btn-sm" id="btnOpenImportWizard">
-      Import Services With Categories
-    </button>
-
-    <span class="text-muted small">
-      Select services → Profit → Finish
-    </span>
-  </div>
-
-  {{-- ✅ Alert Result (Hidden by default) --}}
-  <div class="px-3 pt-3" id="importResultWrap" style="display:none;">
-    <div class="alert alert-success d-flex align-items-center justify-content-between mb-0">
-      <div>
-        ✅ <strong id="importResultText"></strong>
-      </div>
-      <button type="button" class="btn-close"
-              onclick="document.getElementById('importResultWrap').style.display='none'"></button>
-    </div>
-  </div>
-
-  {{-- ✅ Services Table --}}
-  <div class="table-responsive" style="max-height:70vh; overflow:auto;">
-    <table class="table table-sm table-striped mb-0 align-middle">
-      <thead class="bg-white position-sticky top-0" style="z-index:1;">
+  <div class="table-responsive">
+    <table class="table table-sm table-striped mb-0 align-middle" id="svcTable">
+      <thead>
         <tr>
-          <th style="width:110px">ID</th>
-          <th style="min-width:420px;">Name</th>
-          <th style="min-width:260px;">Group</th>
-          <th style="width:110px">Credit</th>
-          <th style="width:140px">Time</th>
-          <th class="text-end" style="width:140px">Action</th>
+          <th style="width:190px">Group</th>
+          <th style="width:110px">Remote ID</th>
+          <th>Name</th>
+          <th style="width:90px">Credits</th>
+          <th style="width:120px">Time</th>
+          <th class="text-end" style="width:130px">Action</th>
         </tr>
       </thead>
       <tbody>
-
-        @foreach($services as $s)
-
+        @forelse($services as $s)
           @php
-            $rid   = (string)($s['SERVICEID'] ?? '');
-            $name  = $s['SERVICENAME'] ?? '';
-            $group = $s['GROUPNAME'] ?? '';
-            $credit= $s['CREDIT'] ?? 0;
-            $time  = $s['TIME'] ?? '';
-
-            $isAdded = array_key_exists($rid, $existing);
+            $group = (string)($s['GROUPNAME'] ?? '');
+            $rid   = (string)($s['REMOTEID'] ?? '');
+            $name  = (string)($s['NAME'] ?? '');
+            $credit= (float)($s['CREDIT'] ?? 0);
+            $time  = (string)($s['TIME'] ?? '');
+            $isAdded = isset($existing[$rid]);
           @endphp
 
-          <tr data-remote-id="{{ $rid }}">
+          <tr data-row
+              data-group="{{ strtolower($group) }}"
+              data-name="{{ strtolower($name) }}"
+              data-remote="{{ strtolower($rid) }}"
+              data-remote-id="{{ $rid }}">
+            <td>{{ $group }}</td>
             <td><code>{{ $rid }}</code></td>
-            <td style="min-width:520px">{!! $name !!}</td>
-            <td>{!! $group !!}</td>
-            <td>{{ $credit }}</td>
-            <td>{!! $time !!}</td>
-
+            <td style="min-width:520px;">{{ $name }}</td>
+            <td>{{ number_format($credit, 4) }}</td>
+            <td>{{ $time }}</td>
             <td class="text-end">
               @if($isAdded)
-                <button type="button" class="btn btn-secondary btn-sm" disabled>
-                  Add ✅
-                </button>
+                <button type="button" class="btn btn-secondary btn-sm" disabled>Added ✅</button>
               @else
                 <button type="button"
-                        class="btn btn-success btn-sm clone-btn"
-                        data-create-service
-                        data-service-type="{{ $kind }}"
-                        data-provider-id="{{ $provider->id }}"
-                        data-provider-name="{{ $provider->name }}"
+                        class="btn btn-success btn-sm"
+                        data-import-one
+                        data-group="{{ $group }}"
                         data-remote-id="{{ $rid }}"
-                        data-name="{{ e(strip_tags($name)) }}"
+                        data-name="{{ $name }}"
                         data-credit="{{ $credit }}"
-                        data-time="{{ e(strip_tags($time)) }}"
-                        data-group="{{ e(strip_tags($group)) }}">
+                        data-time="{{ $time }}">
                   Clone
                 </button>
               @endif
             </td>
           </tr>
-
-        @endforeach
-
+        @empty
+          <tr><td colspan="6" class="text-center p-4">No data</td></tr>
+        @endforelse
       </tbody>
     </table>
   </div>
-
 </div>
 
-<div class="modal-footer">
-  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-</div>
-
-{{-- ✅ template of create form (required by service-modal.js) --}}
-<template id="serviceCreateTpl">
-  @if($kind === 'imei')
-    @include('admin.services.imei._modal_create')
-  @elseif($kind === 'server')
-    @include('admin.services.server._modal_create')
-  @else
-    @include('admin.services.file._modal_create')
-  @endif
-</template>
-
-
-{{-- ✅ Wizard Modal --}}
-<div class="modal fade" id="importWizardModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-xl" style="max-width:95vw;">
+{{-- ============ Import Wizard Modal (Step) ============ --}}
+<div class="modal fade" id="importWizard" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable" style="max-width:min(1400px,96vw);">
     <div class="modal-content">
-
-      <div class="modal-header">
-        <h5 class="modal-title">Import Services With Categories</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      <div class="modal-header" style="background:#111;color:#fff;">
+        <div class="h6 mb-0">Import Services — {{ $provider->name }} ({{ $kindLabel }})</div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
 
       <div class="modal-body">
 
-        {{-- ✅ STEP 1 --}}
-        <div id="wizStep1">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <h6 class="mb-0">Step 1 — Select Services</h6>
-
-            <div class="d-flex gap-2">
-              <button type="button" class="btn btn-outline-secondary btn-sm" id="wizSelectAll">Select All</button>
-              <button type="button" class="btn btn-outline-danger btn-sm" id="wizUnselectAll">Unselect</button>
-            </div>
+        <div class="row g-2 align-items-end mb-3">
+          <div class="col-md-6">
+            <label class="form-label mb-1">Search</label>
+            <input type="text" class="form-control form-control-sm" id="wizSearch" placeholder="Search...">
           </div>
 
-          <div class="table-responsive border rounded" style="max-height:55vh; overflow:auto;">
-            <table class="table table-sm table-striped mb-0 align-middle">
-              <thead class="bg-white position-sticky top-0" style="z-index:1;">
-                <tr>
-                  <th style="width:40px"></th>
-                  <th style="width:120px">ID</th>
-                  <th>Name</th>
-                  <th style="width:280px">Group</th>
-                  <th style="width:120px">Credit</th>
-                  <th style="width:140px">Time</th>
+          <div class="col-md-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="wizSelectAll">Select all</button>
+          </div>
+
+          <div class="col-md-2">
+            <button type="button" class="btn btn-outline-secondary btn-sm w-100" id="wizUnselectAll">Unselect all</button>
+          </div>
+
+          <div class="col-md-2 text-end">
+            <span class="small text-muted" id="wizSelectedCount">0 selected</span>
+          </div>
+        </div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-md-4">
+            <label class="form-label mb-1">Pricing mode</label>
+            <select class="form-select form-select-sm" id="wizPricingMode">
+              <option value="percent">+ % Profit</option>
+              <option value="fixed">+ Fixed Credits</option>
+            </select>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label mb-1">Value</label>
+            <input type="number" step="0.01" class="form-control form-control-sm" id="wizPricingValue" value="0">
+          </div>
+
+          <div class="col-md-4 d-flex align-items-end justify-content-end gap-2">
+            <button type="button" class="btn btn-dark btn-sm" id="wizImportAll">Import ALL</button>
+            <button type="button" class="btn btn-success btn-sm" id="wizImportSelected">Import Selected</button>
+          </div>
+        </div>
+
+        <div class="table-responsive border rounded">
+          <table class="table table-sm table-striped mb-0 align-middle" id="wizTable">
+            <thead>
+              <tr>
+                <th style="width:40px"></th>
+                <th>Group</th>
+                <th style="width:110px">Remote ID</th>
+                <th>Name</th>
+                <th style="width:90px">Credits</th>
+                <th style="width:110px">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              @foreach($services as $s)
+                @php
+                  $group = (string)($s['GROUPNAME'] ?? '');
+                  $rid   = (string)($s['REMOTEID'] ?? '');
+                  $name  = (string)($s['NAME'] ?? '');
+                  $credit= (float)($s['CREDIT'] ?? 0);
+                  $time  = (string)($s['TIME'] ?? '');
+                  $isAdded = isset($existing[$rid]);
+                @endphp
+                <tr data-wiz-row
+                    data-group="{{ strtolower($group) }}"
+                    data-name="{{ strtolower($name) }}"
+                    data-remote="{{ strtolower($rid) }}">
+                  <td>
+                    <input type="checkbox" class="wiz-check" value="{{ $rid }}" @disabled($isAdded)>
+                  </td>
+                  <td>{{ $group }}</td>
+                  <td><code>{{ $rid }}</code></td>
+                  <td style="min-width:520px;">{{ $name }}</td>
+                  <td>{{ number_format($credit, 4) }}</td>
+                  <td>{{ $time }}</td>
                 </tr>
-              </thead>
-              <tbody id="wizBody"></tbody>
-            </table>
-          </div>
-
-          <div class="small text-muted mt-2">
-            Selected: <strong id="wizSelectedCount">0</strong>
-          </div>
-        </div>
-
-        {{-- ✅ STEP 2 --}}
-        <div id="wizStep2" style="display:none;">
-          <h6 class="mb-3">Step 2 — Pricing & Finish</h6>
-
-          <div class="row g-3">
-            <div class="col-md-4">
-              <label class="form-label">Profit Mode</label>
-              <select class="form-select" id="wizPricingMode">
-                <option value="percent">Add Profit %</option>
-                <option value="fixed">Add Fixed Credit</option>
-              </select>
-            </div>
-
-            <div class="col-md-4">
-              <label class="form-label">Profit Value</label>
-              <input type="number" step="0.01" class="form-control" id="wizPricingValue" value="0">
-            </div>
-
-            <div class="col-md-4">
-              <label class="form-label">Summary</label>
-              <div class="border rounded p-2 bg-light">
-                <div>Selected: <strong id="wizSummaryCount">0</strong></div>
-                <div>Type: <strong class="text-uppercase">{{ $kind }}</strong></div>
-                <div>Group: <strong>Auto (by category)</strong></div>
-              </div>
-            </div>
-          </div>
-
-          <div class="alert alert-info mt-3 mb-0">
-            ✅ سيتم إنشاء الجروبات تلقائياً حسب اسم Category القادمة من الـ API  
-            وإذا كانت الجروب موجودة مسبقاً سيتم وضع الخدمات داخلها بدون تكرار.
-          </div>
+              @endforeach
+            </tbody>
+          </table>
         </div>
 
       </div>
-
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" id="wizBackBtn" style="display:none;">Back</button>
-        <button type="button" class="btn btn-primary" id="wizNextBtn">Next</button>
-        <button type="button" class="btn btn-success" id="wizFinishBtn" style="display:none;">Finish</button>
-      </div>
-
     </div>
   </div>
 </div>
 
-{{-- ✅ Import wizard script (unchanged) --}}
 <script>
 (function(){
+  const kind      = @json($kind);
+  const importUrl = @json($importUrl);
+  const csrfToken = @json(csrf_token());
 
-  const kind       = @json($kind);
-  const csrfToken  = @json(csrf_token());
-  const importUrl  = @json(route('admin.apis.services.import_wizard', $provider));
-  const servicesData = @json($services);
+  // ===== Main search (services list) =====
+  const svcSearch = document.getElementById('svcSearch');
+  svcSearch?.addEventListener('input', () => {
+    const q = (svcSearch.value || '').trim().toLowerCase();
+    document.querySelectorAll('#svcTable tr[data-row]').forEach(tr => {
+      const hit =
+        tr.dataset.group.includes(q) ||
+        tr.dataset.name.includes(q) ||
+        tr.dataset.remote.includes(q);
+      tr.style.display = (!q || hit) ? '' : 'none';
+    });
+  });
 
-  const btnOpenWizard = document.getElementById('btnOpenImportWizard');
-  const wizardModalEl = document.getElementById('importWizardModal');
+  // ===== Open wizard =====
+  const wizardEl = document.getElementById('importWizard');
+  const wizard = bootstrap.Modal.getOrCreateInstance(wizardEl);
 
-  const step1 = document.getElementById('wizStep1');
-  const step2 = document.getElementById('wizStep2');
+  document.getElementById('btnOpenImportWizard')?.addEventListener('click', () => wizard.show());
 
-  const wizBody = document.getElementById('wizBody');
-  const btnSelectAll   = document.getElementById('wizSelectAll');
-  const btnUnselectAll = document.getElementById('wizUnselectAll');
-
-  const btnBack   = document.getElementById('wizBackBtn');
-  const btnNext   = document.getElementById('wizNextBtn');
-  const btnFinish = document.getElementById('wizFinishBtn');
-
-  const selectedCount = document.getElementById('wizSelectedCount');
-  const summaryCount  = document.getElementById('wizSummaryCount');
-
-  let selected = new Set();
-
-  function showStep(n){
-    if(n === 1){
-      step1.style.display = '';
-      step2.style.display = 'none';
-      btnBack.style.display = 'none';
-      btnNext.style.display = '';
-      btnFinish.style.display = 'none';
-    }else{
-      step1.style.display = 'none';
-      step2.style.display = '';
-      btnBack.style.display = '';
-      btnNext.style.display = 'none';
-      btnFinish.style.display = '';
-    }
-  }
+  // ===== Wizard logic =====
+  const wizSearch = document.getElementById('wizSearch');
+  const wizChecks = () => Array.from(document.querySelectorAll('.wiz-check'));
+  const wizSelected = () => wizChecks().filter(x => x.checked && !x.disabled).map(x => x.value);
 
   function updateCount(){
-    selectedCount.innerText = selected.size;
-    summaryCount.innerText  = selected.size;
+    const n = wizSelected().length;
+    document.getElementById('wizSelectedCount').innerText = `${n} selected`;
   }
 
-  function escapeHtml(str){
-    return String(str).replace(/[&<>"']/g, function(m){
-      return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]);
+  wizSearch?.addEventListener('input', () => {
+    const q = (wizSearch.value || '').trim().toLowerCase();
+    document.querySelectorAll('#wizTable tr[data-wiz-row]').forEach(tr => {
+      const hit =
+        tr.dataset.group.includes(q) ||
+        tr.dataset.name.includes(q) ||
+        tr.dataset.remote.includes(q);
+      tr.style.display = (!q || hit) ? '' : 'none';
     });
-  }
+  });
 
-  function decodeEntities(text){
-    const txt = document.createElement("textarea");
-    txt.innerHTML = text;
-    return txt.value;
-  }
+  document.getElementById('wizSelectAll')?.addEventListener('click', () => {
+    wizChecks().forEach(cb => { if (!cb.disabled) cb.checked = true; });
+    updateCount();
+  });
 
-  function renderTable(){
-    wizBody.innerHTML = '';
-    selected.clear();
+  document.getElementById('wizUnselectAll')?.addEventListener('click', () => {
+    wizChecks().forEach(cb => cb.checked = false);
+    updateCount();
+  });
 
-    servicesData.forEach(s=>{
-      const id    = String(s.SERVICEID ?? '');
-      const name  = decodeEntities(String(s.SERVICENAME ?? ''));
-      const group = decodeEntities(String(s.GROUPNAME ?? ''));
-      const credit= String(s.CREDIT ?? '');
-      const time  = decodeEntities(String(s.TIME ?? ''));
+  document.addEventListener('change', (e) => {
+    if (e.target.classList?.contains('wiz-check')) updateCount();
+  });
 
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td><input type="checkbox" class="wiz-check" value="${id}"></td>
-        <td><code>${id}</code></td>
-        <td>${escapeHtml(name)}</td>
-        <td>${escapeHtml(group)}</td>
-        <td>${escapeHtml(credit)}</td>
-        <td>${escapeHtml(time)}</td>
-      `;
-      wizBody.appendChild(tr);
+  async function sendImport(payload){
+    const res = await fetch(importUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-TOKEN': csrfToken,
+        'X-Requested-With': 'XMLHttpRequest'
+      },
+      body: JSON.stringify(payload),
     });
 
-    wizBody.querySelectorAll('.wiz-check').forEach(cb=>{
-      cb.addEventListener('change', ()=>{
-        if(cb.checked) selected.add(cb.value);
-        else selected.delete(cb.value);
-        updateCount();
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok || !data?.ok) {
+      alert(data?.msg || 'Import failed');
+      return null;
+    }
+    return data;
+  }
+
+  function markAsAdded(remoteIds){
+    (remoteIds || []).forEach(id => {
+      const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(String(id))}"]`);
+      if (row) {
+        const btn = row.querySelector('[data-import-one]');
+        if (btn) {
+          btn.classList.remove('btn-success');
+          btn.classList.add('btn-secondary');
+          btn.innerText = 'Added ✅';
+          btn.disabled = true;
+          btn.removeAttribute('data-import-one');
+        }
+      }
+
+      // wizard row checkbox disable
+      document.querySelectorAll('.wiz-check').forEach(cb => {
+        if (String(cb.value) === String(id)) {
+          cb.checked = false;
+          cb.disabled = true;
+        }
       });
     });
 
     updateCount();
   }
 
-  btnSelectAll.addEventListener('click', ()=>{
-    wizBody.querySelectorAll('.wiz-check').forEach(cb=>{
-      cb.checked = true;
-      selected.add(cb.value);
-    });
-    updateCount();
-  });
-
-  btnUnselectAll.addEventListener('click', ()=>{
-    selected.clear();
-    wizBody.querySelectorAll('.wiz-check').forEach(cb=> cb.checked = false);
-    updateCount();
-  });
-
-  async function finishImport(applyAll=false){
+  document.getElementById('wizImportSelected')?.addEventListener('click', async () => {
+    const ids = wizSelected();
+    if (!ids.length) return alert('Select services first');
 
     const pricing_mode  = document.getElementById('wizPricingMode').value;
     const pricing_value = document.getElementById('wizPricingValue').value;
 
-    const payload = {
+    const data = await sendImport({
       kind,
-      apply_all: applyAll,
-      service_ids: applyAll ? [] : Array.from(selected),
+      apply_all: false,
+      service_ids: ids,
       pricing_mode,
-      pricing_value
-    };
+      pricing_value,
+    });
 
-    btnFinish.disabled = true;
-    btnFinish.innerText = 'Importing...';
-
-    try{
-      const res = await fetch(importUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type':'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-          'X-Requested-With':'XMLHttpRequest'
-        },
-        body: JSON.stringify(payload)
-      });
-
-      const data = await res.json();
-
-      if(!res.ok || !data?.ok){
-        alert(data?.msg || 'Import failed');
-        return;
-      }
-
-      document.getElementById('importResultWrap').style.display = '';
-      document.getElementById('importResultText').innerText =
-        `Imported: ${data.count ?? 0}, Updated: ${data.updated ?? 0}`;
-
-      const idsToMark = applyAll ? servicesData.map(x=>String(x.SERVICEID)) : Array.from(selected);
-
-      idsToMark.forEach(id=>{
-        const row = document.querySelector(`tr[data-remote-id="${CSS.escape(id)}"]`);
-        if(!row) return;
-        const btn = row.querySelector('.clone-btn');
-        if(btn){
-          btn.classList.remove('btn-success');
-          btn.classList.add('btn-secondary');
-          btn.innerText = 'Add ✅';
-          btn.disabled = true;
-        }
-      });
-
-      bootstrap.Modal.getInstance(wizardModalEl).hide();
-
-    }finally{
-      btnFinish.disabled = false;
-      btnFinish.innerText = 'Finish';
+    if (data?.ok) {
+      markAsAdded(data.added_remote_ids || ids);
+      alert(`✅ Imported ${data.count} services successfully`);
+      wizard.hide();
     }
-  }
-
-  btnOpenWizard.addEventListener('click', ()=>{
-    renderTable();
-    showStep(1);
-    new bootstrap.Modal(wizardModalEl).show();
   });
 
-  btnNext.addEventListener('click', ()=>{
-    if(selected.size === 0){
-      alert("اختر خدمات أولاً أو استخدم Select All ✅");
-      return;
+  document.getElementById('wizImportAll')?.addEventListener('click', async () => {
+    if (!confirm('Import ALL services?')) return;
+
+    const pricing_mode  = document.getElementById('wizPricingMode').value;
+    const pricing_value = document.getElementById('wizPricingValue').value;
+
+    const data = await sendImport({
+      kind,
+      apply_all: true,
+      service_ids: [],
+      pricing_mode,
+      pricing_value,
+    });
+
+    if (data?.ok) {
+      markAsAdded(data.added_remote_ids || []);
+      alert(`✅ Imported ${data.count} services successfully`);
+      wizard.hide();
     }
-    showStep(2);
-  });
-
-  btnBack.addEventListener('click', ()=> showStep(1));
-
-  btnFinish.addEventListener('click', ()=>{
-    const applyAll = selected.size === servicesData.length;
-    finishImport(applyAll);
   });
 
 })();
