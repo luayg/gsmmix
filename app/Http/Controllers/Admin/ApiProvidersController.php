@@ -49,7 +49,6 @@ class ApiProvidersController extends Controller
                 $p->balance = $p->balance ?? 0;
                 return $p;
             }
-
             $key = "api:dhru:balance:{$p->id}";
             $bal = Cache::remember($key, 600, function () use ($p) {
                 try {
@@ -64,7 +63,6 @@ class ApiProvidersController extends Controller
                 } catch (\Throwable $e) {}
                 return (float)($p->balance ?? 0);
             });
-
             $p->balance = $bal;
             return $p;
         });
@@ -82,11 +80,13 @@ class ApiProvidersController extends Controller
         return view('admin.api.providers.edit', compact('provider'));
     }
 
+    /**
+     * ✅
+     * عند إضافة مزوّد: نعمل Sync أول مرة "بالخلفية" عبر Queue
+     * حتى لا تتجمّد الصفحة (خصوصاً GSMHUB/DHRU عند كثرة الخدمات).
+     */
     public function store(Request $r)
     {
-        // ✅ مهم: منع Timeout أثناء المزامنة الأولى (ويب)
-        @set_time_limit(0);
-
         $data = $r->validate([
             'name'               => 'required',
             'type'               => 'required|in:dhru,webx,gsmhub,unlockbase,simple_link',
@@ -104,18 +104,13 @@ class ApiProvidersController extends Controller
         $data['synced'] = false;
         $provider = ApiProvider::create($data);
 
-        // ✅ مزامنة أولية تلقائية (Balance + كل الأنواع حسب flags)
+        // ✅ مزامنة أولية تلقائية "Queue"
         if ($provider->active) {
-            try {
-                Artisan::call('providers:sync', ['--provider_id' => $provider->id, '--balance' => true]);
-                Artisan::call('providers:sync', ['--provider_id' => $provider->id]); // catalog
-                $provider->refresh();
-            } catch (\Throwable $e) {
-                // لا توقف الإضافة بسبب فشل المزامنة
-            }
+            $this->queueProviderSync($provider);
         }
 
-        return redirect()->route('admin.apis.index')->with('ok', 'API added + synced');
+        return redirect()->route('admin.apis.index')
+            ->with('ok', 'API added. Initial sync started in background.');
     }
 
     public function update(Request $r, ApiProvider $provider)
@@ -134,7 +129,6 @@ class ApiProvidersController extends Controller
             'active'             => 'boolean',
         ]);
 
-        // ✅ إذا تغيّر أي شيء مهم، خلّي synced=false إلى أن يعمل Sync now/auto sync
         $criticalChanged = (
             ($provider->url ?? '')      !== ($data['url'] ?? '') ||
             ($provider->username ?? '') !== ($data['username'] ?? '') ||
@@ -149,6 +143,7 @@ class ApiProvidersController extends Controller
         }
 
         Cache::forget("api:dhru:balance:{$provider->id}");
+
         return back()->with('ok', 'Saved');
     }
 
@@ -265,19 +260,36 @@ class ApiProvidersController extends Controller
     }
 
     /**
-     * ✅ زر "Sync now" — مزامنة مباشرة (Balance + Catalog)
-     * ملاحظة: كان يحدث Timeout بسبب كثرة updateOrCreate داخل DhruAdapter
+     * ✅ زر "Sync now" — لا يجمّد الصفحة:
+     * نرسل أوامر التزامن للـQueue ثم نرجع مباشرة.
      */
     public function sync(ApiProvider $provider)
     {
-        // ✅ منع Timeout في طلب الويب
-        @set_time_limit(0);
+        $this->queueProviderSync($provider);
 
-        // ✅ Sync now شامل: balance + catalog
-        Artisan::call('providers:sync', ['--provider_id' => $provider->id, '--balance' => true]);
-        Artisan::call('providers:sync', ['--provider_id' => $provider->id]);
+        return back()->with('ok', "Sync queued: {$provider->name} (will run in background)");
+    }
 
-        $provider->refresh();
-        return back()->with('ok', "Synced now: {$provider->name}");
+    /**
+     * ✅ تنفيذ التزامن عبر Queue
+     * ملاحظة مهمة:
+     * - إذا كان QUEUE_CONNECTION=sync => سيبقى يشتغل داخل نفس الطلب (يعني قد يجمّد)
+     * - الأفضل: database/redis + تشغيل: php artisan queue:work
+     */
+    protected function queueProviderSync(ApiProvider $provider): void
+    {
+        // علّم أنه غير متزامن حالياً (إلى أن ينتهي الأمر)
+        $provider->forceFill(['synced' => 0])->saveQuietly();
+
+        // Balance
+        Artisan::queue('providers:sync', [
+            '--provider_id' => $provider->id,
+            '--balance'     => true,
+        ]);
+
+        // Catalog (imei/server/file حسب flags داخل ProvidersSyncCommand)
+        Artisan::queue('providers:sync', [
+            '--provider_id' => $provider->id,
+        ]);
     }
 }
