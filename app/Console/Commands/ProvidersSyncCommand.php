@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Models\ApiProvider;
-use App\Services\Providers\ProviderFactory;
+use App\Services\Providers\ProviderManager;
 
 class ProvidersSyncCommand extends Command
 {
@@ -13,9 +13,9 @@ class ProvidersSyncCommand extends Command
         {--type= : imei|server|file}
         {--balance : تحديث الرصيد فقط}';
 
-    protected $description = 'Sync remote services (all providers) and/or balances';
+    protected $description = 'Sync remote services (all providers) and/or balances (single unified system)';
 
-    public function handle(): int
+    public function handle(ProviderManager $manager): int
     {
         $providerId  = $this->option('provider_id');
         $typeOpt     = $this->option('type');
@@ -27,53 +27,23 @@ class ProvidersSyncCommand extends Command
         $providers = $q->orderBy('id')->get();
 
         foreach ($providers as $p) {
-            $adapter = ProviderFactory::make($p);
+            $this->info("Syncing #{$p->id} {$p->type} {$p->name}");
 
-            $hadError = false;
-            $total    = 0;
+            $res = $manager->syncProvider($p, $typeOpt ? strtolower($typeOpt) : null, $balanceOnly);
 
-            // ✅ balance only: لا تلمس synced نهائيًا (الرصيد ممكن يكون 0 ومع ذلك الاتصال صحيح)
             if ($balanceOnly) {
-                try {
-                    $bal = $adapter->fetchBalance($p);
-                    $p->update(['balance' => $bal]); // ✅ فقط تحديث الرصيد
-                    $this->info("{$p->id} {$p->type} balance={$bal}");
-                } catch (\Throwable $e) {
-                    $hadError = true;
-                    $p->update(['synced' => false]);
-                    $this->error("{$p->id} {$p->type} balance error: " . $e->getMessage());
-                }
+                $this->info("  balance=" . ($res['balance'] ?? 0));
                 continue;
             }
 
-            $types = [];
-            if ($typeOpt) {
-                $types = [strtolower($typeOpt)];
-            } else {
-                if ($p->sync_imei)   $types[] = 'imei';
-                if ($p->sync_server) $types[] = 'server';
-                if ($p->sync_file)   $types[] = 'file';
-            }
-
-            foreach ($types as $t) {
-                if (!$adapter->supportsCatalog($t)) {
-                    $this->line("{$p->id} {$p->type} skip {$t} (no catalog)");
-                    continue;
-                }
-
-                try {
-                    $n = $adapter->syncCatalog($p, $t);
-                    $total += (int)$n;
-                    $this->info("{$p->id} {$p->type} synced {$t}: {$n}");
-                } catch (\Throwable $e) {
-                    $hadError = true;
-                    $this->error("{$p->id} {$p->type} {$t} error: " . $e->getMessage());
+            if (!empty($res['errors'])) {
+                $this->error("  errors:");
+                foreach ($res['errors'] as $e) {
+                    $this->error("   - {$e}");
                 }
             }
 
-            // ✅ synced true إذا: لا يوجد error + حصلنا على أي خدمات
-            $p->update(['synced' => (!$hadError && $total > 0)]);
-            $this->info("{$p->id} {$p->type} done, total={$total}");
+            $this->info("  total={$res['total']} synced=" . ($p->synced ? 'true' : 'false'));
         }
 
         return self::SUCCESS;

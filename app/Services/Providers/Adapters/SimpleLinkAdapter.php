@@ -28,13 +28,19 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
     }
 
     /** helper: إعدادات simple_link من params */
+    protected function params(ApiProvider $p): array
+    {
+        // متوافق: إن كان يوجد params_json (accessor) أو params
+        return $p->params_json ?? (is_array($p->params) ? $p->params : []);
+    }
+
     public function method(ApiProvider $p): string
     {
-        return strtolower((string)($p->params_json['method'] ?? 'post')); // post|get
+        return strtolower((string)($this->params($p)['method'] ?? 'post')); // post|get
     }
 
     public function mainField(ApiProvider $p): string
     {
-        return (string)($p->params_json['main_field'] ?? 'imei');
+        return (string)($this->params($p)['main_field'] ?? 'imei');
     }
 }

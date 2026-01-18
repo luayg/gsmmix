@@ -9,13 +9,15 @@ class Kernel extends ConsoleKernel
 {
     protected function schedule(Schedule $schedule): void
     {
-        // كل ساعة (عدّلها كما تريد: everyFifteenMinutes, dailyAt('02:00')...)
-        $schedule->command('dhru:sync --provider=all')
+        // ✅ نظام واحد فقط للمزامنة (ProviderManager + Adapters)
+        $schedule->command('providers:sync')
             ->hourly()
             ->withoutOverlapping()
-            ->onOneServer(); // لو عندك أكثر من عامل/سيرفر
+            ->onOneServer();
     }
+
     protected $commands = [
-    \App\Console\Commands\ProvidersSyncCommand::class,
-];
+        \App\Console\Commands\ProvidersSyncCommand::class,
+        // ❌ لا نُسجل SyncDhruServices نهائيًا (سيتم حذف الملف)
+    ];
 }

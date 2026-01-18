@@ -2,45 +2,31 @@
 
 namespace App\Jobs;
 
-use App\Models\ApiProvider;
 use App\Services\Providers\ProviderManager;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Throwable;
 
 class SyncProviderJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $providerId;
+    public ?string $onlyType;
+    public bool $balanceOnly;
 
-    public function __construct(int $providerId)
+    public function __construct(int $providerId, ?string $onlyType = null, bool $balanceOnly = false)
     {
-        $this->providerId = $providerId;
+        $this->providerId  = $providerId;
+        $this->onlyType    = $onlyType;
+        $this->balanceOnly = $balanceOnly;
     }
 
     public function handle(ProviderManager $manager): void
     {
-        $provider = ApiProvider::find($this->providerId);
-        if (!$provider) return;
-
-        try {
-            $manager->syncProvider($provider);
-
-            // ✅ أهم شيء: علشان عمود Synced يصير Yes
-            $provider->update([
-                'synced' => true,
-            ]);
-        } catch (Throwable $e) {
-            // ✅ إذا فشل، خلّيها No حتى تعرف إنه ما اكتمل
-            $provider->update([
-                'synced' => false,
-            ]);
-
-            throw $e;
-        }
+        // ProviderManager هو المسؤول الوحيد عن تحديث synced/balance
+        $manager->syncProviderById($this->providerId, $this->onlyType, $this->balanceOnly);
     }
 }

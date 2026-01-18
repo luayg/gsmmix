@@ -11,6 +11,8 @@ class ApiProvider extends Model
 
     protected $fillable = [
         'name','type','url','username','api_key',
+        'params',
+
         'sync_imei','sync_server','sync_file',
         'ignore_low_balance','auto_sync','active','synced',
         'balance','available_imei','used_imei',
@@ -18,6 +20,8 @@ class ApiProvider extends Model
     ];
 
     protected $casts = [
+        'params' => 'array',
+
         'sync_imei'  => 'boolean',
         'sync_server'=> 'boolean',
         'sync_file'  => 'boolean',
@@ -26,6 +30,12 @@ class ApiProvider extends Model
         'active'     => 'boolean',
         'synced'     => 'boolean',
     ];
+
+    // ✅ توافق للخلف: بعض الأكواد تستخدم params_json
+    public function getParamsJsonAttribute(): array
+    {
+        return is_array($this->params) ? $this->params : [];
+    }
 
     public function remoteImeiServices()   { return $this->hasMany(RemoteImeiService::class,   'api_id'); }
     public function remoteServerServices() { return $this->hasMany(RemoteServerService::class, 'api_id'); }
