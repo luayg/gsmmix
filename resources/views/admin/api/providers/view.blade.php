@@ -1,4 +1,5 @@
-@extends('admin.layout')
+@extends('layouts.admin')
+
 @section('content')
 <div class="card">
   <div class="card-header"><h5 class="mb-0">{{ $provider->name }} | View</h5></div>

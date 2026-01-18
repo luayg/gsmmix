@@ -21,114 +21,145 @@ class DhruAdapter implements ProviderAdapterInterface
 
     public function fetchBalance(ApiProvider $provider): float
     {
-        $client = new DhruClient((string)$provider->url, (string)($provider->username ?? ''), (string)($provider->api_key ?? ''));
+        $client = $this->client($provider);
         $info = $client->accountInfo();
-
-        // DhruClient::accountInfo يرجع credits جاهزة
-        return (float)($info['credits'] ?? 0.0);
+        return (float)($info['creditraw'] ?? 0.0);
     }
 
     public function syncCatalog(ApiProvider $provider, string $serviceType): int
     {
         $serviceType = strtolower($serviceType);
 
-        $client = new DhruClient((string)$provider->url, (string)($provider->username ?? ''), (string)($provider->api_key ?? ''));
+        if ($serviceType === 'file') {
+            return $this->syncFileServices($provider);
+        }
+
+        // imei + server + remote are all coming from imeiservicelist (per docs)
+        return $this->syncImeiAndServerServices($provider, $serviceType);
+    }
+
+    protected function client(ApiProvider $p): DhruClient
+    {
+        return new DhruClient((string)$p->url, (string)($p->username ?? ''), (string)($p->api_key ?? ''), 'JSON');
+    }
+
+    protected function syncImeiAndServerServices(ApiProvider $provider, string $wanted): int
+    {
+        $client = $this->client($provider);
+        $list = $client->allServicesAndGroups();
+        if (!$list) return 0;
+
+        $imeiRows = [];
+        $serverRows = [];
+
+        foreach ($list as $groupName => $group) {
+            if (!is_array($group)) continue;
+
+            $gName = (string)($group['GROUPNAME'] ?? $groupName ?? '');
+            $gType = strtoupper((string)($group['GROUPTYPE'] ?? ''));
+
+            $services = $group['SERVICES'] ?? [];
+            if (!is_array($services)) continue;
+
+            foreach ($services as $k => $srv) {
+                if (!is_array($srv)) continue;
+
+                $srvType = strtoupper((string)($srv['SERVICETYPE'] ?? $gType));
+                $remoteId = (string)($srv['SERVICEID'] ?? $k ?? '');
+                if ($remoteId === '') continue;
+
+                // DHRU types: IMEI / SERVER / REMOTE
+                $normalized = match ($srvType) {
+                    'IMEI'   => 'imei',
+                    'SERVER' => 'server',
+                    'REMOTE' => 'server', // في مشروعك نخزّن REMOTE ضمن server table (تقدر تغيرها لاحقًا)
+                    default  => null,
+                };
+
+                if ($normalized === null) continue;
+                if ($wanted !== $normalized) continue;
+
+                $base = [
+                    'api_id'          => (int)$provider->id,
+                    'remote_id'       => $remoteId,
+                    'name'            => (string)($srv['SERVICENAME'] ?? ''),
+                    'group_name'      => $gName,
+                    'price'           => (float)($srv['CREDIT'] ?? 0),
+                    'time'            => (string)($srv['TIME'] ?? ''),
+                    'info'            => (string)($srv['INFO'] ?? ''),
+                    'additional_data' => json_encode($srv, JSON_UNESCAPED_UNICODE),
+                    'updated_at'      => now(),
+                    'created_at'      => now(),
+                ];
+
+                // حقول مشتركة موجودة في DB عند كثير من نسخ DHRU
+                $extra = [
+                    'min_qty'           => isset($srv['MINQNT']) ? (string)$srv['MINQNT'] : null,
+                    'max_qty'           => isset($srv['MAXQNT']) ? (string)$srv['MAXQNT'] : null,
+                    'additional_fields' => isset($srv['Requires.Custom']) ? json_encode($srv['Requires.Custom'], JSON_UNESCAPED_UNICODE) : null,
+                    'params'            => isset($srv['CUSTOM']) ? json_encode($srv['CUSTOM'], JSON_UNESCAPED_UNICODE) : null,
+                ];
+
+                if ($normalized === 'imei') {
+                    $imeiRows[] = array_merge($base, $extra, [
+                        'network'   => (int)($srv['Requires.Network']   ?? 0) !== 0,
+                        'mobile'    => (int)($srv['Requires.Mobile']    ?? 0) !== 0,
+                        'provider'  => (int)($srv['Requires.Provider']  ?? 0) !== 0,
+                        'pin'       => (int)($srv['Requires.PIN']       ?? 0) !== 0,
+                        'kbh'       => (int)($srv['Requires.KBH']       ?? 0) !== 0,
+                        'mep'       => (int)($srv['Requires.MEP']       ?? 0) !== 0,
+                        'prd'       => (int)($srv['Requires.PRD']       ?? 0) !== 0,
+                        'type'      => (int)($srv['Requires.Type']      ?? 0) !== 0,
+                        'locks'     => (int)($srv['Requires.Locks']     ?? 0) !== 0,
+                        'reference' => (int)($srv['Requires.Reference'] ?? 0) !== 0,
+                        'serial'    => (int)($srv['Requires.SN']        ?? 0) !== 0,
+                        'secro'     => (int)($srv['Requires.SecRO']     ?? 0) !== 0,
+                    ]);
+                } else {
+                    $serverRows[] = array_merge($base, $extra);
+                }
+            }
+        }
+
+        if ($wanted === 'imei') {
+            return $this->bulkUpsert((new RemoteImeiService)->getTable(), $imeiRows);
+        }
+        return $this->bulkUpsert((new RemoteServerService)->getTable(), $serverRows);
+    }
+
+    protected function syncFileServices(ApiProvider $provider): int
+    {
+        $client = $this->client($provider);
+        $list = $client->fileServiceList();
+        if (!$list) return 0;
 
         $rows = [];
 
-        if ($serviceType === 'imei') {
-            $services = $client->imeiServices();
-            foreach ($services as $srv) {
-                $remoteId = (string)($srv['SERVICEID'] ?? '');
+        foreach ($list as $groupName => $group) {
+            if (!is_array($group)) continue;
+            $gName = (string)($group['GROUPNAME'] ?? $groupName ?? '');
+            $services = $group['SERVICES'] ?? [];
+            if (!is_array($services)) continue;
+
+            foreach ($services as $k => $srv) {
+                if (!is_array($srv)) continue;
+                $remoteId = (string)($srv['SERVICEID'] ?? $k ?? '');
                 if ($remoteId === '') continue;
 
                 $rows[] = [
-                    'api_id'            => $provider->id,
-                    'remote_id'         => $remoteId,
-                    'name'              => (string)($srv['SERVICENAME'] ?? ''),
-                    'group_name'        => (string)($srv['group'] ?? ''),
-                    'price'             => (float)($srv['CREDIT'] ?? 0),
-                    'time'              => (string)($srv['TIME'] ?? ''),
-                    'info'              => (string)($srv['INFO'] ?? ''),
-                    'min_qty'           => isset($srv['MINQNT']) ? (string)$srv['MINQNT'] : null,
-                    'max_qty'           => isset($srv['MAXQNT']) ? (string)$srv['MAXQNT'] : null,
-                    'credit_groups'     => isset($srv['CREDITGROUPS']) ? json_encode($srv['CREDITGROUPS']) : null,
-                    'additional_fields' => isset($srv['ADDFIELDS'])    ? json_encode($srv['ADDFIELDS'])    : null,
-                    'additional_data'   => json_encode($srv, JSON_UNESCAPED_UNICODE),
-                    'params'            => isset($srv['PARAMS'])       ? json_encode($srv['PARAMS'])       : null,
-
-                    // Flags (إن كانت الأعمدة موجودة في جدولك)
-                    'network'           => (int)!!($srv['Requires.Network']   ?? 0),
-                    'mobile'            => (int)!!($srv['Requires.Mobile']    ?? 0),
-                    'provider'          => (int)!!($srv['Requires.Provider']  ?? 0),
-                    'pin'               => (int)!!($srv['Requires.PIN']       ?? 0),
-                    'kbh'               => (int)!!($srv['Requires.KBH']       ?? 0),
-                    'mep'               => (int)!!($srv['Requires.MEP']       ?? 0),
-                    'prd'               => (int)!!($srv['Requires.PRD']       ?? 0),
-                    'type'              => (int)!!($srv['Requires.Type']      ?? 0),
-                    'locks'             => (int)!!($srv['Requires.Locks']     ?? 0),
-                    'reference'         => (int)!!($srv['Requires.Reference'] ?? 0),
-                    'udid'              => (int)!!($srv['Requires.UDID']      ?? 0),
-                    'serial'            => (int)!!($srv['Requires.SN']        ?? 0),
-                    'secro'             => (int)!!($srv['Requires.SecRO']     ?? 0),
-
-                    'updated_at'        => now(),
-                    'created_at'        => now(),
+                    'api_id'             => (int)$provider->id,
+                    'remote_id'          => $remoteId,
+                    'name'               => (string)($srv['SERVICENAME'] ?? ''),
+                    'group_name'         => $gName,
+                    'price'              => (float)($srv['CREDIT'] ?? 0),
+                    'time'               => (string)($srv['TIME'] ?? ''),
+                    'info'               => (string)($srv['INFO'] ?? ''),
+                    'allowed_extensions' => (string)($srv['ALLOW_EXTENSION'] ?? ''),
+                    'additional_data'    => json_encode($srv, JSON_UNESCAPED_UNICODE),
+                    'updated_at'         => now(),
+                    'created_at'         => now(),
                 ];
             }
-
-            return $this->bulkUpsert((new RemoteImeiService)->getTable(), $rows);
-        }
-
-        if ($serviceType === 'server') {
-            $services = $client->serverServices();
-            foreach ($services as $srv) {
-                $remoteId = (string)($srv['SERVICEID'] ?? '');
-                if ($remoteId === '') continue;
-
-                $rows[] = [
-                    'api_id'            => $provider->id,
-                    'remote_id'         => $remoteId,
-                    'name'              => (string)($srv['SERVICENAME'] ?? ''),
-                    'group_name'        => (string)($srv['group'] ?? ''),
-                    'price'             => (float)($srv['CREDIT'] ?? 0),
-                    'time'              => (string)($srv['TIME'] ?? ''),
-                    'info'              => (string)($srv['INFO'] ?? ''),
-                    'min_qty'           => isset($srv['MINQNT']) ? (string)$srv['MINQNT'] : null,
-                    'max_qty'           => isset($srv['MAXQNT']) ? (string)$srv['MAXQNT'] : null,
-                    'credit_groups'     => isset($srv['CREDITGROUPS']) ? json_encode($srv['CREDITGROUPS']) : null,
-                    'additional_fields' => isset($srv['ADDFIELDS'])    ? json_encode($srv['ADDFIELDS'])    : null,
-                    'additional_data'   => json_encode($srv, JSON_UNESCAPED_UNICODE),
-                    'params'            => isset($srv['PARAMS'])       ? json_encode($srv['PARAMS'])       : null,
-                    'updated_at'        => now(),
-                    'created_at'        => now(),
-                ];
-            }
-
-            return $this->bulkUpsert((new RemoteServerService)->getTable(), $rows);
-        }
-
-        // file
-        $services = $client->fileServices();
-        foreach ($services as $srv) {
-            $remoteId = (string)($srv['SERVICEID'] ?? '');
-            if ($remoteId === '') continue;
-
-            $rows[] = [
-                'api_id'             => $provider->id,
-                'remote_id'          => $remoteId,
-                'name'               => (string)($srv['SERVICENAME'] ?? ''),
-                'group_name'         => (string)($srv['group'] ?? ''),
-                'price'              => (float)($srv['CREDIT'] ?? 0),
-                'time'               => (string)($srv['TIME'] ?? ''),
-                'info'               => (string)($srv['INFO'] ?? ''),
-                'allowed_extensions' => (string)($srv['ALLOW_EXTENSION'] ?? ''),
-                'additional_fields'  => isset($srv['ADDFIELDS']) ? json_encode($srv['ADDFIELDS']) : null,
-                'additional_data'    => json_encode($srv, JSON_UNESCAPED_UNICODE),
-                'params'             => isset($srv['PARAMS']) ? json_encode($srv['PARAMS']) : null,
-                'updated_at'         => now(),
-                'created_at'         => now(),
-            ];
         }
 
         return $this->bulkUpsert((new RemoteFileService)->getTable(), $rows);
@@ -139,10 +170,7 @@ class DhruAdapter implements ProviderAdapterInterface
         $rows = array_values(array_filter($rows));
         if (!$rows) return 0;
 
-        // نفس فكرة GSMHub upsert :contentReference[oaicite:8]{index=8}
         $uniqueBy = ['api_id', 'remote_id'];
-
-        // نحدث كل الأعمدة ما عدا created_at (نتركها أول مرة فقط)
         $update = array_keys($rows[0]);
         $update = array_values(array_diff($update, ['created_at']));
 

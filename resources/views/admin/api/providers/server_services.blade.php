@@ -1,5 +1,6 @@
 {{-- resources/views/admin/api/providers/server_services.blade.php --}}
-@extends('admin.layout')
+@extends('layouts.admin')
+
 
 @section('content')
 <div class="card">
