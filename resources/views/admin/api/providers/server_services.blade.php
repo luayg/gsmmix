@@ -1,10 +1,11 @@
 {{-- resources/views/admin/api/providers/server_services.blade.php --}}
 @extends('layouts.admin')
 
-
 @section('content')
 <div class="card">
-  <div class="card-header"><h5 class="mb-0">{{ $provider->name }} | SERVER services</h5></div>
+  <div class="card-header">
+    <h5 class="mb-0">{{ $provider->name }} | SERVER services</h5>
+  </div>
 
   <div class="card-body p-0">
     <div class="table-responsive">
@@ -26,7 +27,8 @@
             @php
               $remoteId = $svc->remote_id;
               $name     = $svc->name ?? '';
-              $credit   = $svc->credit ?? 0;
+              // ✅ الصحيح: السعر مخزن في price (ليس credit)
+              $credit   = $svc->price ?? 0;
               $time     = $svc->time ?? '';
             @endphp
             <tr>
@@ -41,6 +43,7 @@
                   data-service-type="server"
                   data-provider-id="{{ $provider->id }}"
                   data-remote-id="{{ $remoteId }}"
+                  data-group-name="{{ $groupName }}"
                   data-name="{{ $name }}"
                   data-credit="{{ $credit }}"
                   data-time="{{ $time }}">
