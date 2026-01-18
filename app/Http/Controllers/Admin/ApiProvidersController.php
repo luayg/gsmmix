@@ -11,8 +11,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use App\Services\Api\DhruClient;
-use App\Models\ServiceGroup;
-use Illuminate\Support\Str;
 
 class ApiProvidersController extends Controller
 {
@@ -51,6 +49,7 @@ class ApiProvidersController extends Controller
                 $p->balance = $p->balance ?? 0;
                 return $p;
             }
+
             $key = "api:dhru:balance:{$p->id}";
             $bal = Cache::remember($key, 600, function () use ($p) {
                 try {
@@ -65,6 +64,7 @@ class ApiProvidersController extends Controller
                 } catch (\Throwable $e) {}
                 return (float)($p->balance ?? 0);
             });
+
             $p->balance = $bal;
             return $p;
         });
@@ -83,36 +83,40 @@ class ApiProvidersController extends Controller
     }
 
     public function store(Request $r)
-{
-    $data = $r->validate([
-        'name'               => 'required',
-        'type'               => 'required|in:dhru,webx,gsmhub,unlockbase,simple_link',
-        'url'                => 'required',
-        'username'           => 'nullable',
-        'api_key'            => 'nullable',
-        'sync_imei'          => 'boolean',
-        'sync_server'        => 'boolean',
-        'sync_file'          => 'boolean',
-        'ignore_low_balance' => 'boolean',
-        'auto_sync'          => 'boolean',
-        'active'             => 'boolean',
-    ]);
+    {
+        // ✅ مهم: منع Timeout أثناء المزامنة الأولى (ويب)
+        @set_time_limit(0);
 
-    $data['synced'] = false;
-    $provider = ApiProvider::create($data);
+        $data = $r->validate([
+            'name'               => 'required',
+            'type'               => 'required|in:dhru,webx,gsmhub,unlockbase,simple_link',
+            'url'                => 'required',
+            'username'           => 'nullable',
+            'api_key'            => 'nullable',
+            'sync_imei'          => 'boolean',
+            'sync_server'        => 'boolean',
+            'sync_file'          => 'boolean',
+            'ignore_low_balance' => 'boolean',
+            'auto_sync'          => 'boolean',
+            'active'             => 'boolean',
+        ]);
 
-    // ✅ مزامنة أولية تلقائية (Balance + كل الأنواع حسب flags)
-    if ($provider->active) {
-        try {
-            \Artisan::call('providers:sync', ['--provider_id' => $provider->id, '--balance' => true]);
-            \Artisan::call('providers:sync', ['--provider_id' => $provider->id]); // catalog
-            $provider->refresh();
-        } catch (\Throwable $e) {}
+        $data['synced'] = false;
+        $provider = ApiProvider::create($data);
+
+        // ✅ مزامنة أولية تلقائية (Balance + كل الأنواع حسب flags)
+        if ($provider->active) {
+            try {
+                Artisan::call('providers:sync', ['--provider_id' => $provider->id, '--balance' => true]);
+                Artisan::call('providers:sync', ['--provider_id' => $provider->id]); // catalog
+                $provider->refresh();
+            } catch (\Throwable $e) {
+                // لا توقف الإضافة بسبب فشل المزامنة
+            }
+        }
+
+        return redirect()->route('admin.apis.index')->with('ok', 'API added + synced');
     }
-
-    return redirect()->route('admin.apis.index')->with('ok', 'API added + synced');
-}
-
 
     public function update(Request $r, ApiProvider $provider)
     {
@@ -174,6 +178,7 @@ class ApiProvidersController extends Controller
                 $info = ['error' => $e->getMessage()];
             }
         }
+
         return view('admin.api.providers.modals.view', compact('provider', 'info'));
     }
 
@@ -260,16 +265,19 @@ class ApiProvidersController extends Controller
     }
 
     /**
-     * ✅ زر "Sync now" — مزامنة مباشرة لجميع أنواع الخدمات للمزوّد (حسب flags)
+     * ✅ زر "Sync now" — مزامنة مباشرة (Balance + Catalog)
+     * ملاحظة: كان يحدث Timeout بسبب كثرة updateOrCreate داخل DhruAdapter
      */
     public function sync(ApiProvider $provider)
-{
-    // ✅ Sync now شامل: balance + catalog
-    \Artisan::call('providers:sync', ['--provider_id' => $provider->id, '--balance' => true]);
-    \Artisan::call('providers:sync', ['--provider_id' => $provider->id]);
+    {
+        // ✅ منع Timeout في طلب الويب
+        @set_time_limit(0);
 
-    $provider->refresh();
-    return back()->with('ok', "Synced now: {$provider->name}");
-}
+        // ✅ Sync now شامل: balance + catalog
+        Artisan::call('providers:sync', ['--provider_id' => $provider->id, '--balance' => true]);
+        Artisan::call('providers:sync', ['--provider_id' => $provider->id]);
 
+        $provider->refresh();
+        return back()->with('ok', "Synced now: {$provider->name}");
+    }
 }
