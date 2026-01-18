@@ -9,6 +9,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Throwable;
 
 class SyncProviderJob implements ShouldQueue
 {
@@ -21,23 +22,25 @@ class SyncProviderJob implements ShouldQueue
         $this->providerId = $providerId;
     }
 
-    public function handle(ProviderManager $manager)
+    public function handle(ProviderManager $manager): void
     {
         $provider = ApiProvider::find($this->providerId);
         if (!$provider) return;
 
-        // balance
-        $manager->syncBalance($provider);
+        try {
+            $manager->syncProvider($provider);
 
-        // catalogs
-        foreach (['imei','server','file'] as $type) {
-            $manager->syncCatalog($provider, $type);
+            // ✅ أهم شيء: علشان عمود Synced يصير Yes
+            $provider->update([
+                'synced' => true,
+            ]);
+        } catch (Throwable $e) {
+            // ✅ إذا فشل، خلّيها No حتى تعرف إنه ما اكتمل
+            $provider->update([
+                'synced' => false,
+            ]);
+
+            throw $e;
         }
-
-        // ✅ أهم سطر مفقود
-        $provider->update([
-            'synced' => 1,
-            'last_synced_at' => now(),
-        ]);
     }
 }

@@ -8,29 +8,14 @@
     <h5 class="mb-0">{{ $provider->name }} | IMEI services</h5>
 
     <div class="d-flex gap-2">
-
-      {{-- Select All --}}
-      <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSelectAll">
-        Select All
-      </button>
-
-      {{-- Add Selected --}}
-      <button type="button" class="btn btn-primary btn-sm" id="btnAddSelected">
-        Add Selected
-      </button>
-
-      {{-- Add All --}}
-      <button type="button" class="btn btn-success btn-sm" id="btnAddAll">
-        Add All
-      </button>
-
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="btnSelectAll">Select All</button>
+      <button type="button" class="btn btn-primary btn-sm" id="btnAddSelected">Add Selected</button>
+      <button type="button" class="btn btn-success btn-sm" id="btnAddAll">Add All</button>
     </div>
   </div>
 
   <div class="card-body p-3 border-bottom">
-    {{-- Pricing / Group Controls --}}
     <div class="row g-2 align-items-center">
-
       <div class="col-md-4">
         <label class="form-label mb-1">Group Mode</label>
         <select class="form-select form-select-sm" id="groupMode">
@@ -61,19 +46,15 @@
         <label class="form-label mb-1">Value</label>
         <input type="number" step="0.01" class="form-control form-control-sm" id="pricingValue" value="0">
       </div>
-
     </div>
   </div>
 
   <div class="card-body p-0">
-
     <div class="table-responsive">
       <table class="table table-sm table-striped mb-0 align-middle">
         <thead>
           <tr>
-            <th style="width:40px">
-              <input type="checkbox" id="checkAll">
-            </th>
+            <th style="width:40px"><input type="checkbox" id="checkAll"></th>
             <th>Group</th>
             <th style="width:110px">Remote ID</th>
             <th>Name</th>
@@ -85,25 +66,30 @@
 
         <tbody>
         @forelse($groups as $groupName => $items)
-  @foreach($items as $svc)
-    @php
-      $remoteId = $svc->remote_id;
-      $name     = $svc->name ?? '';
-      $credit   = $svc->credit ?? 0;
-      $time     = $svc->time ?? '';
-    @endphp
-    <tr data-remote-id="{{ $remoteId }}">
-      ...
-      <td>{{ $groupName }}</td>
-      <td><code>{{ $remoteId }}</code></td>
-      <td style="min-width:520px;">{{ $name }}</td>
-      <td>{{ $credit }}</td>
-      <td>{{ $time }}</td>
-      ...
+          @foreach($items as $svc)
+            @php
+              $remoteId = $svc->remote_id;
+              $name     = $svc->name ?? '';
+              $credit   = $svc->credit ?? 0;
+              $time     = $svc->time ?? '';
+            @endphp
+            <tr data-remote-id="{{ $remoteId }}">
+              <td>
+                <input type="checkbox" class="svc-check"
+                       value="{{ $remoteId }}"
+                       data-group="{{ $groupName }}"
+                       data-name="{{ $name }}"
+                       data-credit="{{ $credit }}"
+                       data-time="{{ $time }}">
+              </td>
 
+              <td>{{ $groupName }}</td>
+              <td><code>{{ $remoteId }}</code></td>
+              <td style="min-width:520px;">{{ $name }}</td>
+              <td>{{ $credit }}</td>
+              <td>{{ $time }}</td>
 
               <td class="text-end">
-                {{-- Clone single service (existing behavior) --}}
                 <button type="button"
                         class="btn btn-success btn-sm clone-btn"
                         data-create-service
@@ -125,7 +111,6 @@
 
       </table>
     </div>
-
   </div>
 </div>
 
@@ -133,10 +118,8 @@
   @include('admin.services.imei._modal_create')
 </template>
 
-{{-- ========== Bulk Import Script ========== --}}
 <script>
 (function(){
-
   const importUrl    = @json(route('admin.apis.services.import', $provider));
   const csrfToken    = @json(csrf_token());
 
@@ -152,17 +135,12 @@
     document.querySelectorAll('.svc-check').forEach(cb => cb.checked = state);
   }
 
-  // ✅ تحديث شكل زر Clone إلى Added
   function markAsAdded(ids = []) {
     ids.forEach(id => {
       const row = document.querySelector(`tr[data-remote-id="${CSS.escape(String(id))}"]`);
       if (!row) return;
-
-      // disable checkbox
       const cb = row.querySelector('.svc-check');
       if (cb) { cb.checked = false; cb.disabled = true; }
-
-      // change clone button
       const btn = row.querySelector('.clone-btn');
       if (btn) {
         btn.classList.remove('btn-success');
@@ -174,10 +152,8 @@
     });
   }
 
-  // ✅ تحديث جميع الصفوف إلى Added (Add All)
   function markAllAsAdded() {
     document.querySelectorAll('tr[data-remote-id]').forEach(row => {
-      const id = row.getAttribute('data-remote-id');
       const cb = row.querySelector('.svc-check');
       if (cb) { cb.checked = false; cb.disabled = true; }
       const btn = row.querySelector('.clone-btn');
@@ -191,12 +167,10 @@
     });
   }
 
-  // Toggle group picker
   groupMode.addEventListener('change', ()=>{
     groupPicker.style.display = groupMode.value === 'pick' ? '' : 'none';
   });
 
-  // Check all
   checkAll?.addEventListener('change', ()=> setAllChecks(checkAll.checked));
 
   document.getElementById('btnSelectAll')?.addEventListener('click', ()=>{
@@ -225,7 +199,6 @@
     return data;
   }
 
-  // ✅ Add Selected
   document.getElementById('btnAddSelected')?.addEventListener('click', async ()=>{
     const ids = getSelectedIds();
     if (!ids.length) return alert("Select services first!");
@@ -241,13 +214,11 @@
     });
 
     if (data?.ok) {
-      // ✅ هنا نغير فقط الخدمات التي تم إضافتها
       markAsAdded(ids);
       alert(`✅ Imported ${data.count} services successfully`);
     }
   });
 
-  // ✅ Add All
   document.getElementById('btnAddAll')?.addEventListener('click', async ()=>{
     if (!confirm("Import ALL services?")) return;
 
@@ -262,12 +233,10 @@
     });
 
     if (data?.ok) {
-      // ✅ هنا نغير كل الخدمات إلى Added
       markAllAsAdded();
       alert(`✅ Imported ALL services successfully`);
     }
   });
-
 })();
 </script>
 @endsection

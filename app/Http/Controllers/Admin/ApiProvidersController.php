@@ -14,39 +14,23 @@ class ApiProvidersController extends Controller
 {
     public function index(Request $request)
     {
-        $q      = trim((string) $request->get('q', ''));
-        $type   = trim((string) $request->get('type', ''));
-        $status = trim((string) $request->get('status', ''));
-        $perPage = (int) $request->get('per_page', 20);
-        if ($perPage <= 0) $perPage = 20;
+        $q      = $request->get('q', '');
+        $type   = $request->get('type', '');
+        $status = $request->get('status', '');
 
-        $query = ApiProvider::query();
+        $rows = ApiProvider::query()
+            ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
+            ->when($type !== '', fn($qq) => $qq->where('type', $type))
+            ->when($status !== '', function ($qq) use ($status) {
+                // status: synced / not_synced (اختياري حسب UI)
+                if ($status === 'synced') $qq->where('synced', 1);
+                if ($status === 'not_synced') $qq->where('synced', 0);
+            })
+            ->orderByDesc('id')
+            ->paginate((int) $request->get('per_page', 20))
+            ->withQueryString();
 
-        if ($q !== '') {
-            $query->where(function($qq) use ($q) {
-                $qq->where('name', 'like', "%{$q}%")
-                   ->orWhere('type', 'like', "%{$q}%")
-                   ->orWhere('id', (int)$q);
-            });
-        }
-
-        if ($type !== '') {
-            $query->where('type', $type);
-        }
-
-        if ($status !== '') {
-            // حسب ما هو ظاهر في الـBlade "Active/Inactive"
-            if ($status === 'Active') {
-                $query->where('active', 1);
-            } elseif ($status === 'Inactive') {
-                $query->where('active', 0);
-            }
-        }
-
-        // ✅ أهم تعديل: الواجهة تتوقع $rows
-        $rows = $query->orderByDesc('id')->paginate($perPage)->withQueryString();
-
-        return view('admin.api.providers.index', compact('rows'));
+        return view('admin.api.providers.index', compact('rows', 'q', 'type', 'status'));
     }
 
     public function create()
@@ -57,27 +41,39 @@ class ApiProvidersController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'name'      => 'required|string|max:255',
-            'type'      => 'required|string|max:50',
-            'base_url'  => 'nullable|string|max:255',
-            'api_key'   => 'nullable|string|max:255',
-            'username'  => 'nullable|string|max:255',
-            'password'  => 'nullable|string|max:255',
-            'active'    => 'nullable|boolean',
-            'auto_sync' => 'nullable|boolean',
+            'name'      => ['required','string','max:255'],
+            'type'      => ['required','string','max:50'],
+            'url'       => ['nullable','string','max:500'],     // ✅ مهم
+            'api_key'   => ['nullable','string','max:500'],
+            'username'  => ['nullable','string','max:255'],
+            'password'  => ['nullable','string','max:255'],
+            'auto_sync' => ['nullable'],
         ]);
 
-        $data['active']    = (bool)($data['active'] ?? 0);
-        $data['auto_sync'] = (bool)($data['auto_sync'] ?? 0);
+        $provider = new ApiProvider();
+        $provider->name      = $data['name'];
+        $provider->type      = $data['type'];
 
-        ApiProvider::create($data);
+        // ✅ توحيد الاسم: نخزن URL في عمود url (ولو جدولك اسمه base_url عدله هنا)
+        $provider->url       = $data['url'] ?? null;
 
-        return redirect()->route('admin.apis.index')->with('ok', 'API created');
-    }
+        $provider->api_key   = $data['api_key'] ?? null;
+        $provider->username  = $data['username'] ?? null;
+        $provider->password  = $data['password'] ?? null;
+        $provider->auto_sync = !empty($data['auto_sync']) ? 1 : 0;
 
-    public function view(ApiProvider $provider)
-    {
-        return view('admin.api.providers.view', compact('provider'));
+        // synced افتراضيًا No
+        $provider->synced    = 0;
+        $provider->balance   = 0;
+
+        $provider->save();
+
+        // ✅ Sync تلقائي أول مرة (بالخلفية) إذا auto_sync=Yes
+        if ($provider->auto_sync) {
+            SyncProviderJob::dispatch($provider->id);
+        }
+
+        return redirect()->route('admin.apis.index')->with('success', 'Provider added');
     }
 
     public function edit(ApiProvider $provider)
@@ -88,86 +84,107 @@ class ApiProvidersController extends Controller
     public function update(Request $request, ApiProvider $provider)
     {
         $data = $request->validate([
-            'name'      => 'required|string|max:255',
-            'type'      => 'required|string|max:50',
-            'base_url'  => 'nullable|string|max:255',
-            'api_key'   => 'nullable|string|max:255',
-            'username'  => 'nullable|string|max:255',
-            'password'  => 'nullable|string|max:255',
-            'active'    => 'nullable|boolean',
-            'auto_sync' => 'nullable|boolean',
+            'name'      => ['required','string','max:255'],
+            'type'      => ['required','string','max:50'],
+            'url'       => ['nullable','string','max:500'],     // ✅ مهم
+            'api_key'   => ['nullable','string','max:500'],
+            'username'  => ['nullable','string','max:255'],
+            'password'  => ['nullable','string','max:255'],
+            'auto_sync' => ['nullable'],
         ]);
 
-        $data['active']    = (bool)($data['active'] ?? 0);
-        $data['auto_sync'] = (bool)($data['auto_sync'] ?? 0);
+        $provider->name      = $data['name'];
+        $provider->type      = $data['type'];
+        $provider->url       = $data['url'] ?? null;
 
-        $provider->update($data);
+        $provider->api_key   = $data['api_key'] ?? null;
+        $provider->username  = $data['username'] ?? null;
+        $provider->password  = $data['password'] ?? null;
 
-        return redirect()->route('admin.apis.index')->with('ok', 'API updated');
+        $provider->auto_sync = !empty($data['auto_sync']) ? 1 : 0;
+
+        // ✅ عند تغيير API، اعتبره غير متزامن حتى يعاد sync
+        $provider->synced = 0;
+
+        $provider->save();
+
+        // ✅ Sync تلقائي بعد التعديل إذا auto_sync=Yes
+        if ($provider->auto_sync) {
+            SyncProviderJob::dispatch($provider->id);
+        }
+
+        return redirect()->route('admin.apis.index')->with('success', 'Provider updated');
     }
 
     public function destroy(ApiProvider $provider)
     {
         $provider->delete();
-        return redirect()->route('admin.apis.index')->with('ok', 'API deleted');
+        return redirect()->route('admin.apis.index')->with('success', 'Provider deleted');
     }
 
-    public function options()
+    /**
+     * ✅ زر Sync now
+     * - لا يعلق الصفحة
+     * - يرسل Job
+     */
+    public function sync(Request $request, ApiProvider $provider)
     {
-        $rows = ApiProvider::orderBy('name')->get(['id','name','type']);
-        return response()->json($rows);
-    }
-
-    public function sync(ApiProvider $provider)
-    {
-        // ✅ يضعه بالطابور
+        // background sync
         SyncProviderJob::dispatch($provider->id);
 
-        return redirect()
-            ->route('admin.apis.index')
-            ->with('ok', "Sync queued: {$provider->name} (will run in background)");
+        // لو AJAX رجّع JSON
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => true, 'msg' => 'Sync queued']);
+        }
+
+        return back()->with('success', "Sync queued: {$provider->name} (will run in background)");
     }
 
-    // ✅ خدمات IMEI
+    /**
+     * ✅ عرض خدمات IMEI من جدول remote_imei_services
+     * مهم: العمود الصحيح api_id وليس api_provider_id
+     */
     public function servicesImei(ApiProvider $provider)
     {
-        // جلب من الجداول المحلية (بعد syncCatalog)
-        $services = RemoteImeiService::where('api_provider_id', $provider->id)
+        $groups = RemoteImeiService::query()
+            ->where('api_id', $provider->id)   // ✅ FIX
             ->orderBy('group_name')
             ->orderBy('remote_id')
-            ->get();
-
-        // Grouped by group_name
-        $groups = $services->groupBy(fn($s) => (string)($s->group_name ?? ''));
+            ->get()
+            ->groupBy('group_name');
 
         return view('admin.api.providers.imei_services', compact('provider', 'groups'));
     }
 
-    // ✅ خدمات SERVER
+    /**
+     * ✅ عرض خدمات SERVER من جدول remote_server_services
+     */
     public function servicesServer(ApiProvider $provider)
     {
-        $services = RemoteServerService::where('api_provider_id', $provider->id)
+        $groups = RemoteServerService::query()
+            ->where('api_id', $provider->id)   // ✅ FIX
             ->orderBy('group_name')
             ->orderBy('remote_id')
-            ->get();
-
-        $groups = $services->groupBy(fn($s) => (string)($s->group_name ?? ''));
+            ->get()
+            ->groupBy('group_name');
 
         return view('admin.api.providers.server_services', compact('provider', 'groups'));
     }
 
-    // ✅ خدمات FILE
+    /**
+     * ✅ عرض خدمات FILE من جدول remote_file_services
+     */
     public function servicesFile(ApiProvider $provider)
     {
-        $services = RemoteFileService::where('api_provider_id', $provider->id)
+        $groups = RemoteFileService::query()
+            ->where('api_id', $provider->id)   // ✅ FIX
             ->orderBy('group_name')
             ->orderBy('remote_id')
-            ->get();
-
-        $groups = $services->groupBy(fn($s) => (string)($s->group_name ?? ''));
+            ->get()
+            ->groupBy('group_name');
 
         return view('admin.api.providers.file_services', compact('provider', 'groups'));
     }
 
-    // (لو عندك importServices / importServicesWizard خليهم كما هم عندك — لم أغيرهم هنا)
+    // إن كان عندك importServices/importServicesWizard خليهم كما هم عندك (لم ألمسهم هنا)
 }

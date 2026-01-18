@@ -27,17 +27,12 @@ class ApiProvider extends Model
         'synced'     => 'boolean',
     ];
 
-    public function imeiServices()   { return $this->hasMany(ImeiService::class,   'supplier_id'); }
-    public function serverServices() { return $this->hasMany(ServerService::class, 'supplier_id'); }
-    public function fileServices()   { return $this->hasMany(FileService::class,   'supplier_id'); }
-
     public function remoteImeiServices()   { return $this->hasMany(RemoteImeiService::class,   'api_id'); }
     public function remoteServerServices() { return $this->hasMany(RemoteServerService::class, 'api_id'); }
     public function remoteFileServices()   { return $this->hasMany(RemoteFileService::class,   'api_id'); }
 
     protected static function booted()
     {
-        // تنظيف تلقائي عند الحذف (بالإضافة إلى FK CASCADE إن وُجد)
         static::deleting(function (ApiProvider $p) {
             DB::table('remote_imei_services')->where('api_id', $p->id)->delete();
             DB::table('remote_server_services')->where('api_id', $p->id)->delete();
