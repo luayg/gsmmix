@@ -123,6 +123,29 @@ class ApiProvidersController extends Controller
     }
 
     /**
+     * ✅ (FIX) خيارات مزوّدي الـAPI لاستخدامها في المودال (select)
+     * Route: admin.apis.options => GET /admin/apis/options
+     */
+    public function options(Request $request)
+    {
+        $type = trim((string) $request->get('type', ''));
+
+        $rows = ApiProvider::query()
+            ->select(['id', 'name', 'type'])
+            ->when($type !== '', fn($q) => $q->where('type', $type))
+            ->orderBy('name')
+            ->get()
+            ->map(fn($p) => [
+                'id'   => $p->id,
+                'name' => $p->name,
+                'type' => $p->type,
+            ])
+            ->values();
+
+        return response()->json($rows);
+    }
+
+    /**
      * ✅ زر Sync now
      * - لا يعلق الصفحة
      * - يرسل Job
