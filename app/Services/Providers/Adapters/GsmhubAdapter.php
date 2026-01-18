@@ -3,10 +3,11 @@
 namespace App\Services\Providers\Adapters;
 
 use App\Models\ApiProvider;
-use App\Models\RemoteFileService;
 use App\Models\RemoteImeiService;
 use App\Models\RemoteServerService;
+use App\Models\RemoteFileService;
 use App\Services\Providers\ProviderAdapterInterface;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 
 class GsmhubAdapter implements ProviderAdapterInterface
@@ -23,27 +24,21 @@ class GsmhubAdapter implements ProviderAdapterInterface
 
     /**
      * imei.us يطلب base URL = https://imei.us/public
-     * لكن endpoint الحقيقي للـ API عادةً: https://imei.us/api/index.php
-     *
-     * ✅ يدعم الحالات:
-     * - https://imei.us/public
-     * - https://imei.us
-     * - https://imei.us/api/index.php
-     * - أي رابط ينتهي بملف php يعتبر endpoint جاهز.
+     * لكن endpoint الحقيقي يكون: https://imei.us/api/index.php
      */
     protected function endpoint(ApiProvider $p): string
     {
-        $base = rtrim((string) $p->url, '/');
+        $base = rtrim((string)$p->url, '/');
 
         // إذا المستخدم كتب ملف php مباشرة
         if (preg_match('~/[^/]+\.php$~i', $base)) {
             return $base;
         }
 
-        // إذا انتهى بـ /public -> احذف public من المسار
+        // إذا انتهى بـ /public -> احذف public
         if (preg_match('~/public$~i', $base)) {
             $base = preg_replace('~/public$~i', '', $base);
-            $base = rtrim((string) $base, '/');
+            $base = rtrim($base, '/');
         }
 
         return $base . '/api/index.php';
@@ -55,8 +50,8 @@ class GsmhubAdapter implements ProviderAdapterInterface
 
         $xml = '<PARAMETERS>';
         foreach ($params as $k => $v) {
-            $tag = strtoupper((string) $k);
-            $val = htmlspecialchars((string) $v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $tag = strtoupper((string)$k);
+            $val = htmlspecialchars((string)$v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $xml .= "<{$tag}>{$val}</{$tag}>";
         }
         $xml .= '</PARAMETERS>';
@@ -77,10 +72,9 @@ class GsmhubAdapter implements ProviderAdapterInterface
         ];
 
         $res = Http::asForm()
-            ->timeout(60)
+            ->timeout(90)
             ->post($url, $payload);
 
-        // Debug HTTP
         logger()->info('GSMHUB HTTP', [
             'provider_id'   => $p->id,
             'url'           => $url,
@@ -100,46 +94,12 @@ class GsmhubAdapter implements ProviderAdapterInterface
         ];
     }
 
-    /**
-     * بعض المزودين حساسون لحالة اسم action (lower/upper)
-     * هنا نعمل fallback بسيط.
-     */
-    protected function callWithFallback(ApiProvider $p, string $action, array $params = []): array
-    {
-        $raw = $this->call($p, $action, $params);
-
-        // Non-JSON response
-        if (isset($raw['_body'])) return $raw;
-
-        $err  = data_get($raw, 'ERROR.0.MESSAGE');
-        $list = $this->extractList($raw);
-
-        if ($err || (is_array($list) && count($list) === 0)) {
-            $alt = ucfirst(strtolower($action));
-            if ($alt !== $action) {
-                $raw2 = $this->call($p, $alt, $params);
-                if (!isset($raw2['_body'])) {
-                    $err2  = data_get($raw2, 'ERROR.0.MESSAGE');
-                    $list2 = $this->extractList($raw2);
-                    if (!$err2 && is_array($list2) && count($list2) > 0) return $raw2;
-                }
-            }
-        }
-
-        return $raw;
-    }
-
-    /**
-     * استخراج LIST من أكثر من شكل شائع.
-     */
-    protected function extractList(array $raw)
+    protected function extractList(array $raw): ?array
     {
         $candidates = [
             data_get($raw, 'SUCCESS.0.LIST'),
             data_get($raw, 'SUCCESS.LIST'),
             data_get($raw, 'LIST'),
-            data_get($raw, 'Success.0.List'),
-            data_get($raw, 'success.0.list'),
         ];
 
         foreach ($candidates as $c) {
@@ -151,7 +111,7 @@ class GsmhubAdapter implements ProviderAdapterInterface
 
     public function fetchBalance(ApiProvider $provider): float
     {
-        $raw = $this->callWithFallback($provider, 'accountinfo');
+        $raw = $this->call($provider, 'accountinfo');
 
         logger()->info('GSMHUB RAW', [
             'provider_id' => $provider->id,
@@ -170,12 +130,12 @@ class GsmhubAdapter implements ProviderAdapterInterface
             return 0.0;
         }
 
-        // حسب ما يظهر في response عندك: SUCCESS[0].AccoutInfo.credit
+        // imei.us يرجع credit (وليس creditraw)
         $creditraw = data_get($raw, 'SUCCESS.0.AccoutInfo.creditraw');
-        if ($creditraw !== null) return (float) $creditraw;
+        if ($creditraw !== null) return (float)$creditraw;
 
         $credit = data_get($raw, 'SUCCESS.0.AccoutInfo.credit');
-        return $credit !== null ? (float) $credit : 0.0;
+        return $credit !== null ? (float)$credit : 0.0;
     }
 
     public function syncCatalog(ApiProvider $provider, string $serviceType): int
@@ -188,10 +148,9 @@ class GsmhubAdapter implements ProviderAdapterInterface
             'file'   => 'fileservicelist',
             default  => null,
         };
-
         if (!$action) return 0;
 
-        $raw = $this->callWithFallback($provider, $action);
+        $raw = $this->call($provider, $action);
 
         logger()->info('GSMHUB RAW', [
             'provider_id' => $provider->id,
@@ -201,10 +160,10 @@ class GsmhubAdapter implements ProviderAdapterInterface
 
         if (isset($raw['_body'])) {
             logger()->error("GSMHUB {$action} NON_JSON_RESPONSE", [
-                'provider_id'   => $provider->id,
-                'http'          => $raw['_http'] ?? null,
-                'content_type'  => $raw['_content_type'] ?? null,
-                'body_head'     => substr((string)($raw['_body'] ?? ''), 0, 500),
+                'provider_id'  => $provider->id,
+                'http'         => $raw['_http'] ?? null,
+                'content_type' => $raw['_content_type'] ?? null,
+                'body_head'    => substr((string)($raw['_body'] ?? ''), 0, 500),
             ]);
             return 0;
         }
@@ -219,53 +178,10 @@ class GsmhubAdapter implements ProviderAdapterInterface
         }
 
         $list = $this->extractList($raw);
-        if (!is_array($list)) {
-            logger()->error("GSMHUB {$action} INVALID_LIST", [
-                'provider_id' => $provider->id,
-            ]);
-            return 0;
-        }
+        if (!is_array($list)) return 0;
 
-        // LIST قد يكون:
-        // 1) Groups: LIST[groupName] = {GROUPNAME, SERVICES{...}}
-        // 2) Map خدمات مباشر: LIST[serviceId] = {SERVICEID,...}
-        if ($this->looksLikeServiceMap($list)) {
-            return $this->upsertServiceMap($provider->id, $serviceType, $list);
-        }
-
+        // ✅ GSMHub LIST = Groups => each group has SERVICES
         return $this->upsertGroupedList($provider->id, $serviceType, $list);
-    }
-
-    protected function looksLikeServiceMap(array $list): bool
-    {
-        $first = reset($list);
-        return is_array($first) && (isset($first['SERVICEID']) || isset($first['SERVICENAME']));
-    }
-
-    protected function upsertServiceMap(int $apiId, string $serviceType, array $map): int
-    {
-        $rows = [];
-        foreach ($map as $srv) {
-            if (!is_array($srv)) continue;
-
-            $remoteId = (string)($srv['SERVICEID'] ?? $srv['id'] ?? '');
-            if ($remoteId === '') continue;
-
-            $rows[] = [
-                'api_id'          => $apiId,
-                'remote_id'       => $remoteId,
-                'name'            => (string)($srv['SERVICENAME'] ?? $srv['name'] ?? ''),
-                'group_name'      => (string)($srv['GROUPNAME'] ?? $srv['group'] ?? ''),
-                'price'           => (float)($srv['CREDIT'] ?? $srv['credit'] ?? 0),
-                'time'            => (string)($srv['TIME'] ?? $srv['time'] ?? ''),
-                'info'            => (string)($srv['INFO'] ?? $srv['info'] ?? ''),
-                'additional_data' => json_encode($srv, JSON_UNESCAPED_UNICODE),
-                'updated_at'      => now(),
-                'created_at'      => now(),
-            ];
-        }
-
-        return $this->bulkUpsert($serviceType, $rows);
     }
 
     protected function upsertGroupedList(int $apiId, string $serviceType, array $groups): int
@@ -275,26 +191,26 @@ class GsmhubAdapter implements ProviderAdapterInterface
         foreach ($groups as $group) {
             if (!is_array($group)) continue;
 
-            $groupName = (string)($group['GROUPNAME'] ?? $group['group'] ?? '');
+            // بعض الردود تكون: LIST => { "GroupName": {GROUPNAME:..., SERVICES:{...}} }
+            $groupName = (string)($group['GROUPNAME'] ?? '');
 
-            // بعض الردود: group['SERVICES'] = {id => srv}
-            $services = $group['SERVICES'] ?? $group['LIST'] ?? $group['services'] ?? $group['list'] ?? [];
+            $services = $group['SERVICES'] ?? [];
             if (!is_array($services)) continue;
 
             foreach ($services as $srv) {
                 if (!is_array($srv)) continue;
 
-                $remoteId = (string)($srv['SERVICEID'] ?? $srv['id'] ?? '');
-                if ($remoteId === '') continue;
+                $remoteId = $srv['SERVICEID'] ?? null;
+                if ($remoteId === null) continue;
 
                 $rows[] = [
                     'api_id'          => $apiId,
-                    'remote_id'       => $remoteId,
-                    'name'            => (string)($srv['SERVICENAME'] ?? $srv['name'] ?? ''),
+                    'remote_id'       => (int)$remoteId,
+                    'name'            => (string)($srv['SERVICENAME'] ?? ''),
                     'group_name'      => $groupName,
-                    'price'           => (float)($srv['CREDIT'] ?? $srv['credit'] ?? 0),
-                    'time'            => (string)($srv['TIME'] ?? $srv['time'] ?? ''),
-                    'info'            => (string)($srv['INFO'] ?? $srv['info'] ?? ''),
+                    'price'           => (float)($srv['CREDIT'] ?? 0),
+                    'time'            => (string)($srv['TIME'] ?? ''),
+                    'info'            => (string)($srv['INFO'] ?? ''),
                     'additional_data' => json_encode($srv, JSON_UNESCAPED_UNICODE),
                     'updated_at'      => now(),
                     'created_at'      => now(),
@@ -302,36 +218,26 @@ class GsmhubAdapter implements ProviderAdapterInterface
             }
         }
 
-        return $this->bulkUpsert($serviceType, $rows);
-    }
+        if (!$rows) return 0;
 
-    /**
-     * ✅ Upsert دفعات لتسريع المزامنة ومنع timeout
-     * يفترض وجود unique على (api_id, remote_id) أو على الأقل الاعتماد عليه منطقياً.
-     */
-    protected function bulkUpsert(string $serviceType, array $rows): int
-    {
-        if (empty($rows)) return 0;
-
-        $model = match ($serviceType) {
-            'imei'   => new RemoteImeiService(),
-            'server' => new RemoteServerService(),
-            'file'   => new RemoteFileService(),
-            default  => null,
+        // ✅ Upsert دفعات = سريع جدًا
+        $table = match ($serviceType) {
+            'server' => (new RemoteServerService())->getTable(),
+            'file'   => (new RemoteFileService())->getTable(),
+            default  => (new RemoteImeiService())->getTable(),
         };
 
-        if (!$model) return 0;
+        // تقسيم دفعات لتفادي packet كبير
+        $chunks = array_chunk($rows, 800);
 
-        $count = 0;
-        foreach (array_chunk($rows, 300) as $chunk) {
-            $model->newQuery()->upsert(
+        foreach ($chunks as $chunk) {
+            DB::table($table)->upsert(
                 $chunk,
                 ['api_id', 'remote_id'],
-                ['name', 'group_name', 'price', 'time', 'info', 'additional_data', 'updated_at']
+                ['name','group_name','price','time','info','additional_data','updated_at']
             );
-            $count += count($chunk);
         }
 
-        return $count;
+        return count($rows);
     }
 }
