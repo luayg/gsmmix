@@ -4,6 +4,13 @@
   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
+@php
+  $types=['dhru'=>'DHRU API','webx'=>'WebX API','gsmhub'=>'GSM Hub API','unlockbase'=>'Unlock Base API (v3.x)','simple_link'=>'Simple link'];
+  $p = $provider->params_json;
+  $simpleMain = $p['main_field'] ?? 'imei';
+  $simpleMethod = strtoupper($p['method'] ?? 'POST');
+@endphp
+
 <form method="POST" action="{{ route('admin.apis.update', $provider) }}">
   @csrf @method('PUT')
 
@@ -17,8 +24,6 @@
       </div>
     @endif
 
-    @php $types=['dhru'=>'DHRU API','webx'=>'WebX API','gsmhub'=>'GSM Hub API','unlockbase'=>'Unlock Base API (v3.x)','simple_link'=>'Simple link']; @endphp
-
     <div class="row g-3">
       <div class="col-md-6">
         <label class="form-label">Name</label>
@@ -27,7 +32,7 @@
 
       <div class="col-md-6">
         <label class="form-label">Type</label>
-        <select name="type" class="form-select" required>
+        <select name="type" id="api_type" class="form-select" required>
           @foreach($types as $k=>$v)
             <option value="{{ $k }}" @selected(old('type',$provider->type)===$k)>{{ $v }}</option>
           @endforeach
@@ -50,6 +55,33 @@
       </div>
     </div>
 
+    {{-- ✅ Simple Link Options --}}
+    <div id="simple_link_box" class="mt-3 p-3 border rounded" style="display:none;">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Main field name</label>
+          <input type="text" name="main_field_name" id="main_field_name" class="form-control"
+                 value="{{ old('main_field_name', $simpleMain) }}">
+          <small class="text-muted">
+            مثال: إذا رابطك يحتوي <code>?imei=123...</code> إذًا main field = <code>imei</code> (حساس لحالة الأحرف)
+          </small>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Method</label>
+          <select name="method" id="simple_method" class="form-select">
+            <option value="GET"  @selected(old('method', $simpleMethod)==='GET')>GET</option>
+            <option value="POST" @selected(old('method', $simpleMethod)==='POST')>POST</option>
+          </select>
+          <div class="alert alert-warning mt-2 mb-0">
+            <b>Warning!!!</b>
+            إذا المزود يرجّع HTTP 200 دائمًا، النظام سيعتبر الطلب <b>Success</b>.
+            لتعامل الرفض، المزود لازم يرجّع HTTP غير 200 عند الأخطاء.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <hr class="my-3">
 
     {{-- hidden false --}}
@@ -67,30 +99,35 @@
           <label class="form-check-label" for="sync_imei">Sync IMEI services</label>
         </div>
       </div>
+
       <div class="col-md-4">
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" name="sync_server" id="sync_server" value="1" @checked(old('sync_server',$provider->sync_server))>
           <label class="form-check-label" for="sync_server">Sync server services</label>
         </div>
       </div>
+
       <div class="col-md-4">
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" name="sync_file" id="sync_file" value="1" @checked(old('sync_file',$provider->sync_file))>
           <label class="form-check-label" for="sync_file">Sync file services</label>
         </div>
       </div>
+
       <div class="col-md-4">
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" name="ignore_low_balance" id="ignore_low_balance" value="1" @checked(old('ignore_low_balance',$provider->ignore_low_balance))>
           <label class="form-check-label" for="ignore_low_balance">Ignore low balance</label>
         </div>
       </div>
+
       <div class="col-md-4">
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" name="auto_sync" id="auto_sync" value="1" @checked(old('auto_sync',$provider->auto_sync))>
           <label class="form-check-label" for="auto_sync">Auto sync</label>
         </div>
       </div>
+
       <div class="col-md-4">
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" name="active" id="active" value="1" @checked(old('active',$provider->active))>
@@ -105,3 +142,15 @@
     <button class="btn btn-primary"><i class="fas fa-save me-1"></i> Save</button>
   </div>
 </form>
+
+<script>
+(function(){
+  function toggleSimpleLink(){
+    var t = document.getElementById('api_type').value;
+    var box = document.getElementById('simple_link_box');
+    box.style.display = (t === 'simple_link') ? 'block' : 'none';
+  }
+  document.getElementById('api_type').addEventListener('change', toggleSimpleLink);
+  toggleSimpleLink();
+})();
+</script>

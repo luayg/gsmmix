@@ -15,4 +15,7 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping()
             ->onOneServer(); // لو عندك أكثر من عامل/سيرفر
     }
+    protected $commands = [
+    \App\Console\Commands\ProvidersSyncCommand::class,
+];
 }

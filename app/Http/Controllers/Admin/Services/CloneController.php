@@ -21,7 +21,8 @@ class CloneController extends Controller
     {
         $type       = strtolower($r->get('type', 'imei'));   // imei|server|file
         $providerId = (int) $r->get('provider');
-        $remoteId   = (int) $r->get('remote_id');
+        $remoteId   = (string) $r->get('remote_id');
+
 
         $typeMap = [
             'imei'   => ['IMEI',          'Numbers',      15, 15, RemoteImeiService::class],
@@ -94,7 +95,8 @@ class CloneController extends Controller
     };
 
     $rows = $model::query()
-        ->where('api_id', $providerId)
+        ->where('remote_id', $remoteId)
+
         ->when($q !== '', fn($qq)=>$qq->where('name','like',"%{$q}%"))
         ->orderBy('name')
         ->limit(500)

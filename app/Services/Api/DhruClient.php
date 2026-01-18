@@ -9,15 +9,22 @@ class DhruClient
     protected string $key;
 
     public function __construct(string $baseUrl, string $username, string $key)
-    {
-        $baseUrl = rtrim($baseUrl, '/');
+{
+    $baseUrl = rtrim($baseUrl, '/');
+
+    // ✅ إذا المستخدم أدخل رابط ملف php (مثال: /api/api.php) استخدمه كما هو
+    if (preg_match('~/[^/]+\.php$~i', $baseUrl)) {
+        $this->endpoint = $baseUrl;
+    } else {
+        // ✅ الافتراضي: DHRU style
         $this->endpoint = preg_match('~/api/index\.php$~i', $baseUrl)
             ? $baseUrl
             : $baseUrl . '/api/index.php';
-
-        $this->username = $username;
-        $this->key      = $key;
     }
+
+    $this->username = $username;
+    $this->key      = $key;
+}
 
     /** استدعاء DHRU v2 */
     protected function request(string $action, array $extra = []): array

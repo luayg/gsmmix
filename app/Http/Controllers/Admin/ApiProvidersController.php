@@ -83,45 +83,86 @@ class ApiProvidersController extends Controller
     }
 
     public function store(Request $r)
-    {
-        $data = $r->validate([
-            'name'               => 'required',
-            'type'               => 'required|in:dhru,webx,gsmhub,unlockbase,simple_link',
-            'url'                => 'required',
-            'username'           => 'nullable',
-            'api_key'            => 'nullable',
-            'sync_imei'          => 'boolean',
-            'sync_server'        => 'boolean',
-            'sync_file'          => 'boolean',
-            'ignore_low_balance' => 'boolean',
-            'auto_sync'          => 'boolean',
-            'active'             => 'boolean',
-        ]);
+{
+    $data = $r->validate([
+        'name'               => 'required',
+        'type'               => 'required|in:dhru,webx,gsmhub,unlockbase,simple_link',
+        'url'                => 'required',
+        'username'           => 'nullable',
+        'api_key'            => 'nullable',
 
-        ApiProvider::create($data);
-        return redirect()->route('admin.apis.index')->with('ok', 'API added');
+        // ✅ إعدادات إضافية (حسب النوع)
+        'main_field_name'    => 'nullable|string|max:100',
+        'method'             => 'nullable|in:GET,POST',
+
+        'sync_imei'          => 'boolean',
+        'sync_server'        => 'boolean',
+        'sync_file'          => 'boolean',
+        'ignore_low_balance' => 'boolean',
+        'auto_sync'          => 'boolean',
+        'active'             => 'boolean',
+    ]);
+
+    // ✅ params JSON (بنفس فكرة الصور)
+    $params = [];
+
+    if (($data['type'] ?? '') === 'simple_link') {
+        $params['main_field'] = (string)($data['main_field_name'] ?? 'imei');
+        $params['method']     = strtolower((string)($data['method'] ?? 'POST')); // post/get
     }
+
+    // (اختياري) حط مكان جاهز لتخزين إعدادات إضافية لباقي المزودين
+    // webx/gsmhub/unlockbase/dhru… لاحقًا نضيف keys هنا حسب الـAdapters
+
+    // ✅ نظف الحقول الإضافية من data، وخزّن params
+    unset($data['main_field_name'], $data['method']);
+    $data['params'] = !empty($params) ? json_encode($params, JSON_UNESCAPED_UNICODE) : null;
+
+    ApiProvider::create($data);
+    return redirect()->route('admin.apis.index')->with('ok', 'API added');
+}
+
 
     public function update(Request $r, ApiProvider $provider)
-    {
-        $data = $r->validate([
-            'name'               => 'required',
-            'type'               => 'required|in:dhru,webx,gsmhub,unlockbase,simple_link',
-            'url'                => 'required',
-            'username'           => 'nullable',
-            'api_key'            => 'nullable',
-            'sync_imei'          => 'boolean',
-            'sync_server'        => 'boolean',
-            'sync_file'          => 'boolean',
-            'ignore_low_balance' => 'boolean',
-            'auto_sync'          => 'boolean',
-            'active'             => 'boolean',
-        ]);
+{
+    $data = $r->validate([
+        'name'               => 'required',
+        'type'               => 'required|in:dhru,webx,gsmhub,unlockbase,simple_link',
+        'url'                => 'required',
+        'username'           => 'nullable',
+        'api_key'            => 'nullable',
 
-        $provider->update($data);
-        Cache::forget("api:dhru:balance:{$provider->id}");
-        return back()->with('ok', 'Saved');
+        // ✅ إعدادات إضافية
+        'main_field_name'    => 'nullable|string|max:100',
+        'method'             => 'nullable|in:GET,POST',
+
+        'sync_imei'          => 'boolean',
+        'sync_server'        => 'boolean',
+        'sync_file'          => 'boolean',
+        'ignore_low_balance' => 'boolean',
+        'auto_sync'          => 'boolean',
+        'active'             => 'boolean',
+    ]);
+
+    $params = $provider->params_json; // ✅ خذ الموجود وحدثه
+
+    if (($data['type'] ?? '') === 'simple_link') {
+        $params['main_field'] = (string)($data['main_field_name'] ?? ($params['main_field'] ?? 'imei'));
+        $params['method']     = strtolower((string)($data['method'] ?? 'POST'));
+    } else {
+        // إذا تغير النوع من simple_link لنوع ثاني: ممكن تترك params أو تنظفه
+        // أنا أفضل عدم حذفها تلقائيًا
     }
+
+    unset($data['main_field_name'], $data['method']);
+    $data['params'] = !empty($params) ? json_encode($params, JSON_UNESCAPED_UNICODE) : null;
+
+    $provider->update($data);
+
+    \Illuminate\Support\Facades\Cache::forget("api:dhru:balance:{$provider->id}");
+    return back()->with('ok', 'Saved');
+}
+
 
     public function destroy(ApiProvider $provider)
     {
@@ -215,8 +256,8 @@ class ApiProvidersController extends Controller
             $payload = [
                 'supplier_id' => $provider->id,
                 'group_id'    => $groupId,
-                'remote_id'   => (int)$s->remote_id,
-                'alias'       => (string)$s->remote_id,
+                'remote_id' => (string) $s->remote_id,
+                'alias'     => (string) $s->remote_id,
                 'name'        => (string)$s->name,
                 'time'        => (string)$s->time,
                 'info'        => (string)$s->info,

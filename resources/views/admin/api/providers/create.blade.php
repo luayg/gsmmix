@@ -22,7 +22,7 @@
 
       <div class="col-md-6">
         <label class="form-label">Type</label>
-        <select name="type" class="form-select" required>
+        <select name="type" id="api_type" class="form-select" required>
           @php $types=['dhru'=>'DHRU API','webx'=>'WebX API','gsmhub'=>'GSM Hub API','unlockbase'=>'Unlock Base API (v3.x)','simple_link'=>'Simple link']; @endphp
           @foreach($types as $k=>$v)
             <option value="{{ $k }}" @selected(old('type')===$k)>{{ $v }}</option>
@@ -46,11 +46,38 @@
       </div>
     </div>
 
+    {{-- ✅ Simple Link Options --}}
+    <div id="simple_link_box" class="mt-3 p-3 border rounded" style="display:none;">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Main field name</label>
+          <input type="text" name="main_field_name" id="main_field_name" class="form-control"
+                 value="{{ old('main_field_name','imei') }}">
+          <small class="text-muted">
+            مثال: إذا رابطك يحتوي <code>?imei=123...</code> إذًا main field = <code>imei</code> (حساس لحالة الأحرف)
+          </small>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Method</label>
+          <select name="method" id="simple_method" class="form-select">
+            <option value="GET"  @selected(old('method')==='GET')>GET</option>
+            <option value="POST" @selected(old('method','POST')==='POST')>POST</option>
+          </select>
+          <div class="alert alert-warning mt-2 mb-0">
+            <b>Warning!!!</b>
+            إذا المزود يرجّع HTTP 200 دائمًا، النظام سيعتبر الطلب <b>Success</b> ويستخدم محتوى الرد كـ Reply.
+            لتعامل الرفض بشكل صحيح، المزود لازم يرجّع HTTP غير 200 عند الأخطاء.
+          </div>
+        </div>
+      </div>
+    </div>
+
     <hr class="my-3">
 
     {{-- toggles --}}
     <div class="row gy-3">
-      {{-- نضيف hidden=0 لضمان وصول false عند الإطفاء --}}
+      {{-- hidden=0 لضمان وصول false عند الإطفاء --}}
       <input type="hidden" name="sync_imei" value="0">
       <input type="hidden" name="sync_server" value="0">
       <input type="hidden" name="sync_file" value="0">
@@ -109,3 +136,15 @@
     </button>
   </div>
 </form>
+
+<script>
+(function(){
+  function toggleSimpleLink(){
+    var t = document.getElementById('api_type').value;
+    var box = document.getElementById('simple_link_box');
+    box.style.display = (t === 'simple_link') ? 'block' : 'none';
+  }
+  document.getElementById('api_type').addEventListener('change', toggleSimpleLink);
+  toggleSimpleLink();
+})();
+</script>
