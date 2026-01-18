@@ -12,8 +12,6 @@ use App\Models\ServiceGroup;
 use App\Models\RemoteImeiService;
 use App\Models\RemoteServerService;
 use App\Models\RemoteFileService;
-// “جداول الريموت” (نتائج المزامنة)
-use Illuminate\Support\Facades\DB;
 
 class CloneController extends Controller
 {
@@ -22,7 +20,6 @@ class CloneController extends Controller
         $type       = strtolower($r->get('type', 'imei'));   // imei|server|file
         $providerId = (int) $r->get('provider');
         $remoteId   = (string) $r->get('remote_id');
-
 
         $typeMap = [
             'imei'   => ['IMEI',          'Numbers',      15, 15, RemoteImeiService::class],
@@ -34,36 +31,39 @@ class CloneController extends Controller
         [$mainField, $allowedChars, $min, $max, $RemoteModel] = $typeMap[$type];
 
         $provider = ApiProvider::findOrFail($providerId);
-        $remote   = $RemoteModel::query()
-                    ->where('api_id', $providerId)
-                    ->where('remote_id', $remoteId)
-                    ->firstOrFail();
+
+        $remote = $RemoteModel::query()
+            ->where('api_id', $providerId)
+            ->where('remote_id', $remoteId)
+            ->firstOrFail();
+
+        $price = (float) ($remote->price ?? $remote->credit ?? 0);
 
         $prefill = [
-            'name'                => $remote->name ?? '',
-            'alias'               => Str::slug($remote->alias ?? $remote->name ?? ''),
-            'delivery_time'       => $remote->time ?? 'e.g. 1-24h',
-            'group_id'            => null,
+            'name'                  => $remote->name ?? '',
+            'alias'                 => Str::slug($remote->alias ?? $remote->name ?? ''),
+            'delivery_time'         => $remote->time ?? 'e.g. 1-24h',
+            'group_id'              => null,
 
-            'type'                => $type,
-            'main_field_type'     => $mainField,
-            'main_field_label'    => $mainField,
-            'allowed_characters'  => $allowedChars,
-            'minimum'             => $min,
-            'maximum'             => $max,
+            'type'                  => $type,
+            'main_field_type'       => $mainField,
+            'main_field_label'      => $mainField,
+            'allowed_characters'    => $allowedChars,
+            'minimum'               => $min,
+            'maximum'               => $max,
 
-            'price'               => (float)($remote->price ?? $remote->credit ?? 0),
-            'converted_price'     => (float)($remote->price ?? $remote->credit ?? 0),
-            'converted_price_ccy' => 'USD',
-            'cost'                => (float)($remote->price ?? $remote->credit ?? 0),
-            'profit'              => 0,
+            'price'                 => $price,
+            'converted_price'       => $price,
+            'converted_price_ccy'   => 'USD',
+            'cost'                  => $price,
+            'profit'                => 0,
 
-            'source'              => 'api',
-            'api_provider_id'     => $provider->id,
+            'source'                => 'api',
+            'api_provider_id'       => $provider->id,
             'api_service_remote_id' => (int) $remote->remote_id,
 
-            'info'                => $remote->info ?? '',
-            'active'              => true,
+            'info'                  => $remote->info ?? '',
+            'active'                => true,
         ];
 
         $groups    = ServiceGroup::orderBy('ordering')->orderBy('name')->get(['id','name','type']);
@@ -82,37 +82,33 @@ class CloneController extends Controller
      * API: إرجاع خدمات مزوّد محدد (لملء القائمة الثانية)
      * GET /admin/service-management/clone/provider-services?provider_id=1&type=imei&q=...
      */
-    public function providerServices(\Illuminate\Http\Request $request)
-{
-    $providerId = (int) $request->get('provider_id');
-    $type       = strtolower($request->get('type','imei'));
-    $q          = trim((string)$request->get('q',''));
+    public function providerServices(Request $request)
+    {
+        $providerId = (int) $request->get('provider_id');
+        $type       = strtolower($request->get('type', 'imei'));
+        $q          = trim((string) $request->get('q', ''));
 
-    $model = match ($type) {
-        'server' => \App\Models\RemoteServerService::class,
-        'file'   => \App\Models\RemoteFileService::class,
-        default  => \App\Models\RemoteImeiService::class,
-    };
+        $model = match ($type) {
+            'server' => RemoteServerService::class,
+            'file'   => RemoteFileService::class,
+            default  => RemoteImeiService::class,
+        };
 
-    $rows = $model::query()
-        ->where('remote_id', $remoteId)
+        // ✅ الصحيح: فلترة حسب api_id (مزود الـ API) وليس remote_id (لأننا نريد "كل الخدمات")
+        $rows = $model::query()
+            ->where('api_id', $providerId)
+            ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
+            ->orderBy('name')
+            ->limit(500)
+            ->get([
+                'remote_id',
+                'remote_id as id',     // مهم لبعض الـ plugins
+                'name',
+                'price as credit',
+                'time',
+                'info',
+            ]);
 
-        ->when($q !== '', fn($qq)=>$qq->where('name','like',"%{$q}%"))
-        ->orderBy('name')
-        ->limit(500)
-        ->get([
-            'remote_id',
-            'remote_id as id',     // مهم لبعض الـ plugins
-            'name',
-            'price as credit',
-            'time',
-            'info',
-        ]);
-
-    return response()->json($rows);
-}
-
-
-
-
+        return response()->json($rows);
+    }
 }

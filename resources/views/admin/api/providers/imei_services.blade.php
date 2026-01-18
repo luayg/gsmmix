@@ -1,7 +1,6 @@
 {{-- resources/views/admin/api/providers/imei_services.blade.php --}}
 @extends('layouts.admin')
 
-
 @section('content')
 <div class="card">
 
@@ -71,7 +70,8 @@
             @php
               $remoteId = $svc->remote_id;
               $name     = $svc->name ?? '';
-              $credit   = $svc->credit ?? 0;
+              // ✅ الصحيح: السعر مخزن في price وليس credit
+              $credit   = $svc->price ?? 0;
               $time     = $svc->time ?? '';
             @endphp
             <tr data-remote-id="{{ $remoteId }}">
@@ -97,6 +97,7 @@
                         data-service-type="imei"
                         data-provider-id="{{ $provider->id }}"
                         data-remote-id="{{ $remoteId }}"
+                        data-group-name="{{ $groupName }}"
                         data-name="{{ $name }}"
                         data-credit="{{ $credit }}"
                         data-time="{{ $time }}">

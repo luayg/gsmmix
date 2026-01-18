@@ -1,7 +1,6 @@
 {{-- resources/views/admin/api/providers/file_services.blade.php --}}
 @extends('layouts.admin')
 
-
 @section('content')
 <div class="card">
   <div class="card-header"><h5 class="mb-0">{{ $provider->name }} | FILE services</h5></div>
@@ -26,7 +25,8 @@
             @php
               $remoteId = $svc->remote_id;
               $name     = $svc->name ?? '';
-              $credit   = $svc->credit ?? 0;
+              // ✅ الصحيح: السعر مخزن في price
+              $credit   = $svc->price ?? 0;
               $time     = $svc->time ?? '';
             @endphp
             <tr>
@@ -41,6 +41,7 @@
                   data-service-type="file"
                   data-provider-id="{{ $provider->id }}"
                   data-remote-id="{{ $remoteId }}"
+                  data-group-name="{{ $groupName }}"
                   data-name="{{ $name }}"
                   data-credit="{{ $credit }}"
                   data-time="{{ $time }}">

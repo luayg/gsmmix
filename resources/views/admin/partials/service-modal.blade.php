@@ -64,7 +64,6 @@
 <script>
 (function(){
 
-  // ✅ helper: يمنع ظهور undefined/null كنص
   const clean = (v) => {
     if (v === undefined || v === null) return '';
     const s = String(v);
@@ -73,7 +72,6 @@
   };
   const escAttr = (s) => clean(s).replaceAll('"','&quot;');
 
-  // ✅ Tabs
   function initTabs(scope){
     const btns = document.querySelectorAll('#serviceModal .tab-btn');
     btns.forEach(btn=>{
@@ -88,7 +86,6 @@
     });
   }
 
-  // ✅ Load libs once
   const loadCssOnce=(id,href)=>{ if(document.getElementById(id)) return;
     const l=document.createElement('link'); l.id=id; l.rel='stylesheet'; l.href=href; document.head.appendChild(l);
   };
@@ -122,7 +119,6 @@
       .replace(/^-+|-+$/g,'');
   }
 
-  // ✅ Price
   function initPrice(scope){
     const cost = scope.querySelector('[name="cost"]');
     const profit = scope.querySelector('[name="profit"]');
@@ -149,7 +145,6 @@
     return { setCost(v){ cost.value = Number(v||0).toFixed(4); recalc(); } };
   }
 
-  // ✅ USER GROUPS pricing table
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
     const hidden = scope.querySelector('#pricingTableHidden');
@@ -225,7 +220,6 @@
     return rows;
   }
 
-  // ✅ API UI
   function ensureApiUI(scope){
     const sourceSel = scope.querySelector('[name="source"]');
     if(!sourceSel) return;
@@ -297,7 +291,9 @@
       const rid  = clean(s.remote_id ?? s.id ?? s.service_id);
       const name = clean(s.name);
       const time = clean(s.time ?? s.delivery_time);
-      const creditNum = Number(s.credit ?? s.cost ?? 0);
+
+      // ✅ FIX: استخدم price أولاً (remote tables) ثم credit/cost
+      const creditNum = Number(s.price ?? s.credit ?? s.cost ?? 0);
       const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
 
       const timeTxt = time ? ` — ${time}` : '';
@@ -311,14 +307,11 @@
     }).join('');
   }
 
-  // ✅ open modal
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-create-service]');
     if(!btn) return;
 
     e.preventDefault();
-
-    // حفظ رابط الصفحة الحالية (عشان ما يوديك للداشبورد)
     window.__serviceReturnUrl = window.location.href;
 
     const body = document.getElementById('serviceModalBody');
@@ -339,10 +332,17 @@
     const isClone = (providerId !== undefined && providerId !== '' && providerId !== 'undefined'
                   && remoteId   !== undefined && remoteId   !== '' && remoteId   !== 'undefined');
 
+    // ✅ FIX: اجلب providerName من data-provider-name أو من عنوان الصفحة
+    const providerName =
+      btn.dataset.providerName ||
+      document.querySelector('.card-header h5')?.textContent?.split('|')?.[0]?.trim() ||
+      '—';
+
     const cloneData = {
       providerId: isClone ? providerId : '',
-      providerName: btn.dataset.providerName || '—',
+      providerName,
       remoteId: isClone ? remoteId : '',
+      groupName: clean(btn.dataset.groupName || ''), // ✅ FIX
       name: btn.dataset.name || '',
       credit: Number(btn.dataset.credit || 0),
       time: btn.dataset.time || '',
@@ -357,6 +357,7 @@
 
     body.querySelector('[name="supplier_id"]').value = isClone ? cloneData.providerId : '';
     body.querySelector('[name="remote_id"]').value   = isClone ? cloneData.remoteId : '';
+    body.querySelector('[name="group_name"]').value  = isClone ? cloneData.groupName : ''; // ✅ FIX
     body.querySelector('[name="name"]').value        = cloneData.name;
     body.querySelector('[name="time"]').value        = cloneData.time || '';
     body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
@@ -369,7 +370,6 @@
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-    // ✅ (ملاحظة 2) ربط main_field_type بتحديث main_field_label
     const mainTypeSel  = body.querySelector('[name="main_field_type"]');
     const mainLabelInp = body.querySelector('[name="main_field_label"]');
     if(mainTypeSel && mainLabelInp){
@@ -378,10 +378,9 @@
         mainLabelInp.value = clean(txt) || clean(mainTypeSel.value);
       };
       mainTypeSel.addEventListener('change', syncLabel);
-      syncLabel(); // initial
+      syncLabel();
     }
 
-    // groups dropdown
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
       .then(r=>r.json())
       .then(rows=>{
@@ -402,6 +401,20 @@
 
     const apiProviderSel = body.querySelector('#apiProviderSelect');
     const apiServiceSel  = body.querySelector('#apiServiceSelect');
+
+    // ✅ إذا هذا Clone: اجعل provider مختار تلقائياً ثم حمّل خدماته
+    if (isClone && apiProviderSel) {
+      apiProviderSel.value = cloneData.providerId;
+      try { await loadProviderServices(body, cloneData.providerId, cloneData.serviceType); } catch(e) {}
+      // حاول اختيار الخدمة نفسها
+      if (apiServiceSel) {
+        const opt = Array.from(apiServiceSel.options).find(o => String(o.value) === String(cloneData.remoteId));
+        if (opt) {
+          apiServiceSel.value = opt.value;
+          apiServiceSel.dispatchEvent(new Event('change'));
+        }
+      }
+    }
 
     apiProviderSel?.addEventListener('change', async ()=>{
       const pid = apiProviderSel.value;
@@ -438,7 +451,6 @@
     bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
   });
 
-  // ✅ Submit (ملاحظة 3) اعترض أي فورم داخل المودال حتى لو بدون data-ajax
   document.addEventListener('submit', async (ev)=>{
     const form = ev.target;
     if(!form || !form.matches('#serviceModal form')) return;
@@ -471,7 +483,6 @@
 
       if(res.ok){
         bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
-        // ارجع لنفس الصفحة (نفس الفلاتر/الباجينيشن)
         window.location.href = window.__serviceReturnUrl || window.location.href;
       }else{
         const t = await res.text();
