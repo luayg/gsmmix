@@ -83,42 +83,36 @@ class ApiProvidersController extends Controller
     }
 
     public function store(Request $r)
-    {
-        $data = $r->validate([
-            'name'               => 'required',
-            'type'               => 'required|in:dhru,webx,gsmhub,unlockbase,simple_link',
-            'url'                => 'required',
-            'username'           => 'nullable',
-            'api_key'            => 'nullable',
-            'sync_imei'          => 'boolean',
-            'sync_server'        => 'boolean',
-            'sync_file'          => 'boolean',
-            'ignore_low_balance' => 'boolean',
-            'auto_sync'          => 'boolean',
-            'active'             => 'boolean',
-        ]);
+{
+    $data = $r->validate([
+        'name'               => 'required',
+        'type'               => 'required|in:dhru,webx,gsmhub,unlockbase,simple_link',
+        'url'                => 'required',
+        'username'           => 'nullable',
+        'api_key'            => 'nullable',
+        'sync_imei'          => 'boolean',
+        'sync_server'        => 'boolean',
+        'sync_file'          => 'boolean',
+        'ignore_low_balance' => 'boolean',
+        'auto_sync'          => 'boolean',
+        'active'             => 'boolean',
+    ]);
 
-        // ✅ reset synced flag عند الإضافة
-        $data['synced'] = false;
+    $data['synced'] = false;
+    $provider = ApiProvider::create($data);
 
-        $provider = ApiProvider::create($data);
-
-        // ✅ مزامنة أولية تلقائية بعد الإضافة (لكل الأنواع حسب flags)
-        if ($provider->active) {
-            try {
-                Artisan::call('providers:sync', [
-                    '--provider_id' => $provider->id,
-                ]);
-                $provider->refresh();
-            } catch (\Throwable $e) {
-                // لا تكسر الإضافة لو فشل sync
-            }
-        }
-
-        return redirect()
-            ->route('admin.apis.index')
-            ->with('ok', "API added".($provider->active ? " + synced" : ""));
+    // ✅ مزامنة أولية تلقائية (Balance + كل الأنواع حسب flags)
+    if ($provider->active) {
+        try {
+            \Artisan::call('providers:sync', ['--provider_id' => $provider->id, '--balance' => true]);
+            \Artisan::call('providers:sync', ['--provider_id' => $provider->id]); // catalog
+            $provider->refresh();
+        } catch (\Throwable $e) {}
     }
+
+    return redirect()->route('admin.apis.index')->with('ok', 'API added + synced');
+}
+
 
     public function update(Request $r, ApiProvider $provider)
     {
@@ -269,14 +263,13 @@ class ApiProvidersController extends Controller
      * ✅ زر "Sync now" — مزامنة مباشرة لجميع أنواع الخدمات للمزوّد (حسب flags)
      */
     public function sync(ApiProvider $provider)
-    {
-        // بدلاً من dhru:sync (الذي يخدم dhru فقط) :contentReference[oaicite:3]{index=3}
-        Artisan::call('providers:sync', [
-            '--provider_id' => $provider->id,
-        ]);
+{
+    // ✅ Sync now شامل: balance + catalog
+    \Artisan::call('providers:sync', ['--provider_id' => $provider->id, '--balance' => true]);
+    \Artisan::call('providers:sync', ['--provider_id' => $provider->id]);
 
-        $provider->refresh();
+    $provider->refresh();
+    return back()->with('ok', "Synced now: {$provider->name}");
+}
 
-        return back()->with('ok', "Synced now: {$provider->name}");
-    }
 }
