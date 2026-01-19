@@ -1,19 +1,20 @@
 {{-- resources/views/admin/services/imei/_modal_create.blade.php --}}
+
 <form id="serviceCreateForm"
-      class="service-create-form"
+      class="service-create-form js-ajax-form"
       action="{{ route('admin.services.imei.store') }}"
       method="POST"
       data-ajax="1">
   @csrf
 
-  {{-- ✅ Injected by service-modal.js --}}
+  {{-- Injected by service-modal.js --}}
   <input type="hidden" name="supplier_id" value="">
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
 
-  {{-- ✅ REQUIRED for Additional (Groups pricing + Custom fields) --}}
-  <input type="hidden" id="pricingTableHidden" name="group_prices_json" value="[]">
-  <input type="hidden" id="customFieldsHidden" name="custom_fields_json" value="[]">
+  {{-- ✅ Additional payloads --}}
+  <input type="hidden" name="pricing_table" id="pricingTableHidden" value="">
+  <input type="hidden" name="custom_fields_json" id="customFieldsHidden" value="[]">
 
   <div class="service-tabs-content">
 
@@ -52,12 +53,13 @@
             {{-- ✅ MAIN FIELD PRESETS --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Main field type</label>
-              <select name="main_field_type" class="form-select">
+              <select name="main_field_type" class="form-select" id="mainFieldType">
                 <option value="imei" selected>IMEI</option>
                 <option value="imei_serial">IMEI/Serial number</option>
                 <option value="serial">Serial number</option>
                 <option value="custom">Custom</option>
 
+                {{-- legacy --}}
                 <option value="number">Number</option>
                 <option value="email">Email</option>
                 <option value="text">Text</option>
@@ -67,7 +69,6 @@
             <div class="col-md-6">
               <label class="form-label mb-1">Type</label>
               <select name="type" class="form-select">
-                {{-- (اتركها حسب نظامك الحالي) --}}
                 <option value="imei" selected>IMEI</option>
                 <option value="server">Server</option>
                 <option value="file">File</option>
@@ -76,12 +77,12 @@
 
             <div class="col-md-6">
               <label class="form-label mb-1">Main field label</label>
-              <input name="main_field_label" type="text" class="form-control" value="IMEI">
+              <input name="main_field_label" id="mainFieldLabel" type="text" class="form-control" value="IMEI">
             </div>
 
             <div class="col-md-6">
               <label class="form-label mb-1">Allowed characters</label>
-              <select name="allowed_characters" class="form-select">
+              <select name="allowed_characters" id="allowedChars" class="form-select">
                 <option value="numbers" selected>Numbers</option>
                 <option value="alnum">Letters and numbers</option>
                 <option value="any">Any</option>
@@ -92,7 +93,7 @@
             <div class="col-md-6">
               <label class="form-label mb-1">Minimum</label>
               <div class="input-group">
-                <input name="min" type="number" class="form-control" value="15">
+                <input name="min" id="minLen" type="number" class="form-control" value="15">
                 <span class="input-group-text">Characters</span>
               </div>
             </div>
@@ -100,7 +101,7 @@
             <div class="col-md-6">
               <label class="form-label mb-1">Maximum</label>
               <div class="input-group">
-                <input name="max" type="number" class="form-control" value="15">
+                <input name="max" id="maxLen" type="number" class="form-control" value="15">
                 <span class="input-group-text">Characters</span>
               </div>
             </div>
@@ -159,7 +160,7 @@
               </select>
             </div>
 
-            {{-- ✅ API block (hidden unless Source=API) --}}
+            {{-- API block --}}
             <div class="col-12 js-api-block d-none">
               <div class="border rounded p-3 bg-light">
                 <div class="row g-2">
@@ -176,7 +177,7 @@
               </div>
             </div>
 
-            {{-- ✅ Required Switches --}}
+            {{-- Switches --}}
             @php
               $toggles = [
                 'use_remote_cost'    => 'Sync the cost of this service with price of remote API service',
@@ -207,7 +208,6 @@
               @endforeach
             </div>
 
-            {{-- Reporting / Cancel timeouts --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Reporting deny timeout</label>
               <div class="input-group">
@@ -237,7 +237,7 @@
           </div>
         </div>
 
-        {{-- RIGHT SIDE (INFO = SUMMERNOTE) --}}
+        {{-- RIGHT SIDE --}}
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
           <textarea id="infoEditor" class="form-control d-none"></textarea>
@@ -255,180 +255,110 @@
         <div class="col-lg-7">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div class="fw-bold">Custom fields</div>
-            <button type="button" class="btn btn-link p-0" id="btnAddField">Add field</button>
+            <a href="javascript:void(0)" class="text-primary small" id="btnAddField">Add field</a>
           </div>
 
-          <div id="fieldsWrap"></div>
-
-          <template id="fieldRowTpl">
-            <div class="border rounded p-3 mb-3 bg-white field-row" data-field-row>
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <div class="form-check form-switch">
-                  <input class="form-check-input" type="checkbox" data-f-active checked>
-                  <label class="form-check-label">Active</label>
-                </div>
-                <button type="button" class="btn btn-sm btn-danger" data-f-remove>&times;</button>
-              </div>
-
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <label class="form-label mb-1">Name</label>
-                  <input type="text" class="form-control" data-f-name placeholder="Name">
-                </div>
-
-                <div class="col-md-6">
-                  <label class="form-label mb-1">Field type</label>
-                  <select class="form-select" data-f-type>
-                    <option value="text" selected>Text</option>
-                    <option value="number">Number</option>
-                    <option value="email">Email</option>
-                    <option value="password">Password</option>
-                    <option value="textarea">Textarea</option>
-                    <option value="select">Select</option>
-                  </select>
-                </div>
-
-                <div class="col-md-6">
-                  <label class="form-label mb-1">Input name (API Param)</label>
-                  <input type="text" class="form-control" data-f-input placeholder="e.g. username / password / serial">
-                </div>
-
-                <div class="col-md-6">
-                  <label class="form-label mb-1">Description</label>
-                  <input type="text" class="form-control" data-f-desc placeholder="Description">
-                </div>
-
-                <div class="col-md-6">
-                  <label class="form-label mb-1">Minimum</label>
-                  <input type="number" class="form-control" data-f-min value="0">
-                </div>
-
-                <div class="col-md-6">
-                  <label class="form-label mb-1">Maximum</label>
-                  <input type="number" class="form-control" data-f-max value="0">
-                </div>
-
-                <div class="col-md-6">
-                  <label class="form-label mb-1">Validation</label>
-                  <select class="form-select" data-f-validation>
-                    <option value="" selected>None</option>
-                    <option value="numeric">Numeric</option>
-                    <option value="email">Email</option>
-                    <option value="alnum">AlphaNumeric</option>
-                  </select>
-                </div>
-
-                <div class="col-md-6">
-                  <label class="form-label mb-1">Required</label>
-                  <select class="form-select" data-f-required>
-                    <option value="0" selected>No</option>
-                    <option value="1">Yes</option>
-                  </select>
-                </div>
-
-                <div class="col-12 d-none" data-f-options-wrap>
-                  <label class="form-label mb-1">Options (for Select) - one per line</label>
-                  <textarea class="form-control" rows="3" data-f-options placeholder="Option 1&#10;Option 2"></textarea>
-                </div>
-
-              </div>
+          <div id="fieldsWrap" class="border rounded bg-white p-2" style="min-height:280px">
+            <div class="text-muted small px-2 py-2">
+              هذه الحقول سيتم حفظها وربطها بالخدمة لاستخدامها لاحقًا عند إرسال الطلبات (خصوصًا server).
             </div>
-          </template>
-
-          <small class="text-muted">
-            هذه الحقول سيتم حفظها وربطها بالخدمة لاستخدامها لاحقًا عند إرسال الطلبات (خصوصًا server).
-          </small>
+          </div>
         </div>
 
         {{-- RIGHT: Groups pricing --}}
         <div class="col-lg-5">
           <div class="fw-bold mb-2">Groups</div>
-          <div id="groupsPricingWrap" class="border rounded p-3 bg-white">
-            <div class="text-muted small">Groups pricing table will be generated here.</div>
+          <div id="groupsPricingWrap" class="border rounded p-2 bg-white">
+            {{-- سيتم بناؤه بالـ JS --}}
           </div>
-          <small class="text-muted d-block mt-2">
-            يتم توليد الجدول تلقائياً من User Groups (Basic / VIP / Reseller ...).
-          </small>
+          <div class="text-muted small mt-2">
+            هنا يتم عرض User Groups (Basic / VIP / Reseller ..) ويتم حفظ الجدول تلقائيًا.
+          </div>
         </div>
       </div>
 
-      <script>
-      (function(){
-        // ===== Custom Fields UI inside modal create (works with hidden JSON) =====
-        const wrap   = document.getElementById('fieldsWrap');
-        const tpl    = document.getElementById('fieldRowTpl');
-        const hidden = document.getElementById('customFieldsHidden');
+      {{-- Template for one field --}}
+      <template id="fieldTpl">
+        <div class="border rounded mb-2 p-2 bg-light field-card" data-field>
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="form-check form-switch">
+              <input class="form-check-input js-field-active" type="checkbox" checked>
+              <label class="form-check-label">Active</label>
+            </div>
+            <button type="button" class="btn btn-sm btn-danger js-remove-field" title="Remove">×</button>
+          </div>
 
-        if(!wrap || !tpl || !hidden) return;
+          <div class="row g-2 mt-1">
+            <div class="col-md-6">
+              <label class="form-label mb-1">Name</label>
+              <input type="text" class="form-control form-control-sm js-field-name" placeholder="Username">
+            </div>
 
-        const readAll = () => {
-          const rows = [];
-          wrap.querySelectorAll('[data-field-row]').forEach((row, idx) => {
-            const type = row.querySelector('[data-f-type]')?.value || 'text';
-            const optionsText = row.querySelector('[data-f-options]')?.value || '';
-            const optionsArr = optionsText.split('\n').map(x => x.trim()).filter(Boolean);
+            <div class="col-md-6">
+              <label class="form-label mb-1">Field type</label>
+              <select class="form-select form-select-sm js-field-type">
+                <option value="text" selected>Text</option>
+                <option value="textarea">Textarea</option>
+                <option value="dropdown">Dropdown</option>
+                <option value="radio">Radio</option>
+                <option value="tickbox">Tickbox</option>
+                <option value="datepicker">Datepicker</option>
+                <option value="time">Time</option>
+              </select>
+            </div>
 
-            rows.push({
-              ordering: idx + 1,
-              active: row.querySelector('[data-f-active]')?.checked ? 1 : 0,
-              name: row.querySelector('[data-f-name]')?.value || '',
-              input: row.querySelector('[data-f-input]')?.value || '',
-              description: row.querySelector('[data-f-desc]')?.value || '',
-              type,
-              minimum: Number(row.querySelector('[data-f-min]')?.value || 0),
-              maximum: Number(row.querySelector('[data-f-max]')?.value || 0),
-              validation: row.querySelector('[data-f-validation]')?.value || null,
-              required: Number(row.querySelector('[data-f-required]')?.value || 0),
-              options: (type === 'select') ? optionsArr : []
-            });
-          });
-          hidden.value = JSON.stringify(rows);
-        };
+            <div class="col-md-6">
+              <label class="form-label mb-1">Input name</label>
+              <input type="text" class="form-control form-control-sm js-field-input" placeholder="service_fields_1">
+            </div>
 
-        const bindRow = (row) => {
-          const typeSel = row.querySelector('[data-f-type]');
-          const optWrap = row.querySelector('[data-f-options-wrap]');
+            <div class="col-md-6">
+              <label class="form-label mb-1">Description</label>
+              <input type="text" class="form-control form-control-sm js-field-desc" placeholder="Description">
+            </div>
 
-          const syncType = () => {
-            const t = typeSel.value;
-            if(optWrap) optWrap.classList.toggle('d-none', t !== 'select');
-            readAll();
-          };
+            <div class="col-md-3">
+              <label class="form-label mb-1">Minimum</label>
+              <input type="number" class="form-control form-control-sm js-field-min" value="0">
+            </div>
 
-          row.querySelectorAll('input,select,textarea').forEach(el => {
-            el.addEventListener('input', readAll);
-            el.addEventListener('change', readAll);
-          });
+            <div class="col-md-3">
+              <label class="form-label mb-1">Maximum</label>
+              <input type="number" class="form-control form-control-sm js-field-max" value="0">
+            </div>
 
-          typeSel?.addEventListener('change', syncType);
-          row.querySelector('[data-f-remove]')?.addEventListener('click', () => {
-            row.remove();
-            readAll();
-          });
+            <div class="col-md-3">
+              <label class="form-label mb-1">Validation</label>
+              <select class="form-select form-select-sm js-field-validation">
+                <option value="" selected>None</option>
+                <option value="email">Email</option>
+                <option value="number">Number</option>
+                <option value="imei">IMEI</option>
+                <option value="serial">Serial</option>
+              </select>
+            </div>
 
-          syncType();
-        };
+            <div class="col-md-3">
+              <label class="form-label mb-1">Required</label>
+              <select class="form-select form-select-sm js-field-required">
+                <option value="0" selected>No</option>
+                <option value="1">Yes</option>
+              </select>
+            </div>
 
-        document.getElementById('btnAddField')?.addEventListener('click', () => {
-          const node = document.createElement('div');
-          node.innerHTML = tpl.innerHTML.trim();
-          const row = node.firstElementChild;
-          wrap.appendChild(row);
-          bindRow(row);
-          readAll();
-        });
-
-        // init
-        readAll();
-      })();
-      </script>
+            <div class="col-12 js-options-wrap d-none">
+              <label class="form-label mb-1">Options (comma separated)</label>
+              <input type="text" class="form-control form-control-sm js-field-options" placeholder="New,Existing">
+            </div>
+          </div>
+        </div>
+      </template>
 
     </div>
 
     {{-- ===================== ✅ META TAB ===================== --}}
     <div class="tab-pane" data-tab="meta">
       <div class="row g-3">
-
         <div class="col-md-6">
           <label class="form-label">Meta keywords</label>
           <input type="text" class="form-control" name="meta_keywords">
@@ -458,7 +388,6 @@
           <label class="form-label">Before "body" tag closing</label>
           <textarea class="form-control" rows="3" name="meta_before_body"></textarea>
         </div>
-
       </div>
     </div>
 
@@ -470,3 +399,136 @@
   </div>
 
 </form>
+
+<script>
+(function(){
+  // =========================
+  // Main field presets
+  // =========================
+  const presets = {
+    imei:        { label: 'IMEI',             allowed: 'numbers', min: 15, max: 15 },
+    imei_serial: { label: 'IMEI/Serial number',allowed: 'alnum',  min: 10, max: 15 },
+    serial:      { label: 'Serial number',     allowed: 'alnum',  min: 10, max: 13 },
+    custom:      { label: 'Device',            allowed: 'alnum',  min: 10, max: 15 },
+    number:      { label: 'Number',            allowed: 'numbers',min: 1,  max: 255 },
+    email:       { label: 'Email',             allowed: 'any',    min: 3,  max: 255 },
+    text:        { label: 'Text',              allowed: 'any',    min: 1,  max: 255 },
+  };
+
+  const mainType  = document.getElementById('mainFieldType');
+  const labelEl   = document.getElementById('mainFieldLabel');
+  const allowedEl = document.getElementById('allowedChars');
+  const minEl     = document.getElementById('minLen');
+  const maxEl     = document.getElementById('maxLen');
+
+  function applyPreset(v){
+    const p = presets[v] || null;
+    if (!p) return;
+    if (labelEl) labelEl.value = p.label;
+    if (allowedEl) allowedEl.value = p.allowed;
+    if (minEl) minEl.value = p.min;
+    if (maxEl) maxEl.value = p.max;
+  }
+  mainType?.addEventListener('change', () => applyPreset(mainType.value));
+  if (mainType) applyPreset(mainType.value);
+
+  // =========================
+  // Custom fields UI + serialization
+  // =========================
+  const wrap   = document.getElementById('fieldsWrap');
+  const tpl    = document.getElementById('fieldTpl');
+  const btnAdd = document.getElementById('btnAddField');
+  const hidden = document.getElementById('customFieldsHidden');
+
+  function toSlugInputName(name){
+    const base = (name || '').trim().toLowerCase()
+      .replace(/[^a-z0-9]+/g,'_')
+      .replace(/^_+|_+$/g,'');
+    return base ? `service_fields_${base}` : `service_fields_${Date.now()}`;
+  }
+
+  function serializeFields(){
+    const rows = [];
+    wrap.querySelectorAll('[data-field]').forEach(card => {
+      const type = card.querySelector('.js-field-type')?.value || 'text';
+      const obj = {
+        active: card.querySelector('.js-field-active')?.checked ? 1 : 0,
+        name: (card.querySelector('.js-field-name')?.value || '').trim(),
+        input: (card.querySelector('.js-field-input')?.value || '').trim(),
+        description: (card.querySelector('.js-field-desc')?.value || '').trim(),
+        minimum: parseInt(card.querySelector('.js-field-min')?.value || '0', 10),
+        maximum: parseInt(card.querySelector('.js-field-max')?.value || '0', 10),
+        validation: card.querySelector('.js-field-validation')?.value || '',
+        required: parseInt(card.querySelector('.js-field-required')?.value || '0', 10),
+        type: type,
+        options: (card.querySelector('.js-field-options')?.value || '').trim(),
+      };
+      // لا نحفظ الفارغ تمامًا
+      if (obj.name || obj.input) rows.push(obj);
+    });
+
+    hidden.value = JSON.stringify(rows);
+  }
+
+  function bindCard(card){
+    const typeSel = card.querySelector('.js-field-type');
+    const optsWrap = card.querySelector('.js-options-wrap');
+    const nameEl = card.querySelector('.js-field-name');
+    const inputEl = card.querySelector('.js-field-input');
+
+    function refreshOptions(){
+      const t = typeSel.value;
+      const show = (t === 'dropdown' || t === 'radio');
+      optsWrap.classList.toggle('d-none', !show);
+    }
+
+    typeSel.addEventListener('change', () => { refreshOptions(); serializeFields(); });
+
+    // اسم افتراضي input عند كتابة الاسم
+    nameEl.addEventListener('input', () => {
+      if (!inputEl.value.trim()) inputEl.value = toSlugInputName(nameEl.value);
+      serializeFields();
+    });
+
+    card.addEventListener('input', serializeFields);
+    card.querySelector('.js-remove-field').addEventListener('click', () => {
+      card.remove();
+      serializeFields();
+    });
+
+    refreshOptions();
+  }
+
+  function addField(defaults = null){
+    const node = tpl.content.cloneNode(true);
+    const card = node.querySelector('[data-field]');
+    wrap.appendChild(node);
+
+    // بعد append
+    const last = wrap.querySelectorAll('[data-field]');
+    const cardEl = last[last.length - 1];
+
+    if (defaults){
+      cardEl.querySelector('.js-field-active').checked = !!defaults.active;
+      cardEl.querySelector('.js-field-name').value = defaults.name || '';
+      cardEl.querySelector('.js-field-type').value = defaults.type || 'text';
+      cardEl.querySelector('.js-field-input').value = defaults.input || '';
+      cardEl.querySelector('.js-field-desc').value = defaults.description || '';
+      cardEl.querySelector('.js-field-min').value = defaults.minimum ?? 0;
+      cardEl.querySelector('.js-field-max').value = defaults.maximum ?? 0;
+      cardEl.querySelector('.js-field-validation').value = defaults.validation || '';
+      cardEl.querySelector('.js-field-required').value = String(defaults.required ?? 0);
+      if (defaults.options) cardEl.querySelector('.js-field-options').value = defaults.options;
+    }
+
+    bindCard(cardEl);
+    serializeFields();
+  }
+
+  btnAdd?.addEventListener('click', () => addField());
+
+  // إذا أردت بدء حقل واحد افتراضيًا:
+  // addField();
+
+})();
+</script>

@@ -211,6 +211,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     await import('./pages/permissions.js');
     return;
   }
+  // Service create / edit
+if (document.querySelector('.service-create-form')) {
+  import('./pages/service-custom-fields.js');
+}
+
 });
 
 
