@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin\Services;
 use App\Http\Controllers\Controller;
 use App\Models\ImeiService;
 use App\Models\ServiceGroupPrice;
-use App\Models\CustomField;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
@@ -22,7 +21,7 @@ class ImeiServiceController extends Controller
             $term = $r->q;
             $q->where(function ($qq) use ($term) {
                 $qq->where('alias', 'like', "%$term%")
-                   ->orWhere('name', 'like', "%$term%");
+                    ->orWhere('name', 'like', "%$term%");
             });
         }
 
@@ -61,9 +60,30 @@ class ImeiServiceController extends Controller
         return view('admin.services.imei._modal_create', compact('data'));
     }
 
+    /**
+     * ✅ Save pricing values in service_group_prices table
+     */
+    private function saveGroupPrices(int $serviceId, array $groupPrices)
+    {
+        foreach ($groupPrices as $groupId => $row) {
+            ServiceGroupPrice::updateOrCreate(
+                [
+                    'service_id'   => $serviceId,
+                    'service_kind' => 'imei',
+                    'group_id'     => (int)$groupId,
+                ],
+                [
+                    'price'    => (float)($row['price'] ?? 0),
+                    'discount' => (float)($row['discount'] ?? 0),
+                    // لو لاحقًا بدك تخزن discount_type لازم تضيف عمود بالموديل/المهاجرة
+                ]
+            );
+        }
+    }
+
     public function store(Request $request)
     {
-        // تنظيف undefined
+        // تنظيف القيم undefined
         foreach (['remote_id', 'supplier_id', 'api_provider_id', 'api_service_remote_id'] as $k) {
             $v = $request->input($k);
             if ($v === 'undefined' || $v === '') {
@@ -71,6 +91,7 @@ class ImeiServiceController extends Controller
             }
         }
 
+        // ✅ VALIDATION (أهم تعديل هنا: group_prices لازم array)
         $v = $request->validate([
             'alias'        => 'nullable|string|max:255',
             'group_id'     => 'nullable|integer|exists:service_groups,id',
@@ -84,12 +105,14 @@ class ImeiServiceController extends Controller
             'time'         => 'nullable|string',
             'info'         => 'nullable|string',
 
+            // main field config
             'main_field_type'    => 'required|string|max:50',
             'allowed_characters' => 'nullable|string|max:50',
             'min'                => 'nullable|integer',
             'max'                => 'nullable|integer',
             'main_field_label'   => 'nullable|string|max:255',
 
+            // meta params
             'meta_keywords'     => 'nullable|string',
             'meta_description'  => 'nullable|string',
             'meta_after_head'   => 'nullable|string',
@@ -97,35 +120,41 @@ class ImeiServiceController extends Controller
             'meta_after_body'   => 'nullable|string',
             'meta_before_body'  => 'nullable|string',
 
+            // pricing
             'cost'        => 'nullable|numeric',
             'profit'      => 'nullable|numeric',
             'profit_type' => 'nullable|integer',
 
-            'active'            => 'sometimes|boolean',
-            'allow_bulk'        => 'sometimes|boolean',
-            'allow_duplicates'  => 'sometimes|boolean',
-            'reply_with_latest' => 'sometimes|boolean',
-            'allow_report'      => 'sometimes|boolean',
-            'allow_report_time' => 'nullable|integer',
-            'allow_cancel'      => 'sometimes|boolean',
-            'allow_cancel_time' => 'nullable|integer',
-            'use_remote_cost'   => 'sometimes|boolean',
-            'use_remote_price'  => 'sometimes|boolean',
-            'stop_on_api_change'=> 'sometimes|boolean',
-            'needs_approval'    => 'sometimes|boolean',
-            'reply_expiration'  => 'nullable|integer',
-            'reject_on_missing_reply' => 'sometimes|boolean',
-            'ordering'          => 'nullable|integer',
+            // toggles
+            'active'             => 'sometimes|boolean',
+            'allow_bulk'         => 'sometimes|boolean',
+            'allow_duplicates'   => 'sometimes|boolean',
+            'reply_with_latest'  => 'sometimes|boolean',
+            'allow_report'       => 'sometimes|boolean',
+            'allow_report_time'  => 'nullable|integer',
+            'allow_cancel'       => 'sometimes|boolean',
+            'allow_cancel_time'  => 'nullable|integer',
+            'use_remote_cost'    => 'sometimes|boolean',
+            'use_remote_price'   => 'sometimes|boolean',
+            'stop_on_api_change' => 'sometimes|boolean',
+            'needs_approval'     => 'sometimes|boolean',
+            'reply_expiration'   => 'nullable|integer',
 
+            'reject_on_missing_reply' => 'sometimes|boolean',
+            'ordering'                => 'nullable|integer',
+
+            // API selection
             'api_provider_id'       => 'nullable|integer',
             'api_service_remote_id' => 'nullable|integer',
 
-            // ✅ إضافات additional
-            'group_prices' => 'nullable|string', // JSON
-            'custom_fields' => 'nullable|string', // JSON
+            // ✅ هذا هو المهم (بدل string)
+            'group_prices' => 'nullable|array',
+            'group_prices.*.price' => 'nullable|numeric|min:0',
+            'group_prices.*.discount' => 'nullable|numeric|min:0',
+            'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
         ]);
 
-        // alias
+        // ✅ alias لازم لا يكون null
         $alias = $v['alias'] ?? null;
         if (!$alias) $alias = Str::slug($v['name'] ?? '');
         if (!$alias) $alias = 'service-' . Str::random(8);
@@ -137,8 +166,15 @@ class ImeiServiceController extends Controller
         }
         $v['alias'] = $alias;
 
-        // main_field_type normalize
-        $mainType = strtolower((string)$v['main_field_type']);
+        // main field mapping
+        $map = [
+            'IMEI'   => 'imei',
+            'Serial' => 'serial',
+            'Number' => 'number',
+            'Email'  => 'email',
+            'Text'   => 'text',
+        ];
+        $mainType = $map[$v['main_field_type']] ?? strtolower($v['main_field_type']);
 
         $name = ['en' => $v['name'], 'fallback' => $v['name']];
         $time = ['en' => ($v['time'] ?? ''), 'fallback' => ($v['time'] ?? '')];
@@ -166,7 +202,7 @@ class ImeiServiceController extends Controller
             'before_body_tag_closing' => $v['meta_before_body'] ?? '',
         ];
 
-        // source api mapping
+        // لو source API واختار من القائمة
         if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
             $v['supplier_id'] = (int)$v['api_provider_id'];
             $v['remote_id']   = (int)$v['api_service_remote_id'];
@@ -190,9 +226,9 @@ class ImeiServiceController extends Controller
                 'main_field' => json_encode($main, JSON_UNESCAPED_UNICODE),
                 'params'     => json_encode($params, JSON_UNESCAPED_UNICODE),
 
-                'cost'       => $v['cost'] ?? 0,
-                'profit'     => $v['profit'] ?? 0,
-                'profit_type'=> $v['profit_type'] ?? 1,
+                'cost'        => $v['cost'] ?? 0,
+                'profit'      => $v['profit'] ?? 0,
+                'profit_type' => $v['profit_type'] ?? 1,
 
                 'active'            => (int)$request->boolean('active'),
                 'allow_bulk'        => (int)$request->boolean('allow_bulk'),
@@ -213,80 +249,20 @@ class ImeiServiceController extends Controller
                 'ordering'                => (int)($v['ordering'] ?? 0),
             ]);
 
-            // ✅ Save group prices (JSON)
-            $groupPricesJson = $request->input('group_prices');
-            if ($groupPricesJson) {
-                $rows = json_decode($groupPricesJson, true);
-                if (is_array($rows)) {
-                    $this->saveGroupPrices($service->id, $rows);
-                }
-            }
+            // ✅ حفظ أسعار الجروبات لو موجودة
+            $this->saveGroupPrices($service->id, $v['group_prices'] ?? []);
 
-            // ✅ Save custom fields (JSON)
-            $customJson = $request->input('custom_fields');
-            if ($customJson) {
-                $rows = json_decode($customJson, true);
-                if (is_array($rows)) {
-                    $this->saveCustomFields($service->id, 'imei_service', $rows);
-                }
+            // ✅ Ajax friendly response
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'ok' => true,
+                    'msg' => 'Created',
+                    'id' => $service->id,
+                ]);
             }
 
             return back()->with('ok', 'Created');
         });
-    }
-
-    private function saveGroupPrices(int $serviceId, array $rows): void
-    {
-        // rows: [{group_id, price, discount, discount_type}]
-        foreach ($rows as $r) {
-            $groupId = (int)($r['group_id'] ?? 0);
-            if (!$groupId) continue;
-
-            ServiceGroupPrice::updateOrCreate([
-                'service_id'   => $serviceId,
-                'service_kind' => 'imei',
-                'group_id'     => $groupId,
-            ], [
-                'price'         => (float)($r['price'] ?? 0),
-                'discount'      => (float)($r['discount'] ?? 0),
-                'discount_type' => (int)($r['discount_type'] ?? 1),
-            ]);
-        }
-    }
-
-    private function saveCustomFields(int $serviceId, string $serviceType, array $rows): void
-    {
-        // امسح القديم ثم أعد الإدخال
-        CustomField::where('service_id', $serviceId)
-            ->where('service_type', $serviceType)
-            ->delete();
-
-        $order = 0;
-        foreach ($rows as $r) {
-            $name = trim((string)($r['name'] ?? ''));
-            if ($name === '') continue;
-
-            CustomField::create([
-                'service_id'   => $serviceId,
-                'service_type' => $serviceType,
-
-                'name'         => $name,
-                'input'        => (string)($r['input'] ?? ''),
-                'description'  => (string)($r['description'] ?? ''),
-
-                'field_type'   => (string)($r['field_type'] ?? 'text'),
-                'field_options'=> (string)($r['field_options'] ?? ''),
-
-                'validation'   => (string)($r['validation'] ?? ''),
-
-                'minimum'      => (int)($r['minimum'] ?? 0),
-                'maximum'      => (int)($r['maximum'] ?? 0),
-
-                'required'     => (int)!empty($r['required']),
-                'active'       => (int)!empty($r['active']),
-                'ordering'     => $order++,
-            ]);
-        }
     }
 
     public function modalEdit(ImeiService $service)
@@ -305,11 +281,13 @@ class ImeiServiceController extends Controller
             'profit_type' => 'nullable|integer|in:1,2',
             'active'      => 'nullable|boolean',
 
-            'group_prices' => 'nullable|string',
-            'custom_fields'=> 'nullable|string',
+            'group_prices'              => 'nullable|array',
+            'group_prices.*.price'      => 'nullable|numeric|min:0',
+            'group_prices.*.discount'   => 'nullable|numeric|min:0',
+            'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
         ]);
 
-        return DB::transaction(function () use ($service, $data, $r) {
+        return DB::transaction(function () use ($service, $data) {
 
             $service->update([
                 'name'        => $data['name'],
@@ -321,18 +299,10 @@ class ImeiServiceController extends Controller
                 'active'      => (int)($data['active'] ?? 1),
             ]);
 
-            if (!empty($data['group_prices'])) {
-                $rows = json_decode($data['group_prices'], true);
-                if (is_array($rows)) $this->saveGroupPrices($service->id, $rows);
-            }
-
-            if (!empty($data['custom_fields'])) {
-                $rows = json_decode($data['custom_fields'], true);
-                if (is_array($rows)) $this->saveCustomFields($service->id, 'imei_service', $rows);
-            }
+            $this->saveGroupPrices($service->id, $data['group_prices'] ?? []);
 
             return response()->json([
-                'ok'  => true,
+                'ok' => true,
                 'msg' => '✅ Updated successfully'
             ]);
         });

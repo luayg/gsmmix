@@ -119,33 +119,16 @@
       .replace(/^-+|-+$/g,'');
   }
 
-  function initPrice(scope){
-    const cost = scope.querySelector('[name="cost"]');
-    const profit = scope.querySelector('[name="profit"]');
-    const pType = scope.querySelector('[name="profit_type"]');
-    const pricePreview = scope.querySelector('#pricePreview');
-    const convertedPreview = scope.querySelector('#convertedPricePreview');
-
-    function recalc(){
-      const c = Number(cost?.value||0);
-      const p = Number(profit?.value||0);
-      const isPercent = (pType?.value == '2');
-      const price = isPercent ? (c + (c*p/100)) : (c+p);
-
-      if(pricePreview) pricePreview.value = price.toFixed(4);
-      if(convertedPreview) convertedPreview.value = price.toFixed(4);
-
-      const badge = document.getElementById('badgePrice');
-      if (badge) badge.innerText = 'Price: ' + price.toFixed(4) + ' Credits';
-    }
-
-    [cost,profit,pType].forEach(el=> el && el.addEventListener('input', recalc));
-    recalc();
-
-    return { setCost(v){ if(cost){ cost.value = Number(v||0).toFixed(4); } recalc(); } };
+  // ===== السعر النهائي للخدمة = Cost + Profit (حسب نوع الربح) =====
+  function calcServiceFinalPrice(scope){
+    const cost   = Number(scope.querySelector('[name="cost"]')?.value || 0);
+    const profit = Number(scope.querySelector('[name="profit"]')?.value || 0);
+    const pType  = String(scope.querySelector('[name="profit_type"]')?.value || '1'); // 1 credits, 2 percent
+    const price = (pType === '2') ? (cost + (cost * profit / 100)) : (cost + profit);
+    return Number.isFinite(price) ? price : 0;
   }
 
-  // ✅ حساب Final في جدول الجروبات
+  // ===== تحديث Final داخل صف الجروب (Price - Discount) =====
   function updateFinalForRow(row){
     const priceEl = row.querySelector('[data-price]');
     const discEl  = row.querySelector('[data-discount]');
@@ -154,16 +137,11 @@
 
     const price = Number(priceEl?.value || 0);
     const disc  = Number(discEl?.value  || 0);
-    const dtype = Number(typeEl?.value  || 1);
+    const dtype = Number(typeEl?.value  || 1); // 1 credits, 2 percent
 
     let final = price;
-
-    // 1 = Credits, 2 = Percent
-    if (dtype === 2) {
-      final = price - (price * (disc/100));
-    } else {
-      final = price - disc;
-    }
+    if (dtype === 2) final = price - (price * (disc/100));
+    else final = price - disc;
 
     if (!Number.isFinite(final)) final = 0;
     if (final < 0) final = 0;
@@ -171,12 +149,67 @@
     if (outEl) outEl.textContent = final.toFixed(4);
   }
 
+  // ✅ تزامن أسعار الجروبات تلقائياً مع سعر الخدمة النهائي
+  // يتم التحديث فقط للصفوف التي ما زالت "auto" (لم يعدلها المستخدم يدوياً)
+  function syncGroupPricesFromService(scope){
+    const wrap = scope.querySelector('#groupsPricingWrap');
+    if (!wrap) return;
+
+    const servicePrice = calcServiceFinalPrice(scope);
+
+    wrap.querySelectorAll('.pricing-row').forEach(row=>{
+      const priceInput = row.querySelector('[data-price]');
+      if (!priceInput) return;
+
+      // لو المستخدم عدّل السعر يدوياً، نوقف التحديث لهذا السطر
+      if (priceInput.dataset.autoPrice !== '1') return;
+
+      priceInput.value = servicePrice.toFixed(4);
+      updateFinalForRow(row);
+    });
+  }
+
+  function initPrice(scope){
+    const cost = scope.querySelector('[name="cost"]');
+    const profit = scope.querySelector('[name="profit"]');
+    const pType = scope.querySelector('[name="profit_type"]');
+    const pricePreview = scope.querySelector('#pricePreview');
+    const convertedPreview = scope.querySelector('#convertedPricePreview');
+
+    function recalc(){
+      const price = calcServiceFinalPrice(scope);
+
+      if(pricePreview) pricePreview.value = price.toFixed(4);
+      if(convertedPreview) convertedPreview.value = price.toFixed(4);
+
+      const badge = document.getElementById('badgePrice');
+      if (badge) badge.innerText = 'Price: ' + price.toFixed(4) + ' Credits';
+
+      // ✅ مهم: حدّث أسعار الجروبات تلقائياً
+      syncGroupPricesFromService(scope);
+    }
+
+    [cost,profit,pType].forEach(el=> el && el.addEventListener('input', recalc));
+    [cost,profit,pType].forEach(el=> el && el.addEventListener('change', recalc));
+    recalc();
+
+    return {
+      setCost(v){
+        if(cost){ cost.value = Number(v||0).toFixed(4); }
+        recalc();
+      }
+    };
+  }
+
   // ✅ بناء جدول أسعار الجروبات + إرسالها للباكند باسم group_prices[ID][...]
+  // ✅ الجديد: تعبئة Price افتراضياً بسعر الخدمة النهائي بدل 0.0000
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if(!wrap) return;
 
     wrap.innerHTML = '';
+
+    const initialServicePrice = calcServiceFinalPrice(scope);
 
     groups.forEach(g=>{
       const row = document.createElement('div');
@@ -194,8 +227,9 @@
                 type="number" step="0.0001"
                 class="form-control"
                 data-price
+                data-auto-price="1"
                 name="group_prices[${g.id}][price]"
-                value="0.0000">
+                value="${initialServicePrice.toFixed(4)}">
               <span class="input-group-text">Credits</span>
             </div>
             <div class="small text-muted mt-1">
@@ -225,10 +259,24 @@
         </div>
       `;
 
+      const priceInput = row.querySelector('[data-price]');
+      const discInput  = row.querySelector('[data-discount]');
+      const typeSelect = row.querySelector('[data-discount-type]');
+
+      // ✅ لو المستخدم عدّل Price يدوياً: أوقف auto لهذا السطر
+      priceInput?.addEventListener('input', ()=>{
+        priceInput.dataset.autoPrice = '0';
+      });
+
       row.querySelector('.btn-reset').addEventListener('click', ()=>{
-        row.querySelector('[data-price]').value = "0.0000";
-        row.querySelector('[data-discount]').value = "0.0000";
-        row.querySelector('[data-discount-type]').value = "1";
+        // إعادة تفعيل auto وإرجاع السعر لسعر الخدمة الحالي
+        const sp = calcServiceFinalPrice(scope);
+        if (priceInput){
+          priceInput.dataset.autoPrice = '1';
+          priceInput.value = sp.toFixed(4);
+        }
+        if (discInput) discInput.value = "0.0000";
+        if (typeSelect) typeSelect.value = "1";
         updateFinalForRow(row);
       });
 
@@ -463,9 +511,12 @@
         }
       });
 
-    // ✅ تحميل User Groups وبناء جدول الأسعار (مع Final شغال)
+    // ✅ تحميل User Groups وبناء جدول الأسعار (Price افتراضي = سعر الخدمة النهائي)
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
+
+    // ✅ بعد بناء الجدول: تأكد من مزامنة الأسعار مع السعر الحالي
+    syncGroupPricesFromService(body);
 
     ensureApiUI(body);
     body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
@@ -516,6 +567,13 @@
       if(Number.isFinite(credit) && credit >= 0){
         body.querySelector('[name="cost"]').value = credit.toFixed(4);
         priceHelper.setCost(credit);
+
+        // ✅ مهم: رجّع auto-price للجروبات (لأننا اخترنا خدمة جديدة من API)
+        const wrap = body.querySelector('#groupsPricingWrap');
+        wrap?.querySelectorAll('[data-price]').forEach(inp=>{
+          inp.dataset.autoPrice = '1';
+        });
+        syncGroupPricesFromService(body);
       }
     });
 
