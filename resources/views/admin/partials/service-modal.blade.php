@@ -320,6 +320,22 @@
 
     body.innerHTML = tpl.innerHTML;
 
+// ✅ IMPORTANT: execute injected <script> tags inside the template
+(function runInjectedScripts(container){
+  const scripts = Array.from(container.querySelectorAll('script'));
+  scripts.forEach(old => {
+    const s = document.createElement('script');
+
+    // copy attributes (if any)
+    for (const attr of old.attributes) s.setAttribute(attr.name, attr.value);
+
+    s.text = old.textContent || '';
+    old.parentNode?.removeChild(old);
+    container.appendChild(s);
+  });
+})(body);
+
+
     initTabs(body);
     await ensureSummernote();
     await ensureSelect2();
