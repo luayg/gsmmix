@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Services;
 
 use App\Http\Controllers\Controller;
+use App\Models\ServiceGroupPrice;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -41,7 +42,6 @@ abstract class BaseServiceController extends Controller
 
         $rows = $q->paginate(20)->withQueryString();
 
-        // اجلب Connections من نفس الجدول (Distinct source)
         $apis = app($this->model)->newQuery()
                  ->select('source')
                  ->whereNotNull('source')
@@ -65,7 +65,13 @@ abstract class BaseServiceController extends Controller
     public function store(Request $r)
     {
         $data = $this->validated($r);
+
+        /** @var Model $row */
         $row = app($this->model)->create($data);
+
+        // ✅ Save group prices (if provided from modal Additional tab)
+        $this->saveGroupPricesFromJson($row->id, $r->input('group_prices_json'));
+
         return redirect()->route("{$this->routePrefix}.edit", $row)->with('ok','Created');
     }
 
@@ -77,9 +83,15 @@ abstract class BaseServiceController extends Controller
 
     public function update(Request $r, $id)
     {
+        /** @var Model $row */
         $row = app($this->model)->findOrFail($id);
+
         $data = $this->validated($r);
         $row->update($data);
+
+        // ✅ Save group prices (if provided)
+        $this->saveGroupPricesFromJson($row->id, $r->input('group_prices_json'));
+
         return back()->with('ok','Saved');
     }
 
@@ -115,7 +127,7 @@ abstract class BaseServiceController extends Controller
         $apis   = app($this->model)->newQuery()
                     ->select('source')->whereNotNull('source')->groupBy('source')->pluck('source');
 
-        // استرجاع JSONs للتعديل (مطابق للأمثلة)
+        // JSONs
         $row->name_json = json_decode($row->name ?? '{}', true) ?: [];
         $row->time_json = json_decode($row->time ?? '{}', true) ?: [];
         $row->info_json = json_decode($row->info ?? '{}', true) ?: [];
@@ -150,7 +162,7 @@ abstract class BaseServiceController extends Controller
             'min_qty'         => 'nullable|integer',
             'max_qty'         => 'nullable|integer',
             'price'           => 'nullable|numeric',
-            'converted_price' => 'nullable|numeric', // للعرض فقط
+            'converted_price' => 'nullable|numeric',
             'cost'            => 'nullable|numeric',
             'profit'          => 'nullable|numeric',
             'profit_type'     => 'nullable|integer',
@@ -159,20 +171,27 @@ abstract class BaseServiceController extends Controller
             'info_en'         => 'nullable|string',
             'name_en'         => 'required|string',
             'time_en'         => 'nullable|string',
-            'meta_keywords'   => 'nullable|string',
-            'meta_description'=> 'nullable|string',
+
+            // Meta
+            'meta_keywords'    => 'nullable|string',
+            'meta_description' => 'nullable|string',
             'after_head_open'   => 'nullable|string',
             'before_head_close' => 'nullable|string',
             'after_body_open'   => 'nullable|string',
             'before_body_close' => 'nullable|string',
+
             // Toggles
             'active'             => 'sometimes|boolean',
             'allow_bulk'         => 'sometimes|boolean',
             'allow_duplicates'   => 'sometimes|boolean',
             'reply_with_latest'  => 'sometimes|boolean',
-            'allow_submit_verify'=> 'sometimes|boolean', // maps -> allow_report
+            'allow_submit_verify'=> 'sometimes|boolean',
             'allow_cancel'       => 'sometimes|boolean',
             'reply_expiration'   => 'sometimes|boolean',
+
+            // ✅ Additional tab payloads (from our UI)
+            'custom_fields_json' => 'nullable|string',
+            'group_prices_json'  => 'nullable|string',
         ]);
 
         $name = ['en'=>$v['name_en'],'fallback'=>$v['name_en']];
@@ -181,8 +200,15 @@ abstract class BaseServiceController extends Controller
 
         $main = [
           'type'  => $v['main_type'],
-          'rules' => ['allowed'=>$v['allowed'] ?? null,'minimum'=>$v['min_qty'] ?? null,'maximum'=>$v['max_qty'] ?? null],
-          'label' => ['en'=>$v['main_label'] ?? '','fallback'=>$v['main_label'] ?? ''],
+          'rules' => [
+              'allowed'=>$v['allowed'] ?? null,
+              'minimum'=>$v['min_qty'] ?? null,
+              'maximum'=>$v['max_qty'] ?? null
+          ],
+          'label' => [
+              'en'=>$v['main_label'] ?? '',
+              'fallback'=>$v['main_label'] ?? ''
+          ],
         ];
 
         $params = [
@@ -193,6 +219,14 @@ abstract class BaseServiceController extends Controller
           'after_body_tag_opening'  => $v['after_body_open'] ?? '',
           'before_body_tag_closing' => $v['before_body_close'] ?? '',
         ];
+
+        // ✅ Merge custom fields into params
+        $customFields = [];
+        if (!empty($v['custom_fields_json'])) {
+            $decoded = json_decode($v['custom_fields_json'], true);
+            if (is_array($decoded)) $customFields = $decoded;
+        }
+        $params['custom_fields'] = $customFields;
 
         return [
           'alias'          => $v['alias'] ?? null,
@@ -216,5 +250,28 @@ abstract class BaseServiceController extends Controller
           'allow_cancel'     => (int)$r->boolean('allow_cancel'),
           'reply_expiration' => (int)$r->boolean('reply_expiration'),
         ];
+    }
+
+    private function saveGroupPricesFromJson(int $serviceId, ?string $json): void
+    {
+        if (!$json) return;
+
+        $rows = json_decode($json, true);
+        if (!is_array($rows)) return;
+
+        foreach ($rows as $r) {
+            $groupId = (int)($r['group_id'] ?? 0);
+            if ($groupId <= 0) continue;
+
+            ServiceGroupPrice::updateOrCreate([
+                'service_id'   => $serviceId,
+                'service_type' => $this->viewPrefix, // ✅ type = imei/server/file
+                'group_id'     => $groupId,
+            ], [
+                'price'         => (float)($r['price'] ?? 0),
+                'discount'      => (float)($r['discount'] ?? 0),
+                'discount_type' => (int)($r['discount_type'] ?? 1),
+            ]);
+        }
     }
 }

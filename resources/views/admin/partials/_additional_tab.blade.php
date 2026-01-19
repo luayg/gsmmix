@@ -1,124 +1,228 @@
-{{-- resources/views/admin/services/partials/_additional_tab.blade.php --}}
+{{-- resources/views/admin/partials/_additional_tab.blade.php --}}
 
 @php
-  // Groups list passed from controller or fallback
-  $groups = $groups ?? \App\Models\UserGroup::query()->orderBy('id')->get();
+  // row->meta comes from BaseServiceController::viewData() (params decoded)
+  $meta = $row->meta ?? [];
+  $savedCustomFields = $meta['custom_fields'] ?? [];
 @endphp
 
 <div class="row g-3">
-
-  {{-- LEFT: Custom fields --}}
-  <div class="col-md-6">
-    <div class="d-flex justify-content-between align-items-center mb-2">
+  {{-- Left: Custom fields --}}
+  <div class="col-lg-6">
+    <div class="d-flex align-items-center justify-content-between mb-2">
       <h6 class="mb-0">Custom fields</h6>
-      <a href="#" class="text-decoration-none fw-bold" id="btnAddField">Add field</a>
+      <button type="button" class="btn btn-link p-0" id="btnAddCustomField">Add field</button>
     </div>
 
-    <div class="border rounded p-3 bg-white">
+    <input type="hidden" name="custom_fields_json" id="customFieldsHidden"
+           value='@json($savedCustomFields)'>
 
-      <div class="form-check form-switch mb-3">
-        <input class="form-check-input" type="checkbox" id="fieldActive" checked>
-        <label class="form-check-label" for="fieldActive">Active</label>
-      </div>
+    <div id="customFieldsWrap"></div>
 
-      <div class="row g-2">
-        <div class="col-md-6">
-          <label class="form-label mb-1">Name</label>
-          <input class="form-control" name="custom_fields[name][]" placeholder="Name">
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label mb-1">Field type</label>
-          <select class="form-select" name="custom_fields[type][]">
-            <option value="text">Text</option>
-            <option value="number">Number</option>
-            <option value="select">Select</option>
-            <option value="textarea">Textarea</option>
-          </select>
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label mb-1">Input name</label>
-          <input class="form-control" name="custom_fields[input_name][]" placeholder="Machine name of your input">
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label mb-1">Description</label>
-          <input class="form-control" name="custom_fields[description][]" placeholder="Description">
-        </div>
-
-        <div class="col-md-3">
-          <label class="form-label mb-1">Minimum</label>
-          <input class="form-control" name="custom_fields[min][]" placeholder="0">
-        </div>
-
-        <div class="col-md-3">
-          <label class="form-label mb-1">Maximum</label>
-          <input class="form-control" name="custom_fields[max][]" placeholder="Unlimited">
-        </div>
-
-        <div class="col-md-3">
-          <label class="form-label mb-1">Validation</label>
-          <select class="form-select" name="custom_fields[validation][]">
-            <option value="">None</option>
-            <option value="email">Email</option>
-            <option value="imei">IMEI</option>
-            <option value="serial">Serial</option>
-          </select>
-        </div>
-
-        <div class="col-md-3">
-          <label class="form-label mb-1">Required</label>
-          <select class="form-select" name="custom_fields[required][]">
-            <option value="0">No</option>
-            <option value="1">Yes</option>
-          </select>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  {{-- RIGHT: Groups / Pricing table --}}
-  <div class="col-md-6">
-    <h6 class="mb-2">Groups</h6>
-
-    <div class="border rounded bg-white">
-
-      @foreach($groups as $g)
-        <div class="border-bottom p-2 fw-bold bg-light">
-          {{ $g->name }}
-        </div>
-
-        <div class="p-2">
-
-          <div class="row g-2 mb-2">
-            <div class="col-md-6">
-              <label class="form-label mb-1">Price</label>
-              <div class="input-group">
-                <input type="number" step="0.01"
-                       name="group_price[{{ $g->id }}]"
-                       class="form-control group-price"
-                       value="0">
-                <span class="input-group-text">Credits</span>
-              </div>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Discount</label>
-              <div class="input-group">
-                <input type="number" step="0.01"
-                       name="group_discount[{{ $g->id }}]"
-                       class="form-control group-discount"
-                       value="0">
-                <button class="btn btn-light btnResetRow" type="button">Reset</button>
-              </div>
+    {{-- Template --}}
+    <template id="customFieldTpl">
+      <div class="card mb-2 custom-field-card" data-field>
+        <div class="card-header d-flex align-items-center justify-content-between py-2">
+          <div class="d-flex gap-2 align-items-center">
+            <div class="form-check form-switch m-0">
+              <input class="form-check-input" type="checkbox" data-active checked>
+              <label class="form-check-label small">Active</label>
             </div>
           </div>
 
+          <button type="button" class="btn btn-sm btn-danger" data-remove>&times;</button>
         </div>
-      @endforeach
 
+        <div class="card-body">
+          <div class="row g-2">
+            <div class="col-md-6">
+              <label class="form-label mb-1">Name</label>
+              <input type="text" class="form-control form-control-sm" data-name placeholder="Name">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Field type</label>
+              <select class="form-select form-select-sm" data-type>
+                <option value="text">Text</option>
+                <option value="number">Number</option>
+                <option value="email">Email</option>
+                <option value="password">Password</option>
+                <option value="textarea">Textarea</option>
+                <option value="select">Select</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Input name</label>
+              <input type="text" class="form-control form-control-sm" data-input placeholder="machine_name">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Description</label>
+              <input type="text" class="form-control form-control-sm" data-desc placeholder="Description">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Minimum</label>
+              <input type="number" class="form-control form-control-sm" data-min value="0">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Maximum</label>
+              <input type="number" class="form-control form-control-sm" data-max placeholder="Unlimited">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Validation</label>
+              <select class="form-select form-select-sm" data-validation>
+                <option value="">None</option>
+                <option value="imei">IMEI</option>
+                <option value="serial">Serial</option>
+                <option value="email">Email</option>
+                <option value="numeric">Numeric</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Required</label>
+              <select class="form-select form-select-sm" data-required>
+                <option value="0">No</option>
+                <option value="1">Yes</option>
+              </select>
+            </div>
+
+            <div class="col-12" data-options-wrap style="display:none;">
+              <label class="form-label mb-1">Options (one per line)</label>
+              <textarea class="form-control form-control-sm" rows="3" data-options></textarea>
+              <div class="form-text">Used only when Field type = Select</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  {{-- Right: Group pricing --}}
+  <div class="col-lg-6">
+    <h6 class="mb-2">Groups</h6>
+
+    {{-- هذا سيتم بناؤه بالـ JS (buildPricingTable في admin.js الذي أرسلته أنت) --}}
+    <div id="groupsPricingWrap"></div>
+
+    <input type="hidden" name="group_prices_json" id="pricingTableHidden" value="[]">
+
+    <div class="form-text">
+      Set special prices/discounts per user group for this service.
     </div>
-
   </div>
 </div>
+
+<script>
+(function(){
+  // ===== Custom fields dynamic UI =====
+  const wrap   = document.getElementById('customFieldsWrap');
+  const tpl    = document.getElementById('customFieldTpl');
+  const hidden = document.getElementById('customFieldsHidden');
+
+  if (!wrap || !tpl || !hidden) return;
+
+  const slugify = (s) => String(s || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g,'_')
+    .replace(/^_+|_+$/g,'');
+
+  function readAll(){
+    const out = [];
+    wrap.querySelectorAll('[data-field]').forEach(card => {
+      const type = card.querySelector('[data-type]')?.value || 'text';
+      const optionsTxt = card.querySelector('[data-options]')?.value || '';
+      const optionsArr = optionsTxt.split('\n').map(x => x.trim()).filter(Boolean);
+
+      out.push({
+        active: card.querySelector('[data-active]')?.checked ? 1 : 0,
+        name: card.querySelector('[data-name]')?.value || '',
+        type,
+        input: card.querySelector('[data-input]')?.value || '',
+        description: card.querySelector('[data-desc]')?.value || '',
+        minimum: Number(card.querySelector('[data-min]')?.value || 0),
+        maximum: (card.querySelector('[data-max]')?.value === '' ? null : Number(card.querySelector('[data-max]')?.value || 0)),
+        validation: card.querySelector('[data-validation]')?.value || '',
+        required: Number(card.querySelector('[data-required]')?.value || 0),
+        options: (type === 'select' ? optionsArr : []),
+      });
+    });
+
+    hidden.value = JSON.stringify(out);
+  }
+
+  function toggleOptions(card){
+    const type = card.querySelector('[data-type]')?.value || 'text';
+    const box  = card.querySelector('[data-options-wrap]');
+    if (!box) return;
+    box.style.display = (type === 'select') ? '' : 'none';
+  }
+
+  function bindCard(card){
+    card.querySelector('[data-remove]')?.addEventListener('click', () => {
+      card.remove();
+      readAll();
+    });
+
+    card.querySelector('[data-name]')?.addEventListener('input', (e) => {
+      const inp = card.querySelector('[data-input]');
+      if (inp && !inp.value) inp.value = slugify(e.target.value);
+      readAll();
+    });
+
+    card.querySelectorAll('input,select,textarea').forEach(el => {
+      el.addEventListener('input', readAll);
+      el.addEventListener('change', () => {
+        toggleOptions(card);
+        readAll();
+      });
+    });
+
+    toggleOptions(card);
+  }
+
+  function addField(prefill = null){
+    const node = tpl.content.cloneNode(true);
+    const card = node.querySelector('[data-field]');
+
+    if (prefill) {
+      card.querySelector('[data-active]').checked = !!prefill.active;
+      card.querySelector('[data-name]').value = prefill.name || '';
+      card.querySelector('[data-type]').value = prefill.type || 'text';
+      card.querySelector('[data-input]').value = prefill.input || '';
+      card.querySelector('[data-desc]').value = prefill.description || '';
+      card.querySelector('[data-min]').value = (prefill.minimum ?? 0);
+      card.querySelector('[data-max]').value = (prefill.maximum ?? '');
+      card.querySelector('[data-validation]').value = prefill.validation || '';
+      card.querySelector('[data-required]').value = String(prefill.required ?? 0);
+
+      if (Array.isArray(prefill.options)) {
+        card.querySelector('[data-options]').value = prefill.options.join('\n');
+      }
+    }
+
+    wrap.appendChild(node);
+    bindCard(wrap.querySelectorAll('[data-field]')[wrap.querySelectorAll('[data-field]').length - 1]);
+    readAll();
+  }
+
+  // Load saved
+  try {
+    const saved = JSON.parse(hidden.value || '[]');
+    if (Array.isArray(saved) && saved.length) saved.forEach(x => addField(x));
+    else addField();
+  } catch(e) {
+    addField();
+  }
+
+  document.getElementById('btnAddCustomField')?.addEventListener('click', () => addField());
+
+  // Expose a hook so service-modal.js can force refresh hidden after cloning
+  window.__syncCustomFieldsHidden__ = readAll;
+})();
+</script>
