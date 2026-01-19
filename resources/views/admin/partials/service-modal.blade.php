@@ -370,16 +370,108 @@
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
+        // ✅ MAIN FIELD PRESETS (IMEI / IMEI+Serial / Serial / Custom ...)
     const mainTypeSel  = body.querySelector('[name="main_field_type"]');
     const mainLabelInp = body.querySelector('[name="main_field_label"]');
-    if(mainTypeSel && mainLabelInp){
-      const syncLabel = ()=>{
-        const txt = mainTypeSel.selectedOptions?.[0]?.textContent || mainTypeSel.value;
-        mainLabelInp.value = clean(txt) || clean(mainTypeSel.value);
-      };
-      mainTypeSel.addEventListener('change', syncLabel);
-      syncLabel();
+    const allowedSel   = body.querySelector('[name="allowed_characters"]');
+    const minInp       = body.querySelector('[name="min"]');
+    const maxInp       = body.querySelector('[name="max"]');
+    const typeSel      = body.querySelector('[name="type"]');
+
+    const presets = {
+      imei: {
+        label: 'IMEI',
+        type: 'imei',
+        allowed: 'numbers',
+        min: 15,
+        max: 15,
+        lockLabel: true,
+      },
+      imei_serial: {
+        label: 'IMEI/Serial number',
+        type: 'imei',
+        allowed: 'alnum',
+        min: 10,
+        max: 15,
+        lockLabel: true,
+      },
+      serial: {
+        label: 'Serial number',
+        type: 'imei',
+        allowed: 'alnum',
+        min: 10,
+        max: 13,
+        lockLabel: true,
+      },
+      number: {
+        label: 'Number',
+        type: cloneData.serviceType || 'imei',
+        allowed: 'numbers',
+        min: 1,
+        max: 32,
+        lockLabel: true,
+      },
+      email: {
+        label: 'Email',
+        type: cloneData.serviceType || 'imei',
+        allowed: 'any',
+        min: 5,
+        max: 128,
+        lockLabel: true,
+      },
+      text: {
+        label: 'Text',
+        type: cloneData.serviceType || 'imei',
+        allowed: 'any',
+        min: 1,
+        max: 255,
+        lockLabel: true,
+      },
+      custom: {
+        label: '', // لا نغيّرها
+        type: cloneData.serviceType || 'imei',
+        allowed: null,
+        min: null,
+        max: null,
+        lockLabel: false,
+      },
+    };
+
+    function applyMainFieldPreset(key){
+      if (!mainTypeSel || !mainLabelInp) return;
+      const p = presets[key] || presets.custom;
+
+      // type
+      if (typeSel && p.type) typeSel.value = p.type;
+
+      // label
+      if (p.lockLabel) {
+        if (p.label) mainLabelInp.value = p.label;
+        mainLabelInp.readOnly = true;
+        mainLabelInp.classList.add('bg-light');
+      } else {
+        mainLabelInp.readOnly = false;
+        mainLabelInp.classList.remove('bg-light');
+        // في custom: لا نلمس القيمة (تظل حسب المستخدم)
+      }
+
+      // allowed characters
+      if (allowedSel && p.allowed) allowedSel.value = p.allowed;
+
+      // min/max
+      if (minInp && Number.isFinite(p.min)) minInp.value = String(p.min);
+      if (maxInp && Number.isFinite(p.max)) maxInp.value = String(p.max);
     }
+
+    if (mainTypeSel) {
+      mainTypeSel.addEventListener('change', () => {
+        applyMainFieldPreset(mainTypeSel.value);
+      });
+
+      // initial apply
+      applyMainFieldPreset(mainTypeSel.value || 'imei');
+    }
+
 
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
       .then(r=>r.json())

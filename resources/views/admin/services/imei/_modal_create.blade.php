@@ -11,7 +11,6 @@
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
 
-  {{-- ✅ Tabs content wrappers --}}
   <div class="service-tabs-content">
 
     {{-- ===================== ✅ GENERAL TAB ===================== --}}
@@ -47,23 +46,29 @@
               </select>
             </div>
 
+            {{-- ✅ MAIN FIELD PRESETS --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Main field type</label>
               <select name="main_field_type" class="form-select">
-                <option value="IMEI" selected>IMEI</option>
-                <option value="Serial">Serial</option>
-                <option value="Number">Number</option>
-                <option value="Email">Email</option>
-                <option value="Text">Text</option>
+                {{-- Presets جديدة --}}
+                <option value="imei" selected>IMEI</option>
+                <option value="imei_serial">IMEI/Serial number</option>
+                <option value="serial">Serial number</option>
+                <option value="custom">Custom</option>
+
+                {{-- الخيارات القديمة (ممكن تتركها عشان ما نكسر شيء) --}}
+                <option value="number">Number</option>
+                <option value="email">Email</option>
+                <option value="text">Text</option>
               </select>
             </div>
 
             <div class="col-md-6">
               <label class="form-label mb-1">Type</label>
               <select name="type" class="form-select">
-                <option value="imei" selected>IMEI</option>
-                <option value="server">Server</option>
-                <option value="file">File</option>
+                <option value="imei" selected>Server</option>
+                <option value="server">Calculation</option>
+                <option value="file">Other</option>
               </select>
             </div>
 
@@ -76,6 +81,7 @@
               <label class="form-label mb-1">Allowed characters</label>
               <select name="allowed_characters" class="form-select">
                 <option value="numbers" selected>Numbers</option>
+                <option value="alnum">Letters and numbers</option>
                 <option value="any">Any</option>
                 <option value="hex">HEX</option>
               </select>
@@ -226,10 +232,7 @@
         {{-- RIGHT SIDE (INFO = SUMMERNOTE) --}}
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
-
-          {{-- ✅ Must be hidden + initialized by JS --}}
           <textarea id="infoEditor" class="form-control d-none"></textarea>
-
           <input type="hidden" name="info" id="infoHidden">
           <small class="text-muted">Description, notes, terms…</small>
         </div>
