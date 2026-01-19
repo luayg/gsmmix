@@ -127,43 +127,56 @@
     const convertedPreview = scope.querySelector('#convertedPricePreview');
 
     function recalc(){
-      const c = Number(cost.value||0);
-      const p = Number(profit.value||0);
-      const isPercent = (pType.value == '2');
+      const c = Number(cost?.value||0);
+      const p = Number(profit?.value||0);
+      const isPercent = (pType?.value == '2');
       const price = isPercent ? (c + (c*p/100)) : (c+p);
 
       if(pricePreview) pricePreview.value = price.toFixed(4);
       if(convertedPreview) convertedPreview.value = price.toFixed(4);
 
-      document.getElementById('badgePrice').innerText =
-        'Price: ' + price.toFixed(4) + ' Credits';
+      const badge = document.getElementById('badgePrice');
+      if (badge) badge.innerText = 'Price: ' + price.toFixed(4) + ' Credits';
     }
 
     [cost,profit,pType].forEach(el=> el && el.addEventListener('input', recalc));
     recalc();
 
-    return { setCost(v){ cost.value = Number(v||0).toFixed(4); recalc(); } };
+    return { setCost(v){ if(cost){ cost.value = Number(v||0).toFixed(4); } recalc(); } };
   }
 
+  // ✅ حساب Final في جدول الجروبات
+  function updateFinalForRow(row){
+    const priceEl = row.querySelector('[data-price]');
+    const discEl  = row.querySelector('[data-discount]');
+    const typeEl  = row.querySelector('[data-discount-type]');
+    const outEl   = row.querySelector('[data-final]');
+
+    const price = Number(priceEl?.value || 0);
+    const disc  = Number(discEl?.value  || 0);
+    const dtype = Number(typeEl?.value  || 1);
+
+    let final = price;
+
+    // 1 = Credits, 2 = Percent
+    if (dtype === 2) {
+      final = price - (price * (disc/100));
+    } else {
+      final = price - disc;
+    }
+
+    if (!Number.isFinite(final)) final = 0;
+    if (final < 0) final = 0;
+
+    if (outEl) outEl.textContent = final.toFixed(4);
+  }
+
+  // ✅ بناء جدول أسعار الجروبات + إرسالها للباكند باسم group_prices[ID][...]
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
-    const hidden = scope.querySelector('#pricingTableHidden');
-    if(!wrap || !hidden) return;
+    if(!wrap) return;
 
     wrap.innerHTML = '';
-
-    function updateHidden(){
-      const rows = [];
-      wrap.querySelectorAll('.pricing-row').forEach(row=>{
-        rows.push({
-          group_id: row.dataset.groupId,
-          price: row.querySelector('[data-price]')?.value || 0,
-          discount: row.querySelector('[data-discount]')?.value || 0,
-          discount_type: row.querySelector('[data-discount-type]')?.value || 1
-        });
-      });
-      hidden.value = JSON.stringify(rows);
-    }
 
     groups.forEach(g=>{
       const row = document.createElement('div');
@@ -171,61 +184,68 @@
       row.dataset.groupId = g.id;
 
       row.innerHTML = `
-  <div class="pricing-title">${g.name}</div>
-  <div class="pricing-inputs">
+        <div class="pricing-title">${clean(g.name)}</div>
+        <div class="pricing-inputs">
 
-    <div>
-      <label class="form-label">Price</label>
-      <div class="input-group">
-        <input type="number" step="0.0001" class="form-control" data-price value="0.0000">
-        <span class="input-group-text">Credits</span>
-      </div>
-      <div class="small text-muted mt-1">
-        Final: <span class="fw-semibold" data-final>0.0000</span> Credits
-      </div>
-    </div>
+          <div>
+            <label class="form-label">Price</label>
+            <div class="input-group">
+              <input
+                type="number" step="0.0001"
+                class="form-control"
+                data-price
+                name="group_prices[${g.id}][price]"
+                value="0.0000">
+              <span class="input-group-text">Credits</span>
+            </div>
+            <div class="small text-muted mt-1">
+              Final: <span class="fw-semibold" data-final>0.0000</span> Credits
+            </div>
+          </div>
 
-    <div>
-      <label class="form-label">Discount</label>
-      <div class="input-group">
-        <input type="number" step="0.0001" class="form-control" data-discount value="0.0000">
-        <select class="form-select" style="max-width:110px" data-discount-type>
-          <option value="1" selected>Credits</option>
-          <option value="2">Percent</option>
-        </select>
-        <button type="button" class="btn btn-light btn-reset">Reset</button>
-      </div>
-    </div>
+          <div>
+            <label class="form-label">Discount</label>
+            <div class="input-group">
+              <input
+                type="number" step="0.0001"
+                class="form-control"
+                data-discount
+                name="group_prices[${g.id}][discount]"
+                value="0.0000">
+              <select class="form-select" style="max-width:110px"
+                data-discount-type
+                name="group_prices[${g.id}][discount_type]">
+                <option value="1" selected>Credits</option>
+                <option value="2">Percent</option>
+              </select>
+              <button type="button" class="btn btn-light btn-reset">Reset</button>
+            </div>
+          </div>
 
-  </div>
-`;
+        </div>
+      `;
 
       row.querySelector('.btn-reset').addEventListener('click', ()=>{
         row.querySelector('[data-price]').value = "0.0000";
         row.querySelector('[data-discount]').value = "0.0000";
         row.querySelector('[data-discount-type]').value = "1";
-        updateHidden();
+        updateFinalForRow(row);
       });
 
       row.querySelectorAll('input,select').forEach(el=>{
-  const handler = () => {
-    updateFinalForRow(row);
-    updateHidden();
-  };
-  el.addEventListener('input', handler);
-  el.addEventListener('change', handler);
-});
+        const handler = () => updateFinalForRow(row);
+        el.addEventListener('input', handler);
+        el.addEventListener('change', handler);
+      });
 
-updateFinalForRow(row);
-
+      updateFinalForRow(row);
+      wrap.appendChild(row);
     });
-
-    updateHidden();
   }
 
   async function loadUserGroups(){
-    const res = await fetch("{{ route('admin.groups.options') }}");
-    const rows = await res.json();
+    const res = await fetch("{{ route('admin.groups.options') }}", { headers:{'X-Requested-With':'XMLHttpRequest'} });
+    const rows = await res.json().catch(()=>[]);
     if(!Array.isArray(rows)) return [];
     return rows;
   }
@@ -267,10 +287,10 @@ updateFinalForRow(row);
     const sel = scope.querySelector('#apiProviderSelect');
     if(!sel) return;
 
-    const res = await fetch("{{ route('admin.apis.options') }}");
+    const res = await fetch("{{ route('admin.apis.options') }}", { headers:{'X-Requested-With':'XMLHttpRequest'} });
     if(!res.ok) return;
 
-    const rows = await res.json();
+    const rows = await res.json().catch(()=>[]);
     sel.innerHTML = `<option value="">Select provider...</option>` +
       (Array.isArray(rows) ? rows.map(r=>`<option value="${r.id}">${clean(r.name)}</option>`).join('') : '');
   }
@@ -285,13 +305,13 @@ updateFinalForRow(row);
     url.searchParams.set('provider_id', providerId);
     url.searchParams.set('type', type);
 
-    const res = await fetch(url.toString());
+    const res = await fetch(url.toString(), { headers:{'X-Requested-With':'XMLHttpRequest'} });
     if(!res.ok){
       sel.innerHTML = `<option value="">Failed to load</option>`;
       return;
     }
 
-    const rows = await res.json();
+    const rows = await res.json().catch(()=>[]);
     if(!Array.isArray(rows) || rows.length === 0){
       sel.innerHTML = `<option value="">No services found</option>`;
       return;
@@ -302,7 +322,6 @@ updateFinalForRow(row);
       const name = clean(s.name);
       const time = clean(s.time ?? s.delivery_time);
 
-      // ✅ FIX: استخدم price أولاً (remote tables) ثم credit/cost
       const creditNum = Number(s.price ?? s.credit ?? s.cost ?? 0);
       const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
 
@@ -330,21 +349,17 @@ updateFinalForRow(row);
 
     body.innerHTML = tpl.innerHTML;
 
-// ✅ IMPORTANT: execute injected <script> tags inside the template
-(function runInjectedScripts(container){
-  const scripts = Array.from(container.querySelectorAll('script'));
-  scripts.forEach(old => {
-    const s = document.createElement('script');
-
-    // copy attributes (if any)
-    for (const attr of old.attributes) s.setAttribute(attr.name, attr.value);
-
-    s.text = old.textContent || '';
-    old.parentNode?.removeChild(old);
-    container.appendChild(s);
-  });
-})(body);
-
+    // ✅ تشغيل أي scripts داخل الـ template
+    (function runInjectedScripts(container){
+      const scripts = Array.from(container.querySelectorAll('script'));
+      scripts.forEach(old => {
+        const s = document.createElement('script');
+        for (const attr of old.attributes) s.setAttribute(attr.name, attr.value);
+        s.text = old.textContent || '';
+        old.parentNode?.removeChild(old);
+        container.appendChild(s);
+      });
+    })(body);
 
     initTabs(body);
     await ensureSummernote();
@@ -358,7 +373,6 @@ updateFinalForRow(row);
     const isClone = (providerId !== undefined && providerId !== '' && providerId !== 'undefined'
                   && remoteId   !== undefined && remoteId   !== '' && remoteId   !== 'undefined');
 
-    // ✅ FIX: اجلب providerName من data-provider-name أو من عنوان الصفحة
     const providerName =
       btn.dataset.providerName ||
       document.querySelector('.card-header h5')?.textContent?.split('|')?.[0]?.trim() ||
@@ -368,7 +382,7 @@ updateFinalForRow(row);
       providerId: isClone ? providerId : '',
       providerName,
       remoteId: isClone ? remoteId : '',
-      groupName: clean(btn.dataset.groupName || ''), // ✅ FIX
+      groupName: clean(btn.dataset.groupName || ''),
       name: btn.dataset.name || '',
       credit: Number(btn.dataset.credit || 0),
       time: btn.dataset.time || '',
@@ -383,7 +397,7 @@ updateFinalForRow(row);
 
     body.querySelector('[name="supplier_id"]').value = isClone ? cloneData.providerId : '';
     body.querySelector('[name="remote_id"]').value   = isClone ? cloneData.remoteId : '';
-    body.querySelector('[name="group_name"]').value  = isClone ? cloneData.groupName : ''; // ✅ FIX
+    body.querySelector('[name="group_name"]').value  = isClone ? cloneData.groupName : '';
     body.querySelector('[name="name"]').value        = cloneData.name;
     body.querySelector('[name="time"]').value        = cloneData.time || '';
     body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
@@ -396,7 +410,7 @@ updateFinalForRow(row);
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-        // ✅ MAIN FIELD PRESETS (IMEI / IMEI+Serial / Serial / Custom ...)
+    // ✅ MAIN FIELD PRESETS
     const mainTypeSel  = body.querySelector('[name="main_field_type"]');
     const mainLabelInp = body.querySelector('[name="main_field_label"]');
     const allowedSel   = body.querySelector('[name="allowed_characters"]');
@@ -405,72 +419,21 @@ updateFinalForRow(row);
     const typeSel      = body.querySelector('[name="type"]');
 
     const presets = {
-      imei: {
-        label: 'IMEI',
-        type: 'imei',
-        allowed: 'numbers',
-        min: 15,
-        max: 15,
-        lockLabel: true,
-      },
-      imei_serial: {
-        label: 'IMEI/Serial number',
-        type: 'imei',
-        allowed: 'alnum',
-        min: 10,
-        max: 15,
-        lockLabel: true,
-      },
-      serial: {
-        label: 'Serial number',
-        type: 'imei',
-        allowed: 'alnum',
-        min: 10,
-        max: 13,
-        lockLabel: true,
-      },
-      number: {
-        label: 'Number',
-        type: cloneData.serviceType || 'imei',
-        allowed: 'numbers',
-        min: 1,
-        max: 32,
-        lockLabel: true,
-      },
-      email: {
-        label: 'Email',
-        type: cloneData.serviceType || 'imei',
-        allowed: 'any',
-        min: 5,
-        max: 128,
-        lockLabel: true,
-      },
-      text: {
-        label: 'Text',
-        type: cloneData.serviceType || 'imei',
-        allowed: 'any',
-        min: 1,
-        max: 255,
-        lockLabel: true,
-      },
-      custom: {
-        label: '', // لا نغيّرها
-        type: cloneData.serviceType || 'imei',
-        allowed: null,
-        min: null,
-        max: null,
-        lockLabel: false,
-      },
+      imei: { label:'IMEI', type:'imei', allowed:'numbers', min:15, max:15, lockLabel:true },
+      imei_serial: { label:'IMEI/Serial number', type:'imei', allowed:'alnum', min:10, max:15, lockLabel:true },
+      serial: { label:'Serial number', type:'imei', allowed:'alnum', min:10, max:13, lockLabel:true },
+      number: { label:'Number', type: cloneData.serviceType || 'imei', allowed:'numbers', min:1, max:32, lockLabel:true },
+      email: { label:'Email', type: cloneData.serviceType || 'imei', allowed:'any', min:5, max:128, lockLabel:true },
+      text: { label:'Text', type: cloneData.serviceType || 'imei', allowed:'any', min:1, max:255, lockLabel:true },
+      custom: { label:'', type: cloneData.serviceType || 'imei', allowed:null, min:null, max:null, lockLabel:false },
     };
 
     function applyMainFieldPreset(key){
       if (!mainTypeSel || !mainLabelInp) return;
       const p = presets[key] || presets.custom;
 
-      // type
       if (typeSel && p.type) typeSel.value = p.type;
 
-      // label
       if (p.lockLabel) {
         if (p.label) mainLabelInp.value = p.label;
         mainLabelInp.readOnly = true;
@@ -478,26 +441,17 @@ updateFinalForRow(row);
       } else {
         mainLabelInp.readOnly = false;
         mainLabelInp.classList.remove('bg-light');
-        // في custom: لا نلمس القيمة (تظل حسب المستخدم)
       }
 
-      // allowed characters
       if (allowedSel && p.allowed) allowedSel.value = p.allowed;
-
-      // min/max
       if (minInp && Number.isFinite(p.min)) minInp.value = String(p.min);
       if (maxInp && Number.isFinite(p.max)) maxInp.value = String(p.max);
     }
 
     if (mainTypeSel) {
-      mainTypeSel.addEventListener('change', () => {
-        applyMainFieldPreset(mainTypeSel.value);
-      });
-
-      // initial apply
+      mainTypeSel.addEventListener('change', () => applyMainFieldPreset(mainTypeSel.value));
       applyMainFieldPreset(mainTypeSel.value || 'imei');
     }
-
 
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
       .then(r=>r.json())
@@ -509,6 +463,7 @@ updateFinalForRow(row);
         }
       });
 
+    // ✅ تحميل User Groups وبناء جدول الأسعار (مع Final شغال)
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
 
@@ -520,11 +475,9 @@ updateFinalForRow(row);
     const apiProviderSel = body.querySelector('#apiProviderSelect');
     const apiServiceSel  = body.querySelector('#apiServiceSelect');
 
-    // ✅ إذا هذا Clone: اجعل provider مختار تلقائياً ثم حمّل خدماته
     if (isClone && apiProviderSel) {
       apiProviderSel.value = cloneData.providerId;
       try { await loadProviderServices(body, cloneData.providerId, cloneData.serviceType); } catch(e) {}
-      // حاول اختيار الخدمة نفسها
       if (apiServiceSel) {
         const opt = Array.from(apiServiceSel.options).find(o => String(o.value) === String(cloneData.remoteId));
         if (opt) {
@@ -575,8 +528,12 @@ updateFinalForRow(row);
 
     ev.preventDefault();
 
-    const html = jQuery(form).find('#infoEditor').summernote('code');
-    form.querySelector('#infoHidden').value = html;
+    const infoEditor = jQuery(form).find('#infoEditor');
+    if (infoEditor.length && infoEditor.summernote) {
+      const html = infoEditor.summernote('code');
+      const hidden = form.querySelector('#infoHidden');
+      if (hidden) hidden.value = html;
+    }
 
     const btn = form.querySelector('[type="submit"]');
     if(btn) btn.disabled = true;
@@ -594,13 +551,13 @@ updateFinalForRow(row);
       if(btn) btn.disabled = false;
 
       if(res.status === 422){
-        const json = await res.json();
-        alert(Object.values(json.errors).flat().join("\n"));
+        const json = await res.json().catch(()=>({}));
+        alert(Object.values(json.errors||{}).flat().join("\n"));
         return;
       }
 
       if(res.ok){
-        bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
+        bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
         window.location.href = window.__serviceReturnUrl || window.location.href;
       }else{
         const t = await res.text();
