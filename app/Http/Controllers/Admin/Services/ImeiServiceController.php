@@ -106,19 +106,19 @@ class ImeiServiceController extends Controller
             'profit_type' => 'nullable|integer',
 
             // toggles
-            'active'            => 'sometimes|boolean',
-            'allow_bulk'        => 'sometimes|boolean',
-            'allow_duplicates'  => 'sometimes|boolean',
-            'reply_with_latest' => 'sometimes|boolean',
-            'allow_report'      => 'sometimes|boolean',
-            'allow_report_time' => 'nullable|integer',
-            'allow_cancel'      => 'sometimes|boolean',
-            'allow_cancel_time' => 'nullable|integer',
-            'use_remote_cost'   => 'sometimes|boolean',
-            'use_remote_price'  => 'sometimes|boolean',
-            'stop_on_api_change'=> 'sometimes|boolean',
-            'needs_approval'    => 'sometimes|boolean',
-            'reply_expiration'  => 'nullable|integer',
+            'active'             => 'sometimes|boolean',
+            'allow_bulk'         => 'sometimes|boolean',
+            'allow_duplicates'   => 'sometimes|boolean',
+            'reply_with_latest'  => 'sometimes|boolean',
+            'allow_report'       => 'sometimes|boolean',
+            'allow_report_time'  => 'nullable|integer',
+            'allow_cancel'       => 'sometimes|boolean',
+            'allow_cancel_time'  => 'nullable|integer',
+            'use_remote_cost'    => 'sometimes|boolean',
+            'use_remote_price'   => 'sometimes|boolean',
+            'stop_on_api_change' => 'sometimes|boolean',
+            'needs_approval'     => 'sometimes|boolean',
+            'reply_expiration'   => 'nullable|integer',
 
             'reject_on_missing_reply' => 'sometimes|boolean',
             'ordering'                => 'nullable|integer',
@@ -128,9 +128,9 @@ class ImeiServiceController extends Controller
             'api_service_remote_id' => 'nullable|integer',
 
             // ✅ Additional (Groups pricing)
-            'pricing_table' => 'nullable|string', // JSON from pricingTableHidden
-            'group_price'   => 'nullable|array',  // from _additional_tab (legacy)
-            'group_discount'=> 'nullable|array',
+            'pricing_table'  => 'nullable|string', // JSON from pricingTableHidden
+            'group_price'    => 'nullable|array',  // legacy
+            'group_discount' => 'nullable|array',
 
             // ✅ Additional (Custom fields)
             'custom_fields' => 'nullable|array',
@@ -147,7 +147,7 @@ class ImeiServiceController extends Controller
         // ✅ alias must never be null
         $alias = $v['alias'] ?? null;
 
-        if (!$alias) {
+        if (!$alias) seeing.
             $alias = Str::slug($v['name'] ?? '');
         }
         if (!$alias) {
@@ -176,7 +176,7 @@ class ImeiServiceController extends Controller
         ];
         $mainType = $map[$v['main_field_type']] ?? strtolower($v['main_field_type']);
 
-        // JSON fields (مثل طريقة النظام عندك)
+        // JSON fields
         $name = ['en' => $v['name'], 'fallback' => $v['name']];
         $time = ['en' => ($v['time'] ?? ''), 'fallback' => ($v['time'] ?? '')];
         $info = ['en' => ($v['info'] ?? ''), 'fallback' => ($v['info'] ?? '')];
@@ -250,7 +250,7 @@ class ImeiServiceController extends Controller
                 'ordering'                => (int) ($v['ordering'] ?? 0),
             ]);
 
-            // ✅ Save groups pricing (supports pricing_table JSON OR legacy arrays)
+            // ✅ Save groups pricing
             $groupPrices = $this->extractGroupPricesFromRequest($request);
             if (!empty($groupPrices)) {
                 $this->saveGroupPrices($service->id, $groupPrices);
@@ -266,7 +266,7 @@ class ImeiServiceController extends Controller
     /**
      * ✅ Read group prices from:
      * - pricing_table JSON (pricingTableHidden)
-     * - group_price[] + group_discount[] (legacy _additional_tab)
+     * - group_price[] + group_discount[] (legacy)
      */
     private function extractGroupPricesFromRequest(Request $r): array
     {
@@ -316,7 +316,7 @@ class ImeiServiceController extends Controller
 
     /**
      * ✅ Save pricing values in service_group_prices table
-     * IMPORTANT: uses service_type (not service_kind) because codebase filters by service_type='imei' :contentReference[oaicite:3]{index=3}
+     * IMPORTANT: uses service_type (not service_kind)
      */
     private function saveGroupPrices(int $serviceId, array $groupPrices): void
     {
@@ -339,12 +339,11 @@ class ImeiServiceController extends Controller
      */
     private function saveCustomFields(int $serviceId, array $cf): void
     {
-        // نفس القيمة اللي عندك في قاعدة البيانات (من الصور): imei_service / server_service ...
+        // نفس القيمة اللي عندك في قاعدة البيانات: imei_service / server_service ...
         $customServiceType = 'imei_service';
 
         $names = $cf['name'] ?? [];
         if (!is_array($names) || count($names) === 0) {
-            // امسح القديم فقط (اختياري)
             DB::table('custom_fields')
                 ->where('service_id', $serviceId)
                 ->where('service_type', $customServiceType)
@@ -387,7 +386,6 @@ class ImeiServiceController extends Controller
             $rowType = (string) ($types[$i] ?? 'text');
             $input   = trim((string) ($inputs[$i] ?? ''));
             if ($input === '') {
-                // fallback machine-name
                 $input = 'field_' . ($i + 1);
             }
 
@@ -408,7 +406,7 @@ class ImeiServiceController extends Controller
                 'maximum'    => is_numeric($maxs[$i] ?? null) ? (int) $maxs[$i] : 0,
                 'required'   => (int) ((string) ($requireds[$i] ?? '0') === '1'),
 
-                'options'    => json_encode(['en' => '', 'fallback' => ''], JSON_UNESCAPED_UNICODE), // جاهزة لاحقاً لو type=select
+                'options'    => json_encode(['en' => '', 'fallback' => ''], JSON_UNESCAPED_UNICODE),
                 'active'     => 1,
                 'ordering'   => $i,
 
@@ -439,9 +437,9 @@ class ImeiServiceController extends Controller
             'active'      => 'nullable|boolean',
 
             // ✅ Additional pricing (two formats)
-            'pricing_table' => 'nullable|string',
-            'group_price'   => 'nullable|array',
-            'group_discount'=> 'nullable|array',
+            'pricing_table'  => 'nullable|string',
+            'group_price'    => 'nullable|array',
+            'group_discount' => 'nullable|array',
 
             // ✅ Additional custom fields
             'custom_fields' => 'nullable|array',
