@@ -119,7 +119,7 @@
       .replace(/^-+|-+$/g,'');
   }
 
-  // ===== السعر النهائي للخدمة = Cost + Profit (حسب نوع الربح) =====
+  // ===== السعر النهائي للخدمة = Cost + Profit =====
   function calcServiceFinalPrice(scope){
     const cost   = Number(scope.querySelector('[name="cost"]')?.value || 0);
     const profit = Number(scope.querySelector('[name="profit"]')?.value || 0);
@@ -128,7 +128,7 @@
     return Number.isFinite(price) ? price : 0;
   }
 
-  // ===== تحديث Final داخل صف الجروب (Price - Discount) =====
+  // ===== تحديث Final داخل صف الجروب =====
   function updateFinalForRow(row){
     const priceEl = row.querySelector('[data-price]');
     const discEl  = row.querySelector('[data-discount]');
@@ -149,8 +149,7 @@
     if (outEl) outEl.textContent = final.toFixed(4);
   }
 
-  // ✅ تزامن أسعار الجروبات تلقائياً مع سعر الخدمة النهائي
-  // يتم التحديث فقط للصفوف التي ما زالت "auto" (لم يعدلها المستخدم يدوياً)
+  // ===== مزامنة أسعار الجروبات مع سعر الخدمة النهائي =====
   function syncGroupPricesFromService(scope){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if (!wrap) return;
@@ -161,7 +160,7 @@
       const priceInput = row.querySelector('[data-price]');
       if (!priceInput) return;
 
-      // لو المستخدم عدّل السعر يدوياً، نوقف التحديث لهذا السطر
+      // فقط إذا ما زال auto
       if (priceInput.dataset.autoPrice !== '1') return;
 
       priceInput.value = servicePrice.toFixed(4);
@@ -185,7 +184,7 @@
       const badge = document.getElementById('badgePrice');
       if (badge) badge.innerText = 'Price: ' + price.toFixed(4) + ' Credits';
 
-      // ✅ مهم: حدّث أسعار الجروبات تلقائياً
+      // ✅ تحديث أسعار الجروبات
       syncGroupPricesFromService(scope);
     }
 
@@ -201,8 +200,7 @@
     };
   }
 
-  // ✅ بناء جدول أسعار الجروبات + إرسالها للباكند باسم group_prices[ID][...]
-  // ✅ الجديد: تعبئة Price افتراضياً بسعر الخدمة النهائي بدل 0.0000
+  // ===== بناء جدول أسعار الجروبات =====
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if(!wrap) return;
@@ -263,13 +261,12 @@
       const discInput  = row.querySelector('[data-discount]');
       const typeSelect = row.querySelector('[data-discount-type]');
 
-      // ✅ لو المستخدم عدّل Price يدوياً: أوقف auto لهذا السطر
+      // المستخدم عدّل price يدوي => وقف auto
       priceInput?.addEventListener('input', ()=>{
         priceInput.dataset.autoPrice = '0';
       });
 
       row.querySelector('.btn-reset').addEventListener('click', ()=>{
-        // إعادة تفعيل auto وإرجاع السعر لسعر الخدمة الحالي
         const sp = calcServiceFinalPrice(scope);
         if (priceInput){
           priceInput.dataset.autoPrice = '1';
@@ -397,7 +394,7 @@
 
     body.innerHTML = tpl.innerHTML;
 
-    // ✅ تشغيل أي scripts داخل الـ template
+    // تشغيل scripts داخل template
     (function runInjectedScripts(container){
       const scripts = Array.from(container.querySelectorAll('script'));
       scripts.forEach(old => {
@@ -458,7 +455,7 @@
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-    // ✅ MAIN FIELD PRESETS
+    // MAIN FIELD PRESETS
     const mainTypeSel  = body.querySelector('[name="main_field_type"]');
     const mainLabelInp = body.querySelector('[name="main_field_label"]');
     const allowedSel   = body.querySelector('[name="allowed_characters"]');
@@ -511,11 +508,11 @@
         }
       });
 
-    // ✅ تحميل User Groups وبناء جدول الأسعار (Price افتراضي = سعر الخدمة النهائي)
+    // User Groups pricing table (Price يبدأ بسعر الخدمة النهائي)
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
 
-    // ✅ بعد بناء الجدول: تأكد من مزامنة الأسعار مع السعر الحالي
+    // تأكيد مزامنة أولية
     syncGroupPricesFromService(body);
 
     ensureApiUI(body);
@@ -568,7 +565,7 @@
         body.querySelector('[name="cost"]').value = credit.toFixed(4);
         priceHelper.setCost(credit);
 
-        // ✅ مهم: رجّع auto-price للجروبات (لأننا اخترنا خدمة جديدة من API)
+        // رجّع auto للجروبات عند اختيار خدمة جديدة
         const wrap = body.querySelector('#groupsPricingWrap');
         wrap?.querySelectorAll('[data-price]').forEach(inp=>{
           inp.dataset.autoPrice = '1';

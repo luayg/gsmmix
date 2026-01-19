@@ -75,7 +75,7 @@ class ImeiServiceController extends Controller
                 [
                     'price'    => (float)($row['price'] ?? 0),
                     'discount' => (float)($row['discount'] ?? 0),
-                    // لو لاحقًا بدك تخزن discount_type لازم تضيف عمود بالموديل/المهاجرة
+                    // discount_type حالياً لا يُخزن إلا إذا أضفت عمود بالمigration
                 ]
             );
         }
@@ -83,7 +83,6 @@ class ImeiServiceController extends Controller
 
     public function store(Request $request)
     {
-        // تنظيف القيم undefined
         foreach (['remote_id', 'supplier_id', 'api_provider_id', 'api_service_remote_id'] as $k) {
             $v = $request->input($k);
             if ($v === 'undefined' || $v === '') {
@@ -91,7 +90,7 @@ class ImeiServiceController extends Controller
             }
         }
 
-        // ✅ VALIDATION (أهم تعديل هنا: group_prices لازم array)
+        // ✅ VALIDATION
         $v = $request->validate([
             'alias'        => 'nullable|string|max:255',
             'group_id'     => 'nullable|integer|exists:service_groups,id',
@@ -147,14 +146,41 @@ class ImeiServiceController extends Controller
             'api_provider_id'       => 'nullable|integer',
             'api_service_remote_id' => 'nullable|integer',
 
-            // ✅ هذا هو المهم (بدل string)
+            // group prices
             'group_prices' => 'nullable|array',
             'group_prices.*.price' => 'nullable|numeric|min:0',
             'group_prices.*.discount' => 'nullable|numeric|min:0',
             'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
+
+            // ✅ custom fields (قد تصل array أو JSON string)
+            'custom_fields' => 'nullable|array',
+            'custom_fields.*.active' => 'nullable|in:0,1,true,false',
+            'custom_fields.*.name' => 'nullable|string|max:255',
+            'custom_fields.*.input_name' => 'nullable|string|max:255',
+            'custom_fields.*.field_type' => 'nullable|string|max:50',
+            'custom_fields.*.description' => 'nullable|string|max:1000',
+            'custom_fields.*.min' => 'nullable|integer|min:0',
+            'custom_fields.*.max' => 'nullable|integer|min:0',
+            'custom_fields.*.validation' => 'nullable|string|max:50',
+            'custom_fields.*.required' => 'nullable|in:0,1,true,false',
+
+            // ✅ احتياطي لو تُرسل JSON كنص
+            'custom_fields_json' => 'nullable|string',
         ]);
 
-        // ✅ alias لازم لا يكون null
+        // ✅ Normalize custom_fields (لو وصلت كنص JSON)
+        $customFields = $request->input('custom_fields');
+
+        if (!is_array($customFields)) {
+            $raw = $request->input('custom_fields_json');
+            if (is_string($raw) && trim($raw) !== '') {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) $customFields = $decoded;
+            }
+        }
+        if (!is_array($customFields)) $customFields = [];
+
+        // ✅ alias must never be null
         $alias = $v['alias'] ?? null;
         if (!$alias) $alias = Str::slug($v['name'] ?? '');
         if (!$alias) $alias = 'service-' . Str::random(8);
@@ -193,6 +219,7 @@ class ImeiServiceController extends Controller
             ],
         ];
 
+        // ✅ Params + Custom Fields (سنحفظها داخل params لتستخدمها لاحقاً في place order)
         $params = [
             'meta_keywords'           => $v['meta_keywords'] ?? '',
             'meta_description'        => $v['meta_description'] ?? '',
@@ -200,9 +227,23 @@ class ImeiServiceController extends Controller
             'before_head_tag_closing' => $v['meta_before_head'] ?? '',
             'after_body_tag_opening'  => $v['meta_after_body'] ?? '',
             'before_body_tag_closing' => $v['meta_before_body'] ?? '',
+
+            // ✅ هنا أهم إضافة
+            'custom_fields' => array_values(array_map(function ($f) {
+                return [
+                    'active'      => !empty($f['active']) ? 1 : 0,
+                    'name'        => (string)($f['name'] ?? ''),
+                    'input_name'  => (string)($f['input_name'] ?? ''),
+                    'field_type'  => (string)($f['field_type'] ?? 'text'),
+                    'description' => (string)($f['description'] ?? ''),
+                    'min'         => isset($f['min']) ? (int)$f['min'] : 0,
+                    'max'         => isset($f['max']) ? (int)$f['max'] : 0,
+                    'validation'  => (string)($f['validation'] ?? 'none'),
+                    'required'    => !empty($f['required']) ? 1 : 0,
+                ];
+            }, $customFields)),
         ];
 
-        // لو source API واختار من القائمة
         if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
             $v['supplier_id'] = (int)$v['api_provider_id'];
             $v['remote_id']   = (int)$v['api_service_remote_id'];
@@ -249,10 +290,8 @@ class ImeiServiceController extends Controller
                 'ordering'                => (int)($v['ordering'] ?? 0),
             ]);
 
-            // ✅ حفظ أسعار الجروبات لو موجودة
             $this->saveGroupPrices($service->id, $v['group_prices'] ?? []);
 
-            // ✅ Ajax friendly response
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
                     'ok' => true,
@@ -285,9 +324,12 @@ class ImeiServiceController extends Controller
             'group_prices.*.price'      => 'nullable|numeric|min:0',
             'group_prices.*.discount'   => 'nullable|numeric|min:0',
             'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
+
+            // custom fields (لو لاحقًا بدك update)
+            'custom_fields' => 'nullable|array',
         ]);
 
-        return DB::transaction(function () use ($service, $data) {
+        return DB::transaction(function () use ($service, $data, $r) {
 
             $service->update([
                 'name'        => $data['name'],

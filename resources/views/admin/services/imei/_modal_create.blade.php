@@ -7,18 +7,14 @@
       data-ajax="1">
   @csrf
 
-
-  <input type="hidden" name="custom_fields" id="customFieldsHidden" value="[]">
-  <input type="hidden" name="group_prices" id="groupPricesHidden" value="[]">
+  {{-- ✅ Additional payloads (sent as JSON strings) --}}
+  <input type="hidden" name="custom_fields_json" id="customFieldsHidden" value="[]">
+  <input type="hidden" name="group_prices_json" id="groupPricesHidden" value="[]">
 
   {{-- Injected by service-modal.js --}}
   <input type="hidden" name="supplier_id" value="">
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
-
-  {{-- ✅ Additional payloads --}}
-  <input type="hidden" name="pricing_table" id="pricingTableHidden" value="">
-  <input type="hidden" name="custom_fields_json" id="customFieldsHidden" value="[]">
 
   <div class="service-tabs-content">
 
@@ -302,14 +298,14 @@
               <label class="form-label mb-1">Field type</label>
               <select class="form-select form-select-sm js-field-type">
                 <option value="text" selected>Text</option>
-                 <option value="password">Password</option>
-                 <option value="dropdown">Dropdown</option>
-                  <option value="radio">Radio</option>
-                  <option value="textarea">Textarea</option>
-                   <option value="checkbox">Checkbox</option>
-                    <option value="file">File</option>
-                    <option value="image">Image</option>
-                    <option value="country">Country</option>
+                <option value="password">Password</option>
+                <option value="dropdown">Dropdown</option>
+                <option value="radio">Radio</option>
+                <option value="textarea">Textarea</option>
+                <option value="checkbox">Checkbox</option>
+                <option value="file">File</option>
+                <option value="image">Image</option>
+                <option value="country">Country</option>
               </select>
             </div>
 
@@ -340,10 +336,10 @@
                 <option value="numeric">Numeric</option>
                 <option value="alphanumeric">Alphanumeric</option>
                 <option value="email">Email</option>
-                 <option value="url">URL</option>
-                  <option value="json">JSON</option>
-                  <option value="ip">IP</option>
-                  <option value="accepted">Accepted</option>
+                <option value="url">URL</option>
+                <option value="json">JSON</option>
+                <option value="ip">IP</option>
+                <option value="accepted">Accepted</option>
               </select>
             </div>
 
@@ -415,13 +411,13 @@
   // Main field presets
   // =========================
   const presets = {
-    imei:        { label: 'IMEI',             allowed: 'numbers', min: 15, max: 15 },
-    imei_serial: { label: 'IMEI/Serial number',allowed: 'alnum',  min: 10, max: 15 },
-    serial:      { label: 'Serial number',     allowed: 'alnum',  min: 10, max: 13 },
-    custom:      { label: 'Device',            allowed: 'alnum',  min: 10, max: 15 },
-    number:      { label: 'Number',            allowed: 'numbers',min: 1,  max: 255 },
-    email:       { label: 'Email',             allowed: 'any',    min: 3,  max: 255 },
-    text:        { label: 'Text',              allowed: 'any',    min: 1,  max: 255 },
+    imei:        { label: 'IMEI',              allowed: 'numbers', min: 15, max: 15 },
+    imei_serial: { label: 'IMEI/Serial number',allowed: 'alnum',   min: 10, max: 15 },
+    serial:      { label: 'Serial number',     allowed: 'alnum',   min: 10, max: 13 },
+    custom:      { label: 'Device',            allowed: 'alnum',   min: 10, max: 15 },
+    number:      { label: 'Number',            allowed: 'numbers', min: 1,  max: 255 },
+    email:       { label: 'Email',             allowed: 'any',     min: 3,  max: 255 },
+    text:        { label: 'Text',              allowed: 'any',     min: 1,  max: 255 },
   };
 
   const mainType  = document.getElementById('mainFieldType');
@@ -442,7 +438,7 @@
   if (mainType) applyPreset(mainType.value);
 
   // =========================
-  // Custom fields UI + serialization
+  // Custom fields UI + serialization -> custom_fields_json
   // =========================
   const wrap   = document.getElementById('fieldsWrap');
   const tpl    = document.getElementById('fieldTpl');
@@ -457,9 +453,12 @@
   }
 
   function serializeFields(){
+    if (!wrap || !hidden) return;
+
     const rows = [];
     wrap.querySelectorAll('[data-field]').forEach(card => {
       const type = card.querySelector('.js-field-type')?.value || 'text';
+
       const obj = {
         active: card.querySelector('.js-field-active')?.checked ? 1 : 0,
         name: (card.querySelector('.js-field-name')?.value || '').trim(),
@@ -469,10 +468,10 @@
         maximum: parseInt(card.querySelector('.js-field-max')?.value || '0', 10),
         validation: card.querySelector('.js-field-validation')?.value || '',
         required: parseInt(card.querySelector('.js-field-required')?.value || '0', 10),
-        type: type,
-        options: (card.querySelector('.js-field-options')?.value || '').trim(),
+        field_type: type,
+        field_options: (card.querySelector('.js-field-options')?.value || '').trim(),
       };
-      // لا نحفظ الفارغ تمامًا
+
       if (obj.name || obj.input) rows.push(obj);
     });
 
@@ -480,10 +479,10 @@
   }
 
   function bindCard(card){
-    const typeSel = card.querySelector('.js-field-type');
-    const optsWrap = card.querySelector('.js-options-wrap');
-    const nameEl = card.querySelector('.js-field-name');
-    const inputEl = card.querySelector('.js-field-input');
+    const typeSel   = card.querySelector('.js-field-type');
+    const optsWrap  = card.querySelector('.js-options-wrap');
+    const nameEl    = card.querySelector('.js-field-name');
+    const inputEl   = card.querySelector('.js-field-input');
 
     function refreshOptions(){
       const t = typeSel.value;
@@ -493,7 +492,6 @@
 
     typeSel.addEventListener('change', () => { refreshOptions(); serializeFields(); });
 
-    // اسم افتراضي input عند كتابة الاسم
     nameEl.addEventListener('input', () => {
       if (!inputEl.value.trim()) inputEl.value = toSlugInputName(nameEl.value);
       serializeFields();
@@ -509,25 +507,26 @@
   }
 
   function addField(defaults = null){
+    if (!tpl || !wrap) return;
+
     const node = tpl.content.cloneNode(true);
-    const card = node.querySelector('[data-field]');
     wrap.appendChild(node);
 
-    // بعد append
-    const last = wrap.querySelectorAll('[data-field]');
-    const cardEl = last[last.length - 1];
+    const cards = wrap.querySelectorAll('[data-field]');
+    const cardEl = cards[cards.length - 1];
 
     if (defaults){
       cardEl.querySelector('.js-field-active').checked = !!defaults.active;
       cardEl.querySelector('.js-field-name').value = defaults.name || '';
-      cardEl.querySelector('.js-field-type').value = defaults.type || 'text';
+      cardEl.querySelector('.js-field-type').value = defaults.field_type || defaults.type || 'text';
       cardEl.querySelector('.js-field-input').value = defaults.input || '';
       cardEl.querySelector('.js-field-desc').value = defaults.description || '';
       cardEl.querySelector('.js-field-min').value = defaults.minimum ?? 0;
       cardEl.querySelector('.js-field-max').value = defaults.maximum ?? 0;
       cardEl.querySelector('.js-field-validation').value = defaults.validation || '';
       cardEl.querySelector('.js-field-required').value = String(defaults.required ?? 0);
-      if (defaults.options) cardEl.querySelector('.js-field-options').value = defaults.options;
+      if (defaults.field_options) cardEl.querySelector('.js-field-options').value = defaults.field_options;
+      if (defaults.options) cardEl.querySelector('.js-field-options').value = defaults.options; // legacy
     }
 
     bindCard(cardEl);
@@ -536,7 +535,7 @@
 
   btnAdd?.addEventListener('click', () => addField());
 
-  // إذا أردت بدء حقل واحد افتراضيًا:
+  // start with one empty field? (اختياري)
   // addField();
 
 })();
