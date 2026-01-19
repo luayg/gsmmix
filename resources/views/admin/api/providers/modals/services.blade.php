@@ -74,14 +74,18 @@
               @if($isAdded)
                 <button type="button" class="btn btn-secondary btn-sm" disabled>Added ✅</button>
               @else
+                {{-- ✅ FIX: خلي زر Clone يستخدم data-create-service حتى يفتح مودال الإنشاء --}}
                 <button type="button"
-                        class="btn btn-success btn-sm"
-                        data-import-one
-                        data-group="{{ $group }}"
+                        class="btn btn-success btn-sm clone-btn"
+                        data-create-service
+                        data-service-type="{{ $kind }}"
+                        data-provider-id="{{ $provider->id }}"
+                        data-provider-name="{{ $provider->name }}"
                         data-remote-id="{{ $rid }}"
-                        data-name="{{ $name }}"
-                        data-credit="{{ $credit }}"
-                        data-time="{{ $time }}">
+                        data-group-name="{{ e($group) }}"
+                        data-name="{{ e($name) }}"
+                        data-credit="{{ number_format($credit, 4, '.', '') }}"
+                        data-time="{{ e($time) }}">
                   Clone
                 </button>
               @endif
@@ -196,7 +200,16 @@
   const importUrl = @json($importUrl);
   const csrfToken = @json(csrf_token());
 
-  // ===== Main search (services list) =====
+  const toastOk = (msg) => {
+    if (window.showToast) window.showToast('success', msg, { title: 'Done' });
+    else alert(msg);
+  };
+  const toastErr = (msg) => {
+    if (window.showToast) window.showToast('danger', msg, { title: 'Error', delay: 5000 });
+    else alert(msg);
+  };
+
+  // ===== Main search =====
   const svcSearch = document.getElementById('svcSearch');
   svcSearch?.addEventListener('input', () => {
     const q = (svcSearch.value || '').trim().toLowerCase();
@@ -212,10 +225,9 @@
   // ===== Open wizard =====
   const wizardEl = document.getElementById('importWizard');
   const wizard = bootstrap.Modal.getOrCreateInstance(wizardEl);
-
   document.getElementById('btnOpenImportWizard')?.addEventListener('click', () => wizard.show());
 
-  // ===== Wizard logic =====
+  // ===== Wizard helpers =====
   const wizSearch = document.getElementById('wizSearch');
   const wizChecks = () => Array.from(document.querySelectorAll('.wiz-check'));
   const wizSelected = () => wizChecks().filter(x => x.checked && !x.disabled).map(x => x.value);
@@ -264,7 +276,7 @@
     const data = await res.json().catch(() => null);
 
     if (!res.ok || !data?.ok) {
-      alert(data?.msg || 'Import failed');
+      toastErr(data?.msg || 'Import failed');
       return null;
     }
     return data;
@@ -274,17 +286,16 @@
     (remoteIds || []).forEach(id => {
       const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(String(id))}"]`);
       if (row) {
-        const btn = row.querySelector('[data-import-one]');
+        const btn = row.querySelector('.clone-btn');
         if (btn) {
           btn.classList.remove('btn-success');
           btn.classList.add('btn-secondary');
           btn.innerText = 'Added ✅';
           btn.disabled = true;
-          btn.removeAttribute('data-import-one');
+          btn.removeAttribute('data-create-service');
         }
       }
 
-      // wizard row checkbox disable
       document.querySelectorAll('.wiz-check').forEach(cb => {
         if (String(cb.value) === String(id)) {
           cb.checked = false;
@@ -298,7 +309,7 @@
 
   document.getElementById('wizImportSelected')?.addEventListener('click', async () => {
     const ids = wizSelected();
-    if (!ids.length) return alert('Select services first');
+    if (!ids.length) return toastErr('Select services first');
 
     const pricing_mode  = document.getElementById('wizPricingMode').value;
     const pricing_value = document.getElementById('wizPricingValue').value;
@@ -313,7 +324,7 @@
 
     if (data?.ok) {
       markAsAdded(data.added_remote_ids || ids);
-      alert(`✅ Imported ${data.count} services successfully`);
+      toastOk(`Imported ${data.count} services successfully ✅`);
       wizard.hide();
     }
   });
@@ -334,10 +345,20 @@
 
     if (data?.ok) {
       markAsAdded(data.added_remote_ids || []);
-      alert(`✅ Imported ${data.count} services successfully`);
+      toastOk(`Imported ${data.count} services successfully ✅`);
       wizard.hide();
     }
   });
 
 })();
 </script>
+{{-- ✅ Template required for Service Modal Clone --}}
+<template id="serviceCreateTpl">
+  @if($kind === 'imei')
+    @include('admin.services.imei._modal_create')
+  @elseif($kind === 'server')
+    @include('admin.services.server._modal_create')
+  @elseif($kind === 'file')
+    @include('admin.services.file._modal_create')
+  @endif
+</template>
