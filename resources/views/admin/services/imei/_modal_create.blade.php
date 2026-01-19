@@ -7,6 +7,10 @@
       data-ajax="1">
   @csrf
 
+
+  <input type="hidden" name="custom_fields" id="customFieldsHidden" value="[]">
+  <input type="hidden" name="group_prices" id="groupPricesHidden" value="[]">
+
   {{-- Injected by service-modal.js --}}
   <input type="hidden" name="supplier_id" value="">
   <input type="hidden" name="remote_id" value="">

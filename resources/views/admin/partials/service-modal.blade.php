@@ -171,29 +171,34 @@
       row.dataset.groupId = g.id;
 
       row.innerHTML = `
-        <div class="pricing-title">${g.name}</div>
-        <div class="pricing-inputs">
-          <div>
-            <label class="form-label">Price</label>
-            <div class="input-group">
-              <input type="number" step="0.0001" class="form-control" data-price value="0.0000">
-              <span class="input-group-text">Credits</span>
-            </div>
-          </div>
+  <div class="pricing-title">${g.name}</div>
+  <div class="pricing-inputs">
 
-          <div>
-            <label class="form-label">Discount</label>
-            <div class="input-group">
-              <input type="number" step="0.0001" class="form-control" data-discount value="0.0000">
-              <select class="form-select" style="max-width:110px" data-discount-type>
-                <option value="1" selected>Credits</option>
-                <option value="2">Percent</option>
-              </select>
-              <button type="button" class="btn btn-light btn-reset">Reset</button>
-            </div>
-          </div>
-        </div>
-      `;
+    <div>
+      <label class="form-label">Price</label>
+      <div class="input-group">
+        <input type="number" step="0.0001" class="form-control" data-price value="0.0000">
+        <span class="input-group-text">Credits</span>
+      </div>
+      <div class="small text-muted mt-1">
+        Final: <span class="fw-semibold" data-final>0.0000</span> Credits
+      </div>
+    </div>
+
+    <div>
+      <label class="form-label">Discount</label>
+      <div class="input-group">
+        <input type="number" step="0.0001" class="form-control" data-discount value="0.0000">
+        <select class="form-select" style="max-width:110px" data-discount-type>
+          <option value="1" selected>Credits</option>
+          <option value="2">Percent</option>
+        </select>
+        <button type="button" class="btn btn-light btn-reset">Reset</button>
+      </div>
+    </div>
+
+  </div>
+`;
 
       row.querySelector('.btn-reset').addEventListener('click', ()=>{
         row.querySelector('[data-price]').value = "0.0000";
@@ -203,11 +208,16 @@
       });
 
       row.querySelectorAll('input,select').forEach(el=>{
-        el.addEventListener('input', updateHidden);
-        el.addEventListener('change', updateHidden);
-      });
+  const handler = () => {
+    updateFinalForRow(row);
+    updateHidden();
+  };
+  el.addEventListener('input', handler);
+  el.addEventListener('change', handler);
+});
 
-      wrap.appendChild(row);
+updateFinalForRow(row);
+
     });
 
     updateHidden();
