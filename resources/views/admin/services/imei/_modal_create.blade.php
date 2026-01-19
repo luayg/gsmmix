@@ -285,25 +285,27 @@
               <input class="form-check-input js-field-active" type="checkbox" checked>
               <label class="form-check-label">Active</label>
             </div>
-            <button type="button" class="btn btn-sm btn-danger js-remove-field" title="Remove">×</button>
+            <button type="button" class="btn btn-sm btn-danger js-remove-field" title="Remove">Remove</button>
           </div>
 
           <div class="row g-2 mt-1">
             <div class="col-md-6">
               <label class="form-label mb-1">Name</label>
-              <input type="text" class="form-control form-control-sm js-field-name" placeholder="Username">
+              <input type="text" class="form-control form-control-sm js-field-name" placeholder="Name">
             </div>
 
             <div class="col-md-6">
               <label class="form-label mb-1">Field type</label>
               <select class="form-select form-select-sm js-field-type">
                 <option value="text" selected>Text</option>
-                <option value="textarea">Textarea</option>
-                <option value="dropdown">Dropdown</option>
-                <option value="radio">Radio</option>
-                <option value="tickbox">Tickbox</option>
-                <option value="datepicker">Datepicker</option>
-                <option value="time">Time</option>
+                 <option value="password">Password</option>
+                 <option value="dropdown">Dropdown</option>
+                  <option value="radio">Radio</option>
+                  <option value="textarea">Textarea</option>
+                   <option value="checkbox">Checkbox</option>
+                    <option value="file">File</option>
+                    <option value="image">Image</option>
+                    <option value="country">Country</option>
               </select>
             </div>
 
@@ -331,10 +333,13 @@
               <label class="form-label mb-1">Validation</label>
               <select class="form-select form-select-sm js-field-validation">
                 <option value="" selected>None</option>
+                <option value="numeric">Numeric</option>
+                <option value="alphanumeric">Alphanumeric</option>
                 <option value="email">Email</option>
-                <option value="number">Number</option>
-                <option value="imei">IMEI</option>
-                <option value="serial">Serial</option>
+                 <option value="url">URL</option>
+                  <option value="json">JSON</option>
+                  <option value="ip">IP</option>
+                  <option value="accepted">Accepted</option>
               </select>
             </div>
 
