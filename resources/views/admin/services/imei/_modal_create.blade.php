@@ -11,11 +11,14 @@
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
 
+  {{-- ✅ REQUIRED for Additional (Groups pricing + Custom fields) --}}
+  <input type="hidden" id="pricingTableHidden" name="group_prices_json" value="[]">
+  <input type="hidden" id="customFieldsHidden" name="custom_fields_json" value="[]">
+
   <div class="service-tabs-content">
 
     {{-- ===================== ✅ GENERAL TAB ===================== --}}
     <div class="tab-pane active" data-tab="general">
-
       <div class="row g-3">
 
         {{-- LEFT SIDE --}}
@@ -50,13 +53,11 @@
             <div class="col-md-6">
               <label class="form-label mb-1">Main field type</label>
               <select name="main_field_type" class="form-select">
-                {{-- Presets جديدة --}}
                 <option value="imei" selected>IMEI</option>
                 <option value="imei_serial">IMEI/Serial number</option>
                 <option value="serial">Serial number</option>
                 <option value="custom">Custom</option>
 
-                {{-- الخيارات القديمة (ممكن تتركها عشان ما نكسر شيء) --}}
                 <option value="number">Number</option>
                 <option value="email">Email</option>
                 <option value="text">Text</option>
@@ -66,9 +67,10 @@
             <div class="col-md-6">
               <label class="form-label mb-1">Type</label>
               <select name="type" class="form-select">
-                <option value="imei" selected>Server</option>
-                <option value="server">Calculation</option>
-                <option value="file">Other</option>
+                {{-- (اتركها حسب نظامك الحالي) --}}
+                <option value="imei" selected>IMEI</option>
+                <option value="server">Server</option>
+                <option value="file">File</option>
               </select>
             </div>
 
@@ -89,12 +91,18 @@
 
             <div class="col-md-6">
               <label class="form-label mb-1">Minimum</label>
-              <input name="min" type="number" class="form-control" value="15">
+              <div class="input-group">
+                <input name="min" type="number" class="form-control" value="15">
+                <span class="input-group-text">Characters</span>
+              </div>
             </div>
 
             <div class="col-md-6">
               <label class="form-label mb-1">Maximum</label>
-              <input name="max" type="number" class="form-control" value="15">
+              <div class="input-group">
+                <input name="max" type="number" class="form-control" value="15">
+                <span class="input-group-text">Characters</span>
+              </div>
             </div>
 
             {{-- Price --}}
@@ -241,21 +249,180 @@
 
     {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
     <div class="tab-pane" data-tab="additional">
-      <div class="d-flex justify-content-between mb-3">
-        <div class="fw-bold">Fields</div>
-        <div class="text-primary small cursor-pointer" id="btnAddField">Add field</div>
+
+      <div class="row g-3">
+        {{-- LEFT: Custom fields --}}
+        <div class="col-lg-7">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-bold">Custom fields</div>
+            <button type="button" class="btn btn-link p-0" id="btnAddField">Add field</button>
+          </div>
+
+          <div id="fieldsWrap"></div>
+
+          <template id="fieldRowTpl">
+            <div class="border rounded p-3 mb-3 bg-white field-row" data-field-row>
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" data-f-active checked>
+                  <label class="form-check-label">Active</label>
+                </div>
+                <button type="button" class="btn btn-sm btn-danger" data-f-remove>&times;</button>
+              </div>
+
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <label class="form-label mb-1">Name</label>
+                  <input type="text" class="form-control" data-f-name placeholder="Name">
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label mb-1">Field type</label>
+                  <select class="form-select" data-f-type>
+                    <option value="text" selected>Text</option>
+                    <option value="number">Number</option>
+                    <option value="email">Email</option>
+                    <option value="password">Password</option>
+                    <option value="textarea">Textarea</option>
+                    <option value="select">Select</option>
+                  </select>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label mb-1">Input name (API Param)</label>
+                  <input type="text" class="form-control" data-f-input placeholder="e.g. username / password / serial">
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label mb-1">Description</label>
+                  <input type="text" class="form-control" data-f-desc placeholder="Description">
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label mb-1">Minimum</label>
+                  <input type="number" class="form-control" data-f-min value="0">
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label mb-1">Maximum</label>
+                  <input type="number" class="form-control" data-f-max value="0">
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label mb-1">Validation</label>
+                  <select class="form-select" data-f-validation>
+                    <option value="" selected>None</option>
+                    <option value="numeric">Numeric</option>
+                    <option value="email">Email</option>
+                    <option value="alnum">AlphaNumeric</option>
+                  </select>
+                </div>
+
+                <div class="col-md-6">
+                  <label class="form-label mb-1">Required</label>
+                  <select class="form-select" data-f-required>
+                    <option value="0" selected>No</option>
+                    <option value="1">Yes</option>
+                  </select>
+                </div>
+
+                <div class="col-12 d-none" data-f-options-wrap>
+                  <label class="form-label mb-1">Options (for Select) - one per line</label>
+                  <textarea class="form-control" rows="3" data-f-options placeholder="Option 1&#10;Option 2"></textarea>
+                </div>
+
+              </div>
+            </div>
+          </template>
+
+          <small class="text-muted">
+            هذه الحقول سيتم حفظها وربطها بالخدمة لاستخدامها لاحقًا عند إرسال الطلبات (خصوصًا server).
+          </small>
+        </div>
+
+        {{-- RIGHT: Groups pricing --}}
+        <div class="col-lg-5">
+          <div class="fw-bold mb-2">Groups</div>
+          <div id="groupsPricingWrap" class="border rounded p-3 bg-white">
+            <div class="text-muted small">Groups pricing table will be generated here.</div>
+          </div>
+          <small class="text-muted d-block mt-2">
+            يتم توليد الجدول تلقائياً من User Groups (Basic / VIP / Reseller ...).
+          </small>
+        </div>
       </div>
 
-      <div class="border rounded p-3 bg-white" style="min-height:200px">
-        <div class="text-muted small">Fields UI will be implemented here (same system as original).</div>
-      </div>
+      <script>
+      (function(){
+        // ===== Custom Fields UI inside modal create (works with hidden JSON) =====
+        const wrap   = document.getElementById('fieldsWrap');
+        const tpl    = document.getElementById('fieldRowTpl');
+        const hidden = document.getElementById('customFieldsHidden');
 
-      <hr class="my-4">
+        if(!wrap || !tpl || !hidden) return;
 
-      <div class="fw-bold mb-2">Groups</div>
-      <div id="groupsPricingWrap" class="border rounded p-3 bg-white">
-        <div class="text-muted small">Groups pricing table will be generated here.</div>
-      </div>
+        const readAll = () => {
+          const rows = [];
+          wrap.querySelectorAll('[data-field-row]').forEach((row, idx) => {
+            const type = row.querySelector('[data-f-type]')?.value || 'text';
+            const optionsText = row.querySelector('[data-f-options]')?.value || '';
+            const optionsArr = optionsText.split('\n').map(x => x.trim()).filter(Boolean);
+
+            rows.push({
+              ordering: idx + 1,
+              active: row.querySelector('[data-f-active]')?.checked ? 1 : 0,
+              name: row.querySelector('[data-f-name]')?.value || '',
+              input: row.querySelector('[data-f-input]')?.value || '',
+              description: row.querySelector('[data-f-desc]')?.value || '',
+              type,
+              minimum: Number(row.querySelector('[data-f-min]')?.value || 0),
+              maximum: Number(row.querySelector('[data-f-max]')?.value || 0),
+              validation: row.querySelector('[data-f-validation]')?.value || null,
+              required: Number(row.querySelector('[data-f-required]')?.value || 0),
+              options: (type === 'select') ? optionsArr : []
+            });
+          });
+          hidden.value = JSON.stringify(rows);
+        };
+
+        const bindRow = (row) => {
+          const typeSel = row.querySelector('[data-f-type]');
+          const optWrap = row.querySelector('[data-f-options-wrap]');
+
+          const syncType = () => {
+            const t = typeSel.value;
+            if(optWrap) optWrap.classList.toggle('d-none', t !== 'select');
+            readAll();
+          };
+
+          row.querySelectorAll('input,select,textarea').forEach(el => {
+            el.addEventListener('input', readAll);
+            el.addEventListener('change', readAll);
+          });
+
+          typeSel?.addEventListener('change', syncType);
+          row.querySelector('[data-f-remove]')?.addEventListener('click', () => {
+            row.remove();
+            readAll();
+          });
+
+          syncType();
+        };
+
+        document.getElementById('btnAddField')?.addEventListener('click', () => {
+          const node = document.createElement('div');
+          node.innerHTML = tpl.innerHTML.trim();
+          const row = node.firstElementChild;
+          wrap.appendChild(row);
+          bindRow(row);
+          readAll();
+        });
+
+        // init
+        readAll();
+      })();
+      </script>
+
     </div>
 
     {{-- ===================== ✅ META TAB ===================== --}}
