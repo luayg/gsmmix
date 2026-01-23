@@ -7,7 +7,7 @@
       data-ajax="1">
   @csrf
 
-  {{-- ✅ إرسال Custom Fields فقط كـ JSON --}}
+  {{-- ✅ خزن custom fields كـ JSON (يتم تعبئته من JS) --}}
   <input type="hidden" name="custom_fields_json" id="customFieldsJson" value="[]">
 
   {{-- Injected by service-modal.js --}}
@@ -389,6 +389,7 @@
 
 <script>
 (function(){
+
   // =========================
   // Main field presets
   // =========================
@@ -427,11 +428,16 @@
   const btnAdd = document.getElementById('btnAddField');
   const hidden = document.getElementById('customFieldsJson');
 
+  if (!wrap || !tpl || !btnAdd || !hidden) {
+    console.warn('Custom fields UI: missing elements', { wrap, tpl, btnAdd, hidden });
+    return;
+  }
+
   function toSlugInputName(name){
     const base = (name || '').trim().toLowerCase()
       .replace(/[^a-z0-9]+/g,'_')
       .replace(/^_+|_+$/g,'');
-    return base ? `service_fields_${base}` assume : `service_fields_${Date.now()}`;
+    return base ? `service_fields_${base}` : `service_fields_${Date.now()}`;
   }
 
   function serializeFields(){
@@ -457,26 +463,26 @@
   }
 
   function bindCard(card){
-    const typeSel = card.querySelector('.js-field-type');
+    const typeSel  = card.querySelector('.js-field-type');
     const optsWrap = card.querySelector('.js-options-wrap');
-    const nameEl = card.querySelector('.js-field-name');
-    const inputEl = card.querySelector('.js-field-input');
+    const nameEl   = card.querySelector('.js-field-name');
+    const inputEl  = card.querySelector('.js-field-input');
 
     function refreshOptions(){
-      const t = typeSel.value;
+      const t = typeSel?.value || 'text';
       const show = (t === 'dropdown' || t === 'radio');
-      optsWrap.classList.toggle('d-none', !show);
+      optsWrap?.classList.toggle('d-none', !show);
     }
 
-    typeSel.addEventListener('change', () => { refreshOptions(); serializeFields(); });
+    typeSel?.addEventListener('change', () => { refreshOptions(); serializeFields(); });
 
-    nameEl.addEventListener('input', () => {
-      if (!inputEl.value.trim()) inputEl.value = toSlugInputName(nameEl.value);
+    nameEl?.addEventListener('input', () => {
+      if (inputEl && !inputEl.value.trim()) inputEl.value = toSlugInputName(nameEl.value);
       serializeFields();
     });
 
     card.addEventListener('input', serializeFields);
-    card.querySelector('.js-remove-field').addEventListener('click', () => {
+    card.querySelector('.js-remove-field')?.addEventListener('click', () => {
       card.remove();
       serializeFields();
     });
@@ -490,6 +496,7 @@
 
     const last = wrap.querySelectorAll('[data-field]');
     const cardEl = last[last.length - 1];
+    if (!cardEl) return;
 
     if (defaults){
       cardEl.querySelector('.js-field-active').checked = !!defaults.active;
@@ -508,7 +515,14 @@
     serializeFields();
   }
 
-  btnAdd?.addEventListener('click', () => addField());
+  // ✅ مهم: preventDefault حتى لا يحصل أي سلوك غريب للرابط
+  btnAdd.addEventListener('click', (e) => {
+    e.preventDefault();
+    addField();
+  });
+
+  // initialize JSON
+  serializeFields();
 
 })();
 </script>
