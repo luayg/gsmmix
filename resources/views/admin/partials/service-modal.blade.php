@@ -119,7 +119,7 @@
       .replace(/^-+|-+$/g,'');
   }
 
-  // ===== السعر النهائي للخدمة = Cost + Profit =====
+  // ===== السعر النهائي للخدمة = Cost + Profit (حسب نوع الربح) =====
   function calcServiceFinalPrice(scope){
     const cost   = Number(scope.querySelector('[name="cost"]')?.value || 0);
     const profit = Number(scope.querySelector('[name="profit"]')?.value || 0);
@@ -128,7 +128,7 @@
     return Number.isFinite(price) ? price : 0;
   }
 
-  // ===== تحديث Final داخل صف الجروب =====
+  // ===== تحديث Final داخل صف الجروب (Price - Discount) =====
   function updateFinalForRow(row){
     const priceEl = row.querySelector('[data-price]');
     const discEl  = row.querySelector('[data-discount]');
@@ -149,7 +149,7 @@
     if (outEl) outEl.textContent = final.toFixed(4);
   }
 
-  // ===== مزامنة أسعار الجروبات مع سعر الخدمة النهائي =====
+  // ✅ تزامن أسعار الجروبات تلقائياً مع سعر الخدمة النهائي
   function syncGroupPricesFromService(scope){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if (!wrap) return;
@@ -160,7 +160,6 @@
       const priceInput = row.querySelector('[data-price]');
       if (!priceInput) return;
 
-      // فقط إذا ما زال auto
       if (priceInput.dataset.autoPrice !== '1') return;
 
       priceInput.value = servicePrice.toFixed(4);
@@ -184,7 +183,6 @@
       const badge = document.getElementById('badgePrice');
       if (badge) badge.innerText = 'Price: ' + price.toFixed(4) + ' Credits';
 
-      // ✅ تحديث أسعار الجروبات
       syncGroupPricesFromService(scope);
     }
 
@@ -200,7 +198,7 @@
     };
   }
 
-  // ===== بناء جدول أسعار الجروبات =====
+  // ✅ بناء جدول أسعار الجروبات
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if(!wrap) return;
@@ -261,7 +259,6 @@
       const discInput  = row.querySelector('[data-discount]');
       const typeSelect = row.querySelector('[data-discount-type]');
 
-      // المستخدم عدّل price يدوي => وقف auto
       priceInput?.addEventListener('input', ()=>{
         priceInput.dataset.autoPrice = '0';
       });
@@ -386,7 +383,6 @@
     if(!btn) return;
 
     e.preventDefault();
-    window.__serviceReturnUrl = window.location.href;
 
     const body = document.getElementById('serviceModalBody');
     const tpl  = document.getElementById('serviceCreateTpl');
@@ -394,7 +390,6 @@
 
     body.innerHTML = tpl.innerHTML;
 
-    // تشغيل scripts داخل template
     (function runInjectedScripts(container){
       const scripts = Array.from(container.querySelectorAll('script'));
       scripts.forEach(old => {
@@ -455,49 +450,6 @@
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-    // MAIN FIELD PRESETS
-    const mainTypeSel  = body.querySelector('[name="main_field_type"]');
-    const mainLabelInp = body.querySelector('[name="main_field_label"]');
-    const allowedSel   = body.querySelector('[name="allowed_characters"]');
-    const minInp       = body.querySelector('[name="min"]');
-    const maxInp       = body.querySelector('[name="max"]');
-    const typeSel      = body.querySelector('[name="type"]');
-
-    const presets = {
-      imei: { label:'IMEI', type:'imei', allowed:'numbers', min:15, max:15, lockLabel:true },
-      imei_serial: { label:'IMEI/Serial number', type:'imei', allowed:'alnum', min:10, max:15, lockLabel:true },
-      serial: { label:'Serial number', type:'imei', allowed:'alnum', min:10, max:13, lockLabel:true },
-      number: { label:'Number', type: cloneData.serviceType || 'imei', allowed:'numbers', min:1, max:32, lockLabel:true },
-      email: { label:'Email', type: cloneData.serviceType || 'imei', allowed:'any', min:5, max:128, lockLabel:true },
-      text: { label:'Text', type: cloneData.serviceType || 'imei', allowed:'any', min:1, max:255, lockLabel:true },
-      custom: { label:'', type: cloneData.serviceType || 'imei', allowed:null, min:null, max:null, lockLabel:false },
-    };
-
-    function applyMainFieldPreset(key){
-      if (!mainTypeSel || !mainLabelInp) return;
-      const p = presets[key] || presets.custom;
-
-      if (typeSel && p.type) typeSel.value = p.type;
-
-      if (p.lockLabel) {
-        if (p.label) mainLabelInp.value = p.label;
-        mainLabelInp.readOnly = true;
-        mainLabelInp.classList.add('bg-light');
-      } else {
-        mainLabelInp.readOnly = false;
-        mainLabelInp.classList.remove('bg-light');
-      }
-
-      if (allowedSel && p.allowed) allowedSel.value = p.allowed;
-      if (minInp && Number.isFinite(p.min)) minInp.value = String(p.min);
-      if (maxInp && Number.isFinite(p.max)) maxInp.value = String(p.max);
-    }
-
-    if (mainTypeSel) {
-      mainTypeSel.addEventListener('change', () => applyMainFieldPreset(mainTypeSel.value));
-      applyMainFieldPreset(mainTypeSel.value || 'imei');
-    }
-
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
       .then(r=>r.json())
       .then(rows=>{
@@ -508,11 +460,8 @@
         }
       });
 
-    // User Groups pricing table (Price يبدأ بسعر الخدمة النهائي)
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
-
-    // تأكيد مزامنة أولية
     syncGroupPricesFromService(body);
 
     ensureApiUI(body);
@@ -565,7 +514,6 @@
         body.querySelector('[name="cost"]').value = credit.toFixed(4);
         priceHelper.setCost(credit);
 
-        // رجّع auto للجروبات عند اختيار خدمة جديدة
         const wrap = body.querySelector('#groupsPricingWrap');
         wrap?.querySelectorAll('[data-price]').forEach(inp=>{
           inp.dataset.autoPrice = '1';
@@ -577,6 +525,7 @@
     bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
   });
 
+  // ✅ هنا التعديل النهائي: لا redirect بعد نجاح الحفظ
   document.addEventListener('submit', async (ev)=>{
     const form = ev.target;
     if(!form || !form.matches('#serviceModal form')) return;
@@ -612,8 +561,24 @@
       }
 
       if(res.ok){
+        // ✅ فقط اغلق المودال + حدث الداتا تيبل لو موجودة
         bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
-        window.location.href = window.__serviceReturnUrl || window.location.href;
+
+        if (window.showToast) {
+          window.showToast('success', '✅ Service created successfully', { title: 'Done' });
+        }
+
+        // Reload DataTable if exists (without leaving page)
+        if (window.$ && $.fn?.DataTable) {
+          try {
+            $('.dataTable').each(function(){
+              const dt = $(this).DataTable();
+              if (dt?.ajax) dt.ajax.reload(null, false);
+            });
+          } catch (e) {}
+        }
+
+        return;
       }else{
         const t = await res.text();
         alert('Failed to save service\n\n' + t);
