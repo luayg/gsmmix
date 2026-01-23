@@ -378,6 +378,46 @@
     }).join('');
   }
 
+  // ✅ (مهم) بعد إنشاء الخدمة: عطّل زر Clone لنفس Remote ID فوراً
+  function markCloneAsAdded(remoteId){
+    const rid = String(remoteId || '').trim();
+    if(!rid) return;
+
+    const esc = (v) => {
+      try { return CSS && CSS.escape ? CSS.escape(v) : v.replace(/["\\]/g, '\\$&'); }
+      catch(e){ return v.replace(/["\\]/g, '\\$&'); }
+    };
+
+    const selectors = [
+      `#svcTable tr[data-remote-id="${esc(rid)}"]`,
+      `#servicesTable tr[data-remote-id="${esc(rid)}"]`,
+      `tr[data-remote-id="${esc(rid)}"]`,
+    ];
+
+    let row = null;
+    for (const sel of selectors){
+      row = document.querySelector(sel);
+      if(row) break;
+    }
+    if(!row) return;
+
+    // جرّب أكثر من شكل للزر
+    const btn =
+      row.querySelector('.clone-btn') ||
+      row.querySelector('[data-create-service]') ||
+      row.querySelector('button.btn.btn-success') ||
+      row.querySelector('button');
+
+    if(btn){
+      btn.disabled = true;
+      btn.classList.remove('btn-success');
+      btn.classList.add('btn-secondary');
+      btn.textContent = 'Added ✅';
+      // إزالة الداتا لتجنب إعادة الفتح
+      btn.removeAttribute('data-create-service');
+    }
+  }
+
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-create-service]');
     if(!btn) return;
@@ -525,7 +565,7 @@
     bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
   });
 
-  // ✅ هنا التعديل النهائي: لا redirect بعد نجاح الحفظ
+  // ✅ هنا التعديل النهائي: لا redirect + تحديث زر clone + refresh سريع للخلفية
   document.addEventListener('submit', async (ev)=>{
     const form = ev.target;
     if(!form || !form.matches('#serviceModal form')) return;
@@ -561,14 +601,19 @@
       }
 
       if(res.ok){
-        // ✅ فقط اغلق المودال + حدث الداتا تيبل لو موجودة
+        // ✅ (1) عطّل زر Clone لنفس Remote ID فوراً
+        const rid = form.querySelector('[name="remote_id"]')?.value;
+        markCloneAsAdded(rid);
+
+        // ✅ (2) اغلق مودال الإضافة فقط
         bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
 
+        // ✅ Toast اختياري
         if (window.showToast) {
           window.showToast('success', '✅ Service created successfully', { title: 'Done' });
         }
 
-        // Reload DataTable if exists (without leaving page)
+        // ✅ (3) Refresh سريع للخلفية (datatable إن وجدت) بدون مغادرة الصفحة
         if (window.$ && $.fn?.DataTable) {
           try {
             $('.dataTable').each(function(){
