@@ -8,22 +8,7 @@ class RemoteServerService extends Model
 {
     protected $table = 'remote_server_services';
 
-    protected $fillable = [
-        'api_provider_id',
-        'remote_id',
-        'name',
-        'group_name',
-        'price',
-        'time',
-        'info',
-        'min_qty',
-        'max_qty',
-
-        'credit_groups',
-        'additional_fields',
-        'additional_data',
-        'params',
-    ];
+    protected $guarded = [];
 
     protected $casts = [
         'price' => 'decimal:4',
@@ -36,5 +21,31 @@ class RemoteServerService extends Model
     public function provider()
     {
         return $this->belongsTo(ApiProvider::class, 'api_provider_id');
+    }
+
+    /* Legacy aliases */
+    public function getGroupAttribute($value = null)
+    {
+        return $this->group_name;
+    }
+
+    public function getServiceIdAttribute($value = null)
+    {
+        return $this->remote_id;
+    }
+
+    public function getServiceNameAttribute($value = null)
+    {
+        return $this->name;
+    }
+
+    public function getCreditAttribute($value = null)
+    {
+        return $this->price;
+    }
+
+    public function getCreditsAttribute($value = null)
+    {
+        return $this->price;
     }
 }

@@ -8,27 +8,23 @@ use Illuminate\Support\Facades\Http;
 
 class DhruClient
 {
-    private string $endpoint;
-    private string $username;
-    private string $apiKey;
-    private string $requestFormat;
-
-    public function __construct(string $endpoint, string $username, string $apiKey, string $requestFormat = 'JSON')
-    {
-        $this->endpoint = $endpoint;
-        $this->username = $username;
-        $this->apiKey = $apiKey;
-        $this->requestFormat = $requestFormat;
-    }
+    public function __construct(
+        private string $endpoint,
+        private string $username,
+        private string $apiKey,
+        private string $requestFormat = 'JSON'
+    ) {}
 
     public static function fromProvider(ApiProvider $provider): self
     {
-        return new self(
-            $provider->dhruEndpoint(),
-            (string) $provider->username,
-            (string) $provider->api_key,
-            'JSON'
-        );
+        $url = rtrim((string)$provider->url, '/');
+
+        // DHRU standard endpoint
+        if (!str_ends_with($url, '/api/index.php')) {
+            $url .= '/api/index.php';
+        }
+
+        return new self($url, (string)$provider->username, (string)$provider->api_key, 'JSON');
     }
 
     public function accountInfo(): array
@@ -36,17 +32,11 @@ class DhruClient
         return $this->call('accountinfo');
     }
 
-    /**
-     * DHRU: Get All Services and Groups (includes IMEI + SERVER + REMOTE)
-     */
     public function getAllServicesAndGroups(): array
     {
         return $this->call('imeiservicelist');
     }
 
-    /**
-     * DHRU: File services list
-     */
     public function getFileServices(): array
     {
         return $this->call('fileservicelist');
@@ -66,7 +56,7 @@ class DhruClient
         }
 
         $resp = Http::asForm()
-            ->timeout(45)
+            ->timeout(60)
             ->retry(2, 500)
             ->post($this->endpoint, $payload);
 
@@ -74,44 +64,36 @@ class DhruClient
             throw new ProviderApiException('dhru', $action, [
                 'http_status' => $resp->status(),
                 'body' => $resp->body(),
-            ], "HTTP error when calling provider API: {$resp->status()}");
+            ], "HTTP {$resp->status()}");
         }
 
-        $body = trim((string) $resp->body());
+        $body = trim((string)$resp->body());
+
+        // DHRU returns JSON when requestformat=JSON
         $data = json_decode($body, true);
 
-        if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
-            // fallback XML
+        if (!is_array($data)) {
+            // fallback: XML
             $xml = @simplexml_load_string($body);
             if ($xml !== false) {
-                $json = json_encode($xml);
-                $data = json_decode((string)$json, true);
+                $data = json_decode(json_encode($xml), true);
             }
         }
 
         if (!is_array($data)) {
-            throw new ProviderApiException('dhru', $action, [
-                'body' => $body,
-            ], 'Invalid response (not JSON/XML array)');
+            throw new ProviderApiException('dhru', $action, ['body' => $body], 'Invalid response');
         }
 
+        // DHRU errors shape
         if (isset($data['ERROR'])) {
-            $msg = $this->extractErrorMessage($data);
-            throw new ProviderApiException('dhru', $action, $data, $msg);
+            $msg = data_get($data, 'ERROR.0.FULL_DESCRIPTION')
+                ?: data_get($data, 'ERROR.0.MESSAGE')
+                ?: 'Unknown API error';
+
+            throw new ProviderApiException('dhru', $action, $data, (string)$msg);
         }
 
         return $data;
-    }
-
-    private function extractErrorMessage(array $data): string
-    {
-        $message = data_get($data, 'ERROR.0.MESSAGE');
-        $full = data_get($data, 'ERROR.0.FULL_DESCRIPTION');
-
-        $message = is_string($message) ? trim($message) : '';
-        $full = is_string($full) ? trim($full) : '';
-
-        return $full !== '' ? $full : ($message !== '' ? $message : 'Unknown API error');
     }
 
     private function buildRequestXml(array $params): string
@@ -119,9 +101,7 @@ class DhruClient
         $xml = new \SimpleXMLElement('<PARAMETERS/>');
 
         foreach ($params as $key => $value) {
-            $p = $xml->addChild('PARAMETER');
-            $p->addChild('KEY', htmlspecialchars((string)$key));
-            $p->addChild('VALUE', htmlspecialchars((string)$value));
+            $xml->addChild($key, htmlspecialchars((string)$value));
         }
 
         return $xml->asXML() ?: '';

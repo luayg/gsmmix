@@ -3,20 +3,51 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\ApiProvidersController;
 
-Route::prefix('admin')->name('admin.')->middleware(['web', 'auth'])->group(function () {
-    Route::get('apis', [ApiProvidersController::class, 'index'])->name('apis.index');
-    Route::get('apis/create', [ApiProvidersController::class, 'create'])->name('apis.create');
-    Route::post('apis', [ApiProvidersController::class, 'store'])->name('apis.store');
+/*
+|--------------------------------------------------------------------------
+| Admin API Management Routes (ONLY)
+|--------------------------------------------------------------------------
+| IMPORTANT:
+| - Keep ALL /admin/apis routes here
+| - Remove the duplicate block from routes/web.php (explained below)
+*/
 
-    Route::get('apis/{provider}', [ApiProvidersController::class, 'view'])->name('apis.view');
-    Route::get('apis/{provider}/edit', [ApiProvidersController::class, 'edit'])->name('apis.edit');
-    Route::put('apis/{provider}', [ApiProvidersController::class, 'update'])->name('apis.update');
-    Route::delete('apis/{provider}', [ApiProvidersController::class, 'destroy'])->name('apis.destroy');
+Route::prefix('admin')->name('admin.')->group(function () {
 
-    Route::post('apis/{provider}/test', [ApiProvidersController::class, 'testConnection'])->name('apis.test');
-    Route::post('apis/{provider}/sync', [ApiProvidersController::class, 'syncNow'])->name('apis.sync');
+    // اختياري: رابط مختصر
+    Route::get('/api', fn () => redirect()->route('admin.apis.index'));
 
-    Route::get('apis/{provider}/services/{kind}', [ApiProvidersController::class, 'services'])
-        ->whereIn('kind', ['imei', 'server', 'file'])
-        ->name('apis.services');
+    Route::prefix('apis')->name('apis.')->group(function () {
+
+        Route::get('/',                [ApiProvidersController::class,'index'])->name('index');
+        Route::get('/create',          [ApiProvidersController::class,'create'])->name('create');
+        Route::post('/',               [ApiProvidersController::class,'store'])->name('store');
+
+        Route::get('/{provider}/view', [ApiProvidersController::class,'view'])->name('view');
+        Route::get('/{provider}/edit', [ApiProvidersController::class,'edit'])->name('edit');
+        Route::put('/{provider}',      [ApiProvidersController::class,'update'])->name('update');
+        Route::delete('/{provider}',   [ApiProvidersController::class,'destroy'])->name('destroy');
+
+        // ✅ هذا هو المسار الذي تستهلكه الواجهة لاختيار مزوّدي الـ API
+        Route::get('/options', [ApiProvidersController::class, 'options'])->name('options');
+
+        // ✅ زر Sync now (FIX: كان syncNow - الآن sync)
+        Route::post('/{provider}/sync', [ApiProvidersController::class, 'sync'])->name('sync');
+
+        // ✅ خدمات Remote + عمليات الاستيراد
+        Route::prefix('{provider}/services')->name('services.')->group(function () {
+
+            Route::get('/imei',   [ApiProvidersController::class,'servicesImei'])->name('imei');
+            Route::get('/server', [ApiProvidersController::class,'servicesServer'])->name('server');
+            Route::get('/file',   [ApiProvidersController::class,'servicesFile'])->name('file');
+
+            // Bulk import
+            Route::post('/import', [ApiProvidersController::class, 'importServices'])->name('import');
+
+            // Wizard import
+            Route::post('/import-wizard', [ApiProvidersController::class, 'importServicesWizard'])->name('import_wizard');
+        });
+
+    });
+
 });

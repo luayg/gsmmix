@@ -24,6 +24,8 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
         $client = DhruClient::fromProvider($provider);
         $data = $client->accountInfo();
 
+        // based on your DHRU doc:
+        // SUCCESS[0].AccoutInfo.creditraw = "61195.601"
         $raw = data_get($data, 'SUCCESS.0.AccoutInfo.creditraw')
             ?? data_get($data, 'SUCCESS.0.AccoutInfo.creditRaw')
             ?? data_get($data, 'SUCCESS.0.AccoutInfo.credit')
@@ -35,34 +37,27 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
 
     public function syncCatalog(ApiProvider $provider, string $kind): int
     {
-        if (!$this->supportsCatalog($kind)) {
-            return 0;
-        }
-
         $client = DhruClient::fromProvider($provider);
 
         return DB::transaction(function () use ($provider, $kind, $client) {
             if ($kind === 'file') {
                 $data = $client->getFileServices();
-                return $this->syncFileServices($provider, $data);
+                return $this->syncFile($provider, $data);
             }
 
-            // DHRU returns IMEI + SERVER + REMOTE in the same list
             $data = $client->getAllServicesAndGroups();
-            return $this->syncImeiOrServerServices($provider, $kind, $data);
+            return $this->syncImeiOrServer($provider, $kind, $data);
         });
     }
 
-    private function syncImeiOrServerServices(ApiProvider $provider, string $kind, array $data): int
+    private function syncImeiOrServer(ApiProvider $provider, string $kind, array $data): int
     {
-        $targetType = strtoupper($kind); // IMEI or SERVER
+        $target = strtoupper($kind); // IMEI or SERVER
 
         $list = data_get($data, 'SUCCESS.0.LIST', []);
-        if (!is_array($list)) {
-            $list = [];
-        }
+        if (!is_array($list)) $list = [];
 
-        $seenRemoteIds = [];
+        $seen = [];
         $count = 0;
 
         foreach ($list as $groupKey => $group) {
@@ -70,33 +65,32 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
 
             $groupName = (string)($group['GROUPNAME'] ?? $groupKey ?? '');
             $groupType = strtoupper((string)($group['GROUPTYPE'] ?? ''));
-            $services = $group['SERVICES'] ?? [];
 
+            $services = $group['SERVICES'] ?? [];
             if (!is_array($services)) continue;
 
             foreach ($services as $srvKey => $srv) {
                 if (!is_array($srv)) continue;
 
                 $serviceType = strtoupper((string)($srv['SERVICETYPE'] ?? $groupType));
-                if ($serviceType !== $targetType) {
-                    continue;
-                }
+                if ($serviceType !== $target) continue;
 
-                $remoteId = (string)($srv['SERVICEID'] ?? $srvKey ?? '');
+                // IMPORTANT: in your doc: SERVICEID exists and is the real service id
+                $remoteId = (string)($srv['SERVICEID'] ?? $srv['serviceid'] ?? $srvKey ?? '');
                 if ($remoteId === '') continue;
 
-                $seenRemoteIds[] = $remoteId;
+                $seen[] = $remoteId;
 
-                $common = [
-                    'name' => (string)($srv['SERVICENAME'] ?? ''),
-                    'group_name' => $groupName,
-                    'price' => $this->toFloat($srv['CREDIT'] ?? 0),
-                    'time' => (string)($srv['TIME'] ?? null),
-                    'info' => $this->normalizeInfo($srv['INFO'] ?? null),
+                $payload = [
+                    'api_provider_id' => $provider->id,
+                    'remote_id' => $remoteId,
+                    'name' => (string)($srv['SERVICENAME'] ?? $srv['servicename'] ?? ''),
+                    'group_name' => $groupName ?: null,
+                    'price' => $this->toFloat($srv['CREDIT'] ?? $srv['credit'] ?? 0),
+                    'time' => $this->clean((string)($srv['TIME'] ?? $srv['time'] ?? '')),
+                    'info' => $this->clean((string)($srv['INFO'] ?? $srv['info'] ?? '')),
                     'min_qty' => (string)($srv['MINQNT'] ?? null),
                     'max_qty' => (string)($srv['MAXQNT'] ?? null),
-                    'credit_groups' => null,
-                    'additional_fields' => $this->extractAdditionalFields($srv),
                     'additional_data' => $srv,
                     'params' => [
                         'GROUPTYPE' => $groupType,
@@ -106,7 +100,7 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
                 ];
 
                 if ($kind === 'imei') {
-                    $imeiData = array_merge($common, [
+                    $payload = array_merge($payload, [
                         'network' => $this->requires($srv['Requires.Network'] ?? null),
                         'mobile' => $this->requires($srv['Requires.Mobile'] ?? null),
                         'provider' => $this->requires($srv['Requires.Provider'] ?? null),
@@ -120,16 +114,19 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
                         'udid' => $this->requires($srv['Requires.UDID'] ?? null),
                         'serial' => $this->requires($srv['Requires.SN'] ?? null),
                         'secro' => $this->requires($srv['Requires.SecRO'] ?? null),
+                        'additional_fields' => $this->extractAdditionalFields($srv),
                     ]);
 
                     RemoteImeiService::updateOrCreate(
                         ['api_provider_id' => $provider->id, 'remote_id' => $remoteId],
-                        array_merge(['api_provider_id' => $provider->id, 'remote_id' => $remoteId], $imeiData)
+                        $payload
                     );
                 } else {
+                    $payload['additional_fields'] = $this->extractAdditionalFields($srv);
+
                     RemoteServerService::updateOrCreate(
                         ['api_provider_id' => $provider->id, 'remote_id' => $remoteId],
-                        array_merge(['api_provider_id' => $provider->id, 'remote_id' => $remoteId], $common)
+                        $payload
                     );
                 }
 
@@ -137,30 +134,24 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
             }
         }
 
-        // Optional: remove old services not present anymore
-        if (!empty($seenRemoteIds)) {
+        // remove old not in list (optional)
+        if (!empty($seen)) {
             if ($kind === 'imei') {
-                RemoteImeiService::where('api_provider_id', $provider->id)
-                    ->whereNotIn('remote_id', $seenRemoteIds)
-                    ->delete();
+                RemoteImeiService::where('api_provider_id', $provider->id)->whereNotIn('remote_id', $seen)->delete();
             } else {
-                RemoteServerService::where('api_provider_id', $provider->id)
-                    ->whereNotIn('remote_id', $seenRemoteIds)
-                    ->delete();
+                RemoteServerService::where('api_provider_id', $provider->id)->whereNotIn('remote_id', $seen)->delete();
             }
         }
 
         return $count;
     }
 
-    private function syncFileServices(ApiProvider $provider, array $data): int
+    private function syncFile(ApiProvider $provider, array $data): int
     {
         $list = data_get($data, 'SUCCESS.0.LIST', []);
-        if (!is_array($list)) {
-            $list = [];
-        }
+        if (!is_array($list)) $list = [];
 
-        $seenRemoteIds = [];
+        $seen = [];
         $count = 0;
 
         foreach ($list as $groupKey => $group) {
@@ -168,36 +159,30 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
 
             $groupName = (string)($group['GROUPNAME'] ?? $groupKey ?? '');
             $services = $group['SERVICES'] ?? [];
-
             if (!is_array($services)) continue;
 
             foreach ($services as $srvKey => $srv) {
                 if (!is_array($srv)) continue;
 
-                $remoteId = (string)($srv['SERVICEID'] ?? $srvKey ?? '');
+                $remoteId = (string)($srv['SERVICEID'] ?? $srv['serviceid'] ?? $srvKey ?? '');
                 if ($remoteId === '') continue;
 
-                $seenRemoteIds[] = $remoteId;
+                $seen[] = $remoteId;
 
                 RemoteFileService::updateOrCreate(
                     ['api_provider_id' => $provider->id, 'remote_id' => $remoteId],
                     [
                         'api_provider_id' => $provider->id,
                         'remote_id' => $remoteId,
-                        'name' => (string)($srv['SERVICENAME'] ?? ''),
-                        'group_name' => $groupName,
-                        'price' => $this->toFloat($srv['CREDIT'] ?? 0),
-                        'time' => (string)($srv['TIME'] ?? null),
-                        'allowed_extensions' => (string)($srv['ALLOW_EXTENSION'] ?? null),
-                        'info' => $this->normalizeInfo($srv['INFO'] ?? null),
-                        'min_qty' => (string)($srv['MINQNT'] ?? null),
-                        'max_qty' => (string)($srv['MAXQNT'] ?? null),
-                        'credit_groups' => null,
-                        'additional_fields' => $this->extractAdditionalFields($srv),
+                        'name' => (string)($srv['SERVICENAME'] ?? $srv['servicename'] ?? ''),
+                        'group_name' => $groupName ?: null,
+                        'price' => $this->toFloat($srv['CREDIT'] ?? $srv['credit'] ?? 0),
+                        'time' => $this->clean((string)($srv['TIME'] ?? $srv['time'] ?? '')),
+                        'info' => $this->clean((string)($srv['INFO'] ?? $srv['info'] ?? '')),
+                        'allowed_extensions' => $this->clean((string)($srv['ALLOW_EXTENSION'] ?? '')),
                         'additional_data' => $srv,
-                        'params' => [
-                            'CUSTOM' => $srv['CUSTOM'] ?? null,
-                        ],
+                        'additional_fields' => $this->extractAdditionalFields($srv),
+                        'params' => ['CUSTOM' => $srv['CUSTOM'] ?? null],
                     ]
                 );
 
@@ -205,38 +190,27 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
             }
         }
 
-        if (!empty($seenRemoteIds)) {
-            RemoteFileService::where('api_provider_id', $provider->id)
-                ->whereNotIn('remote_id', $seenRemoteIds)
-                ->delete();
+        if (!empty($seen)) {
+            RemoteFileService::where('api_provider_id', $provider->id)->whereNotIn('remote_id', $seen)->delete();
         }
 
         return $count;
+    }
+
+    private function extractAdditionalFields(array $srv): array
+    {
+        $fields = [];
+        $req = $srv['Requires.Custom'] ?? null;
+        if (is_array($req)) $fields = array_values($req);
+        return $fields;
     }
 
     private function requires($value): bool
     {
         if (is_bool($value)) return $value;
         if (is_numeric($value)) return ((int)$value) !== 0;
-
         $v = strtolower(trim((string)$value));
         return !($v === '' || $v === 'none' || $v === '0' || $v === 'false' || $v === 'no');
-    }
-
-    private function extractAdditionalFields(array $srv): array
-    {
-        $fields = [];
-
-        $req = $srv['Requires.Custom'] ?? null;
-        if (is_array($req)) {
-            $fields = array_values($req);
-        }
-
-        if (isset($srv['CUSTOM']) && is_array($srv['CUSTOM'])) {
-            $fields[] = ['CUSTOM' => $srv['CUSTOM']];
-        }
-
-        return $fields;
     }
 
     private function toFloat($value): float
@@ -244,17 +218,16 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
         if ($value === null) return 0.0;
         if (is_int($value) || is_float($value)) return (float)$value;
 
-        $str = trim((string)$value);
-        $str = str_replace([',', '$', 'USD', 'usd'], '', $str);
-        $str = preg_replace('/[^0-9\.\-]/', '', $str) ?? '';
+        $s = trim((string)$value);
+        $s = str_replace([',', '$', 'USD', 'usd', ' '], '', $s);
+        $s = preg_replace('/[^0-9\.\-]/', '', $s) ?? '';
 
-        return is_numeric($str) ? (float)$str : 0.0;
+        return is_numeric($s) ? (float)$s : 0.0;
     }
 
-    private function normalizeInfo($info): ?string
+    private function clean(string $s): ?string
     {
-        if ($info === null) return null;
-        $s = trim((string)$info);
+        $s = trim($s);
         return $s === '' ? null : $s;
     }
 }

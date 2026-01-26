@@ -113,19 +113,30 @@ class ApiProvidersController extends Controller
      * - ننفذ sync مباشرة (سريع لتظهر balance فورًا)
      * - إذا تحب Queue لاحقًا نرجعه
      */
-    public function sync(Request $request, ApiProvider $provider, ProviderManager $manager)
-    {
-        // نفّذ مزامنة + balance + تحديث counters
-        $result = $manager->sync($provider, null, false);
+    public function sync(Request $request, \App\Models\ApiProvider $provider, \App\Services\Providers\ProviderManager $manager)
+{
+    $result = $manager->sync($provider);
 
-        if (!empty($result['errors'])) {
-            return redirect()->route('admin.apis.index')
-                ->with('ok', 'Sync finished with errors: ' . implode(' | ', $result['errors']));
-        }
+    $provider->refresh();
 
-        return redirect()->route('admin.apis.index')
-            ->with('ok', 'Sync done. Balance: ' . number_format((float)$result['balance'], 2));
+    $msg = [];
+
+    if (!empty($result['errors'])) {
+        $msg[] = 'Sync finished with errors: ' . implode(' | ', $result['errors']);
+    } else {
+        $msg[] = 'Sync done.';
     }
+
+    if (!empty($result['warnings'])) {
+        $msg[] = implode(' | ', $result['warnings']); // مثال: No File Service Active... (skipped)
+    }
+
+    $msg[] = 'Balance: $' . number_format((float)$provider->balance, 2);
+
+    return redirect()->route('admin.apis.index')->with('ok', implode(' ', $msg));
+}
+
+
 
     /**
      * ✅ إضافة “اختبار اتصال/جلب رصيد فقط” بدون تغيير الواجهة
@@ -146,50 +157,86 @@ class ApiProvidersController extends Controller
      * ✅ هذه الدوال هي سبب الخطأ عندك (كانت موجودة في routes)
      * الآن أرجعناها كما هي حتى تعمل أزرار Services في واجهتك.
      */
-    public function servicesImei(Request $request, ApiProvider $provider)
-    {
-        $services = RemoteImeiService::where('api_provider_id', $provider->id)
-            ->orderBy('group_name')
-            ->orderBy('name')
-            ->get();
+    public function servicesImei(Request $request, \App\Models\ApiProvider $provider)
+{
+    $services = \App\Models\RemoteImeiService::where('api_provider_id', $provider->id)
+        ->orderBy('group_name')
+        ->orderBy('name')
+        ->get();
 
-        return view('admin.api.providers.modals.services', [
-            'provider' => $provider,
-            'kind' => 'imei',
-            'services' => $services,
-            'grouped' => $services->groupBy(fn($s) => $s->group_name ?: 'Ungrouped'),
-        ]);
-    }
+    // تجهيز rows بالشكل الذي تتوقعه الواجهة (حتى لو الview يستخدم أسماء قديمة)
+    $rows = $services->map(function ($s) {
+        return (object)[
+            'group'      => $s->group_name ?? '',
+            'group_name' => $s->group_name ?? '',
+            'remote_id'  => $s->remote_id ?? '',
+            'service_id' => $s->remote_id ?? '',
+            'name'       => $s->name ?? '',
+            'service_name' => $s->name ?? '',
+            'credits'    => (float)($s->price ?? 0),
+            'credit'     => (float)($s->price ?? 0),
+            'time'       => $s->time ?? '',
+            'info'       => $s->info ?? '',
+            'raw'        => $s,
+        ];
+    });
 
-    public function servicesServer(Request $request, ApiProvider $provider)
-    {
-        $services = RemoteServerService::where('api_provider_id', $provider->id)
-            ->orderBy('group_name')
-            ->orderBy('name')
-            ->get();
+    return view('admin.api.providers.services.imei.index', compact('provider', 'rows'));
+}
 
-        return view('admin.api.providers.modals.services', [
-            'provider' => $provider,
-            'kind' => 'server',
-            'services' => $services,
-            'grouped' => $services->groupBy(fn($s) => $s->group_name ?: 'Ungrouped'),
-        ]);
-    }
 
-    public function servicesFile(Request $request, ApiProvider $provider)
-    {
-        $services = RemoteFileService::where('api_provider_id', $provider->id)
-            ->orderBy('group_name')
-            ->orderBy('name')
-            ->get();
+    public function servicesServer(Request $request, \App\Models\ApiProvider $provider)
+{
+    $services = \App\Models\RemoteServerService::where('api_provider_id', $provider->id)
+        ->orderBy('group_name')
+        ->orderBy('name')
+        ->get();
 
-        return view('admin.api.providers.modals.services', [
-            'provider' => $provider,
-            'kind' => 'file',
-            'services' => $services,
-            'grouped' => $services->groupBy(fn($s) => $s->group_name ?: 'Ungrouped'),
-        ]);
-    }
+    $rows = $services->map(function ($s) {
+        return (object)[
+            'group'      => $s->group_name ?? '',
+            'group_name' => $s->group_name ?? '',
+            'remote_id'  => $s->remote_id ?? '',
+            'service_id' => $s->remote_id ?? '',
+            'name'       => $s->name ?? '',
+            'service_name' => $s->name ?? '',
+            'credits'    => (float)($s->price ?? 0),
+            'credit'     => (float)($s->price ?? 0),
+            'time'       => $s->time ?? '',
+            'info'       => $s->info ?? '',
+            'raw'        => $s,
+        ];
+    });
+
+    return view('admin.api.providers.services.server.index', compact('provider', 'rows'));
+}
+
+    public function servicesFile(Request $request, \App\Models\ApiProvider $provider)
+{
+    $services = \App\Models\RemoteFileService::where('api_provider_id', $provider->id)
+        ->orderBy('group_name')
+        ->orderBy('name')
+        ->get();
+
+    $rows = $services->map(function ($s) {
+        return (object)[
+            'group'      => $s->group_name ?? '',
+            'group_name' => $s->group_name ?? '',
+            'remote_id'  => $s->remote_id ?? '',
+            'service_id' => $s->remote_id ?? '',
+            'name'       => $s->name ?? '',
+            'service_name' => $s->name ?? '',
+            'credits'    => (float)($s->price ?? 0),
+            'credit'     => (float)($s->price ?? 0),
+            'time'       => $s->time ?? '',
+            'info'       => $s->info ?? '',
+            'raw'        => $s,
+        ];
+    });
+
+    return view('admin.api.providers.services.file.index', compact('provider', 'rows'));
+}
+
 
     private function normalizeType(string $type): ?string
     {

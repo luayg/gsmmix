@@ -8,39 +8,14 @@ class RemoteImeiService extends Model
 {
     protected $table = 'remote_imei_services';
 
-    protected $fillable = [
-        'api_provider_id',
-        'remote_id',
-        'name',
-        'group_name',
-        'price',
-        'time',
-        'info',
-        'min_qty',
-        'max_qty',
-
-        'network',
-        'mobile',
-        'provider',
-        'pin',
-        'kbh',
-        'mep',
-        'prd',
-        'type',
-        'locks',
-        'reference',
-        'udid',
-        'serial',
-        'secro',
-
-        'credit_groups',
-        'additional_fields',
-        'additional_data',
-        'params',
-    ];
+    protected $guarded = [];
 
     protected $casts = [
         'price' => 'decimal:4',
+        'credit_groups' => 'array',
+        'additional_fields' => 'array',
+        'additional_data' => 'array',
+        'params' => 'array',
 
         'network' => 'boolean',
         'mobile' => 'boolean',
@@ -55,15 +30,43 @@ class RemoteImeiService extends Model
         'udid' => 'boolean',
         'serial' => 'boolean',
         'secro' => 'boolean',
-
-        'credit_groups' => 'array',
-        'additional_fields' => 'array',
-        'additional_data' => 'array',
-        'params' => 'array',
     ];
 
     public function provider()
     {
         return $this->belongsTo(ApiProvider::class, 'api_provider_id');
+    }
+
+    /* =========================================================
+     | Legacy aliases for existing Blade/JS (NO UI changes)
+     |========================================================= */
+
+    // Group -> group_name
+    public function getGroupAttribute($value = null)
+    {
+        return $this->group_name;
+    }
+
+    // service_id -> remote_id
+    public function getServiceIdAttribute($value = null)
+    {
+        return $this->remote_id;
+    }
+
+    // service_name -> name
+    public function getServiceNameAttribute($value = null)
+    {
+        return $this->name;
+    }
+
+    // credit/credits -> price
+    public function getCreditAttribute($value = null)
+    {
+        return $this->price;
+    }
+
+    public function getCreditsAttribute($value = null)
+    {
+        return $this->price;
     }
 }
