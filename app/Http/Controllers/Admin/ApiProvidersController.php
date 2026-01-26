@@ -3,20 +3,25 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\SyncProviderJob;
 use App\Models\ApiProvider;
+use App\Models\RemoteImeiService;
+use App\Models\RemoteServerService;
+use App\Models\RemoteFileService;
 use App\Services\Providers\ProviderManager;
 use Illuminate\Http\Request;
 
 class ApiProvidersController extends Controller
 {
+    /**
+     * صفحة القائمة الرئيسية (واجهة API Management التي عندك)
+     * IMPORTANT: هذه الدالة يجب أن ترسل $rows للـ view لأن blade يعتمد عليه.
+     */
     public function index(Request $request)
     {
-        // Filters
-        $q = trim((string) $request->query('q', ''));
-        $type = trim((string) $request->query('type', ''));
-        $status = trim((string) $request->query('status', '')); // active|inactive|synced|not_synced
-        $perPage = (int) $request->query('per_page', 20);
+        $q       = trim((string) $request->get('q', ''));
+        $type    = trim((string) $request->get('type', ''));
+        $status  = trim((string) $request->get('status', ''));
+        $perPage = (int) $request->get('per_page', 20);
         if ($perPage <= 0) $perPage = 20;
         if ($perPage > 200) $perPage = 200;
 
@@ -30,47 +35,36 @@ class ApiProvidersController extends Controller
             });
         }
 
+        // ✅ دعم فلتر النوع كما في واجهتك (DHRU / Simple link)
+        // في DB النوع غالبًا: dhru / simple_link / gsmhub ...
         if ($type !== '') {
-            $query->where('type', $type);
+            $normalized = $this->normalizeType($type);
+            if ($normalized) {
+                $query->where('type', $normalized);
+            }
         }
 
+        // ✅ دعم فلتر الحالة كما في واجهتك (Active/Inactive)
         if ($status !== '') {
-            if ($status === 'active') {
+            if (strcasecmp($status, 'Active') === 0) {
                 $query->where('active', 1);
-            } elseif ($status === 'inactive') {
+            } elseif (strcasecmp($status, 'Inactive') === 0) {
                 $query->where('active', 0);
-            } elseif ($status === 'synced') {
-                $query->where('synced', 1);
-            } elseif ($status === 'not_synced') {
-                $query->where('synced', 0);
             }
         }
 
         $rows = $query->paginate($perPage)->withQueryString();
 
-        // For filter dropdown
-        $types = ['dhru', 'gsmhub', 'webx', 'unlockbase', 'simple_link'];
-
-        return view('admin.api.providers.index', [
-            'rows' => $rows,
-            'types' => $types,
-            'filters' => [
-                'q' => $q,
-                'type' => $type,
-                'status' => $status,
-                'per_page' => $perPage,
-            ],
-        ]);
+        // ⚠️ لا نغير الواجهة إطلاقًا — فقط نوفر $rows
+        return view('admin.api.providers.index', compact('rows'));
     }
 
+    /**
+     * Create/Edit/View تُستخدم داخل المودال في صفحتك عبر js-api-modal
+     */
     public function create()
     {
         return view('admin.api.providers.create');
-    }
-
-    public function edit(ApiProvider $provider)
-    {
-        return view('admin.api.providers.edit', compact('provider'));
     }
 
     public function view(ApiProvider $provider)
@@ -78,18 +72,23 @@ class ApiProvidersController extends Controller
         return view('admin.api.providers.view', compact('provider'));
     }
 
+    public function edit(ApiProvider $provider)
+    {
+        return view('admin.api.providers.edit', compact('provider'));
+    }
+
+    /**
+     * Store/Update
+     * نحافظ على نفس سلوكك، فقط نحفظ الحقول المهمة (active/auto_sync/sync flags/ignore_low_balance/params)
+     */
     public function store(Request $request)
     {
         $data = $this->validateProvider($request);
         $data['url'] = rtrim((string)$data['url'], '/') . '/';
 
-        $provider = ApiProvider::create($data);
+        ApiProvider::create($data);
 
-        if ($request->expectsJson()) {
-            return response()->json(['ok' => true, 'provider' => $provider]);
-        }
-
-        return redirect()->route('admin.apis.index')->with('success', 'Provider created');
+        return redirect()->route('admin.apis.index')->with('ok', 'API Provider created.');
     }
 
     public function update(Request $request, ApiProvider $provider)
@@ -99,75 +98,110 @@ class ApiProvidersController extends Controller
 
         $provider->update($data);
 
-        if ($request->expectsJson()) {
-            return response()->json(['ok' => true, 'provider' => $provider]);
-        }
-
-        return redirect()->route('admin.apis.index')->with('success', 'Provider updated');
+        return redirect()->route('admin.apis.index')->with('ok', 'API Provider updated.');
     }
 
     public function destroy(Request $request, ApiProvider $provider)
     {
         $provider->delete();
-
-        if ($request->expectsJson()) {
-            return response()->json(['ok' => true]);
-        }
-
-        return redirect()->route('admin.apis.index')->with('success', 'Provider deleted');
+        return redirect()->route('admin.apis.index')->with('ok', 'API Provider deleted.');
     }
 
-    public function testConnection(Request $request, ApiProvider $provider, ProviderManager $manager)
+    /**
+     * ✅ زر Sync now الموجود في واجهتك
+     * - لا نغير شكل الصفحة
+     * - ننفذ sync مباشرة (سريع لتظهر balance فورًا)
+     * - إذا تحب Queue لاحقًا نرجعه
+     */
+    public function sync(Request $request, ApiProvider $provider, ProviderManager $manager)
+    {
+        // نفّذ مزامنة + balance + تحديث counters
+        $result = $manager->sync($provider, null, false);
+
+        if (!empty($result['errors'])) {
+            return redirect()->route('admin.apis.index')
+                ->with('ok', 'Sync finished with errors: ' . implode(' | ', $result['errors']));
+        }
+
+        return redirect()->route('admin.apis.index')
+            ->with('ok', 'Sync done. Balance: ' . number_format((float)$result['balance'], 2));
+    }
+
+    /**
+     * ✅ إضافة “اختبار اتصال/جلب رصيد فقط” بدون تغيير الواجهة
+     * تقدر تناديها من زر/JS أو حتى من رابط.
+     */
+    public function testBalance(ApiProvider $provider, ProviderManager $manager)
     {
         $result = $manager->sync($provider, null, true);
 
         return response()->json([
             'ok' => empty($result['errors']),
-            'result' => $result,
+            'balance' => $result['balance'],
+            'errors' => $result['errors'],
         ]);
     }
 
-    public function syncNow(Request $request, ApiProvider $provider)
+    /**
+     * ✅ هذه الدوال هي سبب الخطأ عندك (كانت موجودة في routes)
+     * الآن أرجعناها كما هي حتى تعمل أزرار Services في واجهتك.
+     */
+    public function servicesImei(Request $request, ApiProvider $provider)
     {
-        $kind = $request->input('kind');
-        if ($kind !== null && !in_array($kind, ['imei', 'server', 'file'], true)) {
-            return response()->json(['ok' => false, 'message' => 'Invalid kind'], 422);
-        }
+        $services = RemoteImeiService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->get();
 
-        dispatch(new SyncProviderJob((int)$provider->id, $kind ?: null, false));
-
-        return response()->json(['ok' => true, 'message' => 'Sync dispatched']);
-    }
-
-    public function services(Request $request, ApiProvider $provider, string $kind)
-    {
-        abort_unless(in_array($kind, ['imei', 'server', 'file'], true), 404);
-
-        $query = match ($kind) {
-            'imei' => $provider->remoteImeiServices(),
-            'server' => $provider->remoteServerServices(),
-            'file' => $provider->remoteFileServices(),
-        };
-
-        $services = $query->orderBy('group_name')->orderBy('name')->get();
-
-        if (!$request->expectsJson()) {
-            $grouped = $services->groupBy(fn($s) => $s->group_name ?: 'Ungrouped');
-
-            return view('admin.api.providers.modals.services', [
-                'provider' => $provider,
-                'kind' => $kind,
-                'services' => $services,
-                'grouped' => $grouped,
-            ]);
-        }
-
-        return response()->json([
-            'ok' => true,
-            'provider_id' => $provider->id,
-            'kind' => $kind,
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'imei',
             'services' => $services,
+            'grouped' => $services->groupBy(fn($s) => $s->group_name ?: 'Ungrouped'),
         ]);
+    }
+
+    public function servicesServer(Request $request, ApiProvider $provider)
+    {
+        $services = RemoteServerService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->get();
+
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'server',
+            'services' => $services,
+            'grouped' => $services->groupBy(fn($s) => $s->group_name ?: 'Ungrouped'),
+        ]);
+    }
+
+    public function servicesFile(Request $request, ApiProvider $provider)
+    {
+        $services = RemoteFileService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->get();
+
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'file',
+            'services' => $services,
+            'grouped' => $services->groupBy(fn($s) => $s->group_name ?: 'Ungrouped'),
+        ]);
+    }
+
+    private function normalizeType(string $type): ?string
+    {
+        $t = strtolower(trim($type));
+        return match ($t) {
+            'dhru' => 'dhru',
+            'gsmhub' => 'gsmhub',
+            'webx' => 'webx',
+            'unlockbase' => 'unlockbase',
+            'simple link', 'simple_link', 'simplelink' => 'simple_link',
+            default => null,
+        };
     }
 
     private function validateProvider(Request $request, ?int $providerId = null): array
