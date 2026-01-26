@@ -68,6 +68,11 @@ class DhruClient
         }
 
         $body = trim((string)$resp->body());
+\Log::info('DHRU RAW RESPONSE', [
+    'action' => $action,
+    'endpoint' => $this->endpoint,
+    'body_first_500' => substr($body, 0, 500),
+]);
 
         // DHRU returns JSON when requestformat=JSON
         $data = json_decode($body, true);

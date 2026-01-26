@@ -157,85 +157,79 @@ class ApiProvidersController extends Controller
      * ✅ هذه الدوال هي سبب الخطأ عندك (كانت موجودة في routes)
      * الآن أرجعناها كما هي حتى تعمل أزرار Services في واجهتك.
      */
-    public function servicesImei(Request $request, \App\Models\ApiProvider $provider)
+   public function servicesImei(Request $request, \App\Models\ApiProvider $provider)
 {
-    $services = \App\Models\RemoteImeiService::where('api_provider_id', $provider->id)
+    $rows = \App\Models\RemoteImeiService::where('api_provider_id', $provider->id)
         ->orderBy('group_name')
         ->orderBy('name')
         ->get();
 
-    // تجهيز rows بالشكل الذي تتوقعه الواجهة (حتى لو الview يستخدم أسماء قديمة)
-    $rows = $services->map(function ($s) {
-        return (object)[
-            'group'      => $s->group_name ?? '',
-            'group_name' => $s->group_name ?? '',
-            'remote_id'  => $s->remote_id ?? '',
-            'service_id' => $s->remote_id ?? '',
-            'name'       => $s->name ?? '',
-            'service_name' => $s->name ?? '',
-            'credits'    => (float)($s->price ?? 0),
-            'credit'     => (float)($s->price ?? 0),
-            'time'       => $s->time ?? '',
-            'info'       => $s->info ?? '',
-            'raw'        => $s,
+    // ✅ تحويل للـ format الذي تتوقعه الواجهة (Blade)
+    $services = $rows->map(function ($s) {
+        return [
+            'GROUPNAME' => (string)($s->group_name ?? ''),
+            'REMOTEID'  => (string)($s->remote_id ?? ''),
+            'NAME'      => (string)($s->name ?? ''),
+            'CREDIT'    => (float)($s->price ?? 0),
+            'TIME'      => (string)($s->time ?? ''),
         ];
-    });
+    })->values()->all();
 
-    return view('admin.api.providers.services.imei.index', compact('provider', 'rows'));
+    return view('admin.api.providers.modals.services', [
+        'provider' => $provider,
+        'kind' => 'imei',
+        'services' => $services,
+    ]);
 }
 
-
-    public function servicesServer(Request $request, \App\Models\ApiProvider $provider)
+public function servicesServer(Request $request, \App\Models\ApiProvider $provider)
 {
-    $services = \App\Models\RemoteServerService::where('api_provider_id', $provider->id)
+    $rows = \App\Models\RemoteServerService::where('api_provider_id', $provider->id)
         ->orderBy('group_name')
         ->orderBy('name')
         ->get();
 
-    $rows = $services->map(function ($s) {
-        return (object)[
-            'group'      => $s->group_name ?? '',
-            'group_name' => $s->group_name ?? '',
-            'remote_id'  => $s->remote_id ?? '',
-            'service_id' => $s->remote_id ?? '',
-            'name'       => $s->name ?? '',
-            'service_name' => $s->name ?? '',
-            'credits'    => (float)($s->price ?? 0),
-            'credit'     => (float)($s->price ?? 0),
-            'time'       => $s->time ?? '',
-            'info'       => $s->info ?? '',
-            'raw'        => $s,
+    $services = $rows->map(function ($s) {
+        return [
+            'GROUPNAME' => (string)($s->group_name ?? ''),
+            'REMOTEID'  => (string)($s->remote_id ?? ''),
+            'NAME'      => (string)($s->name ?? ''),
+            'CREDIT'    => (float)($s->price ?? 0),
+            'TIME'      => (string)($s->time ?? ''),
         ];
-    });
+    })->values()->all();
 
-    return view('admin.api.providers.services.server.index', compact('provider', 'rows'));
+    return view('admin.api.providers.modals.services', [
+        'provider' => $provider,
+        'kind' => 'server',
+        'services' => $services,
+    ]);
 }
 
-    public function servicesFile(Request $request, \App\Models\ApiProvider $provider)
+public function servicesFile(Request $request, \App\Models\ApiProvider $provider)
 {
-    $services = \App\Models\RemoteFileService::where('api_provider_id', $provider->id)
+    $rows = \App\Models\RemoteFileService::where('api_provider_id', $provider->id)
         ->orderBy('group_name')
         ->orderBy('name')
         ->get();
 
-    $rows = $services->map(function ($s) {
-        return (object)[
-            'group'      => $s->group_name ?? '',
-            'group_name' => $s->group_name ?? '',
-            'remote_id'  => $s->remote_id ?? '',
-            'service_id' => $s->remote_id ?? '',
-            'name'       => $s->name ?? '',
-            'service_name' => $s->name ?? '',
-            'credits'    => (float)($s->price ?? 0),
-            'credit'     => (float)($s->price ?? 0),
-            'time'       => $s->time ?? '',
-            'info'       => $s->info ?? '',
-            'raw'        => $s,
+    $services = $rows->map(function ($s) {
+        return [
+            'GROUPNAME' => (string)($s->group_name ?? ''),
+            'REMOTEID'  => (string)($s->remote_id ?? ''),
+            'NAME'      => (string)($s->name ?? ''),
+            'CREDIT'    => (float)($s->price ?? 0),
+            'TIME'      => (string)($s->time ?? ''),
         ];
-    });
+    })->values()->all();
 
-    return view('admin.api.providers.services.file.index', compact('provider', 'rows'));
+    return view('admin.api.providers.modals.services', [
+        'provider' => $provider,
+        'kind' => 'file',
+        'services' => $services,
+    ]);
 }
+
 
 
     private function normalizeType(string $type): ?string

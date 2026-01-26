@@ -19,21 +19,50 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
         return in_array($kind, ['imei', 'server', 'file'], true);
     }
 
-    public function fetchBalance(ApiProvider $provider): float
-    {
-        $client = DhruClient::fromProvider($provider);
-        $data = $client->accountInfo();
+    public function fetchBalance(\App\Models\ApiProvider $provider): float
+{
+    $client = \App\Services\Api\DhruClient::fromProvider($provider);
+    $data = $client->accountInfo();
 
-        // based on your DHRU doc:
-        // SUCCESS[0].AccoutInfo.creditraw = "61195.601"
-        $raw = data_get($data, 'SUCCESS.0.AccoutInfo.creditraw')
-            ?? data_get($data, 'SUCCESS.0.AccoutInfo.creditRaw')
-            ?? data_get($data, 'SUCCESS.0.AccoutInfo.credit')
-            ?? data_get($data, 'SUCCESS.0.AccoutInfo.CREDITRAW')
-            ?? data_get($data, 'SUCCESS.0.AccoutInfo.CREDIT');
+    // 1) حاول المسارات المعروفة (حسب docs)
+    $raw =
+        data_get($data, 'SUCCESS.0.AccoutInfo.creditraw') ??
+        data_get($data, 'SUCCESS.0.AccoutInfo.creditRaw') ??
+        data_get($data, 'SUCCESS.0.AccoutInfo.CREDITRAW') ??
+        data_get($data, 'SUCCESS.0.AccoutInfo.credit') ??
+        data_get($data, 'SUCCESS.0.AccoutInfo.CREDIT') ??
+        data_get($data, 'SUCCESS.0.AccountInfo.creditraw') ??      // بعض المزودين يصححون الاسم
+        data_get($data, 'SUCCESS.0.AccountInfo.creditRaw') ??
+        data_get($data, 'SUCCESS.0.AccountInfo.CREDITRAW') ??
+        data_get($data, 'SUCCESS.0.AccountInfo.credit') ??
+        data_get($data, 'SUCCESS.0.AccountInfo.CREDIT');
 
-        return $this->toFloat($raw);
+    // 2) إذا فشل، ابحث عن أي creditraw في كامل الـ JSON
+    if ($raw === null) {
+        $raw = $this->deepFind($data, ['creditraw', 'creditRaw', 'CREDITRAW', 'credit', 'CREDIT']);
     }
+
+    return $this->toFloat($raw);
+}
+
+private function deepFind($data, array $keys)
+{
+    if (!is_array($data)) return null;
+
+    foreach ($keys as $k) {
+        if (array_key_exists($k, $data)) return $data[$k];
+    }
+
+    foreach ($data as $v) {
+        if (is_array($v)) {
+            $found = $this->deepFind($v, $keys);
+            if ($found !== null) return $found;
+        }
+    }
+
+    return null;
+}
+
 
     public function syncCatalog(ApiProvider $provider, string $kind): int
     {
