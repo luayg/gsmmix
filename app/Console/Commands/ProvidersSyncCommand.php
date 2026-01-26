@@ -2,48 +2,41 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
+use App\Jobs\SyncProviderJob;
 use App\Models\ApiProvider;
-use App\Services\Providers\ProviderManager;
+use Illuminate\Console\Command;
 
 class ProvidersSyncCommand extends Command
 {
     protected $signature = 'providers:sync
-        {--provider_id= : مزود محدد}
+        {--provider= : Provider ID}
         {--type= : imei|server|file}
-        {--balance : تحديث الرصيد فقط}';
+        {--balance-only : Only fetch balance}';
 
-    protected $description = 'Sync remote services (all providers) and/or balances (single unified system)';
+    protected $description = 'Sync API providers (balance + remote catalogs)';
 
-    public function handle(ProviderManager $manager): int
+    public function handle(): int
     {
-        $providerId  = $this->option('provider_id');
-        $typeOpt     = $this->option('type');
-        $balanceOnly = (bool)$this->option('balance');
+        $providerId = $this->option('provider');
+        $type = $this->option('type');
+        $balanceOnly = (bool) $this->option('balance-only');
 
-        $q = ApiProvider::query()->where('active', 1);
-        if ($providerId) $q->where('id', (int)$providerId);
+        $query = ApiProvider::query()->where('active', 1);
 
-        $providers = $q->orderBy('id')->get();
+        if ($providerId) {
+            $query->where('id', (int)$providerId);
+        }
 
-        foreach ($providers as $p) {
-            $this->info("Syncing #{$p->id} {$p->type} {$p->name}");
+        $providers = $query->get();
 
-            $res = $manager->syncProvider($p, $typeOpt ? strtolower($typeOpt) : null, $balanceOnly);
+        if ($providers->isEmpty()) {
+            $this->warn('No providers found');
+            return self::SUCCESS;
+        }
 
-            if ($balanceOnly) {
-                $this->info("  balance=" . ($res['balance'] ?? 0));
-                continue;
-            }
-
-            if (!empty($res['errors'])) {
-                $this->error("  errors:");
-                foreach ($res['errors'] as $e) {
-                    $this->error("   - {$e}");
-                }
-            }
-
-            $this->info("  total={$res['total']} synced=" . ($p->synced ? 'true' : 'false'));
+        foreach ($providers as $provider) {
+            dispatch(new SyncProviderJob((int)$provider->id, $type ?: null, $balanceOnly));
+            $this->info("Dispatched sync for provider #{$provider->id} ({$provider->type})");
         }
 
         return self::SUCCESS;

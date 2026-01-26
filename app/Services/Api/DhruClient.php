@@ -2,175 +2,128 @@
 
 namespace App\Services\Api;
 
-use Illuminate\Http\Client\PendingRequest;
+use App\Exceptions\ProviderApiException;
+use App\Models\ApiProvider;
 use Illuminate\Support\Facades\Http;
 
 class DhruClient
 {
-    protected string $baseUrl;
-    protected string $username;
-    protected string $apiKey;
-    protected string $requestFormat;
+    private string $endpoint;
+    private string $username;
+    private string $apiKey;
+    private string $requestFormat;
 
-    public function __construct(string $baseUrl, string $username, string $apiKey, string $requestFormat = 'JSON')
+    public function __construct(string $endpoint, string $username, string $apiKey, string $requestFormat = 'JSON')
     {
-        $this->baseUrl = rtrim($baseUrl, '/');
+        $this->endpoint = $endpoint;
         $this->username = $username;
         $this->apiKey = $apiKey;
-        $this->requestFormat = strtoupper($requestFormat ?: 'JSON');
+        $this->requestFormat = $requestFormat;
     }
 
-    protected function http(): PendingRequest
+    public static function fromProvider(ApiProvider $provider): self
     {
-        return Http::asForm()
-            ->timeout(60)
-            ->connectTimeout(20)
-            ->withHeaders([
-                'Accept' => 'application/json',
-            ]);
+        return new self(
+            $provider->dhruEndpoint(),
+            (string) $provider->username,
+            (string) $provider->api_key,
+            'JSON'
+        );
     }
-
-    protected function endpoint(): string
-    {
-        return $this->baseUrl . '/api/index.php';
-    }
-
-    /**
-     * Core call:
-     * - parameters can be:
-     *   1) array -> converted to XML <PARAMETERS><KEY>VAL</KEY>...</PARAMETERS>
-     *   2) string that starts with "<" -> sent as-is (XML)
-     *   3) any other string -> sent as-is (usually base64 JSON for bulk)
-     */
-    public function call(string $action, array|string|null $parameters = null): array
-    {
-        $payload = [
-            'username'      => $this->username,
-            'apiaccesskey'  => $this->apiKey,
-            'requestformat' => $this->requestFormat,
-            'action'        => $action,
-        ];
-
-        if ($parameters !== null) {
-            if (is_array($parameters)) {
-                $payload['parameters'] = $this->buildXmlParameters($parameters);
-            } else {
-                $payload['parameters'] = $parameters;
-            }
-        }
-
-        $res = $this->http()->post($this->endpoint(), $payload);
-
-        // إذا الرد ليس JSON، سنرجع نصه كخطأ واضح
-        $json = $res->json();
-        if (!is_array($json)) {
-            throw new \RuntimeException("DHRU non-JSON response (HTTP {$res->status()}): " . mb_substr((string)$res->body(), 0, 500));
-        }
-
-        // معالجة أخطاء DHRU القياسية
-        if (isset($json['ERROR']) && is_array($json['ERROR']) && count($json['ERROR'])) {
-            $msg = $json['ERROR'][0]['MESSAGE'] ?? $json['ERROR'][0]['message'] ?? 'DHRU ERROR';
-            $desc = $json['ERROR'][0]['FULL_DESCRIPTION'] ?? '';
-            throw new \RuntimeException(trim($msg . ' ' . $desc));
-        }
-
-        return $json;
-    }
-
-    /** XML parameters builder (مثل API kit القديم في ملف zip) */
-    public function buildXmlParameters(array $params): string
-    {
-        $xml = '<PARAMETERS>';
-        foreach ($params as $k => $v) {
-            $k = strtoupper((string)$k);
-            $v = htmlspecialchars((string)$v, ENT_XML1 | ENT_COMPAT, 'UTF-8');
-            $xml .= "<{$k}>{$v}</{$k}>";
-        }
-        $xml .= '</PARAMETERS>';
-        return $xml;
-    }
-
-    /** Base64(JSON) helper */
-    public function base64Json(array $data): string
-    {
-        return base64_encode(json_encode($data, JSON_UNESCAPED_UNICODE));
-    }
-
-    /** ========= High-level API v2 ========= */
 
     public function accountInfo(): array
     {
-        $json = $this->call('accountinfo');
-
-        $info = $json['SUCCESS'][0]['AccoutInfo'] ?? $json['SUCCESS'][0]['ACCOUNTINFO'] ?? null;
-        if (!is_array($info)) {
-            // أحيانًا يكون الاسم مختلف عند بعض المزودين
-            $info = $json['SUCCESS'][0] ?? [];
-        }
-
-        return [
-            'credit'    => $info['credit'] ?? null,
-            'creditraw' => $info['creditraw'] ?? null,
-            'mail'      => $info['mail'] ?? null,
-            'currency'  => $info['currency'] ?? null,
-            'raw'       => $json,
-        ];
+        return $this->call('accountinfo');
     }
 
     /**
-     * According to docs:
-     * action=imeiservicelist returns all groups/services
-     * GROUPTYPE=[IMEI,SERVER,REMOTE] and each service has SERVICETYPE.
+     * DHRU: Get All Services and Groups (includes IMEI + SERVER + REMOTE)
      */
-    public function allServicesAndGroups(): array
+    public function getAllServicesAndGroups(): array
     {
-        $json = $this->call('imeiservicelist');
-
-        $list = $json['SUCCESS'][0]['LIST'] ?? null;
-        if (!is_array($list)) return [];
-
-        // Normalize to: array of groups -> services
-        // LIST: { "GroupName": { GROUPNAME, GROUPTYPE, SERVICES: { "6484": {...} } } }
-        return $list;
+        return $this->call('imeiservicelist');
     }
 
-    public function fileServiceList(): array
+    /**
+     * DHRU: File services list
+     */
+    public function getFileServices(): array
     {
-        $json = $this->call('fileservicelist');
-        $list = $json['SUCCESS'][0]['LIST'] ?? null;
-        return is_array($list) ? $list : [];
+        return $this->call('fileservicelist');
     }
 
-    public function placeImeiOrder(array $params): string
+    public function call(string $action, array $params = []): array
     {
-        // docs show XML inside parameters:
-        // <PARAMETERS><IMEI>..</IMEI><ID>..</ID><CUSTOMFIELD>base64(json)</CUSTOMFIELD></PARAMETERS>
-        $json = $this->call('placeimeiorder', $params);
-        $ref = $json['SUCCESS'][0]['REFERENCEID'] ?? null;
-        if (!$ref) throw new \RuntimeException('DHRU: missing REFERENCEID');
-        return (string)$ref;
+        $payload = [
+            'username' => $this->username,
+            'apiaccesskey' => $this->apiKey,
+            'requestformat' => $this->requestFormat,
+            'action' => $action,
+        ];
+
+        if (!empty($params)) {
+            $payload['requestxml'] = $this->buildRequestXml($params);
+        }
+
+        $resp = Http::asForm()
+            ->timeout(45)
+            ->retry(2, 500)
+            ->post($this->endpoint, $payload);
+
+        if (!$resp->successful()) {
+            throw new ProviderApiException('dhru', $action, [
+                'http_status' => $resp->status(),
+                'body' => $resp->body(),
+            ], "HTTP error when calling provider API: {$resp->status()}");
+        }
+
+        $body = trim((string) $resp->body());
+        $data = json_decode($body, true);
+
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
+            // fallback XML
+            $xml = @simplexml_load_string($body);
+            if ($xml !== false) {
+                $json = json_encode($xml);
+                $data = json_decode((string)$json, true);
+            }
+        }
+
+        if (!is_array($data)) {
+            throw new ProviderApiException('dhru', $action, [
+                'body' => $body,
+            ], 'Invalid response (not JSON/XML array)');
+        }
+
+        if (isset($data['ERROR'])) {
+            $msg = $this->extractErrorMessage($data);
+            throw new ProviderApiException('dhru', $action, $data, $msg);
+        }
+
+        return $data;
     }
 
-    public function placeImeiOrderBulk(array $orders): array
+    private function extractErrorMessage(array $data): string
     {
-        // docs: parameters = base64_encode('[{"IMEI":"...","ID":123}, ...]')
-        $payload = $this->base64Json($orders);
-        $json = $this->call('placeimeiorderbulk', $payload);
-        return $json;
+        $message = data_get($data, 'ERROR.0.MESSAGE');
+        $full = data_get($data, 'ERROR.0.FULL_DESCRIPTION');
+
+        $message = is_string($message) ? trim($message) : '';
+        $full = is_string($full) ? trim($full) : '';
+
+        return $full !== '' ? $full : ($message !== '' ? $message : 'Unknown API error');
     }
 
-    public function getImeiOrder(int|string $id): array
+    private function buildRequestXml(array $params): string
     {
-        // docs: action=getimeiorder parameters base64(json) في بعض implementations,
-        // لكن example code shows XML decoded -> we'll send XML for safety.
-        $json = $this->call('getimeiorder', ['id' => $id]);
-        return $json;
-    }
+        $xml = new \SimpleXMLElement('<PARAMETERS/>');
 
-    public function getImeiOrderBulk(array $ids): array
-    {
-        // send base64 json like bulk
-        $payload = $this->base64Json(array_map(fn($x) => ['ID' => $x], $ids));
-        return $this->call('getimeiorderbulk', $payload);
+        foreach ($params as $key => $value) {
+            $p = $xml->addChild('PARAMETER');
+            $p->addChild('KEY', htmlspecialchars((string)$key));
+            $p->addChild('VALUE', htmlspecialchars((string)$value));
+        }
+
+        return $xml->asXML() ?: '';
     }
 }

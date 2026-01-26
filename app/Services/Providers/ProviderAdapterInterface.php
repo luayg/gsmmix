@@ -6,18 +6,17 @@ use App\Models\ApiProvider;
 
 interface ProviderAdapterInterface
 {
-    /** اسم النوع: dhru/webx/gsmhub/unlockbase/simple_link */
     public function type(): string;
 
-    /** هل يدعم كتالوج خدمات لهذا النوع (imei/server/file) */
-    public function supportsCatalog(string $serviceType): bool;
+    /**
+     * kind: imei | server | file
+     */
+    public function supportsCatalog(string $kind): bool;
 
-    /** إحضار الرصيد (إن كان مدعومًا) */
     public function fetchBalance(ApiProvider $provider): float;
 
     /**
-     * مزامنة الكتالوج وملء جداول remote_*.
-     * يرجع عدد السجلات التي تم إضافتها/تحديثها.
+     * Return number of synced items (created/updated)
      */
-    public function syncCatalog(ApiProvider $provider, string $serviceType): int;
+    public function syncCatalog(ApiProvider $provider, string $kind): int;
 }

@@ -7,25 +7,23 @@ use App\Services\Providers\ProviderAdapterInterface;
 
 class UnlockbaseAdapter implements ProviderAdapterInterface
 {
-    public function type(): string { return 'unlockbase'; }
-
-    public function supportsCatalog(string $serviceType): bool
+    public function type(): string
     {
-        // غالبًا IMEI فقط
-        return $serviceType === 'imei';
+        return 'unlockbase';
+    }
+
+    public function supportsCatalog(string $kind): bool
+    {
+        return false;
     }
 
     public function fetchBalance(ApiProvider $provider): float
     {
-        // TODO: اربط API unlockbase هنا (حسب البروتوكول لديك)
         return 0.0;
     }
 
-    public function syncCatalog(ApiProvider $provider, string $serviceType): int
+    public function syncCatalog(ApiProvider $provider, string $kind): int
     {
-        if (strtolower($serviceType) !== 'imei') return 0;
-
-        // TODO: جلب خدمات IMEI و upsert إلى remote_imei_services
         return 0;
     }
 }

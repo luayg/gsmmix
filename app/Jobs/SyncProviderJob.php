@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\ApiProvider;
 use App\Services\Providers\ProviderManager;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -14,19 +15,23 @@ class SyncProviderJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $providerId;
-    public ?string $onlyType;
+    public ?string $onlyKind;
     public bool $balanceOnly;
 
-    public function __construct(int $providerId, ?string $onlyType = null, bool $balanceOnly = false)
+    public function __construct(int $providerId, ?string $onlyKind = null, bool $balanceOnly = false)
     {
-        $this->providerId  = $providerId;
-        $this->onlyType    = $onlyType;
+        $this->providerId = $providerId;
+        $this->onlyKind = $onlyKind;
         $this->balanceOnly = $balanceOnly;
     }
 
     public function handle(ProviderManager $manager): void
     {
-        // ProviderManager هو المسؤول الوحيد عن تحديث synced/balance
-        $manager->syncProviderById($this->providerId, $this->onlyType, $this->balanceOnly);
+        $provider = ApiProvider::find($this->providerId);
+        if (!$provider) {
+            return;
+        }
+
+        $manager->sync($provider, $this->onlyKind, $this->balanceOnly);
     }
 }

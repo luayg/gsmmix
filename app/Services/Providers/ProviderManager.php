@@ -3,97 +3,135 @@
 namespace App\Services\Providers;
 
 use App\Models\ApiProvider;
+use App\Models\FileService;
+use App\Models\ImeiService;
+use App\Models\ServerService;
 use Illuminate\Support\Facades\Log;
 
 class ProviderManager
 {
-    /**
-     * Sync provider catalog (imei/server/file) + optional balance.
-     * Returns: ['ok'=>bool,'balance'=>float|null,'total'=>int,'errors'=>array]
-     */
-    public function syncProvider(ApiProvider $provider, ?string $onlyType = null, bool $balanceOnly = false): array
-    {
-        $adapter = ProviderFactory::make($provider);
+    private ProviderFactory $factory;
 
+    public function __construct(ProviderFactory $factory)
+    {
+        $this->factory = $factory;
+    }
+
+    /**
+     * Sync provider:
+     * - fetch balance
+     * - sync catalogs based on flags
+     * - refresh available/used counters
+     *
+     * @param string|null $onlyKind imei|server|file
+     * @param bool $balanceOnly if true: only balance update
+     * @return array result payload
+     */
+    public function sync(ApiProvider $provider, ?string $onlyKind = null, bool $balanceOnly = false): array
+    {
         $result = [
-            'ok'      => false,
+            'provider_id' => $provider->id,
+            'type' => $provider->type,
             'balance' => null,
-            'total'   => 0,
-            'errors'  => [],
+            'synced' => false,
+            'catalog' => [],
+            'errors' => [],
         ];
 
-        try {
-            // 1) balance
-            if (method_exists($adapter, 'fetchBalance')) {
-                $bal = (float) $adapter->fetchBalance($provider);
-                $result['balance'] = $bal;
+        if (!$provider->active) {
+            $result['errors'][] = 'Provider is inactive';
+            return $result;
+        }
 
-                // خزّن الرصيد دائمًا إن نجحنا
-                $provider->balance = $bal;
-            }
+        $adapter = $this->factory->make($provider);
+
+        try {
+            $balance = $adapter->fetchBalance($provider);
+            $provider->balance = $balance;
+            $provider->save();
+
+            $result['balance'] = $balance;
 
             if ($balanceOnly) {
-                // لا نحكم على synced من خلال الرصيد
+                $provider->synced = true;
                 $provider->save();
-                $result['ok'] = true;
+                $result['synced'] = true;
+
+                $this->refreshStats($provider);
                 return $result;
             }
 
-            // 2) catalog
-            $types = [];
-
-            if ($onlyType) {
-                $types = [strtolower($onlyType)];
-            } else {
-                if ($provider->sync_imei)   $types[] = 'imei';
-                if ($provider->sync_server) $types[] = 'server';
-                if ($provider->sync_file)   $types[] = 'file';
+            if (!$provider->ignore_low_balance && $balance <= 0) {
+                $provider->synced = false;
+                $provider->save();
+                $result['errors'][] = 'Low balance (sync stopped because ignore_low_balance = 0)';
+                $this->refreshStats($provider);
+                return $result;
             }
 
-            $total = 0;
-            $hadError = false;
+            $kinds = [];
 
-            foreach ($types as $t) {
-                if (!$adapter->supportsCatalog($t)) {
+            if ($onlyKind) {
+                $kinds[] = $onlyKind;
+            } else {
+                if ($provider->sync_imei) $kinds[] = 'imei';
+                if ($provider->sync_server) $kinds[] = 'server';
+                if ($provider->sync_file) $kinds[] = 'file';
+            }
+
+            $syncedAny = false;
+
+            foreach ($kinds as $kind) {
+                if (!$adapter->supportsCatalog($kind)) {
+                    $result['catalog'][$kind] = ['supported' => false, 'count' => 0];
                     continue;
                 }
 
-                try {
-                    $n = (int) $adapter->syncCatalog($provider, $t);
-                    $total += $n;
-                } catch (\Throwable $e) {
-                    $hadError = true;
-                    $result['errors'][] = "{$t}: ".$e->getMessage();
-                }
+                $count = $adapter->syncCatalog($provider, $kind);
+                $result['catalog'][$kind] = ['supported' => true, 'count' => $count];
+
+                $syncedAny = true;
             }
 
-            // ✅ synced = true فقط إذا ما في أخطاء + جاب على الأقل خدمة واحدة
-            $provider->synced = (!$hadError && $total > 0);
+            $provider->synced = $syncedAny ? 1 : 0;
             $provider->save();
 
-            $result['ok'] = !$hadError;
-            $result['total'] = $total;
+            $this->refreshStats($provider);
 
-            return $result;
-
+            $result['synced'] = (bool) $provider->synced;
         } catch (\Throwable $e) {
-            Log::error('ProviderManager sync failed', [
+            Log::error('Provider sync failed', [
                 'provider_id' => $provider->id,
-                'type'        => $provider->type,
-                'msg'         => $e->getMessage(),
+                'type' => $provider->type,
+                'error' => $e->getMessage(),
             ]);
 
-            $provider->synced = false;
+            $provider->synced = 0;
             $provider->save();
 
+            $this->refreshStats($provider);
+
             $result['errors'][] = $e->getMessage();
-            return $result;
         }
+
+        return $result;
     }
 
-    public function syncProviderById(int $providerId, ?string $onlyType = null, bool $balanceOnly = false): array
+    /**
+     * Refresh provider available/used counters from DB.
+     */
+    public function refreshStats(ApiProvider $provider): void
     {
-        $provider = ApiProvider::findOrFail($providerId);
-        return $this->syncProvider($provider, $onlyType, $balanceOnly);
+        // available = remote count
+        $provider->available_imei = $provider->remoteImeiServices()->count();
+        $provider->available_server = $provider->remoteServerServices()->count();
+        $provider->available_file = $provider->remoteFileServices()->count();
+
+        // used = local services linked to this provider (supplier_id is still used in your schema)
+        $provider->used_imei = ImeiService::where('supplier_id', $provider->id)->whereNotNull('remote_id')->count();
+        $provider->used_server = ServerService::where('supplier_id', $provider->id)->whereNotNull('remote_id')->count();
+        $provider->used_file = FileService::where('supplier_id', $provider->id)->whereNotNull('remote_id')->count();
+
+        $provider->save();
     }
 }
