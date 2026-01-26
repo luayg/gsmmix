@@ -274,3 +274,4 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
 });
 require __DIR__ . '/admin_apis.php';
+require __DIR__ . '/auth.php';

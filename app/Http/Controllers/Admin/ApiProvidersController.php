@@ -7,13 +7,60 @@ use App\Jobs\SyncProviderJob;
 use App\Models\ApiProvider;
 use App\Services\Providers\ProviderManager;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class ApiProvidersController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        return view('admin.api.providers.index');
+        // Filters
+        $q = trim((string) $request->query('q', ''));
+        $type = trim((string) $request->query('type', ''));
+        $status = trim((string) $request->query('status', '')); // active|inactive|synced|not_synced
+        $perPage = (int) $request->query('per_page', 20);
+        if ($perPage <= 0) $perPage = 20;
+        if ($perPage > 200) $perPage = 200;
+
+        $query = ApiProvider::query()->orderByDesc('id');
+
+        if ($q !== '') {
+            $query->where(function ($w) use ($q) {
+                $w->where('name', 'like', "%{$q}%")
+                  ->orWhere('url', 'like', "%{$q}%")
+                  ->orWhere('username', 'like', "%{$q}%");
+            });
+        }
+
+        if ($type !== '') {
+            $query->where('type', $type);
+        }
+
+        if ($status !== '') {
+            if ($status === 'active') {
+                $query->where('active', 1);
+            } elseif ($status === 'inactive') {
+                $query->where('active', 0);
+            } elseif ($status === 'synced') {
+                $query->where('synced', 1);
+            } elseif ($status === 'not_synced') {
+                $query->where('synced', 0);
+            }
+        }
+
+        $rows = $query->paginate($perPage)->withQueryString();
+
+        // For filter dropdown
+        $types = ['dhru', 'gsmhub', 'webx', 'unlockbase', 'simple_link'];
+
+        return view('admin.api.providers.index', [
+            'rows' => $rows,
+            'types' => $types,
+            'filters' => [
+                'q' => $q,
+                'type' => $type,
+                'status' => $status,
+                'per_page' => $perPage,
+            ],
+        ]);
     }
 
     public function create()
@@ -31,14 +78,9 @@ class ApiProvidersController extends Controller
         return view('admin.api.providers.view', compact('provider'));
     }
 
-    /**
-     * Create provider (Store)
-     */
     public function store(Request $request)
     {
         $data = $this->validateProvider($request);
-
-        // Normalize url
         $data['url'] = rtrim((string)$data['url'], '/') . '/';
 
         $provider = ApiProvider::create($data);
@@ -50,13 +92,9 @@ class ApiProvidersController extends Controller
         return redirect()->route('admin.apis.index')->with('success', 'Provider created');
     }
 
-    /**
-     * Update provider
-     */
     public function update(Request $request, ApiProvider $provider)
     {
         $data = $this->validateProvider($request, $provider->id);
-
         $data['url'] = rtrim((string)$data['url'], '/') . '/';
 
         $provider->update($data);
@@ -79,9 +117,6 @@ class ApiProvidersController extends Controller
         return redirect()->route('admin.apis.index')->with('success', 'Provider deleted');
     }
 
-    /**
-     * Test connection = fetch balance only (no catalog sync)
-     */
     public function testConnection(Request $request, ApiProvider $provider, ProviderManager $manager)
     {
         $result = $manager->sync($provider, null, true);
@@ -92,10 +127,6 @@ class ApiProvidersController extends Controller
         ]);
     }
 
-    /**
-     * Sync now (dispatch job)
-     * You can pass: kind=imei|server|file
-     */
     public function syncNow(Request $request, ApiProvider $provider)
     {
         $kind = $request->input('kind');
@@ -108,10 +139,6 @@ class ApiProvidersController extends Controller
         return response()->json(['ok' => true, 'message' => 'Sync dispatched']);
     }
 
-    /**
-     * Services list (remote)
-     * kind: imei|server|file
-     */
     public function services(Request $request, ApiProvider $provider, string $kind)
     {
         abort_unless(in_array($kind, ['imei', 'server', 'file'], true), 404);
@@ -124,11 +151,8 @@ class ApiProvidersController extends Controller
 
         $services = $query->orderBy('group_name')->orderBy('name')->get();
 
-        // If you want view modal:
         if (!$request->expectsJson()) {
-            $grouped = $services->groupBy(function ($s) {
-                return $s->group_name ?: 'Ungrouped';
-            });
+            $grouped = $services->groupBy(fn($s) => $s->group_name ?: 'Ungrouped');
 
             return view('admin.api.providers.modals.services', [
                 'provider' => $provider,
@@ -138,7 +162,6 @@ class ApiProvidersController extends Controller
             ]);
         }
 
-        // JSON for frontend
         return response()->json([
             'ok' => true,
             'provider_id' => $provider->id,
@@ -147,9 +170,6 @@ class ApiProvidersController extends Controller
         ]);
     }
 
-    /**
-     * Validation shared (store/update)
-     */
     private function validateProvider(Request $request, ?int $providerId = null): array
     {
         $types = ['dhru', 'webx', 'gsmhub', 'unlockbase', 'simple_link'];
@@ -172,7 +192,6 @@ class ApiProvidersController extends Controller
             'params' => ['nullable'],
         ]);
 
-        // checkboxes normalization
         $data['sync_imei'] = $request->boolean('sync_imei');
         $data['sync_server'] = $request->boolean('sync_server');
         $data['sync_file'] = $request->boolean('sync_file');
@@ -181,7 +200,6 @@ class ApiProvidersController extends Controller
         $data['auto_sync'] = $request->boolean('auto_sync');
         $data['active'] = $request->boolean('active');
 
-        // normalize params: accept JSON string or array
         $params = $request->input('params');
         if (is_string($params)) {
             $decoded = json_decode($params, true);
