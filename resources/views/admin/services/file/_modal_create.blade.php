@@ -7,6 +7,14 @@
       data-ajax="1">
   @csrf
 
+  {{-- ✅ Required by backend validation --}}
+  <input type="hidden" name="name_en" value="">
+  <input type="hidden" name="main_type" value="">
+
+
+
+
+
   {{-- ✅ Fix name_en required (if your validation requires it) --}}
   <input type="hidden" name="name_en" id="nameEnHidden" value="">
 

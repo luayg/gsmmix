@@ -123,8 +123,12 @@
   function calcServiceFinalPrice(scope){
     const cost   = Number(scope.querySelector('[name="cost"]')?.value || 0);
     const profit = Number(scope.querySelector('[name="profit"]')?.value || 0);
-    const pType  = String(scope.querySelector('[name="profit_type"]')?.value || '1'); // 1 credits, 2 percent
-    const price = (pType === '2') ? (cost + (cost * profit / 100)) : (cost + profit);
+
+    // profit_type قد يكون: 1/2 أو credits/percent
+    const pTypeRaw  = String(scope.querySelector('[name="profit_type"]')?.value || '1').toLowerCase();
+    const isPercent = (pTypeRaw === '2' || pTypeRaw === 'percent');
+
+    const price = isPercent ? (cost + (cost * profit / 100)) : (cost + profit);
     return Number.isFinite(price) ? price : 0;
   }
 
@@ -171,8 +175,10 @@
     const cost = scope.querySelector('[name="cost"]');
     const profit = scope.querySelector('[name="profit"]');
     const pType = scope.querySelector('[name="profit_type"]');
-    const pricePreview = scope.querySelector('#pricePreview');
-    const convertedPreview = scope.querySelector('#convertedPricePreview');
+
+    // يدعم IMEI/SERVER (id) و FILE (data-role)
+    const pricePreview = scope.querySelector('#pricePreview') || scope.querySelector('[data-role="price-preview"]');
+    const convertedPreview = scope.querySelector('#convertedPricePreview') || scope.querySelector('[data-role="converted-price"]');
 
     function recalc(){
       const price = calcServiceFinalPrice(scope);
@@ -409,18 +415,54 @@
     if(btn){
       btn.disabled = true;
 
-      // ✅ نظّف الألوان السابقة
       btn.classList.remove(
         'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary',
         'btn-light','border-success','text-success','btn-outline-success','btn-outline-primary'
       );
 
-      // ✅ Add + لون فاتح
       btn.classList.add('btn-outline-primary');
       btn.textContent = 'Add';
 
       btn.removeAttribute('data-create-service');
     }
+  }
+
+  // ✅ FIX VALIDATION (SERVER/FILE): name_en + main_type مطلوبين في بعض الكنترولرز
+  function ensureRequiredFields(form){
+    const ensureField = (name, value) => {
+      let el = form.querySelector(`[name="${name}"]`);
+      if (!el) {
+        el = document.createElement('input');
+        el.type = 'hidden';
+        el.name = name;
+        form.appendChild(el);
+      }
+      const v = clean(value);
+      if (!clean(el.value)) el.value = v;
+      return el;
+    };
+
+    // name_en: اجعله مثل name دائماً لو ناقص
+    const nameVal =
+      clean(form.querySelector('[name="name_en"]')?.value) ||
+      clean(form.querySelector('[name="name"]')?.value) ||
+      clean(form.querySelector('[name="title"]')?.value) ||
+      '';
+    ensureField('name_en', nameVal);
+
+    // بعض المشاريع تستخدم name_ar أيضاً (احتياط فقط لو موجود/مطلوب لاحقاً)
+    // ensureField('name_ar', clean(form.querySelector('[name="name_ar"]')?.value || ''));
+
+    // main_type: إن لم يوجد -> خذه من main_field_type / type
+    const mainTypeVal =
+      clean(form.querySelector('[name="main_type"]')?.value) ||
+      clean(form.querySelector('[name="main_field_type"]')?.value) ||
+      clean(form.querySelector('[name="type"]')?.value) ||
+      '';
+    ensureField('main_type', mainTypeVal);
+
+    // تأكيد: لو الاسم فاضي فعلاً، لا ترسل (بيطلع نفس الخطأ)
+    // لكن هنا نترك Laravel يرفض لو فعلاً لا يوجد name.
   }
 
   document.addEventListener('click', async (e)=>{
@@ -480,21 +522,34 @@
 
     document.getElementById('badgeType').innerText = `Type: ${cloneData.serviceType.toUpperCase()}`;
 
-    body.querySelector('[name="supplier_id"]').value = isClone ? cloneData.providerId : '';
-    body.querySelector('[name="remote_id"]').value   = isClone ? cloneData.remoteId : '';
-    body.querySelector('[name="group_name"]').value  = isClone ? cloneData.groupName : '';
-    body.querySelector('[name="name"]').value        = cloneData.name;
-    body.querySelector('[name="time"]').value        = cloneData.time || '';
-    body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
-    body.querySelector('[name="profit"]').value      = '0.0000';
+    // ✅ تعبئة الحقول المشتركة
+    body.querySelector('[name="supplier_id"]') && (body.querySelector('[name="supplier_id"]').value = isClone ? cloneData.providerId : '');
+    body.querySelector('[name="remote_id"]')   && (body.querySelector('[name="remote_id"]').value   = isClone ? cloneData.remoteId : '');
+    body.querySelector('[name="group_name"]')  && (body.querySelector('[name="group_name"]').value  = isClone ? cloneData.groupName : '');
 
-    body.querySelector('[name="source"]').value      = isClone ? 2 : 1;
-    body.querySelector('[name="type"]').value        = cloneData.serviceType;
-    body.querySelector('[name="alias"]').value       = slugify(cloneData.name || '');
+    body.querySelector('[name="name"]') && (body.querySelector('[name="name"]').value = cloneData.name);
+    body.querySelector('[name="time"]') && (body.querySelector('[name="time"]').value = cloneData.time || '');
+    body.querySelector('[name="cost"]') && (body.querySelector('[name="cost"]').value = cloneData.credit.toFixed(4));
+    body.querySelector('[name="profit"]') && (body.querySelector('[name="profit"]').value = '0.0000');
+
+    body.querySelector('[name="source"]') && (body.querySelector('[name="source"]').value = isClone ? 2 : 1);
+    body.querySelector('[name="type"]')   && (body.querySelector('[name="type"]').value = cloneData.serviceType);
+    body.querySelector('[name="alias"]')  && (body.querySelector('[name="alias"]').value = slugify(cloneData.name || ''));
+
+    // ✅ مهم للسيرفر/فايل: لو عندك name_en في الفورم اجعله يساوي name
+    if (body.querySelector('[name="name_en"]') && !clean(body.querySelector('[name="name_en"]').value)) {
+      body.querySelector('[name="name_en"]').value = cloneData.name;
+    }
+    // ✅ مهم للسيرفر/فايل: لو عندك main_type في الفورم اجعله يساوي main_field_type أو type
+    if (body.querySelector('[name="main_type"]') && !clean(body.querySelector('[name="main_type"]').value)) {
+      const mf = clean(body.querySelector('[name="main_field_type"]')?.value || '');
+      body.querySelector('[name="main_type"]').value = mf || cloneData.serviceType;
+    }
 
     const priceHelper = initPrice(body);
-    priceHelper.setCost(cloneData.credit);
+    if (body.querySelector('[name="cost"]')) priceHelper.setCost(cloneData.credit);
 
+    // ✅ جروبات الخدمة (حسب النوع)
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
       .then(r=>r.json())
       .then(rows=>{
@@ -505,6 +560,7 @@
         }
       });
 
+    // ✅ جدول أسعار مجموعات المستخدمين (إن وجد بالمودال)
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
     syncGroupPricesFromService(body);
@@ -522,7 +578,6 @@
     if (isClone && apiProviderSel) {
       const pid = String(cloneData.providerId || '').trim();
 
-      // لو المزوّد غير موجود في options (أو فشل تحميلها) أضفه يدويًا ليظهر اسمه
       if (pid && !apiProviderSel.querySelector(`option[value="${pid.replace(/"/g,'\\"')}"]`)) {
         const opt = document.createElement('option');
         opt.value = pid;
@@ -531,13 +586,6 @@
       }
 
       apiProviderSel.value = pid;
-
-      // لو Select2 موجود
-      if (window.jQuery && window.jQuery.fn?.select2 && window.jQuery(apiProviderSel).data('select2')) {
-        window.jQuery(apiProviderSel).val(pid).trigger('change.select2');
-      } else {
-        apiProviderSel.dispatchEvent(new Event('change'));
-      }
 
       // اقفل الاختيار لأننا في وضع Clone
       apiProviderSel.disabled = true;
@@ -555,7 +603,6 @@
     }
 
     apiProviderSel?.addEventListener('change', async ()=>{
-      // إذا كان مقفول (Clone) لا تعيد تحميل شيء
       if (apiProviderSel.disabled) return;
 
       const pid = apiProviderSel.value;
@@ -570,21 +617,30 @@
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
 
-      body.querySelector('[name="supplier_id"]').value = apiProviderSel.value;
-      body.querySelector('[name="remote_id"]').value   = opt.value;
+      body.querySelector('[name="supplier_id"]') && (body.querySelector('[name="supplier_id"]').value = apiProviderSel.value);
+      body.querySelector('[name="remote_id"]')   && (body.querySelector('[name="remote_id"]').value   = opt.value);
 
       const name = clean(opt.dataset.name);
       const credit = Number(opt.dataset.credit || 0);
       const time = clean(opt.dataset.time);
 
       if(name){
-        body.querySelector('[name="name"]').value = name;
-        body.querySelector('[name="alias"]').value = slugify(name);
+        body.querySelector('[name="name"]') && (body.querySelector('[name="name"]').value = name);
+        body.querySelector('[name="alias"]') && (body.querySelector('[name="alias"]').value = slugify(name));
+
+        // ✅ مهم: server/file validate name_en
+        if (body.querySelector('[name="name_en"]')) body.querySelector('[name="name_en"]').value = name;
       }
-      if(time) body.querySelector('[name="time"]').value = time;
+      if(time) body.querySelector('[name="time"]') && (body.querySelector('[name="time"]').value = time);
+
+      // ✅ مهم: server validate main_type
+      if (body.querySelector('[name="main_type"]') && !clean(body.querySelector('[name="main_type"]').value)) {
+        const mf = clean(body.querySelector('[name="main_field_type"]')?.value || '');
+        body.querySelector('[name="main_type"]').value = mf || clean(body.querySelector('[name="type"]')?.value || '');
+      }
 
       if(Number.isFinite(credit) && credit >= 0){
-        body.querySelector('[name="cost"]').value = credit.toFixed(4);
+        body.querySelector('[name="cost"]') && (body.querySelector('[name="cost"]').value = credit.toFixed(4));
         priceHelper.setCost(credit);
 
         const wrap = body.querySelector('#groupsPricingWrap');
@@ -598,12 +654,15 @@
     bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
   });
 
-  // ✅ لا redirect + تحديث زر clone/add + refresh سريع للخلفية
+  // ✅ Submit AJAX + FIX required fields قبل الإرسال
   document.addEventListener('submit', async (ev)=>{
     const form = ev.target;
     if(!form || !form.matches('#serviceModal form')) return;
 
     ev.preventDefault();
+
+    // ✅ إصلاح: توليد name_en + main_type قبل الإرسال (خصوصاً server/file)
+    ensureRequiredFields(form);
 
     const infoEditor = jQuery(form).find('#infoEditor');
     if (infoEditor.length && infoEditor.summernote) {
@@ -634,19 +693,15 @@
       }
 
       if(res.ok){
-        // ✅ (1) حدّث زر الصف لنفس Remote ID فوراً
         const rid = form.querySelector('[name="remote_id"]')?.value;
         markCloneAsAdded(rid);
 
-        // ✅ (2) اغلق مودال الإضافة فقط
         bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
 
-        // ✅ Toast اختياري
         if (window.showToast) {
           window.showToast('success', '✅ Service created successfully', { title: 'Done' });
         }
 
-        // ✅ (3) Refresh سريع للخلفية (datatable إن وجدت) بدون مغادرة الصفحة
         if (window.$ && $.fn?.DataTable) {
           try {
             $('.dataTable').each(function(){
