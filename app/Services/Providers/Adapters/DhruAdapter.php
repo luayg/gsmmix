@@ -80,7 +80,7 @@ class DhruAdapter implements ProviderAdapterInterface
                 if ($wanted !== $normalized) continue;
 
                 $base = [
-                    'api_id'          => (int)$provider->id,
+                    'api_provider_id'          => (int)$provider->id,
                     'remote_id'       => $remoteId,
                     'name'            => (string)($srv['SERVICENAME'] ?? ''),
                     'group_name'      => $gName,
@@ -147,7 +147,7 @@ class DhruAdapter implements ProviderAdapterInterface
                 if ($remoteId === '') continue;
 
                 $rows[] = [
-                    'api_id'             => (int)$provider->id,
+                    'api_provider_id'             => (int)$provider->id,
                     'remote_id'          => $remoteId,
                     'name'               => (string)($srv['SERVICENAME'] ?? ''),
                     'group_name'         => $gName,
@@ -170,7 +170,7 @@ class DhruAdapter implements ProviderAdapterInterface
         $rows = array_values(array_filter($rows));
         if (!$rows) return 0;
 
-        $uniqueBy = ['api_id', 'remote_id'];
+        $uniqueBy = ['api_provider_id', 'remote_id'];
         $update = array_keys($rows[0]);
         $update = array_values(array_diff($update, ['created_at']));
 

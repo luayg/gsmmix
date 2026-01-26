@@ -25,8 +25,8 @@ class ImeiServiceController extends Controller
             });
         }
 
-        if ($r->filled('api_id')) {
-            $q->where('source', (int)$r->api_id);
+        if ($r->filled('api_provider_id')) {
+            $q->where('source', (int)$r->api_provider_id);
         }
 
         $rows = $q->paginate(20)->withQueryString();

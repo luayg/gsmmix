@@ -9,10 +9,10 @@
       <input class="form-control form-control-sm" name="q" placeholder="Smart search"
              value="{{ request('q') }}" style="max-width:240px">
 
-      <select class="form-select form-select-sm" name="api_id" style="max-width:220px" onchange="this.form.submit()">
+      <select class="form-select form-select-sm" name="api_provider_id" style="max-width:220px" onchange="this.form.submit()">
         <option value="">API connection</option>
         @foreach($apis as $a)
-          <option value="{{ $a }}" @selected(request('api_id')==$a)>{{ $a }}</option>
+          <option value="{{ $a }}" @selected(request('api_provider_id')==$a)>{{ $a }}</option>
         @endforeach
       </select>
 

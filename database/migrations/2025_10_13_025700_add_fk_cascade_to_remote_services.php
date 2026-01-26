@@ -10,45 +10,45 @@ return new class extends Migration {
     {
         // وحّد نوع العمود مع api_providers.id (bigIncrements => unsignedBigInteger)
         Schema::table('remote_imei_services', function (Blueprint $t) {
-            $t->unsignedBigInteger('api_id')->change();
+            $t->unsignedBigInteger('api_provider_id')->change();
         });
         Schema::table('remote_server_services', function (Blueprint $t) {
-            $t->unsignedBigInteger('api_id')->change();
+            $t->unsignedBigInteger('api_provider_id')->change();
         });
         Schema::table('remote_file_services', function (Blueprint $t) {
-            $t->unsignedBigInteger('api_id')->change();
+            $t->unsignedBigInteger('api_provider_id')->change();
         });
 
         // احذف أي صف يتيم قبل إضافة الـFK (DELETE مع LEFT JOIN أضمن من whereNotIn)
         DB::statement('
             DELETE ris FROM remote_imei_services ris
-            LEFT JOIN api_providers ap ON ap.id = ris.api_id
+            LEFT JOIN api_providers ap ON ap.id = ris.api_provider_id
             WHERE ap.id IS NULL
         ');
         DB::statement('
             DELETE rss FROM remote_server_services rss
-            LEFT JOIN api_providers ap ON ap.id = rss.api_id
+            LEFT JOIN api_providers ap ON ap.id = rss.api_provider_id
             WHERE ap.id IS NULL
         ');
         DB::statement('
             DELETE rfs FROM remote_file_services rfs
-            LEFT JOIN api_providers ap ON ap.id = rfs.api_id
+            LEFT JOIN api_providers ap ON ap.id = rfs.api_provider_id
             WHERE ap.id IS NULL
         ');
 
         // أضف المفاتيح الأجنبية مع الحذف المتسلسل
         Schema::table('remote_imei_services', function (Blueprint $t) {
-            $t->foreign('api_id', 'ris_api_fk')
+            $t->foreign('api_provider_id', 'ris_api_fk')
               ->references('id')->on('api_providers')
               ->onDelete('cascade');
         });
         Schema::table('remote_server_services', function (Blueprint $t) {
-            $t->foreign('api_id', 'rss_api_fk')
+            $t->foreign('api_provider_id', 'rss_api_fk')
               ->references('id')->on('api_providers')
               ->onDelete('cascade');
         });
         Schema::table('remote_file_services', function (Blueprint $t) {
-            $t->foreign('api_id', 'rfs_api_fk')
+            $t->foreign('api_provider_id', 'rfs_api_fk')
               ->references('id')->on('api_providers')
               ->onDelete('cascade');
         });

@@ -8,7 +8,7 @@ class RemoteServerService extends Model
 {
     protected $table = 'remote_server_services';
     protected $fillable = [
-        'api_id','remote_id','name','group_name','price','time','info',
+        'api_provider_id','remote_id','name','group_name','price','time','info',
         'min_qty','max_qty','credit_groups',
         'additional_fields','additional_data','params',
     ];

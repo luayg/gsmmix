@@ -10,7 +10,7 @@ return new class extends Migration {
         // === IMEI ===
         Schema::create('remote_imei_services', function (Blueprint $t) {
             $t->id();
-            $t->unsignedInteger('api_id');              // مزوّدنا الداخلي
+            $t->unsignedInteger('api_provider_id');              // مزوّدنا الداخلي
             $t->string('remote_id');                    // SERVICEID عند DHRU
             $t->string('name');                         // SERVICENAME
             $t->string('group_name')->nullable();       // اسم المجموعة
@@ -42,14 +42,14 @@ return new class extends Migration {
             $t->longText('params')->nullable();            // الخام إذا بغيتي
             $t->timestamps();
 
-            $t->unique(['api_id','remote_id']);
-            $t->index('api_id');
+            $t->unique(['api_provider_id','remote_id']);
+            $t->index('api_provider_id');
         });
 
         // === SERVER ===
         Schema::create('remote_server_services', function (Blueprint $t) {
             $t->id();
-            $t->unsignedInteger('api_id');
+            $t->unsignedInteger('api_provider_id');
             $t->string('remote_id');
             $t->string('name');
             $t->string('group_name')->nullable();
@@ -68,14 +68,14 @@ return new class extends Migration {
             $t->longText('params')->nullable();
             $t->timestamps();
 
-            $t->unique(['api_id','remote_id']);
-            $t->index('api_id');
+            $t->unique(['api_provider_id','remote_id']);
+            $t->index('api_provider_id');
         });
 
         // === FILE ===
         Schema::create('remote_file_services', function (Blueprint $t) {
             $t->id();
-            $t->unsignedInteger('api_id');
+            $t->unsignedInteger('api_provider_id');
             $t->string('remote_id');
             $t->string('name');
             $t->string('group_name')->nullable();
@@ -93,8 +93,8 @@ return new class extends Migration {
             $t->longText('params')->nullable();
             $t->timestamps();
 
-            $t->unique(['api_id','remote_id']);
-            $t->index('api_id');
+            $t->unique(['api_provider_id','remote_id']);
+            $t->index('api_provider_id');
         });
     }
 

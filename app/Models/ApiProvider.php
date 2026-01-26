@@ -37,16 +37,16 @@ class ApiProvider extends Model
         return is_array($this->params) ? $this->params : [];
     }
 
-    public function remoteImeiServices()   { return $this->hasMany(RemoteImeiService::class,   'api_id'); }
-    public function remoteServerServices() { return $this->hasMany(RemoteServerService::class, 'api_id'); }
-    public function remoteFileServices()   { return $this->hasMany(RemoteFileService::class,   'api_id'); }
+    public function remoteImeiServices()   { return $this->hasMany(RemoteImeiService::class,   'api_provider_id'); }
+    public function remoteServerServices() { return $this->hasMany(RemoteServerService::class, 'api_provider_id'); }
+    public function remoteFileServices()   { return $this->hasMany(RemoteFileService::class,   'api_provider_id'); }
 
     protected static function booted()
     {
         static::deleting(function (ApiProvider $p) {
-            DB::table('remote_imei_services')->where('api_id', $p->id)->delete();
-            DB::table('remote_server_services')->where('api_id', $p->id)->delete();
-            DB::table('remote_file_services')->where('api_id', $p->id)->delete();
+            DB::table('remote_imei_services')->where('api_provider_id', $p->id)->delete();
+            DB::table('remote_server_services')->where('api_provider_id', $p->id)->delete();
+            DB::table('remote_file_services')->where('api_provider_id', $p->id)->delete();
         });
     }
 }

@@ -33,7 +33,7 @@ class CloneController extends Controller
         $provider = ApiProvider::findOrFail($providerId);
 
         $remote = $RemoteModel::query()
-            ->where('api_id', $providerId)
+            ->where('api_provider_id', $providerId)
             ->where('remote_id', $remoteId)
             ->firstOrFail();
 
@@ -94,9 +94,9 @@ class CloneController extends Controller
             default  => RemoteImeiService::class,
         };
 
-        // ✅ الصحيح: فلترة حسب api_id (مزود الـ API) وليس remote_id (لأننا نريد "كل الخدمات")
+        // ✅ الصحيح: فلترة حسب api_provider_id (مزود الـ API) وليس remote_id (لأننا نريد "كل الخدمات")
         $rows = $model::query()
-            ->where('api_id', $providerId)
+            ->where('api_provider_id', $providerId)
             ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
             ->orderBy('name')
             ->limit(500)

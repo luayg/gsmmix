@@ -182,7 +182,7 @@ class GsmhubAdapter implements ProviderAdapterInterface
         if ($remoteId === '') return null;
 
         return [
-            'api_id'          => $apiId,
+            'api_provider_id'          => $apiId,
             'remote_id'       => $remoteId,
             'name'            => (string)($srv['SERVICENAME'] ?? $srv['name'] ?? ''),
             'group_name'      => $groupName,
@@ -198,7 +198,7 @@ class GsmhubAdapter implements ProviderAdapterInterface
     protected function bulkUpsert(string $serviceType, array $rows): int
     {
         // ✅ upsert سريع جداً ويحل مشكلة timeout/تعليق ScienceNow
-        $uniqueBy = ['api_id', 'remote_id'];
+        $uniqueBy = ['api_provider_id', 'remote_id'];
         $update = ['name','group_name','price','time','info','additional_data','updated_at'];
 
         if ($serviceType === 'imei') {

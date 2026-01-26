@@ -44,7 +44,7 @@ class WebxAdapter implements ProviderAdapterInterface
 
             if ($serviceType === 'imei') {
                 RemoteImeiService::updateOrCreate(
-                    ['api_id'=>$provider->id,'remote_id'=>$remoteId],
+                    ['api_provider_id'=>$provider->id,'remote_id'=>$remoteId],
                     [
                         'name'=>$s['name'] ?? '',
                         'group_name'=>$s['group'] ?? '',
@@ -56,7 +56,7 @@ class WebxAdapter implements ProviderAdapterInterface
                 );
             } elseif ($serviceType === 'server') {
                 RemoteServerService::updateOrCreate(
-                    ['api_id'=>$provider->id,'remote_id'=>$remoteId],
+                    ['api_provider_id'=>$provider->id,'remote_id'=>$remoteId],
                     [
                         'name'=>$s['name'] ?? '',
                         'group_name'=>$s['group'] ?? '',
@@ -68,7 +68,7 @@ class WebxAdapter implements ProviderAdapterInterface
                 );
             } else {
                 RemoteFileService::updateOrCreate(
-                    ['api_id'=>$provider->id,'remote_id'=>$remoteId],
+                    ['api_provider_id'=>$provider->id,'remote_id'=>$remoteId],
                     [
                         'name'=>$s['name'] ?? '',
                         'group_name'=>$s['group'] ?? '',

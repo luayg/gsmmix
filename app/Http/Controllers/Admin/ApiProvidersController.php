@@ -178,11 +178,11 @@ class ApiProvidersController extends Controller
 
     /**
      * ✅ عرض خدمات IMEI من جدول remote_imei_services
-     * مهم: العمود الصحيح api_id وليس api_provider_id
+     * مهم: العمود الصحيح api_provider_id وليس api_provider_id
      */
     public function servicesImei(ApiProvider $provider)
 {
-    $services = RemoteImeiService::where('api_id', $provider->id)   // ✅ FIX
+    $services = RemoteImeiService::where('api_provider_id', $provider->id)   // ✅ FIX
         ->orderBy('group_name')
         ->orderBy('name')
         ->get()
@@ -205,7 +205,7 @@ class ApiProvidersController extends Controller
 
 public function servicesServer(ApiProvider $provider)
 {
-    $services = RemoteServerService::where('api_id', $provider->id)  // ✅ FIX
+    $services = RemoteServerService::where('api_provider_id', $provider->id)  // ✅ FIX
         ->orderBy('group_name')
         ->orderBy('name')
         ->get()
@@ -228,7 +228,7 @@ public function servicesServer(ApiProvider $provider)
 
 public function servicesFile(ApiProvider $provider)
 {
-    $services = RemoteFileService::where('api_id', $provider->id)    // ✅ FIX
+    $services = RemoteFileService::where('api_provider_id', $provider->id)    // ✅ FIX
         ->orderBy('group_name')
         ->orderBy('name')
         ->get()
@@ -272,7 +272,7 @@ public function importServicesWizard(Request $request, ApiProvider $provider)
     };
 
     // ✅ FIX: الربط الصحيح
-    $remoteQ->where('api_id', $provider->id);
+    $remoteQ->where('api_provider_id', $provider->id);
 
     if (!$applyAll) {
         $ids = collect($data['service_ids'] ?? [])->filter()->values()->all();
