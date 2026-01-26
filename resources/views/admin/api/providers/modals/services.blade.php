@@ -283,29 +283,36 @@
   }
 
   function markAsAdded(remoteIds){
-    (remoteIds || []).forEach(id => {
-      const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(String(id))}"]`);
-      if (row) {
-        const btn = row.querySelector('.clone-btn');
-        if (btn) {
-          btn.classList.remove('btn-success');
-          btn.classList.add('btn-secondary');
-          btn.innerText = 'Added ✅';
-          btn.disabled = true;
-          btn.removeAttribute('data-create-service');
-        }
+  (remoteIds || []).forEach(id => {
+    const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(String(id))}"]`);
+    if (row) {
+      const btn = row.querySelector('.clone-btn');
+      if (btn) {
+        // ✅ اجعل الزر "Add" + لون فاتح
+        btn.classList.remove(
+          'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary'
+        );
+        btn.classList.add('btn-outline-primary'); // لون فاتح
+
+        btn.innerText = 'Add';
+        btn.disabled = true;
+
+        // لا تفتح مودال الإنشاء بعد الإضافة
+        btn.removeAttribute('data-create-service');
       }
+    }
 
-      document.querySelectorAll('.wiz-check').forEach(cb => {
-        if (String(cb.value) === String(id)) {
-          cb.checked = false;
-          cb.disabled = true;
-        }
-      });
+    // ✅ عطل checkbox في الـ wizard أيضًا
+    document.querySelectorAll('.wiz-check').forEach(cb => {
+      if (String(cb.value) === String(id)) {
+        cb.checked = false;
+        cb.disabled = true;
+      }
     });
+  });
 
-    updateCount();
-  }
+  updateCount();
+}
 
   document.getElementById('wizImportSelected')?.addEventListener('click', async () => {
     const ids = wizSelected();

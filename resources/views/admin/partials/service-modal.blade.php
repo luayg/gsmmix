@@ -378,7 +378,7 @@
     }).join('');
   }
 
-  // ✅ (مهم) بعد إنشاء الخدمة: عطّل زر Clone لنفس Remote ID فوراً
+  // ✅ بعد إنشاء الخدمة: اجعل زر الصف (Clone/Add) يصبح Add فاتح اللون ومقفول
   function markCloneAsAdded(remoteId){
     const rid = String(remoteId || '').trim();
     if(!rid) return;
@@ -401,19 +401,24 @@
     }
     if(!row) return;
 
-    // جرّب أكثر من شكل للزر
     const btn =
       row.querySelector('.clone-btn') ||
       row.querySelector('[data-create-service]') ||
-      row.querySelector('button.btn.btn-success') ||
       row.querySelector('button');
 
     if(btn){
       btn.disabled = true;
-      btn.classList.remove('btn-success');
-      btn.classList.add('btn-secondary');
-      btn.textContent = 'Added ✅';
-      // إزالة الداتا لتجنب إعادة الفتح
+
+      // ✅ نظّف الألوان السابقة
+      btn.classList.remove(
+        'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary',
+        'btn-light','border-success','text-success','btn-outline-success','btn-outline-primary'
+      );
+
+      // ✅ Add + لون فاتح
+      btn.classList.add('btn-outline-primary');
+      btn.textContent = 'Add';
+
       btn.removeAttribute('data-create-service');
     }
   }
@@ -507,24 +512,52 @@
     ensureApiUI(body);
     body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
 
+    // ✅ تحميل المزودين
     try{ await loadApiProviders(body); }catch(e){}
 
     const apiProviderSel = body.querySelector('#apiProviderSelect');
     const apiServiceSel  = body.querySelector('#apiServiceSelect');
 
+    // ✅ FIX: أثناء Clone — اجعل اسم/ID المزوّد يظهر دائمًا في API connection
     if (isClone && apiProviderSel) {
-      apiProviderSel.value = cloneData.providerId;
-      try { await loadProviderServices(body, cloneData.providerId, cloneData.serviceType); } catch(e) {}
+      const pid = String(cloneData.providerId || '').trim();
+
+      // لو المزوّد غير موجود في options (أو فشل تحميلها) أضفه يدويًا ليظهر اسمه
+      if (pid && !apiProviderSel.querySelector(`option[value="${pid.replace(/"/g,'\\"')}"]`)) {
+        const opt = document.createElement('option');
+        opt.value = pid;
+        opt.textContent = cloneData.providerName || ('Provider #' + pid);
+        apiProviderSel.appendChild(opt);
+      }
+
+      apiProviderSel.value = pid;
+
+      // لو Select2 موجود
+      if (window.jQuery && window.jQuery.fn?.select2 && window.jQuery(apiProviderSel).data('select2')) {
+        window.jQuery(apiProviderSel).val(pid).trigger('change.select2');
+      } else {
+        apiProviderSel.dispatchEvent(new Event('change'));
+      }
+
+      // اقفل الاختيار لأننا في وضع Clone
+      apiProviderSel.disabled = true;
+
+      // حمّل الخدمات واختر نفس remote id
+      try { await loadProviderServices(body, pid, cloneData.serviceType); } catch(e) {}
+
       if (apiServiceSel) {
-        const opt = Array.from(apiServiceSel.options).find(o => String(o.value) === String(cloneData.remoteId));
-        if (opt) {
-          apiServiceSel.value = opt.value;
+        const opt2 = Array.from(apiServiceSel.options).find(o => String(o.value) === String(cloneData.remoteId));
+        if (opt2) {
+          apiServiceSel.value = opt2.value;
           apiServiceSel.dispatchEvent(new Event('change'));
         }
       }
     }
 
     apiProviderSel?.addEventListener('change', async ()=>{
+      // إذا كان مقفول (Clone) لا تعيد تحميل شيء
+      if (apiProviderSel.disabled) return;
+
       const pid = apiProviderSel.value;
       if(!pid){
         apiServiceSel.innerHTML = `<option value="">Select service...</option>`;
@@ -565,7 +598,7 @@
     bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
   });
 
-  // ✅ هنا التعديل النهائي: لا redirect + تحديث زر clone + refresh سريع للخلفية
+  // ✅ لا redirect + تحديث زر clone/add + refresh سريع للخلفية
   document.addEventListener('submit', async (ev)=>{
     const form = ev.target;
     if(!form || !form.matches('#serviceModal form')) return;
@@ -601,7 +634,7 @@
       }
 
       if(res.ok){
-        // ✅ (1) عطّل زر Clone لنفس Remote ID فوراً
+        // ✅ (1) حدّث زر الصف لنفس Remote ID فوراً
         const rid = form.querySelector('[name="remote_id"]')?.value;
         markCloneAsAdded(rid);
 
