@@ -224,6 +224,7 @@
                 class="form-control"
                 data-price
                 data-auto-price="1"
+                name="group_prices[${g.id}][price]"
                 value="${initialServicePrice.toFixed(4)}">
               <span class="input-group-text">Credits</span>
             </div>
@@ -239,9 +240,11 @@
                 type="number" step="0.0001"
                 class="form-control"
                 data-discount
+                name="group_prices[${g.id}][discount]"
                 value="0.0000">
               <select class="form-select" style="max-width:110px"
-                data-discount-type>
+                data-discount-type
+                name="group_prices[${g.id}][discount_type]">
                 <option value="1" selected>Credits</option>
                 <option value="2">Percent</option>
               </select>
@@ -375,7 +378,6 @@
     }).join('');
   }
 
-  // ✅ بعد إنشاء الخدمة: اجعل زر الصف (Clone/Add) يصبح Add فاتح اللون ومقفول
   function markCloneAsAdded(remoteId){
     const rid = String(remoteId || '').trim();
     if(!rid) return;
@@ -418,112 +420,50 @@
     }
   }
 
-  // ✅ FIX: جهّز payload مطابق للـ backend (BaseServiceController)
-  function prepareBackendPayload(form){
-    const ensureHidden = (name, value) => {
-      let el = form.querySelector(`[name="${name}"]`);
-      if (!el) {
-        el = document.createElement('input');
-        el.type = 'hidden';
-        el.name = name;
-        form.appendChild(el);
+  // ✅ FIX VALIDATION: املأ name_en + main_type (حتى لو موجودين أكثر من مرة)
+  function ensureRequiredFields(form){
+    const setOrCreateAll = (name, value) => {
+      const v = clean(value);
+      const els = Array.from(form.querySelectorAll(`[name="${name}"]`));
+      if (els.length) {
+        els.forEach(el => {
+          if (!clean(el.value)) el.value = v;
+        });
+        return;
       }
-      el.value = clean(value);
-      return el;
+      const el = document.createElement('input');
+      el.type = 'hidden';
+      el.name = name;
+      el.value = v;
+      form.appendChild(el);
     };
 
-    // 1) normalize source (some modals send strings)
-    const sourceEl = form.querySelector('[name="source"]');
-    if (sourceEl) {
-      const map = { manual:1, api:2, supplier:3, local:4, "1":1, "2":2, "3":3, "4":4 };
-      const v = clean(sourceEl.value);
-      if (map[v] !== undefined) sourceEl.value = String(map[v]);
-      ensureHidden('source', sourceEl.value);
-    }
+    // name_en = name (fallback)
+    const nameVal =
+      clean(form.querySelector('[name="name_en"]')?.value) ||
+      clean(form.querySelector('[name="name"]')?.value) ||
+      clean(form.querySelector('#apiServiceSelect')?.selectedOptions?.[0]?.dataset?.name) ||
+      '';
 
-    // 2) normalize profit_type (some modals send credits/percent)
-    const ptEl = form.querySelector('[name="profit_type"]');
-    if (ptEl) {
-      const map = { credits:1, percent:2, "1":1, "2":2 };
-      const v = clean(ptEl.value);
-      if (map[v] !== undefined) ptEl.value = String(map[v]);
-      ensureHidden('profit_type', ptEl.value);
-    }
+    setOrCreateAll('name_en', nameVal);
 
-    // 3) ensure name is not empty (fallback from selected API service)
-    const nameEl = form.querySelector('[name="name"]');
-    let nameVal = clean(nameEl?.value);
-    if (!nameVal) {
-      const apiOpt = form.querySelector('#apiServiceSelect option:checked');
-      const fromOpt = clean(apiOpt?.dataset?.name || apiOpt?.textContent || '');
-      if (fromOpt) {
-        const maybe = fromOpt.split('—')[0].trim();
-        if (nameEl) nameEl.value = maybe;
-        nameVal = clean(maybe);
-      }
-    }
+    // main_type: من الموجود أو اعط default حسب type
+    const typeVal = clean(form.querySelector('[name="type"]')?.value || '');
+    const defaultMain =
+      (typeVal === 'imei')   ? 'imei' :
+      (typeVal === 'file')   ? 'file' :
+      (typeVal === 'server') ? 'text' : 'text';
 
-    // 4) required backend fields
-    ensureHidden('name_en', nameVal);             // required
-    ensureHidden('time_en', clean(form.querySelector('[name="time"]')?.value || ''));
-    ensureHidden('info_en', clean(form.querySelector('#infoHidden')?.value || form.querySelector('[name="info"]')?.value || ''));
+    const mainVal =
+      clean(form.querySelector('[name="main_type"]')?.value) ||
+      clean(form.querySelector('[name="main_field_type"]')?.value) ||
+      defaultMain;
 
-    // main field mapping
-    const mainType = clean(
-      form.querySelector('[name="main_field_type"]')?.value ||
-      form.querySelector('[name="main_type"]')?.value ||
-      ''
-    ) || clean(form.querySelector('[name="type"]')?.value || 'imei');
+    setOrCreateAll('main_type', mainVal);
 
-    ensureHidden('main_type', mainType);          // required
-
-    ensureHidden('main_label', clean(
-      form.querySelector('[name="main_field_label"]')?.value ||
-      form.querySelector('[name="main_label"]')?.value ||
-      ''
-    ));
-
-    const allowed = clean(
-      form.querySelector('[name="allowed_characters"]')?.value ||
-      form.querySelector('[name="allowed"]')?.value ||
-      ''
-    );
-    ensureHidden('allowed', allowed);
-
-    const minQty = clean(
-      form.querySelector('[name="min"]')?.value ||
-      form.querySelector('[name="min_qty"]')?.value ||
-      ''
-    );
-    if (minQty !== '') ensureHidden('min_qty', minQty);
-
-    const maxQty = clean(
-      form.querySelector('[name="max"]')?.value ||
-      form.querySelector('[name="max_qty"]')?.value ||
-      ''
-    );
-    if (maxQty !== '') ensureHidden('max_qty', maxQty);
-
-    // 5) meta mapping (modal names -> backend names)
-    ensureHidden('after_head_open',  clean(form.querySelector('[name="meta_after_head"]')?.value || ''));
-    ensureHidden('before_head_close',clean(form.querySelector('[name="meta_before_head"]')?.value || ''));
-    ensureHidden('after_body_open',  clean(form.querySelector('[name="meta_after_body"]')?.value || ''));
-    ensureHidden('before_body_close',clean(form.querySelector('[name="meta_before_body"]')?.value || ''));
-
-    // 6) groups pricing -> group_prices_json (backend expects JSON string)
-    const gpWrap = form.querySelector('#groupsPricingWrap');
-    if (gpWrap) {
-      const rows = [];
-      gpWrap.querySelectorAll('.pricing-row').forEach(row=>{
-        const groupId = Number(row.dataset.groupId || 0);
-        if (!groupId) return;
-        const price = Number(row.querySelector('[data-price]')?.value || 0);
-        const discount = Number(row.querySelector('[data-discount]')?.value || 0);
-        const discount_type = Number(row.querySelector('[data-discount-type]')?.value || 1);
-        rows.push({ group_id: groupId, price, discount, discount_type });
-      });
-      ensureHidden('group_prices_json', JSON.stringify(rows));
-    }
+    // احتياط: أحياناً كنترولرز أخرى تتوقع name/time/info بشكل مختلف
+    // لا نضر هنا، فقط نضمن type موجود
+    if (typeVal) setOrCreateAll('type', typeVal);
   }
 
   document.addEventListener('click', async (e)=>{
@@ -583,21 +523,17 @@
 
     document.getElementById('badgeType').innerText = `Type: ${cloneData.serviceType.toUpperCase()}`;
 
-    body.querySelector('[name="supplier_id"]') && (body.querySelector('[name="supplier_id"]').value = isClone ? cloneData.providerId : '');
-    body.querySelector('[name="remote_id"]')   && (body.querySelector('[name="remote_id"]').value   = isClone ? cloneData.remoteId : '');
-    body.querySelector('[name="group_name"]')  && (body.querySelector('[name="group_name"]').value  = isClone ? cloneData.groupName : '');
+    body.querySelector('[name="supplier_id"]').value = isClone ? cloneData.providerId : '';
+    body.querySelector('[name="remote_id"]').value   = isClone ? cloneData.remoteId : '';
+    body.querySelector('[name="group_name"]').value  = isClone ? cloneData.groupName : '';
+    body.querySelector('[name="name"]').value        = cloneData.name;
+    body.querySelector('[name="time"]').value        = cloneData.time || '';
+    body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
+    body.querySelector('[name="profit"]').value      = '0.0000';
 
-    const nameEl = body.querySelector('[name="name"]');
-    if (nameEl) nameEl.value = cloneData.name;
-
-    body.querySelector('[name="time"]')  && (body.querySelector('[name="time"]').value  = cloneData.time || '');
-    body.querySelector('[name="cost"]')  && (body.querySelector('[name="cost"]').value  = cloneData.credit.toFixed(4));
-    body.querySelector('[name="profit"]')&& (body.querySelector('[name="profit"]').value= '0.0000');
-
-    body.querySelector('[name="source"]')&& (body.querySelector('[name="source"]').value = isClone ? 2 : 1);
-    body.querySelector('[name="type"]')  && (body.querySelector('[name="type"]').value   = cloneData.serviceType);
-
-    body.querySelector('[name="alias"]') && (body.querySelector('[name="alias"]').value  = slugify(cloneData.name || ''));
+    body.querySelector('[name="source"]').value      = isClone ? 2 : 1;
+    body.querySelector('[name="type"]').value        = cloneData.serviceType;
+    body.querySelector('[name="alias"]').value       = slugify(cloneData.name || '');
 
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
@@ -635,6 +571,13 @@
       }
 
       apiProviderSel.value = pid;
+
+      if (window.jQuery && window.jQuery.fn?.select2 && window.jQuery(apiProviderSel).data('select2')) {
+        window.jQuery(apiProviderSel).val(pid).trigger('change.select2');
+      } else {
+        apiProviderSel.dispatchEvent(new Event('change'));
+      }
+
       apiProviderSel.disabled = true;
 
       try { await loadProviderServices(body, pid, cloneData.serviceType); } catch(e) {}
@@ -663,25 +606,31 @@
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
 
-      body.querySelector('[name="supplier_id"]') && (body.querySelector('[name="supplier_id"]').value = apiProviderSel.value);
-      body.querySelector('[name="remote_id"]')   && (body.querySelector('[name="remote_id"]').value   = opt.value);
+      body.querySelector('[name="supplier_id"]').value = apiProviderSel.value;
+      body.querySelector('[name="remote_id"]').value   = opt.value;
 
       const name = clean(opt.dataset.name);
       const credit = Number(opt.dataset.credit || 0);
       const time = clean(opt.dataset.time);
 
       if(name){
-        body.querySelector('[name="name"]') && (body.querySelector('[name="name"]').value = name);
-        body.querySelector('[name="alias"]')&& (body.querySelector('[name="alias"]').value = slugify(name));
+        body.querySelector('[name="name"]').value = name;
+        body.querySelector('[name="alias"]').value = slugify(name);
+
+        // احتياط: لو المودال داخله name_en أصلاً
+        const ne = body.querySelector('[name="name_en"]');
+        if (ne && !clean(ne.value)) ne.value = name;
       }
-      if(time) body.querySelector('[name="time"]') && (body.querySelector('[name="time"]').value = time);
+      if(time) body.querySelector('[name="time"]').value = time;
 
       if(Number.isFinite(credit) && credit >= 0){
-        body.querySelector('[name="cost"]') && (body.querySelector('[name="cost"]').value = credit.toFixed(4));
+        body.querySelector('[name="cost"]').value = credit.toFixed(4);
         priceHelper.setCost(credit);
 
         const wrap = body.querySelector('#groupsPricingWrap');
-        wrap?.querySelectorAll('[data-price]').forEach(inp=>{ inp.dataset.autoPrice = '1'; });
+        wrap?.querySelectorAll('[data-price]').forEach(inp=>{
+          inp.dataset.autoPrice = '1';
+        });
         syncGroupPricesFromService(body);
       }
     });
@@ -695,16 +644,15 @@
 
     ev.preventDefault();
 
-    // Summernote -> hidden
-    const infoEditor = window.jQuery ? jQuery(form).find('#infoEditor') : null;
-    if (infoEditor && infoEditor.length && infoEditor.summernote) {
+    // ✅ مهم جداً: جهّز الحقول المطلوبة قبل الإرسال (حتى لو كانت مكررة في المودال)
+    ensureRequiredFields(form);
+
+    const infoEditor = jQuery(form).find('#infoEditor');
+    if (infoEditor.length && infoEditor.summernote) {
       const html = infoEditor.summernote('code');
       const hidden = form.querySelector('#infoHidden');
       if (hidden) hidden.value = html;
     }
-
-    // ✅ أهم سطر: جهّز الحقول كما يتوقعها BaseServiceController
-    prepareBackendPayload(form);
 
     const btn = form.querySelector('[type="submit"]');
     if(btn) btn.disabled = true;
