@@ -1,6 +1,15 @@
 {{-- resources/views/admin/api/providers/server_services.blade.php --}}
 @extends('layouts.admin')
 
+@php
+  // ✅ خدمات السيرفر الموجودة محلياً (لمنع إعادة الإضافة بعد refresh)
+  $existing = \App\Models\ServerService::where('supplier_id', $provider->id)
+    ->pluck('remote_id')
+    ->map(fn($v) => (string)$v)
+    ->flip()
+    ->all();
+@endphp
+
 @section('content')
 <div class="card">
   <div class="card-header">
@@ -25,30 +34,40 @@
         @forelse($groups as $groupName => $items)
           @foreach($items as $svc)
             @php
-              $remoteId = $svc->remote_id;
-              $name     = $svc->name ?? '';
+              $remoteId = (string)($svc->remote_id ?? '');
+              $name     = (string)($svc->name ?? '');
               // ✅ الصحيح: السعر مخزن في price (ليس credit)
-              $credit   = $svc->price ?? 0;
-              $time     = $svc->time ?? '';
+              $credit   = (float)($svc->price ?? 0);
+              $time     = (string)($svc->time ?? '');
+              $isAdded  = isset($existing[$remoteId]);
             @endphp
-            <tr>
+
+            <tr data-remote-id="{{ $remoteId }}">
               <td>{{ $groupName }}</td>
               <td><code>{{ $remoteId }}</code></td>
               <td>{{ $name }}</td>
-              <td>{{ $credit }}</td>
+              <td>{{ number_format($credit, 4) }}</td>
               <td>{{ $time }}</td>
               <td class="text-end">
-                <button type="button" class="btn btn-success btn-sm"
-                  data-create-service
-                  data-service-type="server"
-                  data-provider-id="{{ $provider->id }}"
-                  data-remote-id="{{ $remoteId }}"
-                  data-group-name="{{ $groupName }}"
-                  data-name="{{ $name }}"
-                  data-credit="{{ $credit }}"
-                  data-time="{{ $time }}">
-                  Clone
-                </button>
+                @if($isAdded)
+                  {{-- ✅ نفس الشكل بعد الإضافة: زر فاتح ومقفول --}}
+                  <button type="button" class="btn btn-outline-primary btn-sm" disabled>
+                    Added ✅
+                  </button>
+                @else
+                  <button type="button" class="btn btn-success btn-sm"
+                    data-create-service
+                    data-service-type="server"
+                    data-provider-id="{{ $provider->id }}"
+                    data-provider-name="{{ $provider->name }}"
+                    data-remote-id="{{ $remoteId }}"
+                    data-group-name="{{ $groupName }}"
+                    data-name="{{ e($name) }}"
+                    data-credit="{{ number_format($credit, 4, '.', '') }}"
+                    data-time="{{ e($time) }}">
+                    Clone
+                  </button>
+                @endif
               </td>
             </tr>
           @endforeach
