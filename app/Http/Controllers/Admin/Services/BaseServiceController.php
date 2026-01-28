@@ -62,22 +62,109 @@ abstract class BaseServiceController extends Controller
         return view("admin.services.{$this->viewPrefix}.form", $this->viewData($row));
     }
 
+    /**
+     * ✅ تطبيع أسماء الحقول القادمة من مودالات/فورمات مختلفة
+     * - يحل مشكلة: name_en required
+     * - ويجهز supplier_id لمنع التكرار وإظهار Added بعد الريفريش
+     */
+    protected function normalizeRequest(Request $r): void
+    {
+        // تنظيف "undefined" و"" لبعض الحقول الشائعة
+        foreach ([
+            'supplier_id', 'remote_id', 'source',
+            'name_en', 'time_en', 'info_en',
+            'name', 'time', 'info',
+            'main_type', 'main_field_type',
+            'main_label', 'main_field_label',
+            'allowed', 'allowed_characters',
+            'min_qty', 'max_qty', 'min', 'max',
+            'api_provider_id', 'api_service_remote_id',
+        ] as $k) {
+            $v = $r->input($k);
+            if ($v === 'undefined' || $v === '') {
+                $r->merge([$k => null]);
+            }
+        }
+
+        // name_en fallback من name
+        if (!$r->filled('name_en') && $r->filled('name')) {
+            $r->merge(['name_en' => $r->input('name')]);
+        }
+
+        // time_en fallback من time
+        if (!$r->filled('time_en') && $r->filled('time')) {
+            $r->merge(['time_en' => $r->input('time')]);
+        }
+
+        // info_en fallback من info
+        if (!$r->filled('info_en') && $r->filled('info')) {
+            $r->merge(['info_en' => $r->input('info')]);
+        }
+
+        // main_type fallback من main_field_type
+        if (!$r->filled('main_type') && $r->filled('main_field_type')) {
+            $r->merge(['main_type' => $r->input('main_field_type')]);
+        }
+
+        // main_label fallback من main_field_label
+        if (!$r->filled('main_label') && $r->filled('main_field_label')) {
+            $r->merge(['main_label' => $r->input('main_field_label')]);
+        }
+
+        // allowed fallback من allowed_characters
+        if (!$r->filled('allowed') && $r->filled('allowed_characters')) {
+            $r->merge(['allowed' => $r->input('allowed_characters')]);
+        }
+
+        // min_qty/max_qty fallback من min/max
+        if (!$r->filled('min_qty') && $r->filled('min')) {
+            $r->merge(['min_qty' => $r->input('min')]);
+        }
+        if (!$r->filled('max_qty') && $r->filled('max')) {
+            $r->merge(['max_qty' => $r->input('max')]);
+        }
+
+        // ✅ API selection fallback (لو UI يبعت api_provider_id / api_service_remote_id)
+        if (!$r->filled('supplier_id') && $r->filled('api_provider_id')) {
+            $r->merge(['supplier_id' => (int)$r->input('api_provider_id')]);
+        }
+        if (!$r->filled('remote_id') && $r->filled('api_service_remote_id')) {
+            $r->merge(['remote_id' => (int)$r->input('api_service_remote_id')]);
+        }
+    }
+
     public function store(Request $r)
     {
+        $this->normalizeRequest($r);
         $data = $this->validated($r);
 
-        /** @var Model $row */
-        $row = app($this->model)->create($data);
+        /** @var Model $m */
+        $m = app($this->model);
+
+        // ✅ منع تكرار نفس الخدمة عند نفس المزود:
+        // إذا موجود supplier_id + remote_id نعمل Update بدل Create
+        if (!empty($data['supplier_id']) && !empty($data['remote_id'])) {
+            $row = $m->newQuery()->updateOrCreate(
+                [
+                    'supplier_id' => (int)$data['supplier_id'],
+                    'remote_id'   => (int)$data['remote_id'],
+                ],
+                $data
+            );
+        } else {
+            /** @var Model $row */
+            $row = $m->newQuery()->create($data);
+        }
 
         // ✅ Save group prices (if provided from modal Additional tab)
-        $this->saveGroupPricesFromJson($row->id, $r->input('group_prices_json'));
+        $this->saveGroupPricesFromJson((int)$row->id, $r->input('group_prices_json'));
 
         // ✅ FIX: if AJAX, return JSON (no redirect -> no missing view)
         if ($r->ajax() || $r->wantsJson()) {
             return response()->json([
                 'ok'      => true,
                 'message' => 'Created',
-                'id'      => $row->id,
+                'id'      => (int)$row->id,
             ]);
         }
 
@@ -92,6 +179,8 @@ abstract class BaseServiceController extends Controller
 
     public function update(Request $r, $id)
     {
+        $this->normalizeRequest($r);
+
         /** @var Model $row */
         $row = app($this->model)->findOrFail($id);
 
@@ -99,14 +188,14 @@ abstract class BaseServiceController extends Controller
         $row->update($data);
 
         // ✅ Save group prices (if provided)
-        $this->saveGroupPricesFromJson($row->id, $r->input('group_prices_json'));
+        $this->saveGroupPricesFromJson((int)$row->id, $r->input('group_prices_json'));
 
         // ✅ FIX: if AJAX, return JSON
         if ($r->ajax() || $r->wantsJson()) {
             return response()->json([
                 'ok'      => true,
                 'message' => 'Saved',
-                'id'      => $row->id,
+                'id'      => (int)$row->id,
             ]);
         }
 
@@ -118,8 +207,6 @@ abstract class BaseServiceController extends Controller
         $row = app($this->model)->findOrFail($id);
         $row->delete();
 
-        // ✅ optional: AJAX delete response
-        // (لا يضر تركها back أيضاً)
         return back()->with('ok', 'Deleted');
     }
 
@@ -173,6 +260,7 @@ abstract class BaseServiceController extends Controller
 
     protected function validated(Request $r): array
     {
+        // مهم: normalizeRequest يتم استدعاؤها قبل validated في store/update
         $v = $r->validate([
             'alias'           => 'nullable|string|max:255',
             'group_id'        => 'nullable|integer|exists:service_groups,id',
@@ -187,8 +275,12 @@ abstract class BaseServiceController extends Controller
             'cost'            => 'nullable|numeric',
             'profit'          => 'nullable|numeric',
             'profit_type'     => 'nullable|integer',
+
+            // ✅ API/provider mapping
             'source'          => 'nullable|integer',
             'remote_id'       => 'nullable|integer',
+            'supplier_id'     => 'nullable|integer',
+
             'info_en'         => 'nullable|string',
             'name_en'         => 'required|string',
             'time_en'         => 'nullable|string',
@@ -252,16 +344,23 @@ abstract class BaseServiceController extends Controller
             'alias'          => $v['alias'] ?? null,
             'group_id'       => $v['group_id'] ?? null,
             'type'           => $v['type'],
+
+            // ✅ مهم جداً حتى يظهر Added بعد refresh ويمنع التكرار
+            'supplier_id'    => $v['supplier_id'] ?? null,
+
             'name'           => json_encode($name, JSON_UNESCAPED_UNICODE),
             'time'           => json_encode($time, JSON_UNESCAPED_UNICODE),
             'info'           => json_encode($info, JSON_UNESCAPED_UNICODE),
             'main_field'     => json_encode($main, JSON_UNESCAPED_UNICODE),
             'params'         => json_encode($params, JSON_UNESCAPED_UNICODE),
+
             'cost'           => $v['cost'] ?? 0,
             'profit'         => $v['profit'] ?? 0,
             'profit_type'    => $v['profit_type'] ?? 1,
+
             'source'         => $v['source'] ?? null,
             'remote_id'      => $v['remote_id'] ?? null,
+
             'active'         => (int)$r->boolean('active'),
             'allow_bulk'     => (int)$r->boolean('allow_bulk'),
             'allow_duplicates' => (int)$r->boolean('allow_duplicates'),
