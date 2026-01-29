@@ -197,6 +197,7 @@
 <script>
 (function(){
   const kind      = @json($kind);
+  const providerId = @json($provider->id);
   const importUrl = @json($importUrl);
   const csrfToken = @json(csrf_token());
 
@@ -283,36 +284,53 @@
   }
 
   function markAsAdded(remoteIds){
-  (remoteIds || []).forEach(id => {
-    const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(String(id))}"]`);
-    if (row) {
-      const btn = row.querySelector('.clone-btn');
-      if (btn) {
-        // ✅ اجعل الزر "Add" + لون فاتح
-        btn.classList.remove(
-          'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary'
-        );
-        btn.classList.add('btn-outline-primary'); // لون فاتح
+    (remoteIds || []).forEach(id => {
+      const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(String(id))}"]`);
+      if (row) {
+        const btn = row.querySelector('.clone-btn');
+        if (btn) {
+          // ✅ اجعل الزر "Add" + لون فاتح
+          btn.classList.remove(
+            'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary'
+          );
+          btn.classList.add('btn-outline-primary'); // لون فاتح
 
-        btn.innerText = 'Add';
-        btn.disabled = true;
+          btn.innerText = 'Add';
+          btn.disabled = true;
 
-        // لا تفتح مودال الإنشاء بعد الإضافة
-        btn.removeAttribute('data-create-service');
+          // لا تفتح مودال الإنشاء بعد الإضافة
+          btn.removeAttribute('data-create-service');
+        }
       }
-    }
 
-    // ✅ عطل checkbox في الـ wizard أيضًا
-    document.querySelectorAll('.wiz-check').forEach(cb => {
-      if (String(cb.value) === String(id)) {
-        cb.checked = false;
-        cb.disabled = true;
-      }
+      // ✅ عطل checkbox في الـ wizard أيضًا
+      document.querySelectorAll('.wiz-check').forEach(cb => {
+        if (String(cb.value) === String(id)) {
+          cb.checked = false;
+          cb.disabled = true;
+        }
+      });
     });
-  });
 
-  updateCount();
-}
+    updateCount();
+  }
+
+  // ✅ NEW: خلي markAsAdded متاح عالميًا (اختياري)
+  window.gsmmixMarkRemoteAdded = window.gsmmixMarkRemoteAdded || {};
+  window.gsmmixMarkRemoteAdded[`${providerId}:${kind}`] = markAsAdded;
+
+  // ✅ NEW: استمع لحدث “تم إنشاء خدمة بالـ Clone” وحدث الـ wizard فورًا بدون خروج/دخول
+  window.addEventListener('gsmmix:service-created', (ev) => {
+    const d = ev?.detail || {};
+    if (String(d.provider_id) !== String(providerId)) return;
+    if (String(d.kind) !== String(kind)) return;
+    if (!d.remote_id) return;
+
+    markAsAdded([d.remote_id]);
+
+    // لو كان الـ wizard مفتوح وكنت محدد checkbox، نحدّث العداد فورًا
+    updateCount();
+  });
 
   document.getElementById('wizImportSelected')?.addEventListener('click', async () => {
     const ids = wizSelected();
@@ -359,6 +377,7 @@
 
 })();
 </script>
+
 {{-- ✅ Template required for Service Modal Clone --}}
 <template id="serviceCreateTpl">
   @if($kind === 'imei')

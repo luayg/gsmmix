@@ -378,6 +378,7 @@
     }).join('');
   }
 
+  // ✅ بعد إنشاء الخدمة: اجعل زر الصف (Clone/Add) يصبح Add فاتح اللون ومقفول
   function markCloneAsAdded(remoteId){
     const rid = String(remoteId || '').trim();
     if(!rid) return;
@@ -408,11 +409,13 @@
     if(btn){
       btn.disabled = true;
 
+      // ✅ نظّف الألوان السابقة
       btn.classList.remove(
         'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary',
         'btn-light','border-success','text-success','btn-outline-success','btn-outline-primary'
       );
 
+      // ✅ Add + لون فاتح
       btn.classList.add('btn-outline-primary');
       btn.textContent = 'Add';
 
@@ -420,50 +423,34 @@
     }
   }
 
-  // ✅ FIX VALIDATION: املأ name_en + main_type (حتى لو موجودين أكثر من مرة)
+  // ✅ FIX VALIDATION: تأكد من وجود main_type + name_en قبل الإرسال
   function ensureRequiredFields(form){
-    const setOrCreateAll = (name, value) => {
-      const v = clean(value);
-      const els = Array.from(form.querySelectorAll(`[name="${name}"]`));
-      if (els.length) {
-        els.forEach(el => {
-          if (!clean(el.value)) el.value = v;
-        });
-        return;
+    const ensureHidden = (name, value) => {
+      let el = form.querySelector(`[name="${name}"]`);
+      if (!el) {
+        el = document.createElement('input');
+        el.type = 'hidden';
+        el.name = name;
+        form.appendChild(el);
       }
-      const el = document.createElement('input');
-      el.type = 'hidden';
-      el.name = name;
-      el.value = v;
-      form.appendChild(el);
+      if (el.value === '' || el.value === null || el.value === undefined) {
+        el.value = (value ?? '');
+      }
+      return el;
     };
 
-    // name_en = name (fallback)
-    const nameVal =
-      clean(form.querySelector('[name="name_en"]')?.value) ||
-      clean(form.querySelector('[name="name"]')?.value) ||
-      clean(form.querySelector('#apiServiceSelect')?.selectedOptions?.[0]?.dataset?.name) ||
-      '';
+    const nameVal = clean(form.querySelector('[name="name"]')?.value || '');
+    ensureHidden('name_en', nameVal);
 
-    setOrCreateAll('name_en', nameVal);
+    const mainFieldVal = clean(
+      form.querySelector('[name="main_type"]')?.value ||
+      form.querySelector('[name="main_field_type"]')?.value ||
+      ''
+    );
+    ensureHidden('main_type', mainFieldVal);
 
-    // main_type: من الموجود أو اعط default حسب type
     const typeVal = clean(form.querySelector('[name="type"]')?.value || '');
-    const defaultMain =
-      (typeVal === 'imei')   ? 'imei' :
-      (typeVal === 'file')   ? 'file' :
-      (typeVal === 'server') ? 'text' : 'text';
-
-    const mainVal =
-      clean(form.querySelector('[name="main_type"]')?.value) ||
-      clean(form.querySelector('[name="main_field_type"]')?.value) ||
-      defaultMain;
-
-    setOrCreateAll('main_type', mainVal);
-
-    // احتياط: أحياناً كنترولرز أخرى تتوقع name/time/info بشكل مختلف
-    // لا نضر هنا، فقط نضمن type موجود
-    if (typeVal) setOrCreateAll('type', typeVal);
+    if (typeVal) ensureHidden('type', typeVal);
   }
 
   document.addEventListener('click', async (e)=>{
@@ -616,10 +603,6 @@
       if(name){
         body.querySelector('[name="name"]').value = name;
         body.querySelector('[name="alias"]').value = slugify(name);
-
-        // احتياط: لو المودال داخله name_en أصلاً
-        const ne = body.querySelector('[name="name_en"]');
-        if (ne && !clean(ne.value)) ne.value = name;
       }
       if(time) body.querySelector('[name="time"]').value = time;
 
@@ -644,7 +627,7 @@
 
     ev.preventDefault();
 
-    // ✅ مهم جداً: جهّز الحقول المطلوبة قبل الإرسال (حتى لو كانت مكررة في المودال)
+    // ✅ هنا الإصلاح: جهّز الحقول المطلوبة قبل الإرسال
     ensureRequiredFields(form);
 
     const infoEditor = jQuery(form).find('#infoEditor');
@@ -678,6 +661,15 @@
       if(res.ok){
         const rid = form.querySelector('[name="remote_id"]')?.value;
         markCloneAsAdded(rid);
+
+        // ✅ NEW: بلّغ Import Wizard فورًا أن هذه الخدمة أصبحت Added (بدون خروج/دخول)
+        const provider_id = form.querySelector('[name="supplier_id"]')?.value || '';
+        const kind = form.querySelector('[name="type"]')?.value || '';
+        if (rid && provider_id && kind) {
+          window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
+            detail: { provider_id, kind, remote_id: rid }
+          }));
+        }
 
         bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
 
