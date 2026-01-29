@@ -37,8 +37,7 @@ abstract class BaseServiceController extends Controller
         }
 
         if ($r->filled('api_provider_id')) {
-            // ملاحظة: هذا الفلتر كان عندك على source، لكن المنطقي للمزود هو supplier_id
-            // نخليه متسامح: لو جدولك يستخدم supplier_id فعلياً
+            // فلتر مزود API على supplier_id
             $q->where('supplier_id', (int)$r->api_provider_id);
         }
 
@@ -68,7 +67,7 @@ abstract class BaseServiceController extends Controller
     {
         $data = $this->validated($r);
 
-        // ✅ منع تكرار الخدمة عند Clone (وأي submit) بنفس (supplier_id + remote_id)
+        // ✅ منع التكرار بنفس (supplier_id + remote_id)
         $supplierId = (int)($data['supplier_id'] ?? 0);
         $remoteId   = (string)($data['remote_id'] ?? '');
 
@@ -81,7 +80,6 @@ abstract class BaseServiceController extends Controller
                 ->first();
 
             if ($existing) {
-                // ✅ لو AJAX: رجّع ok + already (بدون إنشاء جديد)
                 if ($r->ajax() || $r->wantsJson()) {
                     return response()->json([
                         'ok'      => true,
@@ -91,7 +89,6 @@ abstract class BaseServiceController extends Controller
                     ]);
                 }
 
-                // لو غير AJAX: تحويل للتعديل بدل إنشاء تكرار
                 return redirect()->route("{$this->routePrefix}.edit", $existing)->with('ok', 'Already exists');
             }
         }
@@ -99,10 +96,9 @@ abstract class BaseServiceController extends Controller
         /** @var Model $row */
         $row = app($this->model)->create($data);
 
-        // ✅ Save group prices (if provided from modal Additional tab)
-        $this->saveGroupPricesFromJson($row->id, $r->input('group_prices_json'));
+        // ✅ Save group prices (if provided)
+        $this->saveGroupPricesFromJson((int)$row->id, $r->input('group_prices_json'));
 
-        // ✅ if AJAX, return JSON
         if ($r->ajax() || $r->wantsJson()) {
             return response()->json([
                 'ok'      => true,
@@ -128,10 +124,8 @@ abstract class BaseServiceController extends Controller
         $data = $this->validated($r);
         $row->update($data);
 
-        // ✅ Save group prices (if provided)
-        $this->saveGroupPricesFromJson($row->id, $r->input('group_prices_json'));
+        $this->saveGroupPricesFromJson((int)$row->id, $r->input('group_prices_json'));
 
-        // ✅ if AJAX, return JSON
         if ($r->ajax() || $r->wantsJson()) {
             return response()->json([
                 'ok'      => true,
@@ -201,6 +195,17 @@ abstract class BaseServiceController extends Controller
 
     protected function validated(Request $r): array
     {
+        // ==========================================================
+        // ✅ FIX دائم: لو الواجهة أرسلت name/time/info بدل *_en
+        // أو main_field_type بدل main_type
+        // ==========================================================
+        $r->merge([
+            'name_en'   => $r->input('name_en') ?: $r->input('name'),
+            'time_en'   => $r->input('time_en') ?: $r->input('time'),
+            'info_en'   => $r->input('info_en') ?: $r->input('info'),
+            'main_type' => $r->input('main_type') ?: $r->input('main_field_type'),
+        ]);
+
         $v = $r->validate([
             'alias'           => 'nullable|string|max:255',
             'group_id'        => 'nullable|integer|exists:service_groups,id',
@@ -216,13 +221,10 @@ abstract class BaseServiceController extends Controller
             'profit'          => 'nullable|numeric',
             'profit_type'     => 'nullable|integer',
 
-            // ✅ الربط بالمزود (مهم لمنع التكرار + إظهار Added)
-            // نقبل supplier_id أو api_provider_id (احتياط)
-            'supplier_id'     => 'nullable|integer|exists:api_providers,id',
-            'api_provider_id' => 'nullable|integer|exists:api_providers,id',
-
+            // ✅ مزود + remote id (تأتي من المودال)
+            'supplier_id'     => 'nullable|integer',
             'source'          => 'nullable|integer',
-            'remote_id'       => 'nullable|string|max:100',
+            'remote_id'       => 'nullable',
 
             'info_en'         => 'nullable|string',
             'name_en'         => 'required|string',
@@ -237,13 +239,13 @@ abstract class BaseServiceController extends Controller
             'before_body_close' => 'nullable|string',
 
             // Toggles
-            'active'             => 'sometimes|boolean',
-            'allow_bulk'         => 'sometimes|boolean',
-            'allow_duplicates'   => 'sometimes|boolean',
-            'reply_with_latest'  => 'sometimes|boolean',
-            'allow_submit_verify'=> 'sometimes|boolean',
-            'allow_cancel'       => 'sometimes|boolean',
-            'reply_expiration'   => 'sometimes|boolean',
+            'active'              => 'sometimes|boolean',
+            'allow_bulk'          => 'sometimes|boolean',
+            'allow_duplicates'    => 'sometimes|boolean',
+            'reply_with_latest'   => 'sometimes|boolean',
+            'allow_submit_verify' => 'sometimes|boolean',
+            'allow_cancel'        => 'sometimes|boolean',
+            'reply_expiration'    => 'sometimes|boolean',
 
             // Additional tab
             'custom_fields_json' => 'nullable|string',
@@ -283,33 +285,26 @@ abstract class BaseServiceController extends Controller
         }
         $params['custom_fields'] = $customFields;
 
-        // ✅ خذ supplier_id من أي اسم وصل
-        $supplierId = $v['supplier_id'] ?? ($v['api_provider_id'] ?? null);
-
         return [
-            'alias'          => $v['alias'] ?? null,
-            'group_id'       => $v['group_id'] ?? null,
-            'type'           => $v['type'],
-            'name'           => json_encode($name, JSON_UNESCAPED_UNICODE),
-            'time'           => json_encode($time, JSON_UNESCAPED_UNICODE),
-            'info'           => json_encode($info, JSON_UNESCAPED_UNICODE),
-            'main_field'     => json_encode($main, JSON_UNESCAPED_UNICODE),
-            'params'         => json_encode($params, JSON_UNESCAPED_UNICODE),
+            'alias'            => $v['alias'] ?? null,
+            'group_id'         => $v['group_id'] ?? null,
+            'type'             => $v['type'],
+            'name'             => json_encode($name, JSON_UNESCAPED_UNICODE),
+            'time'             => json_encode($time, JSON_UNESCAPED_UNICODE),
+            'info'             => json_encode($info, JSON_UNESCAPED_UNICODE),
+            'main_field'       => json_encode($main, JSON_UNESCAPED_UNICODE),
+            'params'           => json_encode($params, JSON_UNESCAPED_UNICODE),
+            'cost'             => $v['cost'] ?? 0,
+            'profit'           => $v['profit'] ?? 0,
+            'profit_type'      => $v['profit_type'] ?? 1,
+            'source'           => $v['source'] ?? null,
+            'supplier_id'      => $v['supplier_id'] ?? null,
+            'remote_id'        => $v['remote_id'] ?? null,
 
-            'cost'           => $v['cost'] ?? 0,
-            'profit'         => $v['profit'] ?? 0,
-            'profit_type'    => $v['profit_type'] ?? 1,
-
-            'source'         => $v['source'] ?? null,
-
-            // ✅ أهم سطرين
-            'supplier_id'    => $supplierId,
-            'remote_id'      => $v['remote_id'] ?? null,
-
-            'active'         => (int)$r->boolean('active'),
-            'allow_bulk'     => (int)$r->boolean('allow_bulk'),
+            'active'           => (int)$r->boolean('active'),
+            'allow_bulk'       => (int)$r->boolean('allow_bulk'),
             'allow_duplicates' => (int)$r->boolean('allow_duplicates'),
-            'reply_with_latest' => (int)$r->boolean('reply_with_latest'),
+            'reply_with_latest'=> (int)$r->boolean('reply_with_latest'),
             'allow_report'     => (int)$r->boolean('allow_submit_verify'),
             'allow_cancel'     => (int)$r->boolean('allow_cancel'),
             'reply_expiration' => (int)$r->boolean('reply_expiration'),
