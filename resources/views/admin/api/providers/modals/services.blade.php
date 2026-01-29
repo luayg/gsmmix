@@ -31,7 +31,6 @@
       Import Services with Group
     </button>
 
-    {{-- ✅ X close أعلى اليمين --}}
     <button type="button" class="btn-close btn-close-white ms-1" data-bs-dismiss="modal" aria-label="Close"></button>
   </div>
 </div>
@@ -49,6 +48,7 @@
           <th class="text-end" style="width:130px">Action</th>
         </tr>
       </thead>
+
       <tbody>
         @forelse($services as $s)
           @php
@@ -74,7 +74,6 @@
               @if($isAdded)
                 <button type="button" class="btn btn-secondary btn-sm" disabled>Added ✅</button>
               @else
-                {{-- ✅ FIX: خلي زر Clone يستخدم data-create-service حتى يفتح مودال الإنشاء --}}
                 <button type="button"
                         class="btn btn-success btn-sm clone-btn"
                         data-create-service
@@ -99,7 +98,7 @@
   </div>
 </div>
 
-{{-- ============ Import Wizard Modal (Step) ============ --}}
+{{-- ============ Import Wizard Modal ============ --}}
 <div class="modal fade" id="importWizard" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable" style="max-width:min(1400px,96vw);">
     <div class="modal-content">
@@ -196,10 +195,10 @@
 
 <script>
 (function(){
-  const kind      = @json($kind);
+  const kind       = @json($kind);
   const providerId = @json($provider->id);
-  const importUrl = @json($importUrl);
-  const csrfToken = @json(csrf_token());
+  const importUrl  = @json($importUrl);
+  const csrfToken  = @json(csrf_token());
 
   const toastOk = (msg) => {
     if (window.showToast) window.showToast('success', msg, { title: 'Done' });
@@ -226,7 +225,18 @@
   // ===== Open wizard =====
   const wizardEl = document.getElementById('importWizard');
   const wizard = bootstrap.Modal.getOrCreateInstance(wizardEl);
-  document.getElementById('btnOpenImportWizard')?.addEventListener('click', () => wizard.show());
+
+  document.getElementById('btnOpenImportWizard')?.addEventListener('click', () => {
+    // ✅ قبل الفتح: طبّق الذاكرة (لو صار Clone قبل فتح الـ wizard)
+    applyAddedFromMemory();
+    wizard.show();
+  });
+
+  // ✅ أيضاً عند ظهور المودال فعلاً (احتياط لو انفتح بطرق مختلفة)
+  wizardEl?.addEventListener('shown.bs.modal', () => {
+    applyAddedFromMemory();
+    updateCount();
+  });
 
   // ===== Wizard helpers =====
   const wizSearch = document.getElementById('wizSearch');
@@ -289,16 +299,10 @@
       if (row) {
         const btn = row.querySelector('.clone-btn');
         if (btn) {
-          // ✅ اجعل الزر "Add" + لون فاتح
-          btn.classList.remove(
-            'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary'
-          );
-          btn.classList.add('btn-outline-primary'); // لون فاتح
-
-          btn.innerText = 'Add';
+          btn.classList.remove('btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary');
+          btn.classList.add('btn-outline-primary');
+          btn.innerText = 'Added ✅';
           btn.disabled = true;
-
-          // لا تفتح مودال الإنشاء بعد الإضافة
           btn.removeAttribute('data-create-service');
         }
       }
@@ -315,20 +319,36 @@
     updateCount();
   }
 
-  // ✅ NEW: خلي markAsAdded متاح عالميًا (اختياري)
+  // ✅ اجعل markAsAdded متاح عالميًا (موجود عندك)
   window.gsmmixMarkRemoteAdded = window.gsmmixMarkRemoteAdded || {};
   window.gsmmixMarkRemoteAdded[`${providerId}:${kind}`] = markAsAdded;
 
-  // ✅ NEW: استمع لحدث “تم إنشاء خدمة بالـ Clone” وحدث الـ wizard فورًا بدون خروج/دخول
+  // ==========================================================
+  // ✅ NEW: تطبيق "الذاكرة" حتى لو حدث Clone قبل فتح هذا المودال
+  // ==========================================================
+  function applyAddedFromMemory(){
+    const mem = window.__gsmmixAdded || {};
+    const prefix = `${String(providerId)}:${String(kind)}:`;
+    const ids = Object.keys(mem)
+      .filter(k => k.startsWith(prefix))
+      .map(k => k.substring(prefix.length))
+      .filter(Boolean);
+
+    if (ids.length) markAsAdded(ids);
+  }
+
+  // ✅ استمع لحدث “تم إنشاء خدمة بالـ Clone”
   window.addEventListener('gsmmix:service-created', (ev) => {
     const d = ev?.detail || {};
     if (String(d.provider_id) !== String(providerId)) return;
     if (String(d.kind) !== String(kind)) return;
     if (!d.remote_id) return;
 
-    markAsAdded([d.remote_id]);
+    // ✅ خزّن أيضاً في الذاكرة (حتى لو مودال آخر فتح لاحقاً)
+    window.__gsmmixAdded = window.__gsmmixAdded || {};
+    window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(d.remote_id)}`] = true;
 
-    // لو كان الـ wizard مفتوح وكنت محدد checkbox، نحدّث العداد فورًا
+    markAsAdded([d.remote_id]);
     updateCount();
   });
 
@@ -348,6 +368,12 @@
     });
 
     if (data?.ok) {
+      // خزّنهم في الذاكرة أيضاً
+      (data.added_remote_ids || ids).forEach(rid=>{
+        window.__gsmmixAdded = window.__gsmmixAdded || {};
+        window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(rid)}`] = true;
+      });
+
       markAsAdded(data.added_remote_ids || ids);
       toastOk(`Imported ${data.count} services successfully ✅`);
       wizard.hide();
@@ -369,16 +395,24 @@
     });
 
     if (data?.ok) {
+      (data.added_remote_ids || []).forEach(rid=>{
+        window.__gsmmixAdded = window.__gsmmixAdded || {};
+        window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(rid)}`] = true;
+      });
+
       markAsAdded(data.added_remote_ids || []);
       toastOk(`Imported ${data.count} services successfully ✅`);
       wizard.hide();
     }
   });
 
+  // ✅ تطبيق مبكر عند تحميل الملف (لو كان المودال جاء بعد clone)
+  applyAddedFromMemory();
+
 })();
 </script>
 
-{{-- ✅ Template required for Service Modal Clone --}}
+{{-- Template required for Service Modal Clone --}}
 <template id="serviceCreateTpl">
   @if($kind === 'imei')
     @include('admin.services.imei._modal_create')

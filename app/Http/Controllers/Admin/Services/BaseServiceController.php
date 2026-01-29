@@ -36,8 +36,9 @@ abstract class BaseServiceController extends Controller
             });
         }
 
-        // ✅ FIX: فلترة حسب provider الحقيقي (supplier_id) وليس source
         if ($r->filled('api_provider_id')) {
+            // ملاحظة: هذا الفلتر كان عندك على source، لكن المنطقي للمزود هو supplier_id
+            // نخليه متسامح: لو جدولك يستخدم supplier_id فعلياً
             $q->where('supplier_id', (int)$r->api_provider_id);
         }
 
@@ -65,42 +66,52 @@ abstract class BaseServiceController extends Controller
 
     public function store(Request $r)
     {
-        // ✅ مهم جداً: نفس normalizeRequest الموجودة عندك كانت تُستخدم في update فقط
-        $this->normalizeRequest($r);
-
         $data = $this->validated($r);
 
-        // ✅ منع التكرار الحقيقي: نفس (supplier_id + remote_id) = نفس خدمة المزود
-        $dup = null;
-        if (!empty($data['supplier_id']) && !empty($data['remote_id'])) {
-            $dup = app($this->model)->newQuery()
-                ->where('supplier_id', (int)$data['supplier_id'])
-                ->where('remote_id', (int)$data['remote_id'])
+        // ✅ منع تكرار الخدمة عند Clone (وأي submit) بنفس (supplier_id + remote_id)
+        $supplierId = (int)($data['supplier_id'] ?? 0);
+        $remoteId   = (string)($data['remote_id'] ?? '');
+
+        if ($supplierId > 0 && $remoteId !== '') {
+            /** @var Model $m */
+            $m = app($this->model);
+            $existing = $m->newQuery()
+                ->where('supplier_id', $supplierId)
+                ->where('remote_id', $remoteId)
                 ->first();
+
+            if ($existing) {
+                // ✅ لو AJAX: رجّع ok + already (بدون إنشاء جديد)
+                if ($r->ajax() || $r->wantsJson()) {
+                    return response()->json([
+                        'ok'      => true,
+                        'already' => true,
+                        'message' => 'Already exists',
+                        'id'      => $existing->getKey(),
+                    ]);
+                }
+
+                // لو غير AJAX: تحويل للتعديل بدل إنشاء تكرار
+                return redirect()->route("{$this->routePrefix}.edit", $existing)->with('ok', 'Already exists');
+            }
         }
 
         /** @var Model $row */
-        if ($dup) {
-            // بدل ما تنشئ نفس الخدمة 4 مرات
-            $dup->update($data);
-            $row = $dup;
-        } else {
-            $row = app($this->model)->create($data);
-        }
+        $row = app($this->model)->create($data);
 
         // ✅ Save group prices (if provided from modal Additional tab)
         $this->saveGroupPricesFromJson($row->id, $r->input('group_prices_json'));
 
-        // ✅ FIX: if AJAX, return JSON (no redirect -> no missing view)
+        // ✅ if AJAX, return JSON
         if ($r->ajax() || $r->wantsJson()) {
             return response()->json([
                 'ok'      => true,
-                'message' => $dup ? 'Updated (duplicate)' : 'Created',
+                'message' => 'Created',
                 'id'      => $row->id,
             ]);
         }
 
-        return redirect()->route("{$this->routePrefix}.edit", $row)->with('ok', $dup ? 'Updated' : 'Created');
+        return redirect()->route("{$this->routePrefix}.edit", $row)->with('ok', 'Created');
     }
 
     public function edit($id)
@@ -111,9 +122,6 @@ abstract class BaseServiceController extends Controller
 
     public function update(Request $r, $id)
     {
-        // موجودة عندك أصلاً في الريبو: normalizeRequest في update :contentReference[oaicite:4]{index=4}
-        $this->normalizeRequest($r);
-
         /** @var Model $row */
         $row = app($this->model)->findOrFail($id);
 
@@ -123,7 +131,7 @@ abstract class BaseServiceController extends Controller
         // ✅ Save group prices (if provided)
         $this->saveGroupPricesFromJson($row->id, $r->input('group_prices_json'));
 
-        // ✅ FIX: if AJAX, return JSON
+        // ✅ if AJAX, return JSON
         if ($r->ajax() || $r->wantsJson()) {
             return response()->json([
                 'ok'      => true,
@@ -191,25 +199,6 @@ abstract class BaseServiceController extends Controller
         ];
     }
 
-    /**
-     * ✅ normalizeRequest (موجودة عندك بالريبو لكن كانت تُستخدم في update فقط)
-     * - name_en = name
-     * - main_type = type (إن لم يُرسل)
-     * - supplier_id = api_provider_id (في مودال الاستيراد)
-     */
-    protected function normalizeRequest(Request $r): void
-    {
-        if ($r->filled('name') && !$r->filled('name_en')) {
-            $r->merge(['name_en' => $r->input('name')]);
-        }
-        if ($r->filled('type') && !$r->filled('main_type')) {
-            $r->merge(['main_type' => $r->input('type')]);
-        }
-        if ($r->filled('api_provider_id') && !$r->filled('supplier_id')) {
-            $r->merge(['supplier_id' => $r->input('api_provider_id')]);
-        }
-    }
-
     protected function validated(Request $r): array
     {
         $v = $r->validate([
@@ -227,10 +216,13 @@ abstract class BaseServiceController extends Controller
             'profit'          => 'nullable|numeric',
             'profit_type'     => 'nullable|integer',
 
-            // ✅ مهم للتكرار وزر Added
+            // ✅ الربط بالمزود (مهم لمنع التكرار + إظهار Added)
+            // نقبل supplier_id أو api_provider_id (احتياط)
             'supplier_id'     => 'nullable|integer|exists:api_providers,id',
+            'api_provider_id' => 'nullable|integer|exists:api_providers,id',
+
             'source'          => 'nullable|integer',
-            'remote_id'       => 'nullable|integer',
+            'remote_id'       => 'nullable|string|max:100',
 
             'info_en'         => 'nullable|string',
             'name_en'         => 'required|string',
@@ -291,6 +283,9 @@ abstract class BaseServiceController extends Controller
         }
         $params['custom_fields'] = $customFields;
 
+        // ✅ خذ supplier_id من أي اسم وصل
+        $supplierId = $v['supplier_id'] ?? ($v['api_provider_id'] ?? null);
+
         return [
             'alias'          => $v['alias'] ?? null,
             'group_id'       => $v['group_id'] ?? null,
@@ -300,12 +295,17 @@ abstract class BaseServiceController extends Controller
             'info'           => json_encode($info, JSON_UNESCAPED_UNICODE),
             'main_field'     => json_encode($main, JSON_UNESCAPED_UNICODE),
             'params'         => json_encode($params, JSON_UNESCAPED_UNICODE),
+
             'cost'           => $v['cost'] ?? 0,
             'profit'         => $v['profit'] ?? 0,
             'profit_type'    => $v['profit_type'] ?? 1,
-            'supplier_id'    => $v['supplier_id'] ?? null,
+
             'source'         => $v['source'] ?? null,
+
+            // ✅ أهم سطرين
+            'supplier_id'    => $supplierId,
             'remote_id'      => $v['remote_id'] ?? null,
+
             'active'         => (int)$r->boolean('active'),
             'allow_bulk'     => (int)$r->boolean('allow_bulk'),
             'allow_duplicates' => (int)$r->boolean('allow_duplicates'),
