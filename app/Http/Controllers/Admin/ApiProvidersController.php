@@ -7,8 +7,14 @@ use App\Models\ApiProvider;
 use App\Models\RemoteImeiService;
 use App\Models\RemoteServerService;
 use App\Models\RemoteFileService;
+use App\Models\ImeiService;
+use App\Models\ServerService;
+use App\Models\FileService;
+use App\Models\ServiceGroup;
 use App\Services\Providers\ProviderManager;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ApiProvidersController extends Controller
 {
@@ -36,7 +42,6 @@ class ApiProvidersController extends Controller
         }
 
         // ✅ دعم فلتر النوع كما في واجهتك (DHRU / Simple link)
-        // في DB النوع غالبًا: dhru / simple_link / gsmhub ...
         if ($type !== '') {
             $normalized = $this->normalizeType($type);
             if ($normalized) {
@@ -55,8 +60,26 @@ class ApiProvidersController extends Controller
 
         $rows = $query->paginate($perPage)->withQueryString();
 
-        // ⚠️ لا نغير الواجهة إطلاقًا — فقط نوفر $rows
         return view('admin.api.providers.index', compact('rows'));
+    }
+
+    /**
+     * ✅ API options endpoint (يُستخدم في service-modal لاختيار المزودين)
+     * يرجّع JSON بسيط: [{id,name,type,active}, ...]
+     */
+    public function options(Request $request)
+    {
+        $onlyActive = $request->boolean('active', false);
+
+        $q = ApiProvider::query()
+            ->select(['id', 'name', 'type', 'active'])
+            ->orderBy('name');
+
+        if ($onlyActive) {
+            $q->where('active', 1);
+        }
+
+        return response()->json($q->get()->toArray());
     }
 
     /**
@@ -79,7 +102,6 @@ class ApiProvidersController extends Controller
 
     /**
      * Store/Update
-     * نحافظ على نفس سلوكك، فقط نحفظ الحقول المهمة (active/auto_sync/sync flags/ignore_low_balance/params)
      */
     public function store(Request $request)
     {
@@ -108,40 +130,31 @@ class ApiProvidersController extends Controller
     }
 
     /**
-     * ✅ زر Sync now الموجود في واجهتك
-     * - لا نغير شكل الصفحة
-     * - ننفذ sync مباشرة (سريع لتظهر balance فورًا)
-     * - إذا تحب Queue لاحقًا نرجعه
+     * ✅ زر Sync now
      */
-    public function sync(Request $request, \App\Models\ApiProvider $provider, \App\Services\Providers\ProviderManager $manager)
-{
-    $result = $manager->sync($provider);
+    public function sync(Request $request, ApiProvider $provider, ProviderManager $manager)
+    {
+        $result = $manager->sync($provider);
 
-    $provider->refresh();
+        $provider->refresh();
 
-    $msg = [];
+        $msg = [];
 
-    if (!empty($result['errors'])) {
-        $msg[] = 'Sync finished with errors: ' . implode(' | ', $result['errors']);
-    } else {
-        $msg[] = 'Sync done.';
+        if (!empty($result['errors'])) {
+            $msg[] = 'Sync finished with errors: ' . implode(' | ', $result['errors']);
+        } else {
+            $msg[] = 'Sync done.';
+        }
+
+        if (!empty($result['warnings'])) {
+            $msg[] = implode(' | ', $result['warnings']);
+        }
+
+        $msg[] = 'Balance: $' . number_format((float)$provider->balance, 2);
+
+        return redirect()->route('admin.apis.index')->with('ok', implode(' ', $msg));
     }
 
-    if (!empty($result['warnings'])) {
-        $msg[] = implode(' | ', $result['warnings']); // مثال: No File Service Active... (skipped)
-    }
-
-    $msg[] = 'Balance: $' . number_format((float)$provider->balance, 2);
-
-    return redirect()->route('admin.apis.index')->with('ok', implode(' ', $msg));
-}
-
-
-
-    /**
-     * ✅ إضافة “اختبار اتصال/جلب رصيد فقط” بدون تغيير الواجهة
-     * تقدر تناديها من زر/JS أو حتى من رابط.
-     */
     public function testBalance(ApiProvider $provider, ProviderManager $manager)
     {
         $result = $manager->sync($provider, null, true);
@@ -154,83 +167,260 @@ class ApiProvidersController extends Controller
     }
 
     /**
-     * ✅ هذه الدوال هي سبب الخطأ عندك (كانت موجودة في routes)
-     * الآن أرجعناها كما هي حتى تعمل أزرار Services في واجهتك.
+     * ✅ Services modals (View)
      */
-   public function servicesImei(Request $request, \App\Models\ApiProvider $provider)
-{
-    $rows = \App\Models\RemoteImeiService::where('api_provider_id', $provider->id)
-        ->orderBy('group_name')
-        ->orderBy('name')
-        ->get();
+    public function servicesImei(Request $request, ApiProvider $provider)
+    {
+        $rows = RemoteImeiService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->get();
 
-    // ✅ تحويل للـ format الذي تتوقعه الواجهة (Blade)
-    $services = $rows->map(function ($s) {
-        return [
-            'GROUPNAME' => (string)($s->group_name ?? ''),
-            'REMOTEID'  => (string)($s->remote_id ?? ''),
-            'NAME'      => (string)($s->name ?? ''),
-            'CREDIT'    => (float)($s->price ?? 0),
-            'TIME'      => (string)($s->time ?? ''),
-        ];
-    })->values()->all();
+        $services = $rows->map(function ($s) {
+            return [
+                'GROUPNAME' => (string)($s->group_name ?? ''),
+                'REMOTEID'  => (string)($s->remote_id ?? ''),
+                'NAME'      => (string)($s->name ?? ''),
+                'CREDIT'    => (float)($s->price ?? 0),
+                'TIME'      => (string)($s->time ?? ''),
+            ];
+        })->values()->all();
 
-    return view('admin.api.providers.modals.services', [
-        'provider' => $provider,
-        'kind' => 'imei',
-        'services' => $services,
-    ]);
-}
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'imei',
+            'services' => $services,
+        ]);
+    }
 
-public function servicesServer(Request $request, \App\Models\ApiProvider $provider)
-{
-    $rows = \App\Models\RemoteServerService::where('api_provider_id', $provider->id)
-        ->orderBy('group_name')
-        ->orderBy('name')
-        ->get();
+    public function servicesServer(Request $request, ApiProvider $provider)
+    {
+        $rows = RemoteServerService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->get();
 
-    $services = $rows->map(function ($s) {
-        return [
-            'GROUPNAME' => (string)($s->group_name ?? ''),
-            'REMOTEID'  => (string)($s->remote_id ?? ''),
-            'NAME'      => (string)($s->name ?? ''),
-            'CREDIT'    => (float)($s->price ?? 0),
-            'TIME'      => (string)($s->time ?? ''),
-        ];
-    })->values()->all();
+        $services = $rows->map(function ($s) {
+            return [
+                'GROUPNAME' => (string)($s->group_name ?? ''),
+                'REMOTEID'  => (string)($s->remote_id ?? ''),
+                'NAME'      => (string)($s->name ?? ''),
+                'CREDIT'    => (float)($s->price ?? 0),
+                'TIME'      => (string)($s->time ?? ''),
+            ];
+        })->values()->all();
 
-    return view('admin.api.providers.modals.services', [
-        'provider' => $provider,
-        'kind' => 'server',
-        'services' => $services,
-    ]);
-}
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'server',
+            'services' => $services,
+        ]);
+    }
 
-public function servicesFile(Request $request, \App\Models\ApiProvider $provider)
-{
-    $rows = \App\Models\RemoteFileService::where('api_provider_id', $provider->id)
-        ->orderBy('group_name')
-        ->orderBy('name')
-        ->get();
+    public function servicesFile(Request $request, ApiProvider $provider)
+    {
+        $rows = RemoteFileService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')
+            ->orderBy('name')
+            ->get();
 
-    $services = $rows->map(function ($s) {
-        return [
-            'GROUPNAME' => (string)($s->group_name ?? ''),
-            'REMOTEID'  => (string)($s->remote_id ?? ''),
-            'NAME'      => (string)($s->name ?? ''),
-            'CREDIT'    => (float)($s->price ?? 0),
-            'TIME'      => (string)($s->time ?? ''),
-        ];
-    })->values()->all();
+        $services = $rows->map(function ($s) {
+            return [
+                'GROUPNAME' => (string)($s->group_name ?? ''),
+                'REMOTEID'  => (string)($s->remote_id ?? ''),
+                'NAME'      => (string)($s->name ?? ''),
+                'CREDIT'    => (float)($s->price ?? 0),
+                'TIME'      => (string)($s->time ?? ''),
+            ];
+        })->values()->all();
 
-    return view('admin.api.providers.modals.services', [
-        'provider' => $provider,
-        'kind' => 'file',
-        'services' => $services,
-    ]);
-}
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'file',
+            'services' => $services,
+        ]);
+    }
 
+    /**
+     * ✅ IMPORT endpoint (يخدم:
+     * - صفحات Import Services with Group (imei/server/file)
+     *   يرسل: kind, service_ids, profit_mode, profit_value :contentReference[oaicite:1]{index=1}
+     * - وكذلك import wizard في مودال المزودين (يدعم pricing_mode/pricing_value أيضاً)
+     */
+    public function importServices(Request $request, ApiProvider $provider)
+    {
+        // يدعم JSON
+        $kind = strtolower((string)$request->input('kind', ''));
+        if (!in_array($kind, ['imei', 'server', 'file'], true)) {
+            return response()->json(['ok' => false, 'msg' => 'Invalid kind'], 422);
+        }
 
+        $applyAll = (bool)$request->boolean('apply_all', false);
+
+        // ✅ أهم إصلاح: نقبل service_ids (والقديم imported لو موجود)
+        $ids = $request->input('service_ids', null);
+        if ($ids === null) $ids = $request->input('imported', null);
+
+        if (is_string($ids)) {
+            $ids = array_filter(array_map('trim', explode(',', $ids)));
+        }
+
+        if (!$applyAll) {
+            if (!is_array($ids) || count($ids) === 0) {
+                // بدل "Imported field is required" نرجّع رسالة واضحة
+                return response()->json(['ok' => false, 'msg' => 'service_ids is required'], 422);
+            }
+        }
+
+        $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
+        $mode  = strtolower(trim($mode));
+        if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
+
+        $value = (float)($request->input('profit_value') ?? $request->input('pricing_value') ?? 0);
+
+        try {
+            $result = $this->doBulkImport($provider, $kind, $applyAll, $ids ?: [], $mode, $value);
+
+            return response()->json([
+                'ok' => true,
+                'count' => $result['count'],
+                'added_remote_ids' => $result['added_remote_ids'],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'ok' => false,
+                'msg' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * لو عندك Route باسم import-wizard يضرب نفس الوظيفة
+     */
+    public function importServicesWizard(Request $request, ApiProvider $provider)
+    {
+        return $this->importServices($request, $provider);
+    }
+
+    /**
+     * =========================
+     * Internal helpers
+     * =========================
+     */
+    private function doBulkImport(ApiProvider $provider, string $kind, bool $applyAll, array $remoteIds, string $profitMode, float $profitValue): array
+    {
+        [$remoteModel, $localModel] = match ($kind) {
+            'imei'   => [RemoteImeiService::class, ImeiService::class],
+            'server' => [RemoteServerService::class, ServerService::class],
+            'file'   => [RemoteFileService::class, FileService::class],
+        };
+
+        $remoteQ = $remoteModel::query()->where('api_provider_id', $provider->id);
+        if (!$applyAll) {
+            $remoteIds = array_values(array_unique(array_map('strval', $remoteIds)));
+            $remoteQ->whereIn('remote_id', $remoteIds);
+        }
+        $remoteRows = $remoteQ->get();
+
+        $added = [];
+        $count = 0;
+
+        DB::transaction(function () use ($provider, $kind, $remoteRows, $localModel, $profitMode, $profitValue, &$added, &$count) {
+
+            foreach ($remoteRows as $r) {
+                $remoteId = (string)($r->remote_id ?? '');
+                if ($remoteId === '') continue;
+
+                // ✅ منع التكرار الحقيقي (حتى لو الواجهة سمحت بالغلط)
+                $exists = $localModel::query()
+                    ->where('supplier_id', $provider->id)
+                    ->where('remote_id', $remoteId)
+                    ->exists();
+
+                if ($exists) {
+                    continue;
+                }
+
+                $groupName = trim((string)($r->group_name ?? ''));
+                $groupId = null;
+
+                // ✅ أنشئ group تلقائيًا لو موجود اسم مجموعة
+                if ($groupName !== '') {
+                    $groupType = $this->serviceGroupType($kind);
+                    $group = ServiceGroup::firstOrCreate(
+                        ['type' => $groupType, 'name' => $groupName],
+                        ['ordering' => 0]
+                    );
+                    $groupId = $group->id;
+                }
+
+                $nameText = trim(strip_tags((string)($r->name ?? '')));
+                if ($nameText === '') {
+                    $nameText = "{$kind}-{$provider->id}-{$remoteId}";
+                }
+
+                $timeText = trim(strip_tags((string)($r->time ?? '')));
+                $infoText = trim(strip_tags((string)($r->info ?? '')));
+
+                $nameJson = json_encode(['en' => $nameText, 'fallback' => $nameText], JSON_UNESCAPED_UNICODE);
+                $timeJson = json_encode(['en' => $timeText, 'fallback' => $timeText], JSON_UNESCAPED_UNICODE);
+                $infoJson = json_encode(['en' => $infoText, 'fallback' => $infoText], JSON_UNESCAPED_UNICODE);
+
+                $cost = (float)($r->price ?? 0);
+
+                $profitType = ($profitMode === 'percent') ? 2 : 1;
+
+                $aliasBase = Str::slug(Str::limit($nameText, 160, ''), '-');
+                if ($aliasBase === '') $aliasBase = 'service';
+                $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
+
+                $data = [
+                    'alias' => $alias,
+                    'group_id' => $groupId,
+                    'type' => $kind,
+                    'name' => $nameJson,
+                    'time' => $timeJson,
+                    'info' => $infoJson,
+
+                    // تسعير
+                    'cost' => $cost,
+                    'profit' => $profitValue,
+                    'profit_type' => $profitType,
+
+                    // API linking
+                    'source' => 2,                 // API
+                    'supplier_id' => $provider->id,
+                    'remote_id' => $remoteId,
+
+                    // flags
+                    'active' => 1,
+                    'allow_bulk' => 0,
+                    'allow_duplicates' => 0,
+                    'reply_with_latest' => 0,
+                    'allow_report' => 0,
+                    'allow_cancel' => 0,
+                    'reply_expiration' => 0,
+                ];
+
+                $localModel::query()->create($data);
+
+                $added[] = $remoteId;
+                $count++;
+            }
+        });
+
+        return ['count' => $count, 'added_remote_ids' => $added];
+    }
+
+    private function serviceGroupType(string $kind): string
+    {
+        return match ($kind) {
+            'imei'   => 'imei_service',
+            'server' => 'server_service',
+            'file'   => 'file_service',
+            default  => 'imei_service',
+        };
+    }
 
     private function normalizeType(string $type): ?string
     {
