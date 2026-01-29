@@ -90,8 +90,17 @@ class ApiProvidersController extends Controller
         return view('admin.api.providers.create');
     }
 
-    public function view(ApiProvider $provider)
+    public function view(Request $request, ApiProvider $provider)
     {
+        // نفس المتغير الذي يستخدمه مودال view.blade.php
+        $info = [];
+
+        // إذا جاء الطلب من المودال (fetch) رجّع ملف المودال فقط
+        if ($request->ajax() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+            return view('admin.api.providers.modals.view', compact('provider', 'info'));
+        }
+
+        // لو أحد فتح الرابط مباشرة من المتصفح (اختياري)
         return view('admin.api.providers.view', compact('provider'));
     }
 
