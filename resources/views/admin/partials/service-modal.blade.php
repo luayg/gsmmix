@@ -205,6 +205,17 @@
 
     wrap.innerHTML = '';
 
+    // ✅ إذا ما في جروبات: أظهر رسالة بدل صفحة بيضاء
+    if (!Array.isArray(groups) || groups.length === 0) {
+      wrap.innerHTML = `
+        <div class="text-muted small p-2">
+          No user groups found (or failed to load).<br>
+          افتح Console للتفاصيل (loadUserGroups warning).
+        </div>
+      `;
+      return;
+    }
+
     const initialServicePrice = calcServiceFinalPrice(scope);
 
     groups.forEach(g=>{
@@ -286,10 +297,53 @@
   }
 
   async function loadUserGroups(){
-    const res = await fetch("{{ route('admin.groups.options') }}", { headers:{'X-Requested-With':'XMLHttpRequest'} });
-    const rows = await res.json().catch(()=>[]);
-    if(!Array.isArray(rows)) return [];
-    return rows;
+    // ✅ صارم + يدعم صيغ مختلفة + يطبع تحذير إذا فشل
+    const urls = [
+      "{{ route('admin.groups.options') }}",
+      "{{ url('/admin/groups/options') }}",
+    ];
+
+    const tryJson = async (res) => {
+      const ct = (res.headers.get('content-type') || '').toLowerCase();
+      if (!ct.includes('application/json')) {
+        const txt = await res.text().catch(()=> '');
+        throw new Error('Expected JSON but got: ' + (txt || '').slice(0, 200));
+      }
+      return res.json();
+    };
+
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, {
+          headers:{'X-Requested-With':'XMLHttpRequest'},
+          credentials: 'same-origin',
+        });
+
+        if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+
+        const data = await tryJson(res);
+
+        // format A: []
+        if (Array.isArray(data)) return data;
+
+        // format B: {data:[]}
+        if (data && Array.isArray(data.data)) return data.data;
+
+        // format C: {results:[{id,text}]}
+        if (data && Array.isArray(data.results)) {
+          return data.results.map(x => ({
+            id: x.id,
+            name: x.text ?? x.name ?? x.title ?? ''
+          }));
+        }
+
+        console.warn('loadUserGroups: unknown response format from', url, data);
+      } catch (e) {
+        console.warn('loadUserGroups failed for', url, e);
+      }
+    }
+
+    return [];
   }
 
   function ensureApiUI(scope){
@@ -378,7 +432,6 @@
     }).join('');
   }
 
-  // ✅ بعد إنشاء الخدمة: اجعل زر الصف (Clone/Add) يصبح Add فاتح اللون ومقفول
   function markCloneAsAdded(remoteId){
     const rid = String(remoteId || '').trim();
     if(!rid) return;
@@ -409,13 +462,11 @@
     if(btn){
       btn.disabled = true;
 
-      // ✅ نظّف الألوان السابقة
       btn.classList.remove(
         'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary',
         'btn-light','border-success','text-success','btn-outline-success','btn-outline-primary'
       );
 
-      // ✅ Add + لون فاتح
       btn.classList.add('btn-outline-primary');
       btn.textContent = 'Add';
 
@@ -423,7 +474,6 @@
     }
   }
 
-  // ✅ FIX VALIDATION: تأكد من وجود main_type + name_en قبل الإرسال
   function ensureRequiredFields(form){
     const ensureHidden = (name, value) => {
       let el = form.querySelector(`[name="${name}"]`);
@@ -535,6 +585,7 @@
         }
       });
 
+    // ✅ هنا المهم: تحميل جروبات اليوزر وبناء جدول الأسعار
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
     syncGroupPricesFromService(body);
@@ -627,7 +678,6 @@
 
     ev.preventDefault();
 
-    // ✅ هنا الإصلاح: جهّز الحقول المطلوبة قبل الإرسال
     ensureRequiredFields(form);
 
     const infoEditor = jQuery(form).find('#infoEditor');
@@ -661,15 +711,6 @@
       if(res.ok){
         const rid = form.querySelector('[name="remote_id"]')?.value;
         markCloneAsAdded(rid);
-
-        // ✅ NEW: بلّغ Import Wizard فورًا أن هذه الخدمة أصبحت Added (بدون خروج/دخول)
-        const provider_id = form.querySelector('[name="supplier_id"]')?.value || '';
-        const kind = form.querySelector('[name="type"]')?.value || '';
-        if (rid && provider_id && kind) {
-          window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
-            detail: { provider_id, kind, remote_id: rid }
-          }));
-        }
 
         bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
 
