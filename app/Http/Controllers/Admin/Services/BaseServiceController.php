@@ -65,48 +65,59 @@ abstract class BaseServiceController extends Controller
     }
 
     public function store(Request $r)
-    {
-        // ✅ تطبيع المدخلات القادمة من المودال (server تختلف عن imei)
-        $this->normalizeRequest($r);
+{
+    $data = $this->validated($r);
 
-        $data = $this->validated($r);
+    // ================================
+    // ✅ PREVENT DUPLICATE API SERVICES
+    // ================================
+    if (
+        ($data['source'] ?? null) == 2 &&
+        !empty($data['remote_id'])
+    ) {
+        /** @var Model $row */
+        $row = app($this->model)->newQuery()->where([
+            'source'    => 2,
+            'remote_id' => $data['remote_id'],
+            'type'      => $data['type'],
+        ])->first();
 
-        // ✅ منع التكرار نهائياً (حتى لو زر Clone رجع وسمح بالإرسال)
-        /** @var Model $m */
-        $m = app($this->model);
+        if ($row) {
+            // موجود مسبقًا → لا تعيد الإنشاء
+            if ($r->ajax() || $r->wantsJson()) {
+                return response()->json([
+                    'ok'      => true,
+                    'message' => 'Already exists',
+                    'id'      => $row->id,
+                    'exists'  => true,
+                ]);
+            }
 
-        $key = [
-            'supplier_id' => $data['supplier_id'] ?? null,
-            'remote_id'   => $data['remote_id'] ?? null,
-            'type'        => $data['type'] ?? $this->viewPrefix,
-        ];
-
-        // لو ما في remote_id أو supplier_id (إضافة يدوية) -> create عادي
-        if (empty($key['supplier_id']) || empty($key['remote_id'])) {
-            /** @var Model $row */
-            $row = $m->newQuery()->create($data);
-            $created = true;
-        } else {
-            [$row, $created] = $m->newQuery()->updateOrCreate($key, $data);
+            return redirect()
+                ->route("{$this->routePrefix}.edit", $row)
+                ->with('ok', 'Service already exists');
         }
-
-        // ✅ Save group prices (if provided from modal Additional tab)
-        $this->saveGroupPricesFromJson((int)$row->id, $r->input('group_prices_json'));
-
-        // ✅ FIX: if AJAX, return JSON (no redirect)
-        if ($r->ajax() || $r->wantsJson()) {
-            return response()->json([
-                'ok'        => true,
-                'message'   => $created ? 'Created' : 'Already exists',
-                'id'        => (int)$row->id,
-                'created'   => (bool)$created,
-                'remote_id' => $data['remote_id'] ?? null,
-                'supplier_id' => $data['supplier_id'] ?? null,
-            ]);
-        }
-
-        return redirect()->route("{$this->routePrefix}.edit", $row)->with('ok', $created ? 'Created' : 'Already exists');
     }
+
+    /** @var Model $row */
+    $row = app($this->model)->create($data);
+
+    // Save group prices
+    $this->saveGroupPricesFromJson($row->id, $r->input('group_prices_json'));
+
+    if ($r->ajax() || $r->wantsJson()) {
+        return response()->json([
+            'ok'      => true,
+            'message' => 'Created',
+            'id'      => $row->id,
+        ]);
+    }
+
+    return redirect()
+        ->route("{$this->routePrefix}.edit", $row)
+        ->with('ok', 'Created');
+}
+
 
     public function edit($id)
     {
