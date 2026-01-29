@@ -107,25 +107,24 @@ class ServiceGroupController extends Controller
     }
 
     /**
-     * AJAX: إرجاع الخيارات بحسب النوع (imei|server|file)
+     * ✅ AJAX: إرجاع الخيارات بحسب النوع (imei|server|file)
+     * IMPORTANT:
+     * - جدول service_groups يخزن النوع بصيغة: imei_service/server_service/file_service
+     * - بينما المودال يرسل type بصيغة: imei/server/file
+     * لذلك نعمل normalize قبل الفلترة.
      */
     public function options(Request $request)
     {
-        $type = strtolower((string) $request->get('type', ''));
+        $typeIn = strtolower((string) $request->get('type', ''));
 
-        // خريطة الأنواع المعتمدة
-        $map = [
-            'imei'   => 'imei',
-            'server' => 'server',
-            'file'   => 'file',
-        ];
+        // فقط الأنواع المسموحة (لو غير ذلك رجّع كل الجروبات)
+        $allowed = ['imei','imei_service','server','server_service','file','file_service'];
 
-        // إن لم يرسل type صحيح، رجع كل شيء
         $q = ServiceGroup::query();
 
-        if (isset($map[$type])) {
-            // Case-insensitive match
-            $q->whereRaw('LOWER(type) = ?', [$map[$type]]);
+        if ($typeIn !== '' && in_array($typeIn, $allowed, true)) {
+            $normalized = strtolower($this->normalizeType($typeIn)); // => *_service
+            $q->whereRaw('LOWER(type) = ?', [$normalized]);
         }
 
         $rows = $q->orderBy('ordering')->orderBy('id')->get(['id', 'name', 'type']);
@@ -139,7 +138,3 @@ class ServiceGroupController extends Controller
         );
     }
 }
-
-
-
-
