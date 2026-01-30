@@ -14,9 +14,10 @@ class ImeiOrder extends Model
 
     protected $casts = [
         'needs_verify'=>'boolean','expired'=>'boolean','approved'=>'boolean','api_order'=>'boolean',
-        'processing'=>'boolean','replied_at'=>'datetime'
+        'processing'=>'boolean','replied_at'=>'datetime','params'=>'array'
     ];
 
+    public function user(){ return $this->belongsTo(User::class, 'user_id'); }
     public function service(){ return $this->belongsTo(ImeiService::class, 'service_id'); }
     public function provider(){ return $this->belongsTo(ApiProvider::class, 'supplier_id'); }
 }

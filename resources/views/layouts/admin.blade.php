@@ -37,6 +37,19 @@
     }
   </style>
 </head>
+
+
+<div class="modal fade" id="appModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content" id="appModalContent">
+      <div class="p-4">Loading...</div>
+    </div>
+  </div>
+</div>
+
+
+
+
 <body class="bg-light">
   {{-- Navbar + Sidebar --}}
   @include('partials.navbar')
