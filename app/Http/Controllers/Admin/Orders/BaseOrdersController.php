@@ -4,304 +4,307 @@ namespace App\Http\Controllers\Admin\Orders;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApiProvider;
-use Illuminate\Database\Eloquent\Model;
+use App\Models\User;
 use Illuminate\Http\Request;
-use App\Services\Orders\DhruOrderGateway;
+use Illuminate\Support\Facades\Http;
 
 abstract class BaseOrdersController extends Controller
 {
-    /** @var class-string<Model> */
-    protected string $orderModel;
-    /** @var class-string<Model> */
-    protected string $serviceModel;
+    protected string $kind;          // imei|server|file
+    protected string $orderModel;    // \App\Models\ImeiOrder::class
+    protected string $serviceModel;  // \App\Models\ImeiService::class
+    protected string $indexView;     // admin.orders.imei.index
+    protected string $routePrefix;   // admin.orders.imei
 
-    protected string $kind; // imei|server|file
-    protected string $viewPrefix; // admin.orders.imei ...
-    protected string $routePrefix; // admin.orders.imei ...
-
-    public function __construct(protected DhruOrderGateway $dhru)
+    protected function statuses(): array
     {
+        return ['waiting', 'inprogress', 'success', 'rejected', 'cancelled'];
     }
 
     public function index(Request $r)
     {
         $q = trim((string)$r->get('q', ''));
         $status = trim((string)$r->get('status', ''));
-        $provider = trim((string)$r->get('provider', ''));
+        $providerId = trim((string)$r->get('provider', ''));
 
-        $rows = ($this->orderModel)::query()
-            ->with(['service', 'provider'])
-            ->orderByDesc('id');
+        $model = $this->orderModel;
+        $rowsQ = $model::query()->with(['service', 'provider'])->orderByDesc('id');
 
         if ($q !== '') {
-            $rows->where(function ($w) use ($q) {
+            $rowsQ->where(function ($w) use ($q) {
                 $w->where('device', 'like', "%{$q}%")
                   ->orWhere('remote_id', 'like', "%{$q}%")
                   ->orWhere('email', 'like', "%{$q}%");
             });
         }
+        if ($status !== '' && in_array($status, $this->statuses(), true)) {
+            $rowsQ->where('status', $status);
+        }
+        if ($providerId !== '') {
+            $rowsQ->where('supplier_id', (int)$providerId);
+        }
 
-        if ($status !== '') $rows->where('status', $status);
-        if ($provider !== '') $rows->where('supplier_id', (int)$provider);
+        $rows = $rowsQ->paginate(20)->withQueryString();
 
-        $rows = $rows->paginate(20)->withQueryString();
-
-        $services = ($this->serviceModel)::query()
-            ->orderByDesc('id')
-            ->limit(1000)
-            ->get();
-
+        $services = ($this->serviceModel)::query()->orderByDesc('id')->limit(500)->get();
         $providers = ApiProvider::query()->orderByDesc('id')->get();
 
-        return view($this->viewPrefix.'.index', compact('rows','services','providers'));
+        return view($this->indexView, compact('rows', 'services', 'providers'));
     }
 
     public function modalCreate()
     {
-        $services = ($this->serviceModel)::query()->orderByDesc('id')->limit(2000)->get();
-        $providers = ApiProvider::query()->orderByDesc('id')->get();
-        return view($this->viewPrefix.'.modals.create', compact('services','providers'));
+        $users = User::query()->orderByDesc('id')->limit(500)->get();
+        $services = ($this->serviceModel)::query()->orderByDesc('id')->limit(500)->get();
+
+        return view('admin.orders._modals.create', [
+            'kind' => $this->kind,
+            'users' => $users,
+            'services' => $services,
+            'storeUrl' => route($this->routePrefix . '.store'),
+        ]);
+    }
+
+    public function modalView($order)
+    {
+        $model = $this->orderModel;
+        $row = $model::query()->with(['service', 'provider'])->findOrFail($order);
+
+        return view('admin.orders._modals.view', [
+            'kind' => $this->kind,
+            'row' => $row,
+            'parsed' => $this->parseResponse($row->response),
+        ]);
+    }
+
+    public function modalEdit($order)
+    {
+        $model = $this->orderModel;
+        $row = $model::query()->with(['service', 'provider'])->findOrFail($order);
+
+        return view('admin.orders._modals.edit', [
+            'kind' => $this->kind,
+            'row' => $row,
+            'statuses' => $this->statuses(),
+            'updateUrl' => route($this->routePrefix . '.update', $row->id),
+            'parsed' => $this->parseResponse($row->response),
+        ]);
     }
 
     public function store(Request $r)
     {
         $data = $r->validate([
-            'user_id'    => 'nullable|integer',
-            'email'      => 'nullable|string|max:255',
-            'service_id' => 'required|integer',
-            'device'     => 'nullable|string|max:255',
-            'comments'   => 'nullable|string',
-            'quantity'   => 'nullable|integer',
+            'user_id' => ['nullable', 'integer'],
+            'service_id' => ['required', 'integer'],
+            'device' => ['required', 'string', 'max:255'],
+            'quantity' => ['nullable', 'integer'],
+            'comments' => ['nullable', 'string'],
         ]);
 
-        /** @var Model $service */
-        $service = ($this->serviceModel)::query()->findOrFail((int)$data['service_id']);
+        $user = !empty($data['user_id']) ? User::find($data['user_id']) : null;
+        $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
 
-        $supplierId = (int)($service->supplier_id ?? 0);
-        $remoteServiceId = $service->remote_id ?? null;
+        $model = $this->orderModel;
+        $order = new $model();
 
-        $price = (float)($service->price ?? 0);
-        $cost  = (float)($service->cost ?? 0);
+        $order->device = $data['device'];
+        $order->comments = $data['comments'] ?? null;
 
-        $order = ($this->orderModel)::query()->create([
-            'user_id'     => $data['user_id'] ?? null,
-            'email'       => $data['email'] ?? null,
-            'service_id'  => (int)$service->id,
-            'supplier_id' => $supplierId > 0 ? $supplierId : null,
-
-            'device'      => $data['device'] ?? null,
-            'quantity'    => $data['quantity'] ?? null,
-            'comments'    => $data['comments'] ?? null,
-            'ip'          => (string)$r->ip(),
-
-            'price'       => $price,
-            'order_price' => $cost,
-            'profit'      => max(0, $price - $cost),
-
-            'status'      => 'WAITING',
-            'api_order'   => ($supplierId > 0 && !empty($remoteServiceId)) ? true : false,
-            'params'      => null,
-        ]);
-
-        // ✅ إرسال تلقائي إذا الخدمة مرتبطة بـ API
-        if ($order->api_order) {
-            $this->sendNow($order);
-            $order->refresh();
-        } else {
-            $order->status = 'MANUAL';
-            $order->save();
+        if ($this->kind === 'server') {
+            $order->quantity = (int)($data['quantity'] ?? 1);
         }
 
-        return response()->json(['ok'=>true,'id'=>$order->id,'status'=>$order->status]);
+        $order->user_id = $user?->id;
+        $order->email = $user?->email;
+
+        $order->service_id = $service->id;
+        $order->supplier_id = $service->supplier_id ?? null;
+
+        // حالة البداية دائمًا waiting
+        $order->status = 'waiting';
+
+        // هل هو API order؟
+        $order->api_order = !empty($service->supplier_id) && !empty($service->remote_id);
+
+        // نخزن الطلب الخام
+        $order->request = json_encode([
+            'kind' => $this->kind,
+            'service_id' => $service->id,
+            'remote_service_id' => $service->remote_id ?? null,
+            'supplier_id' => $service->supplier_id ?? null,
+            'device' => $order->device,
+            'quantity' => $this->kind === 'server' ? $order->quantity : null,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $order->ip = (string)($r->ip() ?? '');
+        $order->save();
+
+        // ✅ إرسال تلقائي إذا API
+        if ($order->api_order && $order->supplier_id && !empty($service->remote_id)) {
+            $this->sendDhruNow($order, $service->remote_id);
+            $order->refresh();
+        }
+
+        if ($r->expectsJson()) {
+            return response()->json(['ok' => true, 'reload' => true]);
+        }
+
+        return redirect()->route($this->routePrefix . '.index')->with('ok', 'Order created.');
     }
 
-    public function modalView($id)
+    public function update(Request $r, $order)
     {
-        $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
-        $parsed = $this->parsedResponse($row);
-        return view($this->viewPrefix.'.modals.view', compact('row','parsed'));
-    }
-
-    public function modalEdit($id)
-    {
-        $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
-        $parsed = $this->parsedResponse($row);
-        return view($this->viewPrefix.'.modals.edit', compact('row','parsed'));
-    }
-
-    public function update(Request $r, $id)
-    {
-        $row = ($this->orderModel)::query()->findOrFail($id);
+        $model = $this->orderModel;
+        $row = $model::findOrFail($order);
 
         $data = $r->validate([
-            'status'   => 'required|string|max:50',
-            'comments' => 'nullable|string',
-            'response' => 'nullable|string',
+            'status' => ['required', 'string'],
+            'comments' => ['nullable', 'string'],
+            'response' => ['nullable', 'string'],
         ]);
 
-        // ✅ تغيير status يدوي لا يرسل للـ provider (مثل ما طلبت)
+        if (!in_array($data['status'], $this->statuses(), true)) {
+            $data['status'] = $row->status;
+        }
+
         $row->status = $data['status'];
         $row->comments = $data['comments'] ?? $row->comments;
 
-        // لو admin كتب reply يدوي
-        if (!empty($data['response'])) {
+        // يسمح لك تعديل/إضافة response يدويًا لو احتجت
+        if (array_key_exists('response', $data) && $data['response'] !== null) {
             $row->response = $data['response'];
-            $row->replied_at = now();
         }
 
         $row->save();
 
-        return response()->json(['ok'=>true]);
-    }
-
-    public function send($id)
-    {
-        $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
-        $this->sendNow($row);
-        $row->refresh();
-        return response()->json(['ok'=>true,'status'=>$row->status,'remote_id'=>$row->remote_id]);
-    }
-
-    public function refresh($id)
-    {
-        $row = ($this->orderModel)::query()->with(['provider'])->findOrFail($id);
-        if (!$row->provider || empty($row->remote_id)) {
-            return response()->json(['ok'=>false,'message'=>'No provider/remote id']);
+        if ($r->expectsJson()) {
+            return response()->json(['ok' => true, 'reload' => true]);
         }
 
-        if ($row->provider->type !== 'dhru') {
-            return response()->json(['ok'=>false,'message'=>'Refresh not implemented for this provider type']);
-        }
-
-        $resp = $this->fetchDetailsDhru($row);
-        $row->response = json_encode($resp, JSON_UNESCAPED_UNICODE);
-        $row->replied_at = now();
-
-        // لو جاء SUCCESS بنتيجة نهائية نقدر نحولها SUCCESS (حسب مزودك)
-        // حاليًا نخليها INPROGRESS إلا إذا كان واضح أنها منتهية
-        $row->save();
-
-        return response()->json(['ok'=>true]);
+        return redirect()->route($this->routePrefix . '.index')->with('ok', 'Order updated.');
     }
 
-    protected function sendNow(Model $order): void
+    /**
+     * إرسال DHRU (الآن بدون زر Send)
+     * - إذا نجاح واستلم REFERENCEID => status = inprogress + remote_id
+     * - إذا ERROR => status = rejected
+     */
+    protected function sendDhruNow($order, $remoteServiceId): void
     {
-        $order->refresh();
-
-        /** @var Model|null $service */
-        $service = $order->service ?? ($this->serviceModel)::query()->find($order->service_id);
-        /** @var ApiProvider|null $provider */
-        $provider = $order->provider ?? ApiProvider::query()->find($order->supplier_id);
-
-        if (!$service || !$provider) {
-            $order->status = 'MANUAL';
-            $order->api_order = false;
-            $order->save();
+        $provider = ApiProvider::find($order->supplier_id);
+        if (!$provider || $provider->type !== 'dhru') {
+            // لو provider غير موجود/غير dhru نخليها waiting (أنت تقدر تغيّرها لاحقًا)
             return;
         }
 
-        if (empty($service->remote_id)) {
-            $order->status = 'MANUAL';
-            $order->api_order = false;
-            $order->save();
-            return;
-        }
+        $url = rtrim((string)$provider->url, '/') . '/api/index.php';
 
-        $order->processing = true;
-        $order->status = 'INPROGRESS';
-        $order->save();
+        $parametersXml = $this->buildDhruParametersXml($order, $remoteServiceId);
 
-        if ($provider->type !== 'dhru') {
-            $order->processing = false;
-            $order->status = 'FAILED';
-            $order->response = json_encode(['ERROR'=>[['MESSAGE'=>'NotImplemented','FULL_DESCRIPTION'=>'Provider type not implemented yet']]], JSON_UNESCAPED_UNICODE);
-            $order->save();
-            return;
-        }
-
-        // ✅ DHRU: place order
-        $xmlParams = $this->buildDhruXmlParams($order, $service);
-
-        $order->request = json_encode([
-            'provider_id' => $provider->id,
-            'type' => $provider->type,
-            'action' => $this->kind === 'file' ? 'placefileorder' : 'placeimeiorder',
-            'xml' => $xmlParams,
-        ], JSON_UNESCAPED_UNICODE);
-
-        $resp = $this->placeDhru($order, $provider, $service, $xmlParams);
-
-        $order->response = json_encode($resp, JSON_UNESCAPED_UNICODE);
-
-        $norm = $this->dhru->normalizeStatus($resp);
-
-        if ($norm['ok']) {
-            $order->remote_id = $norm['reference_id'] ?: $order->remote_id;
-            $order->status = $norm['status']; // غالبًا INPROGRESS
-        } else {
-            $order->status = 'FAILED';
-        }
-
-        $order->processing = false;
-        $order->replied_at = now();
-        $order->save();
-    }
-
-    protected function placeDhru(Model $order, ApiProvider $provider, Model $service, array $xmlParams): array
-    {
-        // file kind handled in child
-        return $this->dhru->placeImeiOrder($provider, $xmlParams);
-    }
-
-    protected function fetchDetailsDhru(Model $order): array
-    {
-        // Default for imei/server
-        return $this->dhru->getImeiOrder($order->provider, (string)$order->remote_id);
-    }
-
-    protected function buildDhruXmlParams(Model $order, Model $service): array
-    {
-        // أساسيات: ID + Device حسب نوع الخدمة
-        $main = json_decode((string)($service->main_field ?? '{}'), true) ?: [];
-        $mainType = strtolower((string)($main['type'] ?? 'imei'));
-
-        $deviceVal = (string)($order->device ?? '');
-
-        $params = [
-            'ID' => (string)($service->remote_id),
+        $payload = [
+            'username' => (string)($provider->username ?? ''),
+            'apiaccesskey' => (string)($provider->api_key ?? ''),
+            'requestformat' => 'JSON',
+            'action' => 'placeimeiorder',
+            'parameters' => $parametersXml,
         ];
 
-        if ($mainType === 'serial' || $mainType === 'sn') {
-            $params['SN'] = $deviceVal;
-        } else {
-            // default IMEI
-            $params['IMEI'] = $deviceVal;
-        }
+        try {
+            $resp = Http::asForm()
+                ->timeout(40)
+                ->post($url, $payload);
 
-        // إن كان عندك quantity لخدمات server
-        if ($this->kind === 'server' && !empty($order->quantity)) {
-            $params['QNT'] = (string)$order->quantity;
-        }
+            $body = $resp->body();
+            $json = $resp->json();
 
-        return $params;
+            $order->response = json_encode([
+                'http_status' => $resp->status(),
+                'body' => $body,
+                'json' => $json,
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            // Parse:
+            $parsed = $this->parseResponse($order->response);
+
+            if ($parsed['type'] === 'success' && !empty($parsed['reference'])) {
+                $order->remote_id = (string)$parsed['reference'];
+                $order->status = 'inprogress';
+            } elseif ($parsed['type'] === 'error') {
+                $order->status = 'rejected';
+            } else {
+                // إذا ما قدرنا نفهم الرد نخليها waiting
+                $order->status = 'waiting';
+            }
+
+            $order->save();
+        } catch (\Throwable $e) {
+            $order->response = json_encode([
+                'exception' => true,
+                'message' => $e->getMessage(),
+            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $order->status = 'rejected';
+            $order->save();
+        }
     }
 
-    protected function parsedResponse(Model $row): array
+    protected function buildDhruParametersXml($order, $remoteServiceId): string
     {
-        $raw = [];
-        if (!empty($row->response)) {
-            $decoded = json_decode((string)$row->response, true);
-            if (is_array($decoded)) $raw = $decoded;
+        // ملاحظة: مزودين كثير يقبلون القيمة في IMEI حتى لو كانت Serial/Device
+        // لذلك نخليها IMEI = device
+        $device = (string)($order->device ?? '');
+
+        // Server sometimes has QNT
+        $qnt = ($this->kind === 'server' && !empty($order->quantity)) ? (int)$order->quantity : null;
+
+        $xml = '<PARAMETERS>';
+        $xml .= '<IMEI>' . htmlspecialchars($device, ENT_XML1) . '</IMEI>';
+        $xml .= '<ID>' . htmlspecialchars((string)$remoteServiceId, ENT_XML1) . '</ID>';
+        if ($qnt !== null) {
+            $xml .= '<QNT>' . (int)$qnt . '</QNT>';
+        }
+        $xml .= '</PARAMETERS>';
+
+        return $xml;
+    }
+
+    protected function parseResponse(?string $response): array
+    {
+        if (!$response) {
+            return ['type' => 'none', 'message' => '', 'reference' => null, 'raw' => null];
         }
 
-        // extract readable message
-        $msg = '';
-        if (isset($raw['ERROR'])) $msg = $this->dhru->normalizeStatus($raw)['message'] ?? '';
-        elseif (isset($raw['SUCCESS'])) $msg = $this->dhru->normalizeStatus($raw)['message'] ?? '';
+        $arr = json_decode($response, true);
+        $json = is_array($arr) ? ($arr['json'] ?? null) : null;
 
-        return [
-            'message' => $msg,
-            'raw' => $raw,
-        ];
+        // إذا الرد محفوظ بصيغة {http_status, body, json}
+        if (is_array($json)) {
+            // ERROR
+            if (isset($json['ERROR'][0])) {
+                $msg = (string)($json['ERROR'][0]['MESSAGE'] ?? 'ERROR');
+                $full = (string)($json['ERROR'][0]['FULL_DESCRIPTION'] ?? '');
+                $clean = trim(strip_tags($full));
+                return [
+                    'type' => 'error',
+                    'message' => $clean !== '' ? $clean : $msg,
+                    'reference' => null,
+                    'raw' => $json,
+                ];
+            }
+
+            // SUCCESS
+            if (isset($json['SUCCESS'][0])) {
+                $ref = $json['SUCCESS'][0]['REFERENCEID'] ?? null;
+                $msg = (string)($json['SUCCESS'][0]['MESSAGE'] ?? 'Success');
+                return [
+                    'type' => 'success',
+                    'message' => $msg,
+                    'reference' => $ref ? (string)$ref : null,
+                    'raw' => $json,
+                ];
+            }
+        }
+
+        // fallback
+        return ['type' => 'unknown', 'message' => '', 'reference' => null, 'raw' => $arr];
     }
 }

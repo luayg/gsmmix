@@ -3,37 +3,40 @@
   <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
 </div>
 
-<form data-ajax="create" action="{{ $storeUrl }}" method="post">
+<form class="js-ajax-form" method="post" action="{{ $storeUrl }}">
   @csrf
+
   <div class="modal-body">
     <div class="mb-3">
-      <label class="form-label">User ID (optional)</label>
-      <input class="form-control" name="user_id" placeholder="e.g. 1">
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Email (optional)</label>
-      <input class="form-control" name="email" placeholder="user@email.com">
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Service</label>
-      <select class="form-select" name="service_id" required>
+      <label class="form-label">User</label>
+      <select class="form-select" name="user_id">
         <option value="">Choose</option>
-        @foreach($services as $s)
-          <option value="{{ $s->id }}">
-            {{ $s->name_json['en'] ?? $s->name ?? ('#'.$s->id) }}
-          </option>
+        @foreach($users as $u)
+          <option value="{{ $u->id }}">{{ $u->email }}</option>
         @endforeach
       </select>
     </div>
 
     <div class="mb-3">
-      <label class="form-label">{{ $deviceLabel }}</label>
-      <input class="form-control" name="device" placeholder="{{ $devicePlaceholder }}">
+      <label class="form-label">Service</label>
+      <select class="form-select" name="service_id" required>
+        @foreach($services as $s)
+          <option value="{{ $s->id }}">{{ $s->name }}</option>
+        @endforeach
+      </select>
     </div>
 
-    @if($showQuantity)
+    <div class="mb-3">
+      <label class="form-label">
+        @if($kind==='imei') IMEI / Serial number
+        @elseif($kind==='server') Device / Email / Code
+        @else Device
+        @endif
+      </label>
+      <input class="form-control" name="device" required>
+    </div>
+
+    @if($kind==='server')
       <div class="mb-3">
         <label class="form-label">Quantity</label>
         <input class="form-control" name="quantity" type="number" min="1" value="1">
@@ -46,12 +49,12 @@
     </div>
 
     <div class="alert alert-info mb-0">
-      ✅ If service has supplier_id + remote_id → it will auto-send to provider and save provider response.
+      Status starts as <b>WAITING</b> ثم إذا كانت الخدمة مربوطة API سيتم الإرسال تلقائيًا ويصبح <b>INPROGRESS</b> أو <b>REJECTED</b>.
     </div>
   </div>
 
   <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-    <button class="btn btn-success" type="submit">Create</button>
+    <button class="btn btn-success">Create</button>
   </div>
 </form>

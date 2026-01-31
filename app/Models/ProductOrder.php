@@ -6,9 +6,9 @@ use Illuminate\Database\Eloquent\Model;
 
 class ProductOrder extends Model
 {
-    protected $fillable = ['user_id','email','status','total','notes','items'];
+    protected $fillable = [
+        'status','order_price','user_id','email','comments'
+    ];
 
-    protected $casts = ['items' => 'array'];
-
-    public function user(){ return $this->belongsTo(User::class, 'user_id'); }
+    protected $casts = [];
 }

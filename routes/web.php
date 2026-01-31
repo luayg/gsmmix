@@ -171,45 +171,48 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/services/file',   fn () => redirect()->route('admin.services.file.index'));
     Route::get('/services/groups', fn () => redirect()->route('admin.services.groups.index'));
 
-    /* ================== Orders Management ==================== */
-/* ================== Orders ==================== */
+    /* ================== Orders ==================== */
 Route::prefix('orders')->name('orders.')->group(function () {
 
-    Route::get('/', fn () => redirect()->route('admin.orders.imei.index'))->name('index');
-
     // IMEI
-    Route::get('/imei',                 [ImeiOrdersController::class, 'index'])->name('imei.index');
-    Route::get('/imei/modal/create',    [ImeiOrdersController::class, 'modalCreate'])->name('imei.modal.create');
-    Route::post('/imei',                [ImeiOrdersController::class, 'store'])->name('imei.store');
-    Route::get('/imei/{id}/modal/view', [ImeiOrdersController::class, 'modalView'])->name('imei.modal.view');
-    Route::get('/imei/{id}/modal/edit', [ImeiOrdersController::class, 'modalEdit'])->name('imei.modal.edit');
-    Route::put('/imei/{id}',            [ImeiOrdersController::class, 'update'])->name('imei.update');
-    Route::post('/imei/{id}/send',      [ImeiOrdersController::class, 'send'])->name('imei.send');
-    Route::post('/imei/{id}/refresh',   [ImeiOrdersController::class, 'refresh'])->name('imei.refresh');
+    Route::prefix('imei')->name('imei.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\Orders\ImeiOrdersController::class, 'index'])->name('index');
+        Route::post('/', [\App\Http\Controllers\Admin\Orders\ImeiOrdersController::class, 'store'])->name('store');
+        Route::put('/{order}', [\App\Http\Controllers\Admin\Orders\ImeiOrdersController::class, 'update'])->name('update');
+
+        Route::get('/modal/create', [\App\Http\Controllers\Admin\Orders\ImeiOrdersController::class, 'modalCreate'])->name('modal.create');
+        Route::get('/{order}/modal/view', [\App\Http\Controllers\Admin\Orders\ImeiOrdersController::class, 'modalView'])->name('modal.view');
+        Route::get('/{order}/modal/edit', [\App\Http\Controllers\Admin\Orders\ImeiOrdersController::class, 'modalEdit'])->name('modal.edit');
+    });
 
     // SERVER
-    Route::get('/server',                  [ServerOrdersController::class, 'index'])->name('server.index');
-    Route::get('/server/modal/create',     [ServerOrdersController::class, 'modalCreate'])->name('server.modal.create');
-    Route::post('/server',                 [ServerOrdersController::class, 'store'])->name('server.store');
-    Route::get('/server/{id}/modal/view',  [ServerOrdersController::class, 'modalView'])->name('server.modal.view');
-    Route::get('/server/{id}/modal/edit',  [ServerOrdersController::class, 'modalEdit'])->name('server.modal.edit');
-    Route::put('/server/{id}',             [ServerOrdersController::class, 'update'])->name('server.update');
-    Route::post('/server/{id}/send',       [ServerOrdersController::class, 'send'])->name('server.send');
-    Route::post('/server/{id}/refresh',    [ServerOrdersController::class, 'refresh'])->name('server.refresh');
+    Route::prefix('server')->name('server.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\Orders\ServerOrdersController::class, 'index'])->name('index');
+        Route::post('/', [\App\Http\Controllers\Admin\Orders\ServerOrdersController::class, 'store'])->name('store');
+        Route::put('/{order}', [\App\Http\Controllers\Admin\Orders\ServerOrdersController::class, 'update'])->name('update');
+
+        Route::get('/modal/create', [\App\Http\Controllers\Admin\Orders\ServerOrdersController::class, 'modalCreate'])->name('modal.create');
+        Route::get('/{order}/modal/view', [\App\Http\Controllers\Admin\Orders\ServerOrdersController::class, 'modalView'])->name('modal.view');
+        Route::get('/{order}/modal/edit', [\App\Http\Controllers\Admin\Orders\ServerOrdersController::class, 'modalEdit'])->name('modal.edit');
+    });
 
     // FILE
-    Route::get('/file',                  [FileOrdersController::class, 'index'])->name('file.index');
-    Route::get('/file/modal/create',     [FileOrdersController::class, 'modalCreate'])->name('file.modal.create');
-    Route::post('/file',                 [FileOrdersController::class, 'store'])->name('file.store');
-    Route::get('/file/{id}/modal/view',  [FileOrdersController::class, 'modalView'])->name('file.modal.view');
-    Route::get('/file/{id}/modal/edit',  [FileOrdersController::class, 'modalEdit'])->name('file.modal.edit');
-    Route::put('/file/{id}',             [FileOrdersController::class, 'update'])->name('file.update');
-    Route::post('/file/{id}/send',       [FileOrdersController::class, 'send'])->name('file.send');
-    Route::post('/file/{id}/refresh',    [FileOrdersController::class, 'refresh'])->name('file.refresh');
+    Route::prefix('file')->name('file.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\Orders\FileOrdersController::class, 'index'])->name('index');
+        Route::post('/', [\App\Http\Controllers\Admin\Orders\FileOrdersController::class, 'store'])->name('store');
+        Route::put('/{order}', [\App\Http\Controllers\Admin\Orders\FileOrdersController::class, 'update'])->name('update');
 
-    // PRODUCT (placeholder)
-    Route::get('/product', [ProductOrdersController::class, 'index'])->name('product.index');
+        Route::get('/modal/create', [\App\Http\Controllers\Admin\Orders\FileOrdersController::class, 'modalCreate'])->name('modal.create');
+        Route::get('/{order}/modal/view', [\App\Http\Controllers\Admin\Orders\FileOrdersController::class, 'modalView'])->name('modal.view');
+        Route::get('/{order}/modal/edit', [\App\Http\Controllers\Admin\Orders\FileOrdersController::class, 'modalEdit'])->name('modal.edit');
+    });
+
+    // PRODUCT (placeholder standard)
+    Route::prefix('product')->name('product.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\Admin\Orders\ProductOrdersController::class, 'index'])->name('index');
+    });
 });
+
 
 
 
