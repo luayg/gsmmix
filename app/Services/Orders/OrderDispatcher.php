@@ -3,66 +3,65 @@
 namespace App\Services\Orders;
 
 use App\Models\ImeiOrder;
-use App\Models\ServerOrder;
-use App\Models\FileOrder;
+use App\Models\ApiProvider;
 use Illuminate\Support\Facades\Log;
 
 class OrderDispatcher
 {
-    public function __construct(private OrderSender $sender)
-    {}
+    public function __construct(
+        private OrderSender $sender
+    ) {}
 
-    public function dispatchNow(string $kind, int $orderId): void
+    public function dispatchImei(ImeiOrder $order): void
     {
-        $order = match ($kind) {
-            'imei'   => ImeiOrder::query()->with(['service','provider'])->find($orderId),
-            'server' => ServerOrder::query()->with(['service','provider'])->find($orderId),
-            'file'   => FileOrder::query()->with(['service','provider'])->find($orderId),
-            default  => null,
-        };
+        $order->load(['service','provider']);
 
-        if (!$order) return;
+        // لازم يكون مربوط بمزود + remote_id للخدمة
+        if (!$order->service || !$order->service->supplier_id || !$order->service->remote_id) {
+            $order->status = 'rejected';
+            $order->response = 'Service is not linked to API provider.';
+            $order->replied_at = now();
+            $order->save();
+            return;
+        }
 
-        // فقط إذا API order
-        if ((int)($order->api_order ?? 0) !== 1) return;
+        $provider = ApiProvider::find($order->service->supplier_id);
+        if (!$provider || (int)$provider->active !== 1) {
+            $order->status = 'rejected';
+            $order->response = 'Provider is inactive or missing.';
+            $order->replied_at = now();
+            $order->save();
+            return;
+        }
 
-        // منع إعادة الإرسال لو هو بالفعل inprogress/success...
-        if (in_array(($order->status ?? ''), ['inprogress','success'], true)) return;
+        // waiting -> inprogress
+        $order->supplier_id = $provider->id;
+        $order->status = 'inprogress';
+        $order->processing = true;
+        $order->save();
 
         try {
-            $order->processing = 1;
-            $order->save();
+            $result = $this->sender->sendImei($provider, $order);
 
-            $result = $this->sender->send($kind, $order);
+            $order->request = $result['request'] ?? null;
+            $order->response = $result['response'] ?? null;
 
-            // خزّن الطلب/الرد خام كما هو
-            $order->request  = $result['request'] ?? null;
-            $order->response = $result['response_raw'] ?? ($result['response'] ?? null);
-
-            // remote id/reference
-            if (!empty($result['remote_id'])) {
-                $order->remote_id = (string)$result['remote_id'];
-            }
-
-            // status mapping
-            $order->status = $result['status'] ?? 'inprogress';
-
-            if (in_array($order->status, ['success','rejected','cancelled'], true)) {
+            if (($result['ok'] ?? false) === true) {
+                $order->remote_id = $result['remote_id'] ?? $order->remote_id;
+                // مزودات Dhru عادة ترجع REFERENCEID = تم استلام الطلب => inprogress
+                $order->status = $result['status'] ?? 'inprogress';
+            } else {
+                $order->status = $result['status'] ?? 'rejected';
                 $order->replied_at = now();
             }
 
-            $order->processing = 0;
+            $order->processing = false;
             $order->save();
 
         } catch (\Throwable $e) {
-            Log::error('Dispatch failed', [
-                'kind' => $kind,
-                'order_id' => $orderId,
-                'error' => $e->getMessage(),
-            ]);
-
-            $order->processing = 0;
+            Log::error('dispatchImei failed', ['order_id'=>$order->id,'err'=>$e->getMessage()]);
             $order->status = 'rejected';
+            $order->processing = false;
             $order->response = 'Dispatch error: '.$e->getMessage();
             $order->replied_at = now();
             $order->save();

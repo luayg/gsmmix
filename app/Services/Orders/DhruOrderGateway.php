@@ -3,133 +3,71 @@
 namespace App\Services\Orders;
 
 use App\Models\ApiProvider;
+use App\Models\ImeiOrder;
 use Illuminate\Support\Facades\Http;
 
 class DhruOrderGateway
 {
-    public function place(string $kind, ApiProvider $provider, $remoteServiceId, $order): array
+    public function placeImeiOrder(ApiProvider $provider, ImeiOrder $order): array
     {
-        $apiUrl = rtrim((string)$provider->url, '/') . '/api/index.php';
-
-        $paramsXml = $this->buildParametersXml($kind, $remoteServiceId, $order);
+        $serviceRemoteId = (string)($order->service?->remote_id ?? '');
+        $imeiOrSn = (string)$order->device;
 
         $payload = [
-            'username'     => $provider->username,
-            'apiaccesskey' => $provider->api_key,
-            'requestformat'=> 'JSON',
-            'action'       => 'placeimeiorder', // نفس endpoint لـ IMEI/SERVER حسب Dhru doc (placeimeiorder)
-            'parameters'   => $paramsXml,
+            'username'      => (string)($provider->username ?? ''),
+            'apiaccesskey'  => (string)($provider->api_key ?? ''),
+            'requestformat' => 'JSON',
+            'action'        => 'placeimeiorder',
+            'parameters'    => '<PARAMETERS>'
+                .'<IMEI>'.e($imeiOrSn).'</IMEI>'
+                .'<ID>'.e($serviceRemoteId).'</ID>'
+                .'</PARAMETERS>',
         ];
 
-        $r = Http::asForm()->timeout(60)->post($apiUrl, $payload);
-        $raw = (string)$r->body();
+        $url = rtrim((string)$provider->url, '/').'/api/index.php';
 
-        $decoded = json_decode($raw, true);
-        if (!is_array($decoded)) {
-            return [
-                'status' => 'rejected',
-                'request' => $payload,
-                'response_raw' => $raw,
-            ];
-        }
+        $resp = Http::asForm()
+            ->timeout(60)
+            ->post($url, $payload);
 
-        // ✅ تحليل SUCCESS/ERROR
-        // مثال success: {"SUCCESS":[{"MESSAGE":"Order received","REFERENCEID":"3489..."}]}
-        // مثال error: {"ERROR":[{"MESSAGE":"CreditprocessError","FULL_DESCRIPTION":"You have not enough credit"}]}
-        $status = 'inprogress';
-        $remoteId = null;
+        $raw = (string)$resp->body();
+        $json = json_decode($raw, true);
 
-        if (!empty($decoded['ERROR'])) {
-            $status = 'rejected';
-        }
-
-        if (!empty($decoded['SUCCESS'][0]['REFERENCEID'])) {
-            $remoteId = $decoded['SUCCESS'][0]['REFERENCEID'];
-            $status = 'inprogress';
-        }
-
-        // إذا الرد فيه “not enough credit” نخليه rejected صريح
-        $flat = strtolower($raw);
-        if (str_contains($flat, 'not enough credit')) {
-            $status = 'rejected';
-        }
-
-        return [
-            'status' => $status,
-            'remote_id' => $remoteId,
-            'request' => $payload,
-            'response' => $decoded,
-            'response_raw' => $raw,
+        $result = [
+            'ok' => false,
+            'status' => 'rejected',
+            'remote_id' => null,
+            'request' => json_encode(['url'=>$url,'payload'=>$payload], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
+            'response' => $raw,
         ];
-    }
 
-    private function buildParametersXml(string $kind, $serviceId, $order): string
-    {
-        // Dhru expects:
-        // <PARAMETERS><IMEI>...</IMEI><ID>...</ID><CUSTOMFIELD>base64(json)</CUSTOMFIELD></PARAMETERS>
-        // For SERVER: still ID + optional fields SN/REFERENCE/... حسب Requires.Custom.
-        $device = trim((string)$order->device);
+        // Dhru SUCCESS
+        if (is_array($json) && isset($json['SUCCESS'][0])) {
+            $s0 = $json['SUCCESS'][0];
+            $ref = $s0['REFERENCEID'] ?? null;
 
-        $xml = '<PARAMETERS>';
-        if ($kind === 'imei') {
-            $xml .= '<IMEI>'.htmlspecialchars($device, ENT_QUOTES).'</IMEI>';
-            $xml .= '<ID>'.htmlspecialchars((string)$serviceId, ENT_QUOTES).'</ID>';
-        } elseif ($kind === 'server') {
-            $xml .= '<ID>'.htmlspecialchars((string)$serviceId, ENT_QUOTES).'</ID>';
-            // نضعه كـ SN افتراضياً (كثير خدمات Server تطلب SN/Custom)
-            $xml .= '<SN>'.htmlspecialchars($device, ENT_QUOTES).'</SN>';
-            if (!empty($order->quantity)) {
-                $xml .= '<QNT>'.(int)$order->quantity.'</QNT>';
+            $result['ok'] = true;
+            $result['remote_id'] = $ref;
+            $result['status'] = 'inprogress'; // تم استلام الطلب
+            return $result;
+        }
+
+        // Dhru ERROR
+        if (is_array($json) && isset($json['ERROR'][0])) {
+            $e0 = $json['ERROR'][0];
+            $msg = (string)($e0['MESSAGE'] ?? 'Unknown error');
+            $result['ok'] = false;
+            $result['status'] = 'rejected';
+            $result['response'] = json_encode($json, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+
+            // مثال: credit error
+            if (stripos($msg, 'credit') !== false) {
+                $result['status'] = 'rejected';
             }
-        } elseif ($kind === 'file') {
-            $xml .= '<ID>'.htmlspecialchars((string)$serviceId, ENT_QUOTES).'</ID>';
-            // device info كـ REFERENCE
-            $xml .= '<REFERENCE>'.htmlspecialchars($device, ENT_QUOTES).'</REFERENCE>';
-        } else {
-            $xml .= '<ID>'.htmlspecialchars((string)$serviceId, ENT_QUOTES).'</ID>';
+            return $result;
         }
 
-        $xml .= '</PARAMETERS>';
-        return $xml;
+        // Unknown format
+        return $result;
     }
-public function placeImeiOrder(\App\Models\ApiProvider $provider, array $payload): array
-{
-    // expected: IMEI, ID, optional CUSTOMFIELD...
-    $imei = (string)($payload['IMEI'] ?? '');
-    $id   = (string)($payload['ID'] ?? '');
-
-    $xml = "<PARAMETERS><IMEI>".htmlspecialchars($imei, ENT_XML1)."</IMEI><ID>".htmlspecialchars($id, ENT_XML1)."</ID></PARAMETERS>";
-
-    if (!empty($payload['CUSTOMFIELD'])) {
-        $xml = "<PARAMETERS><IMEI>".htmlspecialchars($imei, ENT_XML1)."</IMEI><ID>".htmlspecialchars($id, ENT_XML1)."</ID><CUSTOMFIELD>".htmlspecialchars((string)$payload['CUSTOMFIELD'], ENT_XML1)."</CUSTOMFIELD></PARAMETERS>";
-    }
-
-    // نفس شكل Dhru: POST api/index.php
-    $req = [
-        'username' => $provider->username,
-        'apiaccesskey' => $provider->api_key,
-        'requestformat' => 'JSON',
-        'action' => 'placeimeiorder',
-        'parameters' => $xml,
-    ];
-
-    $raw = $this->post($provider->url, $req); // تأكد عندك post() موجودة
-
-    $referenceId = null;
-    $ok = false;
-
-    if (is_array($raw) && isset($raw['SUCCESS'][0]['REFERENCEID'])) {
-        $ok = true;
-        $referenceId = $raw['SUCCESS'][0]['REFERENCEID'];
-    }
-
-    return [
-        'ok' => $ok,
-        'reference_id' => $referenceId,
-        'request' => json_encode($req, JSON_UNESCAPED_UNICODE),
-        'raw' => json_encode($raw, JSON_UNESCAPED_UNICODE),
-    ];
-}
-
-
 }
