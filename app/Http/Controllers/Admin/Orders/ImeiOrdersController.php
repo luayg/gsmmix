@@ -8,135 +8,164 @@ use App\Models\ImeiOrder;
 use App\Models\ImeiService;
 use App\Models\User;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 
 class ImeiOrdersController extends Controller
 {
-    private string $kind = 'imei';
-    private string $routePrefix = 'admin.orders.imei';
-
     public function index(Request $r)
     {
-        $q = trim((string)$r->get('q', ''));
-        $status = trim((string)$r->get('status', ''));
-        $provider = trim((string)$r->get('provider', ''));
+        $q        = trim((string)$r->get('q', ''));
+        $status   = trim((string)$r->get('status', ''));
+        $provider = (int)$r->get('provider_id', 0);
 
         $rows = ImeiOrder::query()
-            ->with(['service','provider'])
-            ->when($q !== '', function($qq) use ($q){
-                $qq->where(function($w) use ($q){
-                    $w->where('device','like',"%$q%")
-                      ->orWhere('email','like',"%$q%")
-                      ->orWhere('remote_id','like',"%$q%");
-                });
-            })
-            ->when($status !== '', fn($qq) => $qq->where('status', $status))
-            ->when($provider !== '', fn($qq) => $qq->where('supplier_id', (int)$provider))
-            ->orderByDesc('id')
-            ->paginate(20)
-            ->withQueryString();
+            ->with(['service', 'provider'])
+            ->orderByDesc('id');
 
-        // للفلاتر
-        $providers = ApiProvider::query()->orderBy('name')->get(['id','name']);
-        $statuses = ['waiting','inprogress','success','rejected','cancelled','failed'];
+        if ($q !== '') {
+            $rows->where(function ($w) use ($q) {
+                $w->where('device', 'like', "%{$q}%")
+                    ->orWhere('email', 'like', "%{$q}%")
+                    ->orWhere('remote_id', 'like', "%{$q}%")
+                    ->orWhere('id', $q);
+            });
+        }
+
+        if ($status !== '') {
+            $rows->where('status', $status);
+        }
+
+        if ($provider > 0) {
+            $rows->where('supplier_id', $provider);
+        }
+
+        $rows = $rows->paginate(20)->withQueryString();
+
+        $providers = ApiProvider::query()->orderBy('name')->get();
 
         return view('admin.orders.imei.index', [
-            'rows' => $rows,
-            'providers' => $providers,
-            'statuses' => $statuses,
-            'routePrefix' => $this->routePrefix,
-            'kind' => $this->kind,
+            'rows'       => $rows,
+            'providers'  => $providers,
+            'routePrefix'=> 'admin.orders.imei',
         ]);
     }
 
+    /**
+     * Modal: create
+     */
     public function modalCreate()
     {
         $users = User::query()
-            ->orderByDesc('id')
-            ->limit(200)
-            ->get(['id','email','name']);
-
-        $servicesRaw = ImeiService::query()
-            ->where('active', 1)
+            ->select(['id', 'email', 'balance'])
             ->orderByDesc('id')
             ->limit(1000)
-            ->get(['id','name','price','allow_bulk']);
+            ->get();
 
-        $services = $servicesRaw->map(function($s){
-            $nameArr = [];
-            if (is_string($s->name) && $s->name !== '') {
-                $decoded = json_decode($s->name, true);
-                if (is_array($decoded)) $nameArr = $decoded;
-            }
-            $label = (string)($nameArr['en'] ?? $nameArr['fallback'] ?? $s->name ?? ('Service #' . $s->id));
+        $services = ImeiService::query()
+            ->select(['id','name','price','allow_bulk','main_field','min_qty','max_qty','supplier_id','remote_id'])
+            ->orderByDesc('id')
+            ->limit(2000)
+            ->get()
+            ->map(function ($s) {
+                $nameArr = json_decode((string)$s->name, true);
+                if (!is_array($nameArr)) $nameArr = [];
 
-            return [
-                'id' => $s->id,
-                'label' => $label,
-                'price' => (float)($s->price ?? 0),
-                'allow_bulk' => (int)($s->allow_bulk ?? 0) === 1,
-            ];
-        })->values()->all();
+                $title = (string)($nameArr['en'] ?? $nameArr['fallback'] ?? $s->name ?? '');
+                $title = trim($title) === '' ? ('Service #' . $s->id) : $title;
 
-        return view('admin.orders._modals.create', [
-            'kind' => $this->kind,
-            'routePrefix' => $this->routePrefix,
-            'users' => $users,
-            'services' => $services,
+                $price = (float)($s->price ?? 0);
+
+                $main = json_decode((string)$s->main_field, true);
+                if (!is_array($main)) $main = [];
+
+                $mainLabel = (string)Arr::get($main, 'label.en', Arr::get($main, 'label.fallback', 'IMEI'));
+                $mainType  = (string)Arr::get($main, 'type', 'imei');
+
+                return [
+                    'id'         => (int)$s->id,
+                    'label'      => $title . ' — $' . number_format($price, 2),
+                    'price'      => $price,
+                    'allow_bulk' => (int)($s->allow_bulk ?? 0),
+                    'main_label' => $mainLabel ?: 'IMEI',
+                    'main_type'  => $mainType ?: 'imei',
+                    'min_qty'    => (int)($s->min_qty ?? 0),
+                    'max_qty'    => (int)($s->max_qty ?? 0),
+                    'supplier_id'=> (int)($s->supplier_id ?? 0),
+                    'remote_id'  => $s->remote_id,
+                ];
+            })
+            ->values();
+
+        return view('admin.orders.imei.modals.create', [
+            'users'      => $users,
+            'services'   => $services,
+            'routePrefix'=> 'admin.orders.imei',
         ]);
     }
 
+    /**
+     * Store (POST) — هذا كان لا يحدث عندك لأن الفورم كان يرسل GET
+     */
     public function store(Request $r)
     {
-        // ملاحظة: user_id اختياري، email اختياري، لكن واحد منهم لازم يكون موجود
         $v = $r->validate([
-            'user_id' => 'nullable|integer|exists:users,id',
-            'email' => 'nullable|email|max:255',
+            'user_id'    => 'nullable|integer|exists:users,id',
+            'email'      => 'nullable|email',
             'service_id' => 'required|integer|exists:imei_services,id',
-            'device' => 'required|string|max:255',
-            'bulk' => 'nullable|string',
-            'comments' => 'nullable|string',
+            'device'     => 'required|string|max:255',
+            'comments'   => 'nullable|string',
+            'bulk'       => 'nullable|string', // optional (لو allow_bulk)
         ]);
-
-        if (empty($v['user_id']) && empty($v['email'])) {
-            return response()->json([
-                'ok' => false,
-                'message' => 'Please select user or enter email',
-            ], 422);
-        }
 
         $service = ImeiService::findOrFail((int)$v['service_id']);
 
-        // إذا تم اختيار user_id نجيب ايميله تلقائيًا
-        $email = $v['email'] ?? null;
-        $userId = $v['user_id'] ?? null;
+        $userId = !empty($v['user_id']) ? (int)$v['user_id'] : null;
+        $email  = $v['email'] ?? null;
+
         if ($userId) {
             $u = User::find($userId);
             if ($u) $email = $u->email;
         }
 
-        // الحالة المطلوبة منك: waiting / inprogress / success / rejected / cancelled
-        // كبداية دايمًا waiting
+        // السعر/الربح (نفس أعمدتك الموجودة بالموديل)
+        $finalPrice = (float)($service->price ?? 0);
+        $cost       = (float)($service->cost ?? 0);
+        $profit     = $finalPrice - $cost;
+
         $order = ImeiOrder::create([
-            'device' => $v['device'],
-            'status' => 'waiting',
-            'comments' => $v['comments'] ?? '',
-            'user_id' => $userId,
-            'email' => $email,
-            'service_id' => (int)$service->id,
-            'supplier_id' => (int)($service->supplier_id ?? 0) ?: null,
-            'remote_id' => (int)($service->remote_id ?? 0) ?: null,
+            'device'      => $v['device'],
+            'remote_id'   => null,                 // يصير ReferenceID بعد الإرسال للمزود
+            'status'      => 'waiting',            // حسب طلبك: waiting أولاً
+            'order_price' => $finalPrice,          // سعر البيع
+            'price'       => $finalPrice,
+            'profit'      => $profit,
 
-            'api_order' => (int)((int)($service->supplier_id ?? 0) > 0 && (int)($service->remote_id ?? 0) > 0),
-            'processing' => 0,
-            'request' => null,
-            'response' => null,
-            'params' => null,
-            'ip' => $r->ip(),
+            'comments'    => $v['comments'] ?? null,
+
+            'user_id'     => $userId,
+            'email'       => $email,
+
+            'service_id'  => (int)$service->id,
+            'supplier_id' => $service->supplier_id,  // المزود المرتبط بالخدمة
+            'needs_verify'=> 0,
+            'expired'     => 0,
+            'approved'    => 1,
+
+            'ip'          => $r->ip(),
+            'api_order'   => ($service->supplier_id && $service->remote_id) ? 1 : 0,
+            'params'      => json_encode([
+                'kind'      => 'imei',
+                'bulk'      => $v['bulk'] ?? null,
+                'service_remote_id' => $service->remote_id,
+            ], JSON_UNESCAPED_UNICODE),
+            'processing'  => 0,
         ]);
 
-        return response()->json([
-            'ok' => true,
-            'id' => $order->id,
-        ]);
+        // ملاحظة: الإرسال التلقائي للمزود “فعلياً” لازم يمر عبر OrderDispatcher/OrderSender عندك
+        // لكن بدون رؤية توقيعات الكلاسات الحالية عندك قد نكسر النظام.
+        // الآن على الأقل: الحفظ صار صحيح + الحالة waiting جاهزة للـ auto-dispatch بالخطوة التالية.
+
+        return redirect()->route('admin.orders.imei.index')
+            ->with('ok', 'Order created (waiting). #' . $order->id);
     }
 }
