@@ -1,9 +1,16 @@
-@php
-  $title = 'File Orders';
-  $newModalUrl = route('admin.orders.file.modal.create');
-  $viewUrl = fn($id)=> route('admin.orders.file.modal.view', $id);
-  $editUrl = fn($id)=> route('admin.orders.file.modal.edit', $id);
-  $sendUrl = fn($id)=> route('admin.orders.file.send', $id);
-  $refreshUrl = fn($id)=> route('admin.orders.file.refresh', $id);
-@endphp
-@include('admin.orders._index', compact('title','newModalUrl','viewUrl','editUrl','sendUrl','refreshUrl','rows','services','providers'))
+@extends('layouts.admin')
+@section('title','File Orders')
+
+@section('content')
+  <div class="container-fluid py-3">
+    <h4 class="mb-3">File Orders</h4>
+
+    @include('admin.orders._index', [
+      'title'       => 'File Orders',
+      'rows'        => $rows,
+      'services'    => $services,
+      'providers'   => $providers,
+      'routePrefix' => 'admin.orders.file',
+    ])
+  </div>
+@endsection

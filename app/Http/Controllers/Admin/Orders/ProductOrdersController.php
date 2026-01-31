@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\Admin\Orders;
 
-use App\Models\ProductOrder;
-use App\Models\Product;
+use App\Http\Controllers\Controller;
 
-class ProductOrdersController extends BaseOrdersController
+class ProductOrdersController extends Controller
 {
-    protected string $orderModel  = ProductOrder::class;
-    protected string $serviceModel = Product::class;
+    public function index()
+    {
+        return view('admin.orders.product.index');
+    }
 
-    protected string $viewPrefix  = 'product';
-    protected string $routePrefix = 'admin.orders.product';
+    public function modalCreate()
+    {
+        return response('<div class="p-4">Product orders will be implemented later.</div>', 200);
+    }
 }

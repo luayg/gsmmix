@@ -1,9 +1,16 @@
-@php
-  $title = 'IMEI Orders';
-  $newModalUrl = route('admin.orders.imei.modal.create');
-  $viewUrl = fn($id)=> route('admin.orders.imei.modal.view', $id);
-  $editUrl = fn($id)=> route('admin.orders.imei.modal.edit', $id);
-  $sendUrl = fn($id)=> route('admin.orders.imei.send', $id);
-  $refreshUrl = fn($id)=> route('admin.orders.imei.refresh', $id);
-@endphp
-@include('admin.orders._index', compact('title','newModalUrl','viewUrl','editUrl','sendUrl','refreshUrl','rows','services','providers'))
+@extends('layouts.admin')
+@section('title','IMEI Orders')
+
+@section('content')
+  <div class="container-fluid py-3">
+    <h4 class="mb-3">IMEI Orders</h4>
+
+    @include('admin.orders._index', [
+      'title'       => 'IMEI Orders',
+      'rows'        => $rows,
+      'services'    => $services,
+      'providers'   => $providers,
+      'routePrefix' => 'admin.orders.imei',
+    ])
+  </div>
+@endsection

@@ -1,46 +1,38 @@
 <div class="modal-header">
   <h5 class="modal-title">Order #{{ $row->id }} | Edit</h5>
-  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
-<form class="js-ajax-form" method="post" action="{{ $updateUrl }}">
+<form method="post" action="{{ route($routePrefix.'.update', $row) }}">
   @csrf
   @method('PUT')
 
   <div class="modal-body">
-    <table class="table table-bordered">
-      <tr><th style="width:220px;">Service</th><td>{{ $row->service?->name ?? '—' }}</td></tr>
-      <tr><th>User</th><td>{{ $row->email ?? '—' }}</td></tr>
-      <tr><th>Device</th><td>{{ $row->device ?? '—' }}</td></tr>
-      <tr><th>Provider</th><td>{{ $row->provider?->name ?? '—' }}</td></tr>
-      <tr><th>Provider Ref</th><td>{{ $row->remote_id ?? '—' }}</td></tr>
+    <table class="table table-sm">
+      <tr><th style="width:180px">Service</th><td>{{ optional($row->service)->name_json['en'] ?? optional($row->service)->name ?? '—' }}</td></tr>
+      <tr><th>User</th><td>{{ $row->email ?? optional($row->user)->email ?? '—' }}</td></tr>
+      <tr><th>Device</th><td>{{ $row->device }}</td></tr>
+      <tr><th>Provider</th><td>{{ optional($row->provider)->name ?? '—' }}</td></tr>
+      <tr><th>Remote ID</th><td>{{ $row->remote_id ?? '—' }}</td></tr>
     </table>
 
     <div class="mb-3">
+      <label class="form-label">Reply</label>
+      <textarea name="reply" class="form-control" rows="6">{{ old('reply', $row->response ?? '') }}</textarea>
+    </div>
+
+    <div class="mb-3">
       <label class="form-label">Status</label>
-      <select class="form-select" name="status" required>
-        @foreach($statuses as $st)
-          <option value="{{ $st }}" @selected($row->status===$st)>{{ ucfirst($st) }}</option>
+      <select name="status" class="form-select">
+        @foreach(['waiting','inprogress','success','rejected','cancelled'] as $st)
+          <option value="{{ $st }}" @selected(($row->status ?? 'waiting')===$st)>{{ ucfirst($st) }}</option>
         @endforeach
       </select>
-      <div class="form-text">
-        الحالات فقط: waiting / inprogress / success / rejected / cancelled
-      </div>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Comments</label>
-      <textarea class="form-control" name="comments" rows="3">{{ $row->comments }}</textarea>
-    </div>
-
-    <div class="mb-3">
-      <label class="form-label">Raw response (editable if you want)</label>
-      <textarea class="form-control" name="response" rows="6">{{ $row->response }}</textarea>
     </div>
   </div>
 
   <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-    <button class="btn btn-success">Save</button>
+    <button type="submit" class="btn btn-success">Save</button>
   </div>
 </form>
