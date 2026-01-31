@@ -2,17 +2,16 @@
 
 namespace App\Http\Controllers\Admin\Orders;
 
-use App\Http\Controllers\Controller;
+use Illuminate\Database\Eloquent\Model;
 
-class ProductOrdersController extends Controller
+class ProductOrdersController extends BaseOrdersController
 {
-    public function index()
-    {
-        return view('admin.orders.product.index');
-    }
+    // لو ما عندك موديل/جدول product_orders جاهز الآن، خليه بسيط بدون API
+    protected string $model      = \App\Models\ProductOrder::class; // تأكد عندك موديل
+    protected string $kind       = 'product';
+    protected string $viewFolder = 'admin.orders.product';
+    protected string $routePrefix= 'admin.orders.product';
 
-    public function modalCreate()
-    {
-        return response('<div class="p-4">Product orders will be implemented later.</div>', 200);
-    }
+    protected function serviceModel(): ?string { return null; }
+    protected function deviceFieldLabel(): string { return 'Product'; }
 }

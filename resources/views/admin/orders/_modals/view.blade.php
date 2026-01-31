@@ -1,23 +1,48 @@
+@php
+  $req = $row->request;
+  $res = $row->response;
+@endphp
+
 <div class="modal-header">
   <h5 class="modal-title">Order #{{ $row->id }} | View</h5>
   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
 <div class="modal-body">
-  <table class="table table-sm">
-    <tr><th style="width:180px">Service</th><td>{{ optional($row->service)->name_json['en'] ?? optional($row->service)->name ?? '—' }}</td></tr>
-    <tr><th>User</th><td>{{ $row->email ?? optional($row->user)->email ?? '—' }}</td></tr>
-    <tr><th>Device</th><td>{{ $row->device }}</td></tr>
-    <tr><th>Provider</th><td>{{ optional($row->provider)->name ?? '—' }}</td></tr>
-    <tr><th>Status</th><td>{{ strtoupper($row->status ?? 'waiting') }}</td></tr>
-    <tr><th>Remote ID</th><td>{{ $row->remote_id ?? '—' }}</td></tr>
-    <tr><th>Created</th><td>{{ optional($row->created_at)->format('Y-m-d H:i:s') }}</td></tr>
-    <tr><th>Replied at</th><td>{{ optional($row->replied_at)->format('Y-m-d H:i:s') ?? '—' }}</td></tr>
-  </table>
+  <dl class="row mb-0">
+    <dt class="col-sm-3">Service</dt>
+    <dd class="col-sm-9">{{ optional($row->service)->name ?? '—' }}</dd>
 
-  <div class="mt-3">
-    <div class="fw-bold mb-2">Last Response (raw)</div>
-    <pre class="bg-light p-3 border rounded" style="white-space:pre-wrap">{{ $row->response ?? '' }}</pre>
+    <dt class="col-sm-3">Provider</dt>
+    <dd class="col-sm-9">{{ optional($row->provider)->name ?? '—' }}</dd>
+
+    <dt class="col-sm-3">{{ $deviceLabel ?? 'Device' }}</dt>
+    <dd class="col-sm-9">{{ $row->device }}</dd>
+
+    <dt class="col-sm-3">Status</dt>
+    <dd class="col-sm-9"><span class="badge bg-primary">{{ strtoupper($row->status ?? 'waiting') }}</span></dd>
+
+    <dt class="col-sm-3">API order</dt>
+    <dd class="col-sm-9">{{ (int)($row->api_order ?? 0) === 1 ? 'Yes' : 'No' }}</dd>
+
+    <dt class="col-sm-3">Remote ID</dt>
+    <dd class="col-sm-9">{{ $row->remote_id ?: '—' }}</dd>
+
+    <dt class="col-sm-3">Comments</dt>
+    <dd class="col-sm-9">{{ $row->comments ?: '—' }}</dd>
+  </dl>
+
+  <hr>
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <div class="fw-bold mb-2">Request</div>
+      <pre class="bg-light p-3 border rounded" style="white-space:pre-wrap;">{{ is_string($req) ? $req : json_encode($req, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE) }}</pre>
+    </div>
+    <div class="col-md-6">
+      <div class="fw-bold mb-2">Response</div>
+      <pre class="bg-light p-3 border rounded" style="white-space:pre-wrap;">{{ is_string($res) ? $res : json_encode($res, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE) }}</pre>
+    </div>
   </div>
 </div>
 

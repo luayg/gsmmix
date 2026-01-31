@@ -2,51 +2,70 @@
 
 namespace App\Services\Orders;
 
-use App\Models\ApiProvider;
-use App\Services\Providers\DhruClient;
+use App\Models\ImeiOrder;
+use App\Models\ServerOrder;
+use App\Models\FileOrder;
+use Illuminate\Support\Facades\Log;
 
 class OrderDispatcher
 {
-    public function sendByProvider(ApiProvider $provider, int $serviceRemoteId, array $payload): array
-    {
-        $type = strtolower((string)$provider->type);
+    public function __construct(private OrderSender $sender)
+    {}
 
-        return match ($type) {
-            'dhru' => (new DhruClient($provider))->placeOrder($serviceRemoteId, $payload),
-            default => ['ok' => false, 'error' => "Provider type [$type] not supported yet."],
+    public function dispatchNow(string $kind, int $orderId): void
+    {
+        $order = match ($kind) {
+            'imei'   => ImeiOrder::query()->with(['service','provider'])->find($orderId),
+            'server' => ServerOrder::query()->with(['service','provider'])->find($orderId),
+            'file'   => FileOrder::query()->with(['service','provider'])->find($orderId),
+            default  => null,
         };
-    }
 
-    public function refreshByProvider(ApiProvider $provider, int $remoteOrderId): array
-    {
-        $type = strtolower((string)$provider->type);
+        if (!$order) return;
 
-        return match ($type) {
-            'dhru' => (new DhruClient($provider))->getOrder($remoteOrderId),
-            default => ['ok' => false, 'error' => "Provider type [$type] not supported yet."],
-        };
-    }
+        // فقط إذا API order
+        if ((int)($order->api_order ?? 0) !== 1) return;
 
-    /**
-     * نحاول نحدد اسم الحقل المرسل حسب label في main_field
-     * مثال: IMEI / SN / EMAIL / UDID ...
-     */
-    public function buildMainFieldPayload(string $mainLabel, string $value): array
-    {
-        $label = strtoupper(trim($mainLabel));
-        $label = preg_replace('/\s+/', '_', $label);
+        // منع إعادة الإرسال لو هو بالفعل inprogress/success...
+        if (in_array(($order->status ?? ''), ['inprogress','success'], true)) return;
 
-        // بعض التطبيع
-        $map = [
-            'SERIAL' => 'SN',
-            'SERIAL_NUMBER' => 'SN',
-            'E-MAIL' => 'EMAIL',
-        ];
-        $key = $map[$label] ?? $label;
+        try {
+            $order->processing = 1;
+            $order->save();
 
-        // fallback إن كان فاضي
-        if ($key === '' || $key === 'GROUP') $key = 'IMEI';
+            $result = $this->sender->send($kind, $order);
 
-        return [$key => $value];
+            // خزّن الطلب/الرد خام كما هو
+            $order->request  = $result['request'] ?? null;
+            $order->response = $result['response_raw'] ?? ($result['response'] ?? null);
+
+            // remote id/reference
+            if (!empty($result['remote_id'])) {
+                $order->remote_id = (string)$result['remote_id'];
+            }
+
+            // status mapping
+            $order->status = $result['status'] ?? 'inprogress';
+
+            if (in_array($order->status, ['success','rejected','cancelled'], true)) {
+                $order->replied_at = now();
+            }
+
+            $order->processing = 0;
+            $order->save();
+
+        } catch (\Throwable $e) {
+            Log::error('Dispatch failed', [
+                'kind' => $kind,
+                'order_id' => $orderId,
+                'error' => $e->getMessage(),
+            ]);
+
+            $order->processing = 0;
+            $order->status = 'rejected';
+            $order->response = 'Dispatch error: '.$e->getMessage();
+            $order->replied_at = now();
+            $order->save();
+        }
     }
 }

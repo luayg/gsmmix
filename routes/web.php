@@ -174,37 +174,38 @@ Route::prefix('admin')->name('admin.')->group(function () {
       /* ================== ✅ Orders ==================== */
     Route::prefix('orders')->name('orders.')->group(function () {
 
-        // IMEI Orders
-        Route::get('/imei', [ImeiOrdersController::class, 'index'])->name('imei.index');
-        Route::post('/imei', [ImeiOrdersController::class, 'store'])->name('imei.store');
-        Route::put('/imei/{order}', [ImeiOrdersController::class, 'update'])->name('imei.update');
+    // IMEI
+    Route::get('/imei', [ImeiOrdersController::class, 'index'])->name('imei.index');
+    Route::post('/imei', [ImeiOrdersController::class, 'store'])->name('imei.store');
+    Route::put('/imei/{order}', [ImeiOrdersController::class, 'update'])->name('imei.update');
+    Route::get('/imei/modal/create', [ImeiOrdersController::class, 'modalCreate'])->name('imei.modal.create');
+    Route::get('/imei/{order}/modal/view', [ImeiOrdersController::class, 'modalView'])->name('imei.modal.view');
+    Route::get('/imei/{order}/modal/edit', [ImeiOrdersController::class, 'modalEdit'])->name('imei.modal.edit');
 
-        Route::get('/imei/modal/create', [ImeiOrdersController::class, 'modalCreate'])->name('imei.modal.create');
-        Route::get('/imei/{order}/modal/view', [ImeiOrdersController::class, 'modalView'])->name('imei.modal.view');
-        Route::get('/imei/{order}/modal/edit', [ImeiOrdersController::class, 'modalEdit'])->name('imei.modal.edit');
+    // SERVER
+    Route::get('/server', [ServerOrdersController::class, 'index'])->name('server.index');
+    Route::post('/server', [ServerOrdersController::class, 'store'])->name('server.store');
+    Route::put('/server/{order}', [ServerOrdersController::class, 'update'])->name('server.update');
+    Route::get('/server/modal/create', [ServerOrdersController::class, 'modalCreate'])->name('server.modal.create');
+    Route::get('/server/{order}/modal/view', [ServerOrdersController::class, 'modalView'])->name('server.modal.view');
+    Route::get('/server/{order}/modal/edit', [ServerOrdersController::class, 'modalEdit'])->name('server.modal.edit');
 
-        // Server Orders
-        Route::get('/server', [ServerOrdersController::class, 'index'])->name('server.index');
-        Route::post('/server', [ServerOrdersController::class, 'store'])->name('server.store');
-        Route::put('/server/{order}', [ServerOrdersController::class, 'update'])->name('server.update');
+    // FILE
+    Route::get('/file', [FileOrdersController::class, 'index'])->name('file.index');
+    Route::post('/file', [FileOrdersController::class, 'store'])->name('file.store');
+    Route::put('/file/{order}', [FileOrdersController::class, 'update'])->name('file.update');
+    Route::get('/file/modal/create', [FileOrdersController::class, 'modalCreate'])->name('file.modal.create');
+    Route::get('/file/{order}/modal/view', [FileOrdersController::class, 'modalView'])->name('file.modal.view');
+    Route::get('/file/{order}/modal/edit', [FileOrdersController::class, 'modalEdit'])->name('file.modal.edit');
 
-        Route::get('/server/modal/create', [ServerOrdersController::class, 'modalCreate'])->name('server.modal.create');
-        Route::get('/server/{order}/modal/view', [ServerOrdersController::class, 'modalView'])->name('server.modal.view');
-        Route::get('/server/{order}/modal/edit', [ServerOrdersController::class, 'modalEdit'])->name('server.modal.edit');
-
-        // File Orders
-        Route::get('/file', [FileOrdersController::class, 'index'])->name('file.index');
-        Route::post('/file', [FileOrdersController::class, 'store'])->name('file.store');
-        Route::put('/file/{order}', [FileOrdersController::class, 'update'])->name('file.update');
-
-        Route::get('/file/modal/create', [FileOrdersController::class, 'modalCreate'])->name('file.modal.create');
-        Route::get('/file/{order}/modal/view', [FileOrdersController::class, 'modalView'])->name('file.modal.view');
-        Route::get('/file/{order}/modal/edit', [FileOrdersController::class, 'modalEdit'])->name('file.modal.edit');
-
-        // Product Orders (placeholder clean)
-        Route::get('/product', [ProductOrdersController::class, 'index'])->name('product.index');
-        Route::get('/product/modal/create', [ProductOrdersController::class, 'modalCreate'])->name('product.modal.create');
-    });
+    // PRODUCT (placeholder ready بدون API)
+    Route::get('/product', [ProductOrdersController::class, 'index'])->name('product.index');
+    Route::post('/product', [ProductOrdersController::class, 'store'])->name('product.store');
+    Route::put('/product/{order}', [ProductOrdersController::class, 'update'])->name('product.update');
+    Route::get('/product/modal/create', [ProductOrdersController::class, 'modalCreate'])->name('product.modal.create');
+    Route::get('/product/{order}/modal/view', [ProductOrdersController::class, 'modalView'])->name('product.modal.view');
+    Route::get('/product/{order}/modal/edit', [ProductOrdersController::class, 'modalEdit'])->name('product.modal.edit');
+});
 
 
 

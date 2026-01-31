@@ -3,97 +3,42 @@
 namespace App\Services\Orders;
 
 use App\Models\ApiProvider;
-use Illuminate\Support\Facades\Http;
 
 class OrderSender
 {
-    /**
-     * إرسال IMEI/SERVER عبر DHRU (placeimeiorder).
-     * (DHRU يستخدم نفس action للـ IMEI و SERVER حسب نوع الخدمة نفسها)
-     */
-    public function sendDhruImeiOrServer(ApiProvider $provider, array $payload): array
+    public function __construct(private DhruOrderGateway $dhru)
+    {}
+
+    public function send(string $kind, $order): array
     {
-        $url = rtrim((string)$provider->url, '/') . '/api/index.php';
-
-        $base = [
-            'username'     => (string)$provider->username,
-            'apiaccesskey' => (string)$provider->api_key,
-            'requestformat'=> 'JSON',
-        ];
-
-        $post = array_merge($base, [
-            'action'     => 'placeimeiorder',
-            'parameters' => $payload['parameters_xml'], // <PARAMETERS>...</PARAMETERS>
-        ]);
-
-        $resp = Http::asForm()->timeout(60)->post($url, $post);
-        $json = $resp->json();
-
-        return [
-            'http_status' => $resp->status(),
-            'json' => $json,
-            'raw'  => $resp->body(),
-        ];
-    }
-
-    /**
-     * استخراج رسالة مفهومة من DHRU response (SUCCESS/ERROR).
-     */
-    public function dhruExtractMessage(?array $json): array
-    {
-        $out = [
-            'ok' => false,
-            'reference_id' => null,
-            'message' => null,
-            'full_description' => null,
-        ];
-
-        if (!is_array($json)) {
-            $out['message'] = 'Empty response';
-            return $out;
+        $service = $order->service;
+        if (!$service) {
+            return [
+                'status' => 'rejected',
+                'response_raw' => 'Missing service',
+            ];
         }
 
-        // SUCCESS
-        if (!empty($json['SUCCESS']) && is_array($json['SUCCESS'])) {
-            $first = $json['SUCCESS'][0] ?? [];
-            $out['ok'] = true;
-            $out['message'] = $first['MESSAGE'] ?? 'SUCCESS';
-            $out['reference_id'] = $first['REFERENCEID'] ?? null;
-            return $out;
+        $providerId = (int)($service->supplier_id ?? 0);
+        $remoteServiceId = $service->remote_id ?? null;
+
+        if ($providerId <= 0 || empty($remoteServiceId)) {
+            return [
+                'status' => 'rejected',
+                'response_raw' => 'Service is not linked to API (supplier_id/remote_id missing).',
+            ];
         }
 
-        // ERROR (مثل CreditprocessError)
-        if (!empty($json['ERROR']) && is_array($json['ERROR'])) {
-            $first = $json['ERROR'][0] ?? [];
-            $out['ok'] = false;
-            $out['message'] = $first['MESSAGE'] ?? 'ERROR';
-            $out['full_description'] = $first['FULL_DESCRIPTION'] ?? null;
-            return $out;
+        $provider = ApiProvider::query()->find($providerId);
+        if (!$provider || (int)$provider->active !== 1) {
+            return [
+                'status' => 'rejected',
+                'response_raw' => 'Provider inactive/missing',
+            ];
         }
 
-        // Sometimes provider returns strange format
-        $out['message'] = $json['message'] ?? 'Unknown response format';
-        return $out;
-    }
-
-    /**
-     * بناء XML parameters للـ DHRU placeimeiorder
-     * ID = remote service id
-     * IMEI = device
-     * CUSTOMFIELD = base64(json) إذا موجود
-     */
-    public function buildDhruParametersXml(array $fields): string
-    {
-        $xml = '<PARAMETERS>';
-
-        foreach ($fields as $k => $v) {
-            if ($v === null || $v === '') continue;
-            $key = strtoupper($k);
-            $val = htmlspecialchars((string)$v, ENT_QUOTES | ENT_XML1, 'UTF-8');
-            $xml .= "<{$key}>{$val}</{$key}>";
-        }
-
-        $xml .= '</PARAMETERS>';
-        return $xml;
+        // حالياً: نفترض DHRU فقط (انت شغال عليه الآن)
+        // لاحقاً نضيف بوابات أخرى حسب type
+        return $this->dhru->place($kind, $provider, $remoteServiceId, $order);
     }
 }
