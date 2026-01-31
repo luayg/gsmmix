@@ -92,4 +92,44 @@ class DhruOrderGateway
         $xml .= '</PARAMETERS>';
         return $xml;
     }
+public function placeImeiOrder(\App\Models\ApiProvider $provider, array $payload): array
+{
+    // expected: IMEI, ID, optional CUSTOMFIELD...
+    $imei = (string)($payload['IMEI'] ?? '');
+    $id   = (string)($payload['ID'] ?? '');
+
+    $xml = "<PARAMETERS><IMEI>".htmlspecialchars($imei, ENT_XML1)."</IMEI><ID>".htmlspecialchars($id, ENT_XML1)."</ID></PARAMETERS>";
+
+    if (!empty($payload['CUSTOMFIELD'])) {
+        $xml = "<PARAMETERS><IMEI>".htmlspecialchars($imei, ENT_XML1)."</IMEI><ID>".htmlspecialchars($id, ENT_XML1)."</ID><CUSTOMFIELD>".htmlspecialchars((string)$payload['CUSTOMFIELD'], ENT_XML1)."</CUSTOMFIELD></PARAMETERS>";
+    }
+
+    // نفس شكل Dhru: POST api/index.php
+    $req = [
+        'username' => $provider->username,
+        'apiaccesskey' => $provider->api_key,
+        'requestformat' => 'JSON',
+        'action' => 'placeimeiorder',
+        'parameters' => $xml,
+    ];
+
+    $raw = $this->post($provider->url, $req); // تأكد عندك post() موجودة
+
+    $referenceId = null;
+    $ok = false;
+
+    if (is_array($raw) && isset($raw['SUCCESS'][0]['REFERENCEID'])) {
+        $ok = true;
+        $referenceId = $raw['SUCCESS'][0]['REFERENCEID'];
+    }
+
+    return [
+        'ok' => $ok,
+        'reference_id' => $referenceId,
+        'request' => json_encode($req, JSON_UNESCAPED_UNICODE),
+        'raw' => json_encode($raw, JSON_UNESCAPED_UNICODE),
+    ];
+}
+
+
 }
