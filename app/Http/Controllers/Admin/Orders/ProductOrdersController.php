@@ -2,15 +2,14 @@
 
 namespace App\Http\Controllers\Admin\Orders;
 
-use App\Http\Controllers\Controller;
 use App\Models\ProductOrder;
-use Illuminate\Http\Request;
+use App\Models\Product;
 
-class ProductOrdersController extends Controller
+class ProductOrdersController extends BaseOrdersController
 {
-    public function index(Request $r)
-    {
-        $rows = ProductOrder::query()->orderByDesc('id')->paginate(20)->withQueryString();
-        return view('admin.orders.product.index', compact('rows'));
-    }
+    protected string $orderModel  = ProductOrder::class;
+    protected string $serviceModel = Product::class;
+
+    protected string $viewPrefix  = 'product';
+    protected string $routePrefix = 'admin.orders.product';
 }

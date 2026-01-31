@@ -7,9 +7,9 @@ use App\Models\ServerService;
 
 class ServerOrdersController extends BaseOrdersController
 {
-    protected string $kind = 'server';
-    protected string $orderModel = ServerOrder::class;
+    protected string $orderModel  = ServerOrder::class;
     protected string $serviceModel = ServerService::class;
-    protected string $indexView = 'admin.orders.server.index';
+
+    protected string $viewPrefix  = 'server';
     protected string $routePrefix = 'admin.orders.server';
 }

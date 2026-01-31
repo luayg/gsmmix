@@ -7,9 +7,9 @@ use App\Models\ImeiService;
 
 class ImeiOrdersController extends BaseOrdersController
 {
-    protected string $kind = 'imei';
-    protected string $orderModel = ImeiOrder::class;
+    protected string $orderModel  = ImeiOrder::class;
     protected string $serviceModel = ImeiService::class;
-    protected string $indexView = 'admin.orders.imei.index';
+
+    protected string $viewPrefix  = 'imei';
     protected string $routePrefix = 'admin.orders.imei';
 }
