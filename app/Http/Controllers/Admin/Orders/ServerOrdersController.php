@@ -7,13 +7,20 @@ use App\Models\ServerService;
 
 class ServerOrdersController extends BaseOrdersController
 {
-    public function __construct()
-    {
-        $this->orderModel = ServerOrder::class;
-        $this->serviceModel = ServerService::class;
+    protected string $orderModel   = ServerOrder::class;
+    protected string $serviceModel = ServerService::class;
 
-        $this->routePrefix = 'admin.orders.server';
-        $this->title = 'Server Orders';
-        $this->kind = 'server';
+    protected string $kind        = 'server';
+    protected string $title       = 'Server Orders';
+    protected string $routePrefix = 'admin.orders.server';
+
+    protected function deviceLabel(): string
+    {
+        return 'Device / Email / Code';
+    }
+
+    protected function supportsQuantity(): bool
+    {
+        return true;
     }
 }

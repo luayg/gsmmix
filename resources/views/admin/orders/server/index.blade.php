@@ -1,9 +1,13 @@
 @extends('layouts.admin')
 
-@section('title', 'Server Orders')
+@section('title', $title ?? 'Orders')
 
 @section('content')
   @include('admin.orders._index', [
-    'pageTitle' => 'Server Orders',
+    'title' => $title,
+    'kind' => $kind,
+    'routePrefix' => $routePrefix,
+    'rows' => $rows,
+    'providers' => $providers ?? collect([]),
   ])
 @endsection

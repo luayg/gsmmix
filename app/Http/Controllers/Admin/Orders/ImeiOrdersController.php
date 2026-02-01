@@ -7,13 +7,15 @@ use App\Models\ImeiService;
 
 class ImeiOrdersController extends BaseOrdersController
 {
-    public function __construct()
-    {
-        $this->orderModel = ImeiOrder::class;
-        $this->serviceModel = ImeiService::class;
+    protected string $orderModel   = ImeiOrder::class;
+    protected string $serviceModel = ImeiService::class;
 
-        $this->routePrefix = 'admin.orders.imei';
-        $this->title = 'IMEI Orders';
-        $this->kind = 'imei';
+    protected string $kind        = 'imei';
+    protected string $title       = 'IMEI Orders';
+    protected string $routePrefix = 'admin.orders.imei';
+
+    protected function deviceLabel(): string
+    {
+        return 'Device (IMEI/SN)';
     }
 }
