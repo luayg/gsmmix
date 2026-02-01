@@ -171,7 +171,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/services/file',   fn () => redirect()->route('admin.services.file.index'));
     Route::get('/services/groups', fn () => redirect()->route('admin.services.groups.index'));
 
- /* ===== IMEI Orders ===== */
+Route::prefix('orders')->name('orders.')->group(function () {
+
+    /* ===== IMEI Orders ===== */
     Route::prefix('imei')->name('imei.')->group(function () {
         Route::get('/', [ImeiOrdersController::class, 'index'])->name('index');
 
