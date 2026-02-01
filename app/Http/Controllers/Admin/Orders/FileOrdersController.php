@@ -7,11 +7,13 @@ use App\Models\FileService;
 
 class FileOrdersController extends BaseOrdersController
 {
-    protected string $model      = FileOrder::class;
-    protected string $kind       = 'file';
-    protected string $viewFolder = 'admin.orders.file';
-    protected string $routePrefix= 'admin.orders.file';
+    public function __construct()
+    {
+        $this->orderModel = FileOrder::class;
+        $this->serviceModel = FileService::class;
 
-    protected function serviceModel(): ?string { return FileService::class; }
-    protected function deviceFieldLabel(): string { return 'Device / Info'; }
+        $this->routePrefix = 'admin.orders.file';
+        $this->title = 'File Orders';
+        $this->kind = 'file';
+    }
 }

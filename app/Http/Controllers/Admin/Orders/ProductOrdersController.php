@@ -2,16 +2,18 @@
 
 namespace App\Http\Controllers\Admin\Orders;
 
-use Illuminate\Database\Eloquent\Model;
+use App\Models\ProductOrder;
+use App\Models\Product; // لو ما عندك Product الآن، خليها لاحقاً واعتبرها placeholder
 
 class ProductOrdersController extends BaseOrdersController
 {
-    // لو ما عندك موديل/جدول product_orders جاهز الآن، خليه بسيط بدون API
-    protected string $model      = \App\Models\ProductOrder::class; // تأكد عندك موديل
-    protected string $kind       = 'product';
-    protected string $viewFolder = 'admin.orders.product';
-    protected string $routePrefix= 'admin.orders.product';
+    public function __construct()
+    {
+        $this->orderModel = ProductOrder::class;     // لازم يكون موجود عندك
+        $this->serviceModel = Product::class;        // placeholder
 
-    protected function serviceModel(): ?string { return null; }
-    protected function deviceFieldLabel(): string { return 'Product'; }
+        $this->routePrefix = 'admin.orders.product';
+        $this->title = 'Product Orders';
+        $this->kind = 'product';
+    }
 }
