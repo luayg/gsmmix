@@ -20,10 +20,8 @@ class ImeiOrder extends Model
         'processing'   => 'boolean',
         'replied_at'   => 'datetime',
 
-        // ✅ FIX: تمنع Array to string conversion
-        'params'   => 'array',
-        'request'  => 'array',
-        'response' => 'array',
+        // ✅ هذا هو الإصلاح الأساسي للخطأ
+        'params'       => 'array',
     ];
 
     public function service(){ return $this->belongsTo(ImeiService::class, 'service_id'); }

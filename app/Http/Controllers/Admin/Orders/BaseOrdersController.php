@@ -7,6 +7,8 @@ use App\Models\ApiProvider;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 abstract class BaseOrdersController extends Controller
 {
@@ -16,19 +18,18 @@ abstract class BaseOrdersController extends Controller
     /** @var class-string<Model> */
     protected string $serviceModel;
 
-    protected string $kind; // imei|server|file|product
-    protected string $title; // IMEI Orders ...
+    protected string $kind;        // imei|server|file|product
+    protected string $title;       // IMEI Orders ...
     protected string $routePrefix; // admin.orders.imei ...
 
-    /** override per kind */
     protected function deviceLabel(): string { return 'Device'; }
     protected function supportsQuantity(): bool { return false; }
 
     public function index(Request $request)
     {
-        $q       = trim((string)$request->get('q', ''));
-        $status  = trim((string)$request->get('status', ''));
-        $prov    = trim((string)$request->get('provider', ''));
+        $q      = trim((string)$request->get('q', ''));
+        $status = trim((string)$request->get('status', ''));
+        $prov   = trim((string)$request->get('provider', ''));
 
         $rows = ($this->orderModel)::query()
             ->with(['service','provider'])
@@ -51,7 +52,6 @@ abstract class BaseOrdersController extends Controller
         }
 
         $rows = $rows->paginate(20)->withQueryString();
-
         $providers = ApiProvider::query()->orderBy('name')->get();
 
         return view("admin.orders.{$this->kind}.index", [
@@ -63,16 +63,10 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
-    /** مودال create */
     public function modalCreate()
     {
         $users = User::query()->orderByDesc('id')->limit(500)->get();
-
-        // نجيب الخدمات فقط التي فعلاً قابلة للبيع (حسب مشروعك)
-        $services = ($this->serviceModel)::query()
-            ->orderByDesc('id')
-            ->limit(1000)
-            ->get();
+        $services = ($this->serviceModel)::query()->orderByDesc('id')->limit(1000)->get();
 
         return view('admin.orders.modals.create', [
             'title'       => "Create {$this->title}",
@@ -85,19 +79,29 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
-    /** إنشاء الطلب */
     public function store(Request $request)
     {
         $rules = [
             'user_id'    => ['nullable','integer'],
             'email'      => ['nullable','string','max:255'],
             'service_id' => ['required','integer'],
-            'device'     => ['required','string','max:255'],
             'comments'   => ['nullable','string'],
         ];
 
+        // file kind: نحتاج ملف
+        if ($this->kind === 'file') {
+            $rules['file'] = ['required','file','max:51200']; // 50MB
+        } else {
+            $rules['device'] = ['required','string','max:255'];
+        }
+
         if ($this->supportsQuantity()) {
             $rules['quantity'] = ['nullable','integer','min:1','max:999'];
+        }
+
+        // Server required fields (اختياري) يجي من API أو توسعة لاحقاً
+        if ($this->kind === 'server') {
+            $rules['required'] = ['nullable','array'];
         }
 
         $data = $request->validate($rules);
@@ -111,22 +115,17 @@ abstract class BaseOrdersController extends Controller
             $user = User::find($userId);
             if ($user) $email = $user->email;
         }
-
-        if ($email === '' && $user) {
-            $email = (string)$user->email;
-        }
+        if ($email === '' && $user) $email = (string)$user->email;
 
         // service + provider resolution
         $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
-
-        // هذه الطريقة متوافقة مع مشروعك لأن الخدمات عندك فيها supplier_id + remote_id
         $supplierId = (int)($service->supplier_id ?? 0);
         $provider   = $supplierId ? ApiProvider::find($supplierId) : null;
 
         $hasRemote = !empty($service->remote_id);
-        $isApi = $provider && $provider->active && $hasRemote;
+        $isApi = $provider && (int)$provider->active === 1 && $hasRemote;
 
-        // prices (حاولنا نقرأ أكثر من اسم حقل لأن مشاريع كثيرة تختلف)
+        // prices
         $sellPrice = (float)($service->price ?? $service->sell_price ?? 0);
         $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
         $profit    = $sellPrice - $costPrice;
@@ -134,7 +133,6 @@ abstract class BaseOrdersController extends Controller
         /** @var Model $order */
         $order = new ($this->orderModel);
 
-        $order->device      = (string)$data['device'];
         $order->comments    = (string)($data['comments'] ?? '');
         $order->user_id     = $user?->id;
         $order->email       = $email ?: null;
@@ -146,7 +144,7 @@ abstract class BaseOrdersController extends Controller
             $order->quantity = (int)($data['quantity'] ?? 1);
         }
 
-        // ✅ الحالة تبدأ دائمًا waiting (لا rejected بدون إرسال)
+        // الحالة
         $order->status     = 'waiting';
         $order->processing = 0;
         $order->api_order  = $isApi ? 1 : 0;
@@ -155,40 +153,55 @@ abstract class BaseOrdersController extends Controller
         $order->order_price = $costPrice;
         $order->profit      = $profit;
 
-        // ✅ params لازم تكون array (casts سيحوّلها تلقائياً JSON)
-        $order->params = [
-            'kind' => $this->kind,
-        ];
+        // params
+        $params = ['kind' => $this->kind];
 
+        if ($this->kind === 'server' && isset($data['required']) && is_array($data['required'])) {
+            $params['required'] = $data['required'];
+        }
+
+        $order->params = $params;
         $order->ip = $request->ip();
 
-        // ✅ احفظ أولاً (هذا يمنع ضياع الطلب)
+        // file upload (File Orders)
+        if ($this->kind === 'file') {
+            $file = $request->file('file');
+            $original = $file->getClientOriginalName();
+
+            // نخزن على default disk (storage/app/...)
+            $path = $file->store('orders/files');
+
+            $order->device = $original;         // اسم الملف
+            $order->storage_path = $path;       // المسار للتصدير API لاحقاً
+        } else {
+            $order->device = (string)$data['device'];
+        }
+
+        // احفظ أولاً
         $order->save();
 
-        // ✅ إرسال تلقائي لو API
+        // إرسال تلقائي لو API
         if ($isApi) {
             try {
                 $order->processing = 1;
                 $order->status = 'inprogress';
                 $order->save();
 
-                // هنا يفترض عندك OrderDispatcher/OrderSender (أنت أرسلت صور وجودهم)
-                // نستخدمه إن كان موجود
                 if (class_exists(\App\Services\Orders\OrderDispatcher::class)) {
-                    /** @var \App\Services\Orders\OrderDispatcher $dispatcher */
                     $dispatcher = app(\App\Services\Orders\OrderDispatcher::class);
-                    $dispatcher->send($this->kind, $order->id);
-                    // الدسباتشر هو الذي يحدّث status/remote_id/response
+                    $dispatcher->send($this->kind, (int)$order->id);
                 } else {
-                    // إذا الدسباتشر غير موجود: لا نكسر النظام
                     $order->status = 'waiting';
                     $order->processing = 0;
                     $order->save();
                 }
             } catch (\Throwable $e) {
+                Log::error('Auto dispatch failed', ['id'=>$order->id,'err'=>$e->getMessage()]);
+
                 $order->processing = 0;
                 $order->status = 'rejected';
                 $order->response = ['ERROR' => [['MESSAGE' => $e->getMessage()]]];
+                $order->replied_at = now();
                 $order->save();
             }
         }
@@ -196,7 +209,6 @@ abstract class BaseOrdersController extends Controller
         return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order created.');
     }
 
-    /** View modal */
     public function modalView(int $id)
     {
         $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
@@ -209,7 +221,6 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
-    /** Edit modal */
     public function modalEdit(int $id)
     {
         $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
@@ -235,7 +246,6 @@ abstract class BaseOrdersController extends Controller
         $row->status   = $data['status'];
         $row->comments = (string)($data['comments'] ?? '');
 
-        // لو المستخدم كتب response نص/JSON
         if (isset($data['response'])) {
             if (is_string($data['response'])) {
                 $decoded = json_decode($data['response'], true);

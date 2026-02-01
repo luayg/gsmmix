@@ -1,13 +1,12 @@
+{{-- resources/views/admin/orders/modals/create.blade.php --}}
+
 @php
-  // helper لاستخراج name من JSON translation
   $pickName = function ($v) {
     if (is_string($v)) {
       $s = trim($v);
       if ($s !== '' && $s[0] === '{') {
         $j = json_decode($s, true);
-        if (is_array($j)) {
-          return $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
-        }
+        if (is_array($j)) return $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
       }
       return $v;
     }
@@ -18,6 +17,8 @@
     $p = $svc->price ?? $svc->sell_price ?? 0;
     return (float)$p;
   };
+
+  $isFileKind = ($kind ?? '') === 'file';
 @endphp
 
 <div class="modal-header">
@@ -25,7 +26,7 @@
   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
-<form method="post" action="{{ route($routePrefix.'.store') }}">
+<form method="post" action="{{ route($routePrefix.'.store') }}" enctype="multipart/form-data">
   @csrf
 
   <div class="modal-body">
@@ -36,9 +37,7 @@
         <select class="form-select" name="user_id">
           <option value="">Choose</option>
           @foreach($users as $u)
-            <option value="{{ $u->id }}">
-              {{ $u->email }}
-            </option>
+            <option value="{{ $u->id }}">{{ $u->email }}</option>
           @endforeach
         </select>
         <div class="form-text">اختر المستخدم أو اتركه فارغ واكتب Email يدوي.</div>
@@ -62,10 +61,18 @@
         <div class="form-text">عند اختيار الخدمة سيتم الإرسال تلقائياً إذا كانت مرتبطة بـ API.</div>
       </div>
 
-      <div class="col-12">
-        <label class="form-label">{{ $deviceLabel ?? 'Device' }}</label>
-        <input type="text" class="form-control" name="device" required>
-      </div>
+      @if($isFileKind)
+        <div class="col-12">
+          <label class="form-label">Upload file</label>
+          <input type="file" class="form-control" name="file" required>
+          <div class="form-text">هذا الملف سيتم رفعه وتخزينه ثم إرساله للمزوّد تلقائياً إذا كانت الخدمة مرتبطة بـ API.</div>
+        </div>
+      @else
+        <div class="col-12">
+          <label class="form-label">{{ $deviceLabel ?? 'Device' }}</label>
+          <input type="text" class="form-control" name="device" required>
+        </div>
+      @endif
 
       @if(!empty($supportsQty))
       <div class="col-12">
@@ -81,7 +88,7 @@
 
       <div class="col-12">
         <div class="alert alert-info mb-0">
-          ملاحظة: إذا كانت الخدمة مرتبطة بـ API سيتم الإرسال تلقائياً (status: waiting → inprogress → success/rejected).
+          ملاحظة: إذا كانت الخدمة مرتبطة بـ API سيتم الإرسال تلقائياً (waiting → inprogress → success/rejected).
         </div>
       </div>
 

@@ -1,6 +1,8 @@
+{{-- resources/views/admin/orders/modals/edit.blade.php --}}
+
 @php
   $pretty = function ($v) {
-    if (is_array($v)) return json_encode($v, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE);
+    if (is_array($v)) return json_encode($v, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
     if (is_string($v)) return $v;
     return (string)$v;
   };
@@ -48,7 +50,7 @@
 
       <div class="col-12">
         <label class="form-label">Response (JSON or text)</label>
-        <textarea class="form-control" name="response" rows="6">{{ $pretty($row->response) }}</textarea>
+        <textarea class="form-control" name="response" rows="8">{{ $pretty($row->response) }}</textarea>
       </div>
 
     </div>

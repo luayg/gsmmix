@@ -20,10 +20,8 @@ class ServerOrder extends Model
         'processing'   => 'boolean',
         'replied_at'   => 'datetime',
 
-        // ✅ FIX
-        'params'   => 'array',
-        'request'  => 'array',
-        'response' => 'array',
+        // ✅ نفس الإصلاح
+        'params'       => 'array',
     ];
 
     public function provider(){ return $this->belongsTo(ApiProvider::class, 'supplier_id'); }

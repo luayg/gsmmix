@@ -3,71 +3,148 @@
 namespace App\Services\Orders;
 
 use App\Models\ApiProvider;
+use App\Models\FileOrder;
 use App\Models\ImeiOrder;
+use App\Models\ServerOrder;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 
 class DhruOrderGateway
 {
-    public function placeImeiOrder(ApiProvider $provider, ImeiOrder $order): array
+    private function endpoint(ApiProvider $provider): string
     {
-        $serviceRemoteId = (string)($order->service?->remote_id ?? '');
-        $imeiOrSn = (string)$order->device;
+        $url = rtrim((string) $provider->url, '/');
+        return $url . '/api/index.php';
+    }
 
-        $payload = [
-            'username'      => (string)($provider->username ?? ''),
-            'apiaccesskey'  => (string)($provider->api_key ?? ''),
+    private function basePayload(ApiProvider $provider, string $action): array
+    {
+        return [
+            'username'      => (string) ($provider->username ?? ''),
+            'apiaccesskey'  => (string) ($provider->api_key ?? ''),
             'requestformat' => 'JSON',
-            'action'        => 'placeimeiorder',
-            'parameters'    => '<PARAMETERS>'
-                .'<IMEI>'.e($imeiOrSn).'</IMEI>'
-                .'<ID>'.e($serviceRemoteId).'</ID>'
-                .'</PARAMETERS>',
+            'action'        => $action,
         ];
+    }
 
-        $url = rtrim((string)$provider->url, '/').'/api/index.php';
+    private function xmlEscape(string $v): string
+    {
+        return htmlspecialchars($v, ENT_XML1 | ENT_QUOTES, 'UTF-8');
+    }
 
-        $resp = Http::asForm()
-            ->timeout(60)
-            ->post($url, $payload);
+    private function send(ApiProvider $provider, string $action, string $parametersXml): array
+    {
+        $payload = $this->basePayload($provider, $action);
+        $payload['parameters'] = $parametersXml;
 
-        $raw = (string)$resp->body();
+        $url = $this->endpoint($provider);
+
+        $resp = Http::asForm()->timeout(60)->post($url, $payload);
+
+        $raw = (string) $resp->body();
         $json = json_decode($raw, true);
 
         $result = [
-            'ok' => false,
-            'status' => 'rejected',
+            'ok'        => false,
+            'status'    => 'rejected',
             'remote_id' => null,
-            'request' => json_encode(['url'=>$url,'payload'=>$payload], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
-            'response' => $raw,
+            'request'   => ['url' => $url, 'payload' => $payload],
+            'response'  => is_array($json) ? $json : ['raw' => $raw, 'http_status' => $resp->status()],
         ];
 
-        // Dhru SUCCESS
         if (is_array($json) && isset($json['SUCCESS'][0])) {
             $s0 = $json['SUCCESS'][0];
             $ref = $s0['REFERENCEID'] ?? null;
 
             $result['ok'] = true;
             $result['remote_id'] = $ref;
-            $result['status'] = 'inprogress'; // تم استلام الطلب
+            $result['status'] = 'inprogress'; // تم الاستلام عند المزوّد
             return $result;
         }
 
-        // Dhru ERROR
         if (is_array($json) && isset($json['ERROR'][0])) {
-            $e0 = $json['ERROR'][0];
-            $msg = (string)($e0['MESSAGE'] ?? 'Unknown error');
             $result['ok'] = false;
             $result['status'] = 'rejected';
-            $result['response'] = json_encode($json, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-
-            // مثال: credit error
-            if (stripos($msg, 'credit') !== false) {
-                $result['status'] = 'rejected';
-            }
             return $result;
         }
 
-        // Unknown format
         return $result;
+    }
+
+    public function placeImeiOrder(ApiProvider $provider, ImeiOrder $order): array
+    {
+        $serviceRemoteId = (string) ($order->service?->remote_id ?? '');
+        $imeiOrSn = (string) ($order->device ?? '');
+
+        $xml = '<PARAMETERS>'
+            . '<IMEI>' . $this->xmlEscape($imeiOrSn) . '</IMEI>'
+            . '<ID>' . $this->xmlEscape($serviceRemoteId) . '</ID>'
+            . '</PARAMETERS>';
+
+        return $this->send($provider, 'placeimeiorder', $xml);
+    }
+
+    /**
+     * تفعيل إرسال Server فعلياً:
+     * - يستخدم action: placeserverorder (في أغلب DHRU)
+     * - REQUIRED تُرسل كـ JSON داخل XML (إذا لم تحتاجها بعض الخدمات، تمرّ فارغة).
+     */
+    public function placeServerOrder(ApiProvider $provider, ServerOrder $order): array
+    {
+        $serviceRemoteId = (string) ($order->service?->remote_id ?? '');
+        $quantity = (int) ($order->quantity ?? 1);
+
+        $required = [];
+        if (is_array($order->params) && isset($order->params['required']) && is_array($order->params['required'])) {
+            $required = $order->params['required'];
+        }
+
+        $comments = (string) ($order->comments ?? '');
+
+        $requiredJson = json_encode($required, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $xml = '<PARAMETERS>'
+            . '<ID>' . $this->xmlEscape($serviceRemoteId) . '</ID>'
+            . '<QUANTITY>' . $this->xmlEscape((string)$quantity) . '</QUANTITY>'
+            . '<REQUIRED>' . $this->xmlEscape((string)$requiredJson) . '</REQUIRED>'
+            . '<COMMENTS>' . $this->xmlEscape($comments) . '</COMMENTS>'
+            . '</PARAMETERS>';
+
+        return $this->send($provider, 'placeserverorder', $xml);
+    }
+
+    /**
+     * تفعيل إرسال File فعلياً:
+     * - يتطلب storage_path موجود وقابل للقراءة.
+     * - action: placefileorder (في أغلب DHRU)
+     */
+    public function placeFileOrder(ApiProvider $provider, FileOrder $order): array
+    {
+        $serviceRemoteId = (string) ($order->service?->remote_id ?? '');
+        $comments = (string) ($order->comments ?? '');
+
+        $path = (string) ($order->storage_path ?? '');
+        if ($path === '' || !Storage::exists($path)) {
+            return [
+                'ok' => false,
+                'status' => 'rejected',
+                'remote_id' => null,
+                'request' => null,
+                'response' => ['ERROR' => [['MESSAGE' => 'File storage_path missing or file not found in storage.']]],
+            ];
+        }
+
+        $raw = Storage::get($path);
+        $filename = (string) ($order->device ?? basename($path));
+        $b64 = base64_encode($raw);
+
+        $xml = '<PARAMETERS>'
+            . '<ID>' . $this->xmlEscape($serviceRemoteId) . '</ID>'
+            . '<FILENAME>' . $this->xmlEscape($filename) . '</FILENAME>'
+            . '<FILEDATA>' . $this->xmlEscape($b64) . '</FILEDATA>'
+            . '<COMMENTS>' . $this->xmlEscape($comments) . '</COMMENTS>'
+            . '</PARAMETERS>';
+
+        return $this->send($provider, 'placefileorder', $xml);
     }
 }
