@@ -17,31 +17,25 @@ import 'datatables.net-buttons/js/dataTables.buttons';
 import 'datatables.net-buttons/js/buttons.colVis';
 import 'datatables.net-buttons/js/buttons.html5';
 
-import 'select2/dist/js/select2.full.min.js';   // full لتعمل AJAX/tags
+import 'select2/dist/js/select2.full.min.js';
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 
-// ✅ Summernote (Bootstrap 5 build)
-import 'summernote/dist/summernote-bs5.min.js';
-import 'summernote/dist/summernote-bs5.min.css';
+// ✅ Summernote (المسارات الصحيحة بدون min)
+import 'summernote/dist/summernote-lite.js';
+import 'summernote/dist/summernote-lite.css';
+
 
 
 /* =================================================================
  * Helpers
  * ================================================================= */
 
-/** هل Select2 محمَّل على jQuery الحالي؟ */
 const hasSelect2 = () => !!$.fn && typeof $.fn.select2 === 'function';
-
-/** هل Summernote محمّل؟ */
 const hasSummernote = () => !!$.fn && typeof $.fn.summernote === 'function';
 
-/** تهيئة Select2 بأمان داخل جذر معيّن (مثل المودال) */
 function initSelect2Safe($root, $dropdownParent = null) {
-  if (!hasSelect2()) {
-    console.warn('Select2 is not loaded on current jQuery instance.');
-    return;
-  }
+  if (!hasSelect2()) return;
   $root.find('select.select2, select.js-roles, select.js-groups').each(function () {
     const $el = $(this);
     try {
@@ -57,7 +51,6 @@ function initSelect2Safe($root, $dropdownParent = null) {
   });
 }
 
-/** Toast helper (يظهر أعلى يمين الشاشة) */
 window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
   const bg = {
     success: 'bg-success text-white',
@@ -86,15 +79,14 @@ window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
   el.addEventListener('hidden.bs.toast', () => el.remove());
 };
 
-
 /* ================================
- * ✅ Summernote upload + init
+ * Summernote upload + init
  * ================================ */
 
-/** رفع الصورة باستخدام UploadController الحالي (expects field name: image) */
+// ✅ عندك UploadController يتوقع الاسم image
 async function uploadSummernoteImage(file, token) {
   const fd = new FormData();
-  fd.append('image', file); // ✅ مهم: UploadController يتوقع image
+  fd.append('image', file);
 
   const res = await fetch('/admin/uploads/summernote-image', {
     method: 'POST',
@@ -106,21 +98,15 @@ async function uploadSummernoteImage(file, token) {
     body: fd
   });
 
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(txt || 'Upload failed');
-  }
-
+  if (!res.ok) throw new Error(await res.text());
   const j = await res.json();
-  if (!j || !j.url) throw new Error('Invalid upload response');
-
+  if (!j?.url) throw new Error('Invalid upload response');
   return j.url;
 }
 
-/** تهيئة Summernote داخل root (المودال) */
 function initSummernoteSafe($root, token) {
   if (!hasSummernote()) {
-    console.warn('Summernote not loaded. Run: npm install && npm run build');
+    console.warn('Summernote not loaded. Run: npm install && npm run dev/build');
     return;
   }
 
@@ -130,19 +116,15 @@ function initSummernoteSafe($root, token) {
   $areas.each(function () {
     const $t = $(this);
 
-    // إذا كان متفعّل سابقاً (عند إعادة فتح مودال)
+    // لو تم تفعيله سابقاً
     try {
-      if ($t.next('.note-editor').length) {
-        $t.summernote('destroy');
-      }
+      if ($t.next('.note-editor').length) $t.summernote('destroy');
     } catch (_) {}
 
     const h = Number($t.attr('data-summernote-height') || 420);
 
     $t.summernote({
       height: h,
-
-      // ✅ Toolbar قريب جداً من مثال صورك
       toolbar: [
         ['style', ['style']],
         ['font', ['fontname', 'fontsize', 'bold', 'italic', 'underline', 'strikethrough', 'clear']],
@@ -152,12 +134,9 @@ function initSummernoteSafe($root, token) {
         ['insert', ['link', 'picture']],
         ['view', ['codeview']]
       ],
-
       fontNames: ['Arial', 'Lato', 'Tahoma', 'Times New Roman', 'Courier New', 'Verdana'],
       fontSizes: ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32'],
-
       callbacks: {
-        // ✅ بدل Base64: نرفع صورة على السيرفر ثم ندخل رابطها
         onImageUpload: async function (files) {
           for (const f of files) {
             try {
@@ -174,20 +153,17 @@ function initSummernoteSafe($root, token) {
   });
 }
 
-
 /* =================================================================
- * Ajax Modal Loader (مرة واحدة للموقع) - FIX double-binding
+ * Ajax Modal Loader (مرة واحدة للموقع)
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
-  // امنع إعادة الربط لو سبق الربط
   if (window.__bindOpenModalOnce__) return;
   window.__bindOpenModalOnce__ = true;
 
   const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
-  let MODAL_REQ_ID = 0; // يزيد مع كل نقره
+  let MODAL_REQ_ID = 0;
 
   $(document).on('click', '.js-open-modal', async function (e) {
-    // امنع أي مستمعين/تصرّفات أخرى
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -195,13 +171,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = $(this).data('url') || $(this).attr('href');
     if (!url || url === '#') return;
 
-    // عرّف رقم الطلب الحالي
     const myReq = ++MODAL_REQ_ID;
 
     const $modal   = $('#ajaxModal');
     const $content = $modal.find('.modal-content');
 
-    // شاشة انتظار
     $content.html(`
       <div class="modal-body py-5 text-center text-muted">
         <div class="spinner-border" role="status" aria-hidden="true"></div>
@@ -217,18 +191,15 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('Failed to load modal');
       const html = await res.text();
 
-      // لو جاء ردّ قديم، تجاهله
       if (myReq !== MODAL_REQ_ID) return;
 
       $content.html(html);
 
-      // init select2 داخل المودال لو موجود
-      if (typeof initSelect2Safe === 'function') initSelect2Safe($content, $modal);
+      initSelect2Safe($content, $modal);
 
-      // ✅ init summernote داخل المودال (هذا هو السبب الرئيسي لمشكلتك)
+      // ✅ هذا هو المهم: فعل Summernote بعد تحميل المودال
       initSummernoteSafe($content, token);
 
-      // إرسال Ajax للنماذج داخل المودال
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -278,7 +249,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch (err) {
       console.error(err);
-      // لو ردّ قديم تجاهله
       if (myReq !== MODAL_REQ_ID) return;
       $content.html(`<div class="modal-body text-danger">Failed to load modal content.</div>`);
       showToast?.('danger', 'Failed to load modal content', { title: 'Error' });
@@ -286,12 +256,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-
 /* =================================================================
  * Lazy-load لسكربتات الصفحات
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', async () => {
-  // Users
   if (document.getElementById('usersPage')) {
     await import('./pages/users-index.js');
     return;
@@ -304,19 +272,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     await import('./pages/roles.js');
     return;
   }
-  if (document.getElementById('permsPage')) { // permissions
+  if (document.getElementById('permsPage')) {
     await import('./pages/permissions.js');
     return;
   }
-  // Service create / edit
   if (document.querySelector('.service-create-form')) {
     import('./pages/service-custom-fields.js');
   }
 });
 
-
 /* =================================================================
- * سلوك السايدبار على الموبايل (زر الفتح/الإغلاق + الخلفية)
+ * سلوك السايدبار على الموبايل
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
   const sidebar  = document.querySelector('.admin-sidebar');
@@ -343,9 +309,8 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeSidebar(); });
 });
 
-
 /* =================================================================
- * زر إظهار/إخفاء كلمة المرور داخل input-group
+ * زر إظهار/إخفاء كلمة المرور
  * ================================================================= */
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.js-toggle-pass');
@@ -355,7 +320,6 @@ document.addEventListener('click', (e) => {
   input.type = input.type === 'password' ? 'text' : 'password';
 });
 
-
 /* =================================================================
  * موضع التوست داخل content-wrapper
  * ================================================================= */
@@ -364,7 +328,7 @@ function positionToastStack() {
   const wrap  = document.querySelector('.content-wrapper');
   if (!stack || !wrap) return;
 
-  const gap = 16; // px
+  const gap = 16;
   const rect  = wrap.getBoundingClientRect();
   const extra = Math.max(window.innerWidth - rect.right + gap, gap);
 
@@ -375,13 +339,11 @@ function positionToastStack() {
 document.addEventListener('DOMContentLoaded', positionToastStack);
 window.addEventListener('resize', positionToastStack);
 
-// لو عندك زر إظهار/إخفاء السايدبار، أعد التموضع بعد الأنيميشن
 const btnRepos = document.getElementById('btnToggleSidebar');
 if (btnRepos) {
   btnRepos.addEventListener('click', () => {
-    setTimeout(positionToastStack, 250); // زمن انتقال الـsidebar في CSS
+    setTimeout(positionToastStack, 250);
   });
 }
 
-// في حال تشغيل التوستر من الدالة العامة، أعد التموضع قبل إظهاره
 window.addEventListener('show-toast-reposition', positionToastStack);
