@@ -5,34 +5,55 @@
 import $ from 'jquery';
 window.$ = window.jQuery = $;
 
-// Bootstrap
 import * as bootstrap from 'bootstrap';
 window.bootstrap = bootstrap;
 
-// DataTables
 import 'datatables.net-bs5';
 import 'datatables.net-responsive-bs5';
 import 'datatables.net-buttons-bs5';
+
+// Buttons + ColVis + HTML5 export + Bootstrap 5 styling
 import 'datatables.net-buttons/js/dataTables.buttons';
 import 'datatables.net-buttons/js/buttons.colVis';
 import 'datatables.net-buttons/js/buttons.html5';
 
-// Select2
 import 'select2/dist/js/select2.full.min.js';
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 
-// ✅ Summernote CSS (الـ JS سنحمله Lazy عبر dynamic import لتجنب مشاكل jQuery instance)
-import 'summernote/dist/summernote-lite.css';
+/**
+ * ⚠️ مهم جداً (سبب مشكلتك):
+ * في ES Modules (Vite) الـ import ينفّذ قبل كود الملف،
+ * لذلك Summernote قد لا يجد jQuery على window وقت التحميل → لن يظهر toolbar.
+ * الحل: تحميل Summernote "ديناميكياً" بعد تجهيز window.$
+ */
+let __summernoteLoader = null;
+async function ensureSummernoteLoaded() {
+  if (__summernoteLoader) return __summernoteLoader;
+
+  __summernoteLoader = (async () => {
+    // JS
+    await import('summernote/dist/summernote-lite.js');
+    // CSS
+    await import('summernote/dist/summernote-lite.css');
+  })();
+
+  return __summernoteLoader;
+}
 
 /* =================================================================
  * Helpers
  * ================================================================= */
 
 const hasSelect2 = () => !!$.fn && typeof $.fn.select2 === 'function';
+const hasSummernote = () => !!$.fn && typeof $.fn.summernote === 'function';
 
+/** تهيئة Select2 بأمان داخل جذر معيّن (مثل المودال) */
 function initSelect2Safe($root, $dropdownParent = null) {
-  if (!hasSelect2()) return;
+  if (!hasSelect2()) {
+    console.warn('Select2 is not loaded on current jQuery instance.');
+    return;
+  }
   $root.find('select.select2, select.js-roles, select.js-groups').each(function () {
     const $el = $(this);
     try {
@@ -52,9 +73,9 @@ function initSelect2Safe($root, $dropdownParent = null) {
 window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
   const bg = {
     success: 'bg-success text-white',
-    danger: 'bg-danger text-white',
+    danger : 'bg-danger text-white',
     warning: 'bg-warning',
-    info: 'bg-primary text-white'
+    info   : 'bg-primary text-white'
   }[variant] || 'bg-dark text-white';
 
   const id = 't' + Date.now() + Math.random().toString(16).slice(2);
@@ -78,20 +99,10 @@ window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
 };
 
 /* =================================================================
- * ✅ Summernote loader + init (يحل مشكلة toolbar + HTML)
+ * Summernote upload + init
  * ================================================================= */
 
-let __summernoteLoaded = false;
-
-async function ensureSummernoteLoaded() {
-  if (__summernoteLoaded) return;
-  // مهم جداً: تأكد أن summernote يركّب نفسه على نفس jQuery (global)
-  window.$ = window.jQuery = $;
-
-  await import('summernote/dist/summernote-lite.js');
-  __summernoteLoaded = true;
-}
-
+// ✅ UploadController يتوقع الاسم image
 async function uploadSummernoteImage(file, token) {
   const fd = new FormData();
   fd.append('image', file);
@@ -113,35 +124,21 @@ async function uploadSummernoteImage(file, token) {
 }
 
 async function initSummernoteSafe($root, token) {
-  const $areas = $root.find('textarea[data-summernote="1"]');
-  if (!$areas.length) return;
-
+  // حمّل Summernote بعد تجهيز window.$
   await ensureSummernoteLoaded();
 
-  if (!$.fn || typeof $.fn.summernote !== 'function') {
-    console.error('Summernote loaded لكن لم يثبت على jQuery الحالي. تحقق من نسخة jQuery واحدة فقط.');
+  if (!hasSummernote()) {
+    console.warn('Summernote not attached to jQuery (toolbar will not show).');
     return;
   }
+
+  const $areas = $root.find('textarea[data-summernote="1"]');
+  if (!$areas.length) return;
 
   $areas.each(function () {
     const $t = $(this);
 
-    // إذا كان داخل details مغلق: فعّله عند الفتح (حتى لا ينهار القياس/toolbar)
-    const $details = $t.closest('details');
-    if ($details.length && !$details.prop('open')) {
-      if (!$details.data('sn-bind')) {
-        $details.data('sn-bind', 1);
-        $details.on('toggle', async function () {
-          if (this.open) {
-            // إعادة المحاولة عند الفتح
-            await initSummernoteSafe($root, token);
-          }
-        });
-      }
-      return;
-    }
-
-    // منع double init
+    // لو تم تفعيله سابقاً
     try {
       if ($t.next('.note-editor').length) $t.summernote('destroy');
     } catch (_) {}
@@ -150,6 +147,7 @@ async function initSummernoteSafe($root, token) {
 
     $t.summernote({
       height: h,
+      // نفس شكل التولبار تقريباً مثل المثال
       toolbar: [
         ['style', ['style']],
         ['font', ['fontname', 'fontsize', 'bold', 'italic', 'underline', 'strikethrough', 'clear']],
@@ -175,16 +173,11 @@ async function initSummernoteSafe($root, token) {
         }
       }
     });
-
-    // ✅ أحياناً داخل المودال يحتاج Refresh بعد render
-    setTimeout(() => {
-      try { $t.summernote('reset'); } catch (_) {}
-    }, 50);
   });
 }
 
 /* =================================================================
- * Ajax Modal Loader (مرة واحدة للموقع)
+ * Ajax Modal Loader (مرة واحدة للموقع) - FIX double-binding
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
   if (window.__bindOpenModalOnce__) return;
@@ -203,7 +196,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const myReq = ++MODAL_REQ_ID;
 
-    const $modal = $('#ajaxModal');
+    const $modal   = $('#ajaxModal');
     const $content = $modal.find('.modal-content');
 
     $content.html(`
@@ -217,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inst.show();
 
     try {
-      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const res  = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       if (!res.ok) throw new Error('Failed to load modal');
       const html = await res.text();
 
@@ -225,18 +218,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
       $content.html(html);
 
+      // init select2 داخل المودال لو موجود
       initSelect2Safe($content, $modal);
 
-      // ✅ فعل Summernote بعد إدخال HTML للمودال
+      // ✅ فعل Summernote بعد تحميل المودال (سيُظهر toolbar)
       await initSummernoteSafe($content, token);
 
+      // إرسال Ajax للنماذج داخل المودال
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
         ev.stopImmediatePropagation();
 
-        const form = ev.currentTarget;
-        const fd = new FormData(form);
+        const form   = ev.currentTarget;
+        const fd     = new FormData(form);
         const method = (form.method || 'POST').toUpperCase();
 
         try {
@@ -312,14 +307,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 /* =================================================================
- * Sidebar (mobile)
+ * سلوك السايدبار على الموبايل
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
-  const sidebar = document.querySelector('.admin-sidebar');
+  const sidebar  = document.querySelector('.admin-sidebar');
   const backdrop = document.getElementById('sidebarBackdrop');
-  const btn = document.getElementById('btnToggleSidebar');
+  const btn      = document.getElementById('btnToggleSidebar');
 
-  const openSidebar = () => {
+  const openSidebar  = () => {
     if (!sidebar) return;
     sidebar.classList.add('is-open');
     document.body.classList.add('sidebar-open');
@@ -340,7 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* =================================================================
- * Toggle password (FIX)
+ * زر إظهار/إخفاء كلمة المرور داخل input-group
  * ================================================================= */
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.js-toggle-pass');
@@ -351,19 +346,19 @@ document.addEventListener('click', (e) => {
 });
 
 /* =================================================================
- * Toast position
+ * موضع التوست داخل content-wrapper
  * ================================================================= */
 function positionToastStack() {
   const stack = document.getElementById('toastStack');
-  const wrap = document.querySelector('.content-wrapper');
+  const wrap  = document.querySelector('.content-wrapper');
   if (!stack || !wrap) return;
 
-  const gap = 16;
-  const rect = wrap.getBoundingClientRect();
+  const gap = 16; // px
+  const rect  = wrap.getBoundingClientRect();
   const extra = Math.max(window.innerWidth - rect.right + gap, gap);
 
   stack.style.right = extra + 'px';
-  stack.style.top = '16px';
+  stack.style.top   = '16px';
 }
 
 document.addEventListener('DOMContentLoaded', positionToastStack);
@@ -371,6 +366,9 @@ window.addEventListener('resize', positionToastStack);
 
 const btnRepos = document.getElementById('btnToggleSidebar');
 if (btnRepos) {
-  btnRepos.addEventListener('click', () => setTimeout(positionToastStack, 250));
+  btnRepos.addEventListener('click', () => {
+    setTimeout(positionToastStack, 250);
+  });
 }
+
 window.addEventListener('show-toast-reposition', positionToastStack);
