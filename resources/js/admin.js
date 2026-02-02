@@ -35,10 +35,7 @@ const hasSummernote = () => !!$.fn && typeof $.fn.summernote === 'function';
 let __summernoteLoaded = false;
 async function ensureSummernoteLoaded() {
   if (__summernoteLoaded) return;
-
-  // مهم: هذا الاستيراد الآن سيتم بعد ضبط window.jQuery
   await import('summernote/dist/summernote-lite.js');
-
   __summernoteLoaded = true;
 }
 
@@ -112,57 +109,65 @@ async function uploadSummernoteImage(file, token) {
 }
 
 async function initSummernoteSafe($root, token) {
-  // ✅ حمّل Summernote JS الآن
-  await ensureSummernoteLoaded();
+  try {
+    await ensureSummernoteLoaded();
 
-  if (!hasSummernote()) {
-    console.warn('Summernote loaded but plugin not attached to jQuery. Check window.jQuery binding.');
-    return;
-  }
+    if (!hasSummernote()) {
+      console.warn('Summernote loaded but plugin not attached to jQuery.');
+      return;
+    }
 
-  const $areas = $root.find('textarea[data-summernote="1"]');
-  if (!$areas.length) return;
+    // ✅ selector مرن
+    const $areas = $root.find('textarea[data-summernote="1"], textarea.js-summernote');
+    if (!$areas.length) return;
 
-  // إعطاء فرصة للرسم داخل المودال قبل التحويل (يقلل مشاكل عدم ظهور toolbar)
-  await new Promise((r) => requestAnimationFrame(() => r()));
+    // ✅ مهم: أعطِ فرصة للـ DOM/Modal يرسم قبل التحويل (حل مشكلة toolbar)
+    await new Promise((r) => requestAnimationFrame(() => r()));
+    await new Promise((r) => setTimeout(r, 30));
 
-  $areas.each(function () {
-    const $t = $(this);
+    $areas.each(function () {
+      const $t = $(this);
 
-    try {
-      if ($t.next('.note-editor').length) $t.summernote('destroy');
-    } catch (_) {}
+      // لو تم تفعيله سابقاً
+      try {
+        if ($t.next('.note-editor').length) $t.summernote('destroy');
+      } catch (_) {}
 
-    const h = Number($t.attr('data-summernote-height') || 420);
+      const h = Number($t.attr('data-summernote-height') || 420);
 
-    $t.summernote({
-      height: h,
-      toolbar: [
-        ['style', ['style']],
-        ['font', ['fontname', 'fontsize', 'bold', 'italic', 'underline', 'strikethrough', 'clear']],
-        ['color', ['color']],
-        ['para', ['ul', 'ol', 'paragraph']],
-        ['table', ['table']],
-        ['insert', ['link', 'picture']],
-        ['view', ['codeview']]
-      ],
-      fontNames: ['Arial', 'Lato', 'Tahoma', 'Times New Roman', 'Courier New', 'Verdana'],
-      fontSizes: ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32'],
-      callbacks: {
-        onImageUpload: async function (files) {
-          for (const f of files) {
-            try {
-              const url = await uploadSummernoteImage(f, token);
-              $t.summernote('insertImage', url);
-            } catch (e) {
-              console.error(e);
-              window.showToast?.('danger', 'Image upload failed', { title: 'Error', delay: 5000 });
+      $t.summernote({
+        height: h,
+        toolbar: [
+          ['style', ['style']],
+          ['font', ['fontname', 'fontsize', 'bold', 'italic', 'underline', 'strikethrough', 'clear']],
+          ['color', ['color']],
+          ['para', ['ul', 'ol', 'paragraph']],
+          ['table', ['table']],
+          ['insert', ['link', 'picture']],
+          ['view', ['codeview']]
+        ],
+        fontNames: ['Arial', 'Lato', 'Tahoma', 'Times New Roman', 'Courier New', 'Verdana'],
+        fontSizes: ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32'],
+        callbacks: {
+          onImageUpload: async function (files) {
+            for (const f of files) {
+              try {
+                const url = await uploadSummernoteImage(f, token);
+                $t.summernote('insertImage', url);
+              } catch (e) {
+                console.error(e);
+                window.showToast?.('danger', 'Image upload failed', { title: 'Error', delay: 5000 });
+              }
             }
           }
         }
-      }
+      });
     });
-  });
+
+  } catch (e) {
+    console.error('Summernote init error:', e);
+    window.showToast?.('danger', 'Summernote failed to initialize', { title: 'Error', delay: 6000 });
+  }
 }
 
 /* =================================================================
@@ -207,11 +212,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       $content.html(html);
 
+      // ✅ init plugins داخل المودال
       initSelect2Safe($content, $modal);
 
-      // ✅ فعل Summernote بعد تحميل المودال (وبعد تحميله ديناميكياً)
+      // ✅ الأهم: فعّل Summernote بعد إدخال HTML + بعد رسم المودال
       await initSummernoteSafe($content, token);
 
+      // Ajax submit
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -329,7 +336,7 @@ document.addEventListener('click', (e) => {
   if (!btn) return;
   const input = btn.closest('.input-group')?.querySelector('input[type="password"], input[type="text"]');
   if (!input) return;
-  input.type = input.type === 'password' ? 'text' : password;
+  input.type = input.type === 'password' ? 'text' : 'password';
 });
 
 /* =================================================================

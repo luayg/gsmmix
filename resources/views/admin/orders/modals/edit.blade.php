@@ -100,10 +100,11 @@
   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
-<form method="post" action="{{ route($routePrefix.'.update', $row->id) }}">
+<form method="post" action="{{ route($routePrefix.'.update', $row->id) }}" class="js-ajax-form">
   @csrf
 
-  <div class="modal-body">
+  {{-- ✅ مهم: نخلي المودال قابل للتمرير --}}
+  <div class="modal-body" style="max-height:72vh; overflow:auto;">
     {{-- ✅ نفس أسلوب أمثلتك: عمودين --}}
     <div class="row g-3">
 
@@ -159,7 +160,7 @@
           @if($img && $isSafeImg($img))
             <div class="mb-3 text-center">
               <img src="{{ $img }}" alt="Result image"
-                   style="max-width:420px; height:auto;"
+                   style="max-width:520px; height:auto;"
                    class="img-fluid rounded shadow-sm">
             </div>
           @endif
@@ -189,11 +190,11 @@
         </div>
       </div>
 
-      {{-- ===== RIGHT (مثل أمثلتك: Reply editor مع toolbar) ===== --}}
+      {{-- ===== RIGHT ===== --}}
       <div class="col-lg-6">
         <label class="form-label">Reply</label>
 
-        {{-- ✅ هذا هو اللي طلبته: details وفيه محرر يدعم صور --}}
+        {{-- ✅ details مفتوح + محرر --}}
         <details open class="border rounded p-2 bg-white">
           <summary class="fw-semibold">Provider reply (editable)</summary>
 
@@ -202,9 +203,8 @@
               هذا الحقل يدعم تنسيق + إدراج صور. بعد التعديل اضغط <b>Save</b>.
             </div>
 
-            {{-- ✅ Summernote سيحوّل textarea إلى محرر --}}
             <textarea
-              class="form-control"
+              class="form-control js-summernote"
               name="reply_html"
               data-summernote="1"
               data-summernote-height="420"
@@ -212,7 +212,6 @@
           </div>
         </details>
 
-        {{-- ✅ (اختياري) Raw JSON للتعديل المتقدم --}}
         <details class="mt-3">
           <summary class="fw-semibold">Raw response JSON (advanced)</summary>
           <div class="mt-2">
