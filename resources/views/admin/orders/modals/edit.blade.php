@@ -1,225 +1,98 @@
+{{-- resources/views/admin/orders/modals/edit.blade.php --}}
 @php
-  $pickName = function ($v) {
-    if (is_string($v)) {
-      $s = trim($v);
-      if ($s !== '' && $s[0] === '{') {
-        $j = json_decode($s, true);
-        if (is_array($j)) return $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
-      }
-      return $v;
-    }
-    return (string)$v;
-  };
+  /** @var \App\Models\Order $order */
+  $replyHtml = (string)($order->reply ?? '');
+  // حماية بسيطة لو في reply يحتوي </textarea>
+  $replyHtmlSafe = str_ireplace('</textarea>', '&lt;/textarea&gt;', $replyHtml);
 
-  $resp = $row->response;
-  if (is_string($resp)) {
-    $decoded = json_decode($resp, true);
-    if (is_array($decoded)) $resp = $decoded;
-  }
-  if (!is_array($resp)) $resp = [];
-
-  $items = $resp['result_items'] ?? [];
-  $img   = $resp['result_image'] ?? null;
-
-  // ✅ reply_html الذي سنعرضه في المحرر (HTML)
-  $replyHtml = (string)($resp['reply_html'] ?? '');
-
-  // إذا ما فيه reply_html، نبني HTML بسيط من النتيجة
-  if ($replyHtml === '') {
-    $built = '';
-    if ($img) {
-      $built .= '<p style="text-align:center"><img src="'.e($img).'" style="max-width:520px;height:auto;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.12);" /></p>';
-    }
-    if (is_array($items) && count($items)) {
-      foreach ($items as $it) {
-        $label = $it['label'] ?? '';
-        $value = $it['value'] ?? '';
-        $built .= '<div><strong>'.e($label).':</strong> '.e($value).'</div>';
-      }
-    } elseif (!empty($resp['message'])) {
-      $built .= '<div>'.e($resp['message']).'</div>';
-    }
-    $replyHtml = $built;
-  }
-
-  $rawJson = json_encode($resp, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
-
-  $clean = function ($v) {
-    $v = (string)$v;
-    $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    return trim($v);
-  };
-
-  $renderValue = function ($label, $value) use ($clean) {
-    $labelL = mb_strtolower($clean($label));
-    $val = $clean($value);
-    $valL = mb_strtolower($val);
-
-    if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
-    if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
-
-    if (str_contains($labelL, 'icloud')) {
-      if (str_contains($valL, 'lost'))  return '<span class="badge bg-danger">'.e($val).'</span>';
-      if (str_contains($valL, 'clean')) return '<span class="badge bg-success">'.e($val).'</span>';
-      return '<span class="badge bg-secondary">'.e($val).'</span>';
-    }
-
-    if ($valL === 'activated') return '<span class="badge bg-success">Activated</span>';
-    if ($valL === 'expired')   return '<span class="badge bg-danger">Expired</span>';
-    if ($valL === 'unlocked')  return '<span class="badge bg-success">Unlocked</span>';
-
-    return e($val);
-  };
-
-  $isSafeImg = function ($url) {
-    if (!is_string($url)) return false;
-    $u = trim($url);
-    return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
-  };
-
-  // ✅ Pricing
-  $currency = $row->currency ?? $row->curr ?? 'USD';
-  $orderPrice = $row->price ?? null;
-  $profit = $row->profit ?? null;
-  $apiProcessingPrice = $row->service?->cost ?? null;
-
-  $fmtMoney = function ($v) use ($currency) {
-    if ($v === null || $v === '') return null;
-    if (is_numeric($v)) return number_format((float)$v, 2) . ' ' . $currency;
-    return (string)$v . ' ' . $currency;
-  };
-
-  if ($profit === null && is_numeric($orderPrice) && is_numeric($apiProcessingPrice)) {
-    $profit = (float)$orderPrice - (float)$apiProcessingPrice;
-  }
+  // raw provider json/text (لو عندك عمود مختلف غير last_response عدّله)
+  $raw = (string)($order->last_response ?? '');
 @endphp
 
 <div class="modal-header">
-  <h5 class="modal-title">{{ $title ?? ('Edit Order #'.$row->id) }}</h5>
+  <h5 class="modal-title">Edit Order #{{ $order->id }}</h5>
   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
-<form method="post" action="{{ route($routePrefix.'.update', $row->id) }}">
+<form class="js-ajax-form" method="POST" action="{{ route('admin.orders.imei.update', $order->id) }}">
   @csrf
 
-  {{-- ✅ scroll واضح داخل المودال --}}
-  <div class="modal-body" style="max-height:70vh; overflow:auto;">
+  <div class="modal-body" style="max-height: 75vh; overflow:auto;">
     <div class="row g-3">
-
-      {{-- LEFT --}}
+      {{-- LEFT: details + preview --}}
       <div class="col-lg-6">
         <div class="table-responsive">
-          <table class="table table-bordered mb-0">
+          <table class="table table-sm table-bordered align-middle mb-3">
             <tbody>
-              <tr><th style="width:220px">Service</th><td>{{ $row->service ? $pickName($row->service->name) : '—' }}</td></tr>
-              <tr><th>User</th><td>{{ $row->email ?? '—' }}</td></tr>
-              <tr><th>Device</th><td>{{ $row->device }}</td></tr>
-              <tr><th>Provider</th><td>{{ $row->provider?->name ?? '—' }}</td></tr>
-              <tr><th>API order ID</th><td>{{ $row->remote_id ?? '—' }}</td></tr>
-
-              @if(!empty($row->ip))
-                <tr><th>Order IP</th><td>{{ $row->ip }}</td></tr>
-              @endif
-
-              @if($orderPrice !== null)
-                <tr><th>Order price</th><td>{{ $fmtMoney($orderPrice) }}</td></tr>
-              @endif
-
-              @if($apiProcessingPrice !== null)
-                <tr><th>API processing price</th><td>{{ $fmtMoney($apiProcessingPrice) }}</td></tr>
-              @endif
-
-              @if($profit !== null)
-                <tr><th>Profit</th><td>{{ $fmtMoney($profit) }}</td></tr>
-              @endif
+              <tr><th style="width:180px">Service</th><td>{{ $order->service_name ?? '-' }}</td></tr>
+              <tr><th>User</th><td>{{ $order->user_email ?? '-' }}</td></tr>
+              <tr><th>Device</th><td>{{ $order->device ?? '-' }}</td></tr>
+              <tr><th>Provider</th><td>{{ $order->provider ?? '-' }}</td></tr>
+              <tr><th>API order ID</th><td>{{ $order->remote_id ?? '-' }}</td></tr>
+              <tr><th>Order IP</th><td>{{ $order->order_ip ?? '-' }}</td></tr>
+              <tr><th>Order price</th><td>{{ number_format((float)($order->price ?? 0), 2) }} USD</td></tr>
+              <tr><th>API processing price</th><td>{{ number_format((float)($order->cost ?? 0), 2) }} USD</td></tr>
+              <tr><th>Profit</th><td>{{ number_format((float)($order->profit ?? 0), 2) }} USD</td></tr>
             </tbody>
           </table>
         </div>
 
-        <div class="row g-3 mt-2">
+        <div class="row g-2 mb-3">
           <div class="col-md-6">
             <label class="form-label">Status</label>
-            <select class="form-select" name="status" required>
-              @foreach(['waiting','inprogress','success','rejected','cancelled'] as $st)
-                <option value="{{ $st }}" @selected($row->status===$st)>{{ ucfirst($st) }}</option>
-              @endforeach
+            <select name="status" class="form-select">
+              @php $st = (string)($order->status ?? ''); @endphp
+              <option value="waiting"   @selected($st==='waiting')>Waiting</option>
+              <option value="inprogress" @selected($st==='inprogress')>Inprogress</option>
+              <option value="success"   @selected($st==='success')>Success</option>
+              <option value="rejected"  @selected($st==='rejected')>Rejected</option>
             </select>
           </div>
-
           <div class="col-md-6">
             <label class="form-label">Comments</label>
-            <input type="text" class="form-control" name="comments" value="{{ $row->comments }}">
+            <input name="comments" class="form-control" value="{{ $order->comments ?? '' }}">
           </div>
         </div>
 
-        <div class="mt-3">
-          <label class="form-label">Result (Preview)</label>
+        <div class="mb-2 fw-semibold">Result (Preview)</div>
 
-          @if($img && $isSafeImg($img))
-            <div class="mb-3 text-center">
-              {{-- ✅ تكبير الصورة --}}
-              <img src="{{ $img }}" alt="Result image"
-                   style="max-width:520px; height:auto;"
-                   class="img-fluid rounded shadow-sm">
-            </div>
-          @endif
-
-          @if(is_array($items) && count($items))
-            <div class="table-responsive">
-              <table class="table table-sm table-striped table-bordered mb-0">
-                <tbody>
-                @foreach($items as $it)
-                  @php
-                    $label = $it['label'] ?? '';
-                    $value = $it['value'] ?? '';
-                  @endphp
-                  <tr>
-                    <th style="width:240px">{{ $label }}</th>
-                    <td>{!! $renderValue($label, $value) !!}</td>
-                  </tr>
-                @endforeach
-                </tbody>
-              </table>
-            </div>
-          @else
-            <div class="border rounded p-3 bg-light mb-0">
-              {{ $resp['message'] ?? '—' }}
-            </div>
-          @endif
+        {{-- ✅ هذا القسم موجود عندك ويظهر صح (صورة + جدول) — اتركه كما هو عندك إن كان مختلف.
+             هنا وضعته بشكل عام باستخدام reply (لأنك قلت تريد نفس شكل reply)
+             إذا عندك متغير preview جاهز (مثل $resultPreviewHtml) استبدل هذا القسم به.
+        --}}
+        <div class="border rounded p-2 bg-white" style="min-height:180px">
+          {!! $order->result_preview_html ?? '' !!}
         </div>
       </div>
 
-      {{-- RIGHT --}}
+      {{-- RIGHT: editable provider reply + raw json --}}
       <div class="col-lg-6">
-        <label class="form-label">Reply</label>
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <div class="fw-semibold">Reply</div>
+        </div>
 
-        <details open class="border rounded p-2 bg-white">
+        <details open class="mb-3">
           <summary class="fw-semibold">Provider reply (editable)</summary>
-
           <div class="mt-2">
-            <div class="form-text mb-2">
-              هذا الحقل يدعم تنسيق + إدراج صور. بعد التعديل اضغط <b>Save</b>.
-            </div>
+            <div class="small text-muted mb-2">هذا الحقل يدعم تنسيق + إدراج صور. بعد التعديل اضغط Save.</div>
 
-            {{-- ✅ Summernote --}}
+            {{-- ✅ مهم: class js-summernote + data-summernote=1 --}}
             <textarea
-              class="form-control"
-              name="reply_html"
+              name="reply"
+              class="form-control js-summernote"
               data-summernote="1"
               data-summernote-height="420"
-            >{!! $replyHtml !!}</textarea>
+            >{!! $replyHtmlSafe !!}</textarea>
           </div>
         </details>
 
-        <details class="mt-3">
+        <details>
           <summary class="fw-semibold">Raw response JSON (advanced)</summary>
           <div class="mt-2">
-            <textarea class="form-control" name="response" rows="10" style="font-family: ui-monospace, Menlo, Consolas, monospace;">{{ $rawJson }}</textarea>
-            <div class="form-text">إذا عدّلته لازم يكون JSON صحيح.</div>
+            <textarea class="form-control" rows="10" readonly>{{ $raw }}</textarea>
           </div>
         </details>
       </div>
-
     </div>
   </div>
 
@@ -228,3 +101,75 @@
     <button type="submit" class="btn btn-success">Save</button>
   </div>
 </form>
+
+{{-- ✅ ضمان تفعيل المحرر داخل المودال حتى لو admin.js ما التقطه --}}
+<script>
+(function () {
+  const root = document.currentScript.closest('.modal-content');
+  if (!root) return;
+
+  // انتظر شوي للـ DOM داخل المودال
+  setTimeout(() => {
+    if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.summernote !== 'function') {
+      console.warn('Summernote not ready on this page.');
+      return;
+    }
+
+    const $ = window.jQuery;
+    const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+    $(root).find('textarea.js-summernote').each(function () {
+      const $t = $(this);
+
+      // امنع double init
+      try { if ($t.next('.note-editor').length) $t.summernote('destroy'); } catch(e){}
+
+      const h = Number($t.attr('data-summernote-height') || 420);
+
+      $t.summernote({
+        height: h,
+        toolbar: [
+          ['style', ['style']],
+          ['font', ['fontname', 'fontsize', 'bold', 'italic', 'underline', 'strikethrough', 'clear']],
+          ['color', ['color']],
+          ['para', ['ul', 'ol', 'paragraph']],
+          ['table', ['table']],
+          ['insert', ['link', 'picture']],
+          ['view', ['codeview']]
+        ],
+        fontNames: ['Arial', 'Lato', 'Tahoma', 'Times New Roman', 'Courier New', 'Verdana'],
+        fontSizes: ['8','9','10','11','12','14','16','18','20','24','28','32'],
+        callbacks: {
+          onImageUpload: async function (files) {
+            for (const f of files) {
+              try {
+                const fd = new FormData();
+                fd.append('image', f);
+
+                const res = await fetch('/admin/uploads/summernote-image', {
+                  method: 'POST',
+                  headers: {
+                    'X-CSRF-TOKEN': token,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                  },
+                  body: fd
+                });
+
+                if (!res.ok) throw new Error(await res.text());
+                const j = await res.json();
+                if (!j.url) throw new Error('Invalid upload response');
+
+                $t.summernote('insertImage', j.url);
+              } catch (err) {
+                console.error(err);
+                window.showToast?.('danger', 'Image upload failed', { title: 'Error', delay: 5000 });
+              }
+            }
+          }
+        }
+      });
+    });
+  }, 50);
+})();
+</script>
