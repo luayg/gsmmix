@@ -12,6 +12,44 @@ class SyncImeiOrders extends Command
     protected $signature = 'orders:sync-imei {--limit=50}';
     protected $description = 'Sync IMEI orders status/result using DHRU getimeiorder';
 
+    private function providerBaseUrl(ApiProvider $p): string
+    {
+        $u = rtrim((string)$p->url, '/');
+        // لو كان مخزن api/index.php احذفه للحصول على base
+        $u = preg_replace('~/api/index\.php$~', '', $u) ?? $u;
+        return rtrim($u, '/');
+    }
+
+    private function resolveImageUrl(ApiProvider $p, string $src): ?string
+    {
+        $src = trim($src);
+        if ($src === '') return null;
+
+        // data URI
+        if (str_starts_with($src, 'data:image/')) return $src;
+
+        // protocol-relative
+        if (str_starts_with($src, '//')) return 'https:' . $src;
+
+        // absolute
+        if (preg_match('~^https?://~i', $src)) return $src;
+
+        // relative => ركّبه على base
+        $base = $this->providerBaseUrl($p);
+        if ($base === '') return null;
+
+        if (str_starts_with($src, '/')) return $base . $src;
+        return $base . '/' . $src;
+    }
+
+    private function extractFirstImgSrc(string $html): ?string
+    {
+        if (!preg_match('~<img[^>]+src=["\']([^"\']+)["\']~i', $html, $m)) {
+            return null;
+        }
+        return $m[1] ?? null;
+    }
+
     private function cleanHtmlResultToLines(string $html): array
     {
         // بدّل <br> إلى \n
@@ -37,7 +75,6 @@ class SyncImeiOrders extends Command
     {
         $items = [];
         foreach ($lines as $line) {
-            // حاول تقسيم: "Key: Value"
             $pos = mb_strpos($line, ':');
             if ($pos !== false) {
                 $key = trim(mb_substr($line, 0, $pos));
@@ -47,8 +84,6 @@ class SyncImeiOrders extends Command
                     continue;
                 }
             }
-
-            // إذا ما كان Key:Value خليه سطر عادي
             $items[] = ['label' => '', 'value' => $line];
         }
         return $items;
@@ -95,10 +130,9 @@ class SyncImeiOrders extends Command
                 continue;
             }
 
-            // إذا ERROR برسائل تقنية (Command/Invalid/Parameter Required) => لا نرفض الطلب
+            // ERROR برسائل تقنية => لا نرفض
             if (isset($raw['ERROR'][0]['MESSAGE'])) {
                 $m = strtolower((string)$raw['ERROR'][0]['MESSAGE']);
-
                 if (
                     str_contains($m, 'command not found') ||
                     str_contains($m, 'invalid action') ||
@@ -113,7 +147,6 @@ class SyncImeiOrders extends Command
                     continue;
                 }
 
-                // خطأ فعلي: rejected
                 $order->status = 'rejected';
                 $order->replied_at = now();
                 $order->response = [
@@ -149,17 +182,24 @@ class SyncImeiOrders extends Command
                     'reference_id' => $order->remote_id,
                 ];
 
-                // ✅ تنظيف CODE (قد يأتي HTML)
                 if (!empty($code)) {
                     $rawResult = is_string($code)
                         ? $code
                         : json_encode($code, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 
+                    // ✅ استخراج صورة إن وجدت
+                    $imgSrc = $this->extractFirstImgSrc($rawResult);
+                    if ($imgSrc) {
+                        $imgUrl = $this->resolveImageUrl($provider, $imgSrc);
+                        if ($imgUrl) $ui['result_image'] = $imgUrl;
+                    }
+
+                    // ✅ تنظيف وتحويل لجدول
                     $lines = $this->cleanHtmlResultToLines($rawResult);
                     $items = $this->linesToKeyValue($lines);
 
-                    $ui['result_text']  = implode("\n", $lines);     // نص نظيف
-                    $ui['result_items'] = $items;                   // جاهز للعرض
+                    $ui['result_text']  = implode("\n", $lines);
+                    $ui['result_items'] = $items;
                 }
 
                 $order->response = $ui;

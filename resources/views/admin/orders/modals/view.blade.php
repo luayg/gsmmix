@@ -19,9 +19,60 @@
     'cancelled'  => 'bg-dark',
   ][$row->status] ?? 'bg-secondary';
 
-  $resp = is_array($row->response) ? $row->response : null;
-  $items = $resp['result_items'] ?? null;
-  $resultText = $resp['result_text'] ?? null;
+  // response قد تكون array أو JSON string
+  $resp = $row->response;
+  if (is_string($resp)) {
+    $decoded = json_decode($resp, true);
+    if (is_array($decoded)) $resp = $decoded;
+  }
+  if (!is_array($resp)) $resp = [];
+
+  $items = $resp['result_items'] ?? [];
+  $img = $resp['result_image'] ?? null;
+
+  $clean = function ($v) {
+    $v = (string)$v;
+    $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    return trim($v);
+  };
+
+  $renderValue = function ($label, $value) use ($clean) {
+    $labelL = mb_strtolower($clean($label));
+    $val = $clean($value);
+    $valL = mb_strtolower($val);
+
+    // ON/OFF
+    if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
+    if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
+
+    // Find My iPhone
+    if (str_contains($labelL, 'find my') || str_contains($labelL, 'fmi')) {
+      if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
+      if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
+    }
+
+    // iCloud Status
+    if (str_contains($labelL, 'icloud')) {
+      if (str_contains($valL, 'lost')) return '<span class="badge bg-danger">'.e($val).'</span>';
+      if (str_contains($valL, 'clean')) return '<span class="badge bg-success">'.e($val).'</span>';
+      return '<span class="badge bg-secondary">'.e($val).'</span>';
+    }
+
+    // بعض الحالات الشائعة (اختياري)
+    if ($valL === 'activated') return '<span class="badge bg-success">Activated</span>';
+    if ($valL === 'expired')   return '<span class="badge bg-danger">Expired</span>';
+    if ($valL === 'unlocked')  return '<span class="badge bg-success">Unlocked</span>';
+    if ($valL === 'clean')     return '<span class="badge bg-success">Clean</span>';
+    if (str_contains($valL, 'lost')) return '<span class="badge bg-danger">'.e($val).'</span>';
+
+    return e($val);
+  };
+
+  $isSafeImg = function ($url) {
+    if (!is_string($url)) return false;
+    $u = trim($url);
+    return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
+  };
 @endphp
 
 <div class="modal-header">
@@ -53,29 +104,49 @@
     </div>
 
     <div class="col-12">
-      <label class="form-label">Provider reply</label>
+      <label class="form-label">Result</label>
+
+      @if($img && $isSafeImg($img))
+        <div class="mb-3 text-center">
+          <img src="{{ $img }}" alt="Result image" style="max-width:180px; height:auto;" class="img-fluid rounded shadow-sm">
+        </div>
+      @endif
 
       @if(is_array($items) && count($items))
         <div class="table-responsive">
           <table class="table table-sm table-striped table-bordered mb-0">
             <tbody>
-            @foreach($items as $it)
-              <tr>
-                <th style="width:240px">{{ $it['label'] ?? '' }}</th>
-                <td>{{ $it['value'] ?? '' }}</td>
-              </tr>
-            @endforeach
+              @foreach($items as $it)
+                @php
+                  $label = $it['label'] ?? '';
+                  $value = $it['value'] ?? '';
+                @endphp
+
+                @if(trim($label) === '')
+                  <tr>
+                    <td colspan="2">{!! $renderValue('', $value) !!}</td>
+                  </tr>
+                @else
+                  <tr>
+                    <th style="width:240px">{{ $label }}</th>
+                    <td>{!! $renderValue($label, $value) !!}</td>
+                  </tr>
+                @endif
+              @endforeach
             </tbody>
           </table>
         </div>
-
-      @elseif(is_string($resultText) && $resultText !== '')
-        <pre class="border rounded p-3 bg-light mb-0" style="white-space:pre-wrap;">{{ $resultText }}</pre>
-
       @else
         <div class="border rounded p-3 bg-light mb-0">
-          {{ is_array($resp) ? ($resp['message'] ?? '—') : '—' }}
+          {{ $resp['message'] ?? '—' }}
         </div>
+      @endif
+
+      @if(!empty($resp['result_text']))
+        <details class="mt-3">
+          <summary>Raw text (debug)</summary>
+          <pre class="border rounded p-3 bg-light mb-0" style="white-space:pre-wrap;">{{ $resp['result_text'] }}</pre>
+        </details>
       @endif
     </div>
 

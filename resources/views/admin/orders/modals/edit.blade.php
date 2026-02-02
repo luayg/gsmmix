@@ -11,16 +11,47 @@
     return (string)$v;
   };
 
-  $uiMessage = function ($resp) {
-    if (is_array($resp)) {
-      $msg = $resp['message'] ?? null;
-      $ref = $resp['reference_id'] ?? null;
-      if ($msg && $ref) return $msg . " (Ref: {$ref})";
-      if ($msg) return $msg;
-      return json_encode($resp, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+  $resp = $row->response;
+  if (is_string($resp)) {
+    $decoded = json_decode($resp, true);
+    if (is_array($decoded)) $resp = $decoded;
+  }
+  if (!is_array($resp)) $resp = [];
+
+  $items = $resp['result_items'] ?? [];
+  $img = $resp['result_image'] ?? null;
+
+  $clean = function ($v) {
+    $v = (string)$v;
+    $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    return trim($v);
+  };
+
+  $renderValue = function ($label, $value) use ($clean) {
+    $labelL = mb_strtolower($clean($label));
+    $val = $clean($value);
+    $valL = mb_strtolower($val);
+
+    if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
+    if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
+
+    if (str_contains($labelL, 'icloud')) {
+      if (str_contains($valL, 'lost')) return '<span class="badge bg-danger">'.e($val).'</span>';
+      if (str_contains($valL, 'clean')) return '<span class="badge bg-success">'.e($val).'</span>';
+      return '<span class="badge bg-secondary">'.e($val).'</span>';
     }
-    if (is_string($resp)) return $resp;
-    return (string)$resp;
+
+    if ($valL === 'activated') return '<span class="badge bg-success">Activated</span>';
+    if ($valL === 'expired')   return '<span class="badge bg-danger">Expired</span>';
+    if ($valL === 'unlocked')  return '<span class="badge bg-success">Unlocked</span>';
+
+    return e($val);
+  };
+
+  $isSafeImg = function ($url) {
+    if (!is_string($url)) return false;
+    $u = trim($url);
+    return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 @endphp
 
@@ -56,7 +87,6 @@
             <option value="{{ $st }}" @selected($row->status===$st)>{{ ucfirst($st) }}</option>
           @endforeach
         </select>
-        <div class="form-text">تغيير الحالة يدويًا لا يرسل API (الإرسال تلقائي عند create فقط).</div>
       </div>
 
       <div class="col-md-6">
@@ -65,17 +95,42 @@
       </div>
 
       <div class="col-12">
-        <label class="form-label">Provider reply (recommended)</label>
-        <textarea class="form-control" rows="5" readonly>{{ $uiMessage($row->response) }}</textarea>
-        <div class="form-text">
-          هذه الرسالة مختصرة ومناسبة للعرض. التفاصيل الخام محفوظة في request/response_raw للتتبع.
-        </div>
+        <label class="form-label">Result</label>
+
+        @if($img && $isSafeImg($img))
+          <div class="mb-3 text-center">
+            <img src="{{ $img }}" alt="Result image" style="max-width:180px; height:auto;" class="img-fluid rounded shadow-sm">
+          </div>
+        @endif
+
+        @if(is_array($items) && count($items))
+          <div class="table-responsive">
+            <table class="table table-sm table-striped table-bordered mb-0">
+              <tbody>
+              @foreach($items as $it)
+                @php
+                  $label = $it['label'] ?? '';
+                  $value = $it['value'] ?? '';
+                @endphp
+                <tr>
+                  <th style="width:240px">{{ $label }}</th>
+                  <td>{!! $renderValue($label, $value) !!}</td>
+                </tr>
+              @endforeach
+              </tbody>
+            </table>
+          </div>
+        @else
+          <div class="border rounded p-3 bg-light mb-0">
+            {{ $resp['message'] ?? '—' }}
+          </div>
+        @endif
       </div>
 
       <div class="col-12">
         <label class="form-label">Response override (JSON or text) - optional</label>
-        <textarea class="form-control" name="response" rows="6"></textarea>
-        <div class="form-text">اتركه فارغاً إن لم ترد تعديل الرد يدوياً.</div>
+        <textarea class="form-control" name="response" rows="5"></textarea>
+        <div class="form-text">اختياري: لو تريد تعديل الرد يدوياً. اتركه فارغاً.</div>
       </div>
 
     </div>
