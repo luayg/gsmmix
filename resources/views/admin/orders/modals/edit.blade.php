@@ -53,6 +53,26 @@
     $u = trim($url);
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
+
+  // ✅ Pricing (ذكي)
+  $currency = $row->currency ?? $row->curr ?? 'USD';
+
+  $orderPrice   = $row->price ?? $row->order_price ?? $row->customer_price ?? null;
+  $providerCost = $row->supplier_price ?? $row->provider_price ?? $row->cost ?? null;
+  $finalPrice   = $row->final_price ?? $row->paid_price ?? $row->charged_price ?? null;
+  $profit       = $row->profit ?? null;
+
+  $fmtMoney = function ($v) use ($currency) {
+    if ($v === null || $v === '') return null;
+    if (is_numeric($v)) return number_format((float)$v, 2) . ' ' . $currency;
+    return (string)$v . ' ' . $currency;
+  };
+
+  if ($profit === null && is_numeric($finalPrice) && is_numeric($providerCost)) {
+    $profit = (float)$finalPrice - (float)$providerCost;
+  } elseif ($profit === null && is_numeric($finalPrice) && is_numeric($orderPrice)) {
+    $profit = (float)$finalPrice - (float)$orderPrice;
+  }
 @endphp
 
 <div class="modal-header">
@@ -75,6 +95,20 @@
               <tr><th>Device</th><td>{{ $row->device }}</td></tr>
               <tr><th>Provider</th><td>{{ $row->provider?->name ?? '—' }}</td></tr>
               <tr><th>API order ID</th><td>{{ $row->remote_id ?? '—' }}</td></tr>
+
+              {{-- ✅ Pricing rows --}}
+              @if($orderPrice !== null)
+                <tr><th>Order price</th><td>{{ $fmtMoney($orderPrice) }}</td></tr>
+              @endif
+              @if($providerCost !== null)
+                <tr><th>Provider cost</th><td>{{ $fmtMoney($providerCost) }}</td></tr>
+              @endif
+              @if($finalPrice !== null)
+                <tr><th>Final price</th><td>{{ $fmtMoney($finalPrice) }}</td></tr>
+              @endif
+              @if($profit !== null)
+                <tr><th>Profit</th><td>{{ $fmtMoney($profit) }}</td></tr>
+              @endif
             </tbody>
           </table>
         </div>
@@ -97,9 +131,12 @@
       <div class="col-12">
         <label class="form-label">Result</label>
 
+        {{-- ✅ Bigger image --}}
         @if($img && $isSafeImg($img))
           <div class="mb-3 text-center">
-            <img src="{{ $img }}" alt="Result image" style="max-width:180px; height:auto;" class="img-fluid rounded shadow-sm">
+            <img src="{{ $img }}" alt="Result image"
+                 style="max-width:280px; height:auto;"
+                 class="img-fluid rounded shadow-sm">
           </div>
         @endif
 
