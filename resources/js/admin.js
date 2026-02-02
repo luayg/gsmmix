@@ -21,11 +21,8 @@ import 'select2/dist/js/select2.full.min.js';
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 
-// ✅ Summernote (المسارات الصحيحة بدون min)
-import 'summernote/dist/summernote-lite.js';
+// ✅ CSS فقط (آمن في الأعلى)
 import 'summernote/dist/summernote-lite.css';
-
-
 
 /* =================================================================
  * Helpers
@@ -33,6 +30,17 @@ import 'summernote/dist/summernote-lite.css';
 
 const hasSelect2 = () => !!$.fn && typeof $.fn.select2 === 'function';
 const hasSummernote = () => !!$.fn && typeof $.fn.summernote === 'function';
+
+// ✅ تحميل Summernote JS ديناميكياً (بعد ما صار window.jQuery جاهز)
+let __summernoteLoaded = false;
+async function ensureSummernoteLoaded() {
+  if (__summernoteLoaded) return;
+
+  // مهم: هذا الاستيراد الآن سيتم بعد ضبط window.jQuery
+  await import('summernote/dist/summernote-lite.js');
+
+  __summernoteLoaded = true;
+}
 
 function initSelect2Safe($root, $dropdownParent = null) {
   if (!hasSelect2()) return;
@@ -54,9 +62,9 @@ function initSelect2Safe($root, $dropdownParent = null) {
 window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
   const bg = {
     success: 'bg-success text-white',
-    danger : 'bg-danger text-white',
+    danger: 'bg-danger text-white',
     warning: 'bg-warning',
-    info   : 'bg-primary text-white'
+    info: 'bg-primary text-white'
   }[variant] || 'bg-dark text-white';
 
   const id = 't' + Date.now() + Math.random().toString(16).slice(2);
@@ -83,7 +91,6 @@ window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
  * Summernote upload + init
  * ================================ */
 
-// ✅ عندك UploadController يتوقع الاسم image
 async function uploadSummernoteImage(file, token) {
   const fd = new FormData();
   fd.append('image', file);
@@ -104,19 +111,24 @@ async function uploadSummernoteImage(file, token) {
   return j.url;
 }
 
-function initSummernoteSafe($root, token) {
+async function initSummernoteSafe($root, token) {
+  // ✅ حمّل Summernote JS الآن
+  await ensureSummernoteLoaded();
+
   if (!hasSummernote()) {
-    console.warn('Summernote not loaded. Run: npm install && npm run dev/build');
+    console.warn('Summernote loaded but plugin not attached to jQuery. Check window.jQuery binding.');
     return;
   }
 
   const $areas = $root.find('textarea[data-summernote="1"]');
   if (!$areas.length) return;
 
+  // إعطاء فرصة للرسم داخل المودال قبل التحويل (يقلل مشاكل عدم ظهور toolbar)
+  await new Promise((r) => requestAnimationFrame(() => r()));
+
   $areas.each(function () {
     const $t = $(this);
 
-    // لو تم تفعيله سابقاً
     try {
       if ($t.next('.note-editor').length) $t.summernote('destroy');
     } catch (_) {}
@@ -173,7 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const myReq = ++MODAL_REQ_ID;
 
-    const $modal   = $('#ajaxModal');
+    const $modal = $('#ajaxModal');
     const $content = $modal.find('.modal-content');
 
     $content.html(`
@@ -187,7 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
     inst.show();
 
     try {
-      const res  = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       if (!res.ok) throw new Error('Failed to load modal');
       const html = await res.text();
 
@@ -197,16 +209,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       initSelect2Safe($content, $modal);
 
-      // ✅ هذا هو المهم: فعل Summernote بعد تحميل المودال
-      initSummernoteSafe($content, token);
+      // ✅ فعل Summernote بعد تحميل المودال (وبعد تحميله ديناميكياً)
+      await initSummernoteSafe($content, token);
 
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
         ev.stopImmediatePropagation();
 
-        const form   = ev.currentTarget;
-        const fd     = new FormData(form);
+        const form = ev.currentTarget;
+        const fd = new FormData(form);
         const method = (form.method || 'POST').toUpperCase();
 
         try {
@@ -285,11 +297,11 @@ document.addEventListener('DOMContentLoaded', async () => {
  * سلوك السايدبار على الموبايل
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
-  const sidebar  = document.querySelector('.admin-sidebar');
+  const sidebar = document.querySelector('.admin-sidebar');
   const backdrop = document.getElementById('sidebarBackdrop');
-  const btn      = document.getElementById('btnToggleSidebar');
+  const btn = document.getElementById('btnToggleSidebar');
 
-  const openSidebar  = () => {
+  const openSidebar = () => {
     if (!sidebar) return;
     sidebar.classList.add('is-open');
     document.body.classList.add('sidebar-open');
@@ -317,7 +329,7 @@ document.addEventListener('click', (e) => {
   if (!btn) return;
   const input = btn.closest('.input-group')?.querySelector('input[type="password"], input[type="text"]');
   if (!input) return;
-  input.type = input.type === 'password' ? 'text' : 'password';
+  input.type = input.type === 'password' ? 'text' : password;
 });
 
 /* =================================================================
@@ -325,15 +337,15 @@ document.addEventListener('click', (e) => {
  * ================================================================= */
 function positionToastStack() {
   const stack = document.getElementById('toastStack');
-  const wrap  = document.querySelector('.content-wrapper');
+  const wrap = document.querySelector('.content-wrapper');
   if (!stack || !wrap) return;
 
   const gap = 16;
-  const rect  = wrap.getBoundingClientRect();
+  const rect = wrap.getBoundingClientRect();
   const extra = Math.max(window.innerWidth - rect.right + gap, gap);
 
   stack.style.right = extra + 'px';
-  stack.style.top   = '16px';
+  stack.style.top = '16px';
 }
 
 document.addEventListener('DOMContentLoaded', positionToastStack);
