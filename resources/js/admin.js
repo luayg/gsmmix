@@ -21,6 +21,10 @@ import 'select2/dist/js/select2.full.min.js';   // full لتعمل AJAX/tags
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 
+// ✅ Summernote (Bootstrap 5 build)
+import 'summernote/dist/summernote-bs5.min.js';
+import 'summernote/dist/summernote-bs5.min.css';
+
 
 /* =================================================================
  * Helpers
@@ -28,6 +32,9 @@ import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 
 /** هل Select2 محمَّل على jQuery الحالي؟ */
 const hasSelect2 = () => !!$.fn && typeof $.fn.select2 === 'function';
+
+/** هل Summernote محمّل؟ */
+const hasSummernote = () => !!$.fn && typeof $.fn.summernote === 'function';
 
 /** تهيئة Select2 بأمان داخل جذر معيّن (مثل المودال) */
 function initSelect2Safe($root, $dropdownParent = null) {
@@ -80,6 +87,93 @@ window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
 };
 
 
+/* ================================
+ * ✅ Summernote upload + init
+ * ================================ */
+
+/** رفع الصورة باستخدام UploadController الحالي (expects field name: image) */
+async function uploadSummernoteImage(file, token) {
+  const fd = new FormData();
+  fd.append('image', file); // ✅ مهم: UploadController يتوقع image
+
+  const res = await fetch('/admin/uploads/summernote-image', {
+    method: 'POST',
+    headers: {
+      'X-CSRF-TOKEN': token,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Accept': 'application/json'
+    },
+    body: fd
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(txt || 'Upload failed');
+  }
+
+  const j = await res.json();
+  if (!j || !j.url) throw new Error('Invalid upload response');
+
+  return j.url;
+}
+
+/** تهيئة Summernote داخل root (المودال) */
+function initSummernoteSafe($root, token) {
+  if (!hasSummernote()) {
+    console.warn('Summernote not loaded. Run: npm install && npm run build');
+    return;
+  }
+
+  const $areas = $root.find('textarea[data-summernote="1"]');
+  if (!$areas.length) return;
+
+  $areas.each(function () {
+    const $t = $(this);
+
+    // إذا كان متفعّل سابقاً (عند إعادة فتح مودال)
+    try {
+      if ($t.next('.note-editor').length) {
+        $t.summernote('destroy');
+      }
+    } catch (_) {}
+
+    const h = Number($t.attr('data-summernote-height') || 420);
+
+    $t.summernote({
+      height: h,
+
+      // ✅ Toolbar قريب جداً من مثال صورك
+      toolbar: [
+        ['style', ['style']],
+        ['font', ['fontname', 'fontsize', 'bold', 'italic', 'underline', 'strikethrough', 'clear']],
+        ['color', ['color']],
+        ['para', ['ul', 'ol', 'paragraph']],
+        ['table', ['table']],
+        ['insert', ['link', 'picture']],
+        ['view', ['codeview']]
+      ],
+
+      fontNames: ['Arial', 'Lato', 'Tahoma', 'Times New Roman', 'Courier New', 'Verdana'],
+      fontSizes: ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32'],
+
+      callbacks: {
+        // ✅ بدل Base64: نرفع صورة على السيرفر ثم ندخل رابطها
+        onImageUpload: async function (files) {
+          for (const f of files) {
+            try {
+              const url = await uploadSummernoteImage(f, token);
+              $t.summernote('insertImage', url);
+            } catch (e) {
+              console.error(e);
+              window.showToast?.('danger', 'Image upload failed', { title: 'Error', delay: 5000 });
+            }
+          }
+        }
+      }
+    });
+  });
+}
+
 
 /* =================================================================
  * Ajax Modal Loader (مرة واحدة للموقع) - FIX double-binding
@@ -130,6 +224,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // init select2 داخل المودال لو موجود
       if (typeof initSelect2Safe === 'function') initSelect2Safe($content, $modal);
+
+      // ✅ init summernote داخل المودال (هذا هو السبب الرئيسي لمشكلتك)
+      initSummernoteSafe($content, token);
 
       // إرسال Ajax للنماذج داخل المودال
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
@@ -212,10 +309,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
   // Service create / edit
-if (document.querySelector('.service-create-form')) {
-  import('./pages/service-custom-fields.js');
-}
-
+  if (document.querySelector('.service-create-form')) {
+    import('./pages/service-custom-fields.js');
+  }
 });
 
 
