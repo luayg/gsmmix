@@ -19,7 +19,6 @@
     'cancelled'  => 'bg-dark',
   ][$row->status] ?? 'bg-secondary';
 
-  // response قد تكون array أو JSON string
   $resp = $row->response;
   if (is_string($resp)) {
     $decoded = json_decode($resp, true);
@@ -70,13 +69,15 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
-  // ✅ Pricing (ذكي: يعرض الموجود فقط)
+  // ✅ Pricing
   $currency = $row->currency ?? $row->curr ?? 'USD';
 
-  $orderPrice   = $row->price ?? $row->order_price ?? $row->customer_price ?? null;
-  $providerCost = $row->supplier_price ?? $row->provider_price ?? $row->cost ?? null;
-  $finalPrice   = $row->final_price ?? $row->paid_price ?? $row->charged_price ?? null;
-  $profit       = $row->profit ?? null;
+  $orderPrice = $row->price ?? null;         // سعر البيع للزبون (عندك موجود في جدول الطلب)
+  
+  $profit = $row->profit ?? null;
+
+  // ✅ API processing price = service.cost
+  $apiProcessingPrice = $row->service?->cost ?? null;
 
   $fmtMoney = function ($v) use ($currency) {
     if ($v === null || $v === '') return null;
@@ -84,10 +85,8 @@
     return (string)$v . ' ' . $currency;
   };
 
-  if ($profit === null && is_numeric($finalPrice) && is_numeric($providerCost)) {
-    $profit = (float)$finalPrice - (float)$providerCost;
-  } elseif ($profit === null && is_numeric($finalPrice) && is_numeric($orderPrice)) {
-    $profit = (float)$finalPrice - (float)$orderPrice;
+  if ($profit === null && is_numeric($orderPrice) && is_numeric($apiProcessingPrice)) {
+    $profit = (float)$orderPrice - (float)$apiProcessingPrice;
   }
 @endphp
 
@@ -114,16 +113,22 @@
             <tr><th>Provider</th><td>{{ $row->provider?->name ?? '—' }}</td></tr>
             <tr><th>Remote ID</th><td>{{ $row->remote_id ?? '—' }}</td></tr>
 
-            {{-- ✅ Pricing rows (only if exists) --}}
+            {{-- ✅ Order IP --}}
+            @if(!empty($row->ip))
+              <tr><th>Order IP</th><td>{{ $row->ip }}</td></tr>
+            @endif
+
+            {{-- ✅ Prices --}}
             @if($orderPrice !== null)
               <tr><th>Order price</th><td>{{ $fmtMoney($orderPrice) }}</td></tr>
             @endif
-            @if($providerCost !== null)
-              <tr><th>Provider cost</th><td>{{ $fmtMoney($providerCost) }}</td></tr>
+
+            @if($apiProcessingPrice !== null)
+              <tr><th>API processing price</th><td>{{ $fmtMoney($apiProcessingPrice) }}</td></tr>
             @endif
-            @if($finalPrice !== null)
-              <tr><th>Final price</th><td>{{ $fmtMoney($finalPrice) }}</td></tr>
-            @endif
+
+            
+
             @if($profit !== null)
               <tr><th>Profit</th><td>{{ $fmtMoney($profit) }}</td></tr>
             @endif
@@ -137,7 +142,6 @@
     <div class="col-12">
       <label class="form-label">Result</label>
 
-      {{-- ✅ Bigger image --}}
       @if($img && $isSafeImg($img))
         <div class="mb-3 text-center">
           <img src="{{ $img }}" alt="Result image"

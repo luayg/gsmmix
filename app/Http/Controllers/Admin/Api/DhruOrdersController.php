@@ -35,8 +35,8 @@ class DhruOrdersController extends Controller
         $c = $this->client($provider);
 
         $reqPayload = [
-            'IMEI' => $data['imei'],
-            'ID'   => $data['remote_service'],
+            'IMEI'   => $data['imei'],
+            'ID'     => $data['remote_service'],
             'CUSTOM' => $data['custom'] ?? [],
         ];
 
@@ -58,6 +58,9 @@ class DhruOrdersController extends Controller
             'supplier_id' => $provider->id,
             'api_order'   => 1,
             'processing'  => 1,
+
+            // ✅ حفظ IP
+            'ip'          => $r->ip(),
         ]);
 
         return response()->json(['ok'=>true,'id'=>$order->id,'remote'=>$order->remote_id,'raw'=>$res]);
@@ -93,7 +96,12 @@ class DhruOrdersController extends Controller
             'COMMENTS' => $data['comments'] ?? '',
         ];
 
-        $res = $c->placeServerOrder((int)$data['remote_service'], (int)($data['quantity'] ?? 1), $data['required'] ?? [], $data['comments'] ?? '');
+        $res = $c->placeServerOrder(
+            (int)$data['remote_service'],
+            (int)($data['quantity'] ?? 1),
+            $data['required'] ?? [],
+            $data['comments'] ?? ''
+        );
 
         $order = ServerOrder::create([
             'device'      => $data['device'] ?? null,
@@ -112,6 +120,9 @@ class DhruOrdersController extends Controller
             'supplier_id' => $provider->id,
             'api_order'   => 1,
             'processing'  => 1,
+
+            // ✅ حفظ IP
+            'ip'          => $r->ip(),
         ]);
 
         return response()->json(['ok'=>true,'id'=>$order->id,'remote'=>$order->remote_id,'raw'=>$res]);
@@ -160,6 +171,9 @@ class DhruOrdersController extends Controller
             'supplier_id' => $provider->id,
             'api_order'   => 1,
             'processing'  => 1,
+
+            // ✅ حفظ IP
+            'ip'          => $r->ip(),
         ]);
 
         return response()->json(['ok'=>true,'id'=>$order->id,'remote'=>$order->remote_id,'raw'=>$res]);
