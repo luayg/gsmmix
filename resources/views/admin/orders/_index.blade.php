@@ -7,6 +7,23 @@
   </button>
 </div>
 
+@php
+  // ✅ Fix: عرض اسم الخدمة لو كان JSON translation
+  $pickName = function ($v) {
+    if (is_string($v)) {
+      $s = trim($v);
+      if ($s !== '' && $s[0] === '{') {
+        $j = json_decode($s, true);
+        if (is_array($j)) {
+          return $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
+        }
+      }
+      return $v;
+    }
+    return (string)$v;
+  };
+@endphp
+
 <form class="row g-2 mb-3" method="get">
   <div class="col-md-5">
     <input type="text" class="form-control" name="q" value="{{ request('q') }}"
@@ -59,7 +76,10 @@
           <td>#{{ $row->id }}</td>
           <td>{{ optional($row->created_at)->format('Y-m-d H:i') }}</td>
           <td>{{ $row->device }}</td>
-          <td>{{ $row->service?->name ?? '—' }}</td>
+
+          {{-- ✅ Fix here --}}
+          <td>{{ $row->service ? $pickName($row->service->name) : '—' }}</td>
+
           <td>{{ $row->provider?->name ?? '—' }}</td>
           <td>
             @php

@@ -18,21 +18,25 @@ class OrderDispatcher
     {
         $kind = strtolower(trim($kind));
 
-        match ($kind) {
-            'imei'   => $this->dispatchImei(ImeiOrder::findOrFail($orderId)),
-            'server' => $this->dispatchServer(ServerOrder::findOrFail($orderId)),
-            'file'   => $this->dispatchFile(FileOrder::findOrFail($orderId)),
-            default  => Log::warning('Unknown order kind', ['kind' => $kind, 'order_id' => $orderId]),
-        };
+        try {
+            match ($kind) {
+                'imei'   => $this->dispatchImei(ImeiOrder::findOrFail($orderId)),
+                'server' => $this->dispatchServer(ServerOrder::findOrFail($orderId)),
+                'file'   => $this->dispatchFile(FileOrder::findOrFail($orderId)),
+                default  => Log::warning('Unknown order kind', ['kind'=>$kind,'order_id'=>$orderId]),
+            };
+        } catch (\Throwable $e) {
+            Log::error('OrderDispatcher send failed', ['kind'=>$kind,'order_id'=>$orderId,'err'=>$e->getMessage()]);
+        }
     }
 
-    private function resolveProviderFromService($order): ?ApiProvider
+    private function resolveProvider($order): ?ApiProvider
     {
         $order->load(['service','provider']);
 
         if (!$order->service || !$order->service->supplier_id || !$order->service->remote_id) {
             $order->status = 'rejected';
-            $order->response = ['ERROR' => [['MESSAGE' => 'Service is not linked to API provider.']]];
+            $order->response = ['type'=>'error','message'=>'Service is not linked to API provider.'];
             $order->replied_at = now();
             $order->processing = false;
             $order->save();
@@ -40,11 +44,20 @@ class OrderDispatcher
         }
 
         $provider = ApiProvider::find((int)$order->service->supplier_id);
-        if (!$provider || (int)$provider->active !== 1) {
+        if (!$provider) {
             $order->status = 'rejected';
-            $order->response = ['ERROR' => [['MESSAGE' => 'Provider is inactive or missing.']]];
+            $order->response = ['type'=>'error','message'=>'Provider missing.'];
             $order->replied_at = now();
             $order->processing = false;
+            $order->save();
+            return null;
+        }
+
+        // ✅ حتى لو provider inactive لا نرفض (حسب طلبك)، نخليها waiting
+        if ((int)$provider->active !== 1) {
+            $order->status = 'waiting';
+            $order->processing = false;
+            $order->response = ['type'=>'queued','message'=>'Provider disabled, waiting until enabled.'];
             $order->save();
             return null;
         }
@@ -53,9 +66,50 @@ class OrderDispatcher
         return $provider;
     }
 
+    private function saveGatewayResult($order, array $result): void
+    {
+        // نخزن raw للتتبع
+        $order->request = [
+            'request' => $result['request'] ?? null,
+            'response_raw' => $result['response_raw'] ?? null,
+        ];
+
+        // نخزن رد واجهة مختصر
+        $order->response = $result['response_ui'] ?? null;
+    }
+
+    private function applyResult($order, array $result): void
+    {
+        $this->saveGatewayResult($order, $result);
+
+        $retryable = (bool)($result['retryable'] ?? false);
+
+        if ($retryable) {
+            // ✅ مطلوبك: يبقى waiting وينتظر
+            $order->status = 'waiting';
+            $order->processing = false;
+            $order->save();
+            return;
+        }
+
+        if (($result['ok'] ?? false) === true) {
+            $order->remote_id = $result['remote_id'] ?? $order->remote_id;
+            $order->status    = $result['status'] ?? 'inprogress';
+            $order->processing = false;
+            $order->save();
+            return;
+        }
+
+        // non-retryable error
+        $order->status = $result['status'] ?? 'rejected';
+        $order->processing = false;
+        $order->replied_at = now();
+        $order->save();
+    }
+
     public function dispatchImei(ImeiOrder $order): void
     {
-        $provider = $this->resolveProviderFromService($order);
+        $provider = $this->resolveProvider($order);
         if (!$provider) return;
 
         $order->status = 'inprogress';
@@ -64,34 +118,19 @@ class OrderDispatcher
 
         try {
             $result = $this->sender->sendImei($provider, $order);
-
-            $order->request  = $result['request']  ?? $order->request;
-            $order->response = $result['response'] ?? $order->response;
-
-            if (($result['ok'] ?? false) === true) {
-                $order->remote_id = $result['remote_id'] ?? $order->remote_id;
-                $order->status    = $result['status'] ?? 'inprogress';
-            } else {
-                $order->status     = $result['status'] ?? 'rejected';
-                $order->replied_at = now();
-            }
-
-            $order->processing = false;
-            $order->save();
-
+            $this->applyResult($order, $result);
         } catch (\Throwable $e) {
             Log::error('dispatchImei failed', ['order_id'=>$order->id,'err'=>$e->getMessage()]);
-            $order->status = 'rejected';
+            $order->status = 'waiting';            // ✅ لا نرفض، نخليه waiting لإعادة المحاولة
             $order->processing = false;
-            $order->response = ['ERROR' => [['MESSAGE' => 'Dispatch error: '.$e->getMessage()]]];
-            $order->replied_at = now();
+            $order->response = ['type'=>'queued','message'=>'Dispatch error, will retry: '.$e->getMessage()];
             $order->save();
         }
     }
 
     public function dispatchServer(ServerOrder $order): void
     {
-        $provider = $this->resolveProviderFromService($order);
+        $provider = $this->resolveProvider($order);
         if (!$provider) return;
 
         $order->status = 'inprogress';
@@ -100,34 +139,19 @@ class OrderDispatcher
 
         try {
             $result = $this->sender->sendServer($provider, $order);
-
-            $order->request  = $result['request']  ?? $order->request;
-            $order->response = $result['response'] ?? $order->response;
-
-            if (($result['ok'] ?? false) === true) {
-                $order->remote_id = $result['remote_id'] ?? $order->remote_id;
-                $order->status    = $result['status'] ?? 'inprogress';
-            } else {
-                $order->status     = $result['status'] ?? 'rejected';
-                $order->replied_at = now();
-            }
-
-            $order->processing = false;
-            $order->save();
-
+            $this->applyResult($order, $result);
         } catch (\Throwable $e) {
             Log::error('dispatchServer failed', ['order_id'=>$order->id,'err'=>$e->getMessage()]);
-            $order->status = 'rejected';
+            $order->status = 'waiting';
             $order->processing = false;
-            $order->response = ['ERROR' => [['MESSAGE' => 'Dispatch error: '.$e->getMessage()]]];
-            $order->replied_at = now();
+            $order->response = ['type'=>'queued','message'=>'Dispatch error, will retry: '.$e->getMessage()];
             $order->save();
         }
     }
 
     public function dispatchFile(FileOrder $order): void
     {
-        $provider = $this->resolveProviderFromService($order);
+        $provider = $this->resolveProvider($order);
         if (!$provider) return;
 
         $order->status = 'inprogress';
@@ -136,27 +160,12 @@ class OrderDispatcher
 
         try {
             $result = $this->sender->sendFile($provider, $order);
-
-            $order->request  = $result['request']  ?? $order->request;
-            $order->response = $result['response'] ?? $order->response;
-
-            if (($result['ok'] ?? false) === true) {
-                $order->remote_id = $result['remote_id'] ?? $order->remote_id;
-                $order->status    = $result['status'] ?? 'inprogress';
-            } else {
-                $order->status     = $result['status'] ?? 'rejected';
-                $order->replied_at = now();
-            }
-
-            $order->processing = false;
-            $order->save();
-
+            $this->applyResult($order, $result);
         } catch (\Throwable $e) {
             Log::error('dispatchFile failed', ['order_id'=>$order->id,'err'=>$e->getMessage()]);
-            $order->status = 'rejected';
+            $order->status = 'waiting';
             $order->processing = false;
-            $order->response = ['ERROR' => [['MESSAGE' => 'Dispatch error: '.$e->getMessage()]]];
-            $order->replied_at = now();
+            $order->response = ['type'=>'queued','message'=>'Dispatch error, will retry: '.$e->getMessage()];
             $order->save();
         }
     }
