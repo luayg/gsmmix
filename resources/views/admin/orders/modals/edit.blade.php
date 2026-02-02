@@ -19,7 +19,31 @@
   if (!is_array($resp)) $resp = [];
 
   $items = $resp['result_items'] ?? [];
-  $img = $resp['result_image'] ?? null;
+  $img   = $resp['result_image'] ?? null;
+
+  // ✅ reply_html الذي سنعرضه في المحرر (HTML)
+  $replyHtml = (string)($resp['reply_html'] ?? '');
+
+  // إذا ما فيه reply_html، نبني HTML بسيط من النتيجة
+  if ($replyHtml === '') {
+    $built = '';
+    if ($img) {
+      $built .= '<p style="text-align:center"><img src="'.e($img).'" style="max-width:420px;height:auto;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,.12);" /></p>';
+    }
+    if (is_array($items) && count($items)) {
+      foreach ($items as $it) {
+        $label = $it['label'] ?? '';
+        $value = $it['value'] ?? '';
+        $built .= '<div><strong>'.e($label).':</strong> '.e($value).'</div>';
+      }
+    } elseif (!empty($resp['message'])) {
+      $built .= '<div>'.e($resp['message']).'</div>';
+    }
+    $replyHtml = $built;
+  }
+
+  // Raw JSON للـ response (للاحتياط داخل details ثاني)
+  $rawJson = json_encode($resp, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
 
   $clean = function ($v) {
     $v = (string)$v;
@@ -36,7 +60,7 @@
     if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
 
     if (str_contains($labelL, 'icloud')) {
-      if (str_contains($valL, 'lost')) return '<span class="badge bg-danger">'.e($val).'</span>';
+      if (str_contains($valL, 'lost'))  return '<span class="badge bg-danger">'.e($val).'</span>';
       if (str_contains($valL, 'clean')) return '<span class="badge bg-success">'.e($val).'</span>';
       return '<span class="badge bg-secondary">'.e($val).'</span>';
     }
@@ -56,12 +80,8 @@
 
   // ✅ Pricing
   $currency = $row->currency ?? $row->curr ?? 'USD';
-
   $orderPrice = $row->price ?? null;
-
   $profit = $row->profit ?? null;
-
-  // ✅ API processing price = service.cost
   $apiProcessingPrice = $row->service?->cost ?? null;
 
   $fmtMoney = function ($v) use ($currency) {
@@ -84,9 +104,11 @@
   @csrf
 
   <div class="modal-body">
+    {{-- ✅ نفس أسلوب أمثلتك: عمودين --}}
     <div class="row g-3">
 
-      <div class="col-12">
+      {{-- ===== LEFT ===== --}}
+      <div class="col-lg-6">
         <div class="table-responsive">
           <table class="table table-bordered mb-0">
             <tbody>
@@ -96,12 +118,10 @@
               <tr><th>Provider</th><td>{{ $row->provider?->name ?? '—' }}</td></tr>
               <tr><th>API order ID</th><td>{{ $row->remote_id ?? '—' }}</td></tr>
 
-              {{-- ✅ Order IP --}}
               @if(!empty($row->ip))
                 <tr><th>Order IP</th><td>{{ $row->ip }}</td></tr>
               @endif
 
-              {{-- ✅ Prices --}}
               @if($orderPrice !== null)
                 <tr><th>Order price</th><td>{{ $fmtMoney($orderPrice) }}</td></tr>
               @endif
@@ -110,69 +130,96 @@
                 <tr><th>API processing price</th><td>{{ $fmtMoney($apiProcessingPrice) }}</td></tr>
               @endif
 
-           
-
               @if($profit !== null)
                 <tr><th>Profit</th><td>{{ $fmtMoney($profit) }}</td></tr>
               @endif
             </tbody>
           </table>
         </div>
-      </div>
 
-      <div class="col-md-6">
-        <label class="form-label">Status</label>
-        <select class="form-select" name="status" required>
-          @foreach(['waiting','inprogress','success','rejected','cancelled'] as $st)
-            <option value="{{ $st }}" @selected($row->status===$st)>{{ ucfirst($st) }}</option>
-          @endforeach
-        </select>
-      </div>
-
-      <div class="col-md-6">
-        <label class="form-label">Comments</label>
-        <input type="text" class="form-control" name="comments" value="{{ $row->comments }}">
-      </div>
-
-      <div class="col-12">
-        <label class="form-label">Result</label>
-
-        @if($img && $isSafeImg($img))
-          <div class="mb-3 text-center">
-            <img src="{{ $img }}" alt="Result image"
-                 style="max-width:280px; height:auto;"
-                 class="img-fluid rounded shadow-sm">
-          </div>
-        @endif
-
-        @if(is_array($items) && count($items))
-          <div class="table-responsive">
-            <table class="table table-sm table-striped table-bordered mb-0">
-              <tbody>
-              @foreach($items as $it)
-                @php
-                  $label = $it['label'] ?? '';
-                  $value = $it['value'] ?? '';
-                @endphp
-                <tr>
-                  <th style="width:240px">{{ $label }}</th>
-                  <td>{!! $renderValue($label, $value) !!}</td>
-                </tr>
+        <div class="row g-3 mt-2">
+          <div class="col-md-6">
+            <label class="form-label">Status</label>
+            <select class="form-select" name="status" required>
+              @foreach(['waiting','inprogress','success','rejected','cancelled'] as $st)
+                <option value="{{ $st }}" @selected($row->status===$st)>{{ ucfirst($st) }}</option>
               @endforeach
-              </tbody>
-            </table>
+            </select>
           </div>
-        @else
-          <div class="border rounded p-3 bg-light mb-0">
-            {{ $resp['message'] ?? '—' }}
+
+          <div class="col-md-6">
+            <label class="form-label">Comments</label>
+            <input type="text" class="form-control" name="comments" value="{{ $row->comments }}">
           </div>
-        @endif
+        </div>
+
+        <div class="mt-3">
+          <label class="form-label">Result (Preview)</label>
+
+          @if($img && $isSafeImg($img))
+            <div class="mb-3 text-center">
+              <img src="{{ $img }}" alt="Result image"
+                   style="max-width:420px; height:auto;"
+                   class="img-fluid rounded shadow-sm">
+            </div>
+          @endif
+
+          @if(is_array($items) && count($items))
+            <div class="table-responsive">
+              <table class="table table-sm table-striped table-bordered mb-0">
+                <tbody>
+                @foreach($items as $it)
+                  @php
+                    $label = $it['label'] ?? '';
+                    $value = $it['value'] ?? '';
+                  @endphp
+                  <tr>
+                    <th style="width:240px">{{ $label }}</th>
+                    <td>{!! $renderValue($label, $value) !!}</td>
+                  </tr>
+                @endforeach
+                </tbody>
+              </table>
+            </div>
+          @else
+            <div class="border rounded p-3 bg-light mb-0">
+              {{ $resp['message'] ?? '—' }}
+            </div>
+          @endif
+        </div>
       </div>
 
-      <div class="col-12">
-        <label class="form-label">Response override (JSON or text) - optional</label>
-        <textarea class="form-control" name="response" rows="5"></textarea>
-        <div class="form-text">اختياري: لو تريد تعديل الرد يدوياً. اتركه فارغاً.</div>
+      {{-- ===== RIGHT (مثل أمثلتك: Reply editor مع toolbar) ===== --}}
+      <div class="col-lg-6">
+        <label class="form-label">Reply</label>
+
+        {{-- ✅ هذا هو اللي طلبته: details وفيه محرر يدعم صور --}}
+        <details open class="border rounded p-2 bg-white">
+          <summary class="fw-semibold">Provider reply (editable)</summary>
+
+          <div class="mt-2">
+            <div class="form-text mb-2">
+              هذا الحقل يدعم تنسيق + إدراج صور. بعد التعديل اضغط <b>Save</b>.
+            </div>
+
+            {{-- ✅ Summernote سيحوّل textarea إلى محرر --}}
+            <textarea
+              class="form-control"
+              name="reply_html"
+              data-summernote="1"
+              data-summernote-height="420"
+            >{!! $replyHtml !!}</textarea>
+          </div>
+        </details>
+
+        {{-- ✅ (اختياري) Raw JSON للتعديل المتقدم --}}
+        <details class="mt-3">
+          <summary class="fw-semibold">Raw response JSON (advanced)</summary>
+          <div class="mt-2">
+            <textarea class="form-control" name="response" rows="10" style="font-family: ui-monospace, Menlo, Consolas, monospace;">{{ $rawJson }}</textarea>
+            <div class="form-text">إذا عدّلته لازم يكون JSON صحيح.</div>
+          </div>
+        </details>
       </div>
 
     </div>

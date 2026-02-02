@@ -38,7 +38,6 @@
   </style>
 </head>
 
-
 <div class="modal fade" id="appModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content" id="appModalContent">
@@ -46,9 +45,6 @@
     </div>
   </div>
 </div>
-
-
-
 
 <body class="bg-light">
   {{-- Navbar + Sidebar --}}
@@ -120,6 +116,68 @@
         };
       }
 
+      // ===== ✅ Summernote initializer for Ajax modals =====
+      const loadCssOnce = (id,href)=>{ if(document.getElementById(id)) return;
+        const l=document.createElement('link'); l.id=id; l.rel='stylesheet'; l.href=href; document.head.appendChild(l);
+      };
+      const loadScriptOnce=(id,src)=>new Promise((res,rej)=>{
+        if(document.getElementById(id)) return res();
+        const s=document.createElement('script'); s.id=id; s.src=src; s.async=false;
+        s.onload=res; s.onerror=rej; document.body.appendChild(s);
+      });
+
+      async function ensureSummernote(){
+        loadCssOnce('sn-css','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css');
+        if(!window.jQuery || !window.jQuery.fn?.summernote){
+          await loadScriptOnce('jq','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
+          window.$=window.jQuery;
+          await loadScriptOnce('sn','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
+        }
+      }
+
+      window.initAjaxModalEditors = async function(scope){
+        const root = scope instanceof Element ? scope : document;
+        const els = root.querySelectorAll('textarea[data-summernote="1"]');
+        if(!els.length) return;
+
+        await ensureSummernote();
+
+        if(!window.jQuery || !window.jQuery.fn?.summernote) return;
+
+        window.jQuery(els).each(function(){
+          const $t = window.jQuery(this);
+
+          // إذا تم تهيئته من قبل
+          if ($t.next('.note-editor').length) return;
+
+          const h = Number($t.attr('data-summernote-height') || 420);
+
+          $t.summernote({
+            height: h,
+            placeholder: 'Write reply…',
+            toolbar: [
+              ['style', ['style']],
+              ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
+              ['para', ['ul', 'ol', 'paragraph']],
+              ['insert', ['link', 'picture', 'table']],
+              ['view', ['codeview']]
+            ],
+            callbacks: {
+              // ✅ إدراج صور مباشرة (Base64) بدون أي API إضافي
+              onImageUpload: function(files) {
+                for (const f of files) {
+                  const reader = new FileReader();
+                  reader.onload = (e) => {
+                    $t.summernote('insertImage', e.target.result);
+                  };
+                  reader.readAsDataURL(f);
+                }
+              }
+            }
+          });
+        });
+      };
+
       // Ajax modal open helper
       window.openAjaxModal = function (url, {method='GET', body=null, headers={}} = {}) {
         const modalEl = document.getElementById('ajaxModal');
@@ -142,7 +200,11 @@
 
         return fetch(url, { method, headers: h, body })
           .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.text(); })
-          .then(html => { content.innerHTML = html; })
+          .then(async html => {
+            content.innerHTML = html;
+            // ✅ فعّل المحررات بعد تحميل المودال
+            try { await window.initAjaxModalEditors(content); } catch(e) { console.error(e); }
+          })
           .catch(err => {
             modal.hide();
             console.error(err);
