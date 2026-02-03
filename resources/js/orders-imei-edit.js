@@ -1,16 +1,29 @@
 // resources/js/orders-imei-edit.js
+import $ from 'jquery';
+window.$ = window.jQuery = $;
+
+import * as bootstrap from 'bootstrap';
+window.bootstrap = window.bootstrap || bootstrap;
+
 import { initModalEditors } from './modal-editors';
 
-function getCsrf() {
-  return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-}
+function initSelect2Inside(scopeEl, dropdownParentEl) {
+  if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') return;
 
-function qs(sel, root = document) {
-  return root.querySelector(sel);
-}
-
-function qsa(sel, root = document) {
-  return Array.from(root.querySelectorAll(sel));
+  const $root = window.jQuery(scopeEl);
+  $root.find('select.select2').each(function () {
+    const $el = window.jQuery(this);
+    try {
+      if ($el.data('select2')) $el.select2('destroy');
+      $el.select2({
+        theme: 'bootstrap-5',
+        width: '100%',
+        dropdownParent: dropdownParentEl ? window.jQuery(dropdownParentEl) : $root
+      });
+    } catch (e) {
+      console.warn('Select2 init failed in Order Edit modal', e);
+    }
+  });
 }
 
 async function openOrderEditModal(url) {
@@ -25,91 +38,103 @@ async function openOrderEditModal(url) {
     </div>
   `;
 
-  // Use bootstrap if available, otherwise fallback
-  const bs = window.bootstrap;
-  let modalInstance = null;
-  if (bs?.Modal) {
-    modalInstance = bs.Modal.getOrCreateInstance(modalEl);
-    modalInstance.show();
-  } else {
-    // minimal fallback
-    modalEl.classList.add('show');
-    modalEl.style.display = 'block';
-  }
+  const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
 
-  const res = await fetch(url, {
-    headers: { 'X-Requested-With': 'XMLHttpRequest' }
-  });
+  try {
+    const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+    if (!res.ok) throw new Error('Failed to load edit modal: ' + res.status);
 
-  if (!res.ok) {
-    contentEl.innerHTML = `<div class="modal-body text-danger">Failed to load edit modal.</div>`;
-    return;
-  }
+    const html = await res.text();
+    contentEl.innerHTML = html;
 
-  const html = await res.text();
-  contentEl.innerHTML = html;
+    // ✅ Summernote (المهم)
+    await initModalEditors(contentEl);
 
-  // init summernote inside this modal only
-  await initModalEditors(contentEl);
+    // ✅ Select2 (اختياري — لو موجود في المشروع)
+    initSelect2Inside(contentEl, modalEl);
 
-  // bind ajax submit (only inside this modal)
-  const form = contentEl.querySelector('form.js-ajax-form');
-  if (form) {
-    form.addEventListener('submit', async (ev) => {
-      ev.preventDefault();
+    // ✅ Ajax submit داخل المودال فقط
+    const form = contentEl.querySelector('form.js-ajax-form');
+    if (form) {
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
 
-      const btn = form.querySelector('[type="submit"]');
-      if (btn) btn.disabled = true;
+        const token =
+          document.querySelector('meta[name="csrf-token"]')?.content ||
+          window.CSRF_TOKEN ||
+          '';
 
-      try {
         const fd = new FormData(form);
         const method = (form.method || 'POST').toUpperCase();
 
-        const res2 = await fetch(form.action, {
-          method,
-          headers: {
-            'X-CSRF-TOKEN': getCsrf(),
-            'X-Requested-With': 'XMLHttpRequest',
-            'Accept': 'application/json'
-          },
-          body: fd
-        });
+        // أثناء الإرسال: عطّل زر الحفظ
+        const btn = form.querySelector('button[type="submit"]');
+        if (btn) btn.disabled = true;
 
-        if (btn) btn.disabled = false;
+        try {
+          const res2 = await fetch(form.action, {
+            method,
+            headers: {
+              'X-CSRF-TOKEN': token,
+              'X-Requested-With': 'XMLHttpRequest',
+              'Accept': 'application/json'
+            },
+            body: fd
+          });
 
-        if (res2.status === 422) {
-          const j = await res2.json().catch(() => ({}));
-          alert(Object.values(j.errors || {}).flat().join("\n") || 'Validation error');
-          return;
+          if (btn) btn.disabled = false;
+
+          if (res2.status === 422) {
+            const j = await res2.json().catch(() => ({}));
+            const msg = Object.values(j.errors || {}).flat().join('\n') || 'Validation error';
+            alert(msg);
+            return;
+          }
+
+          if (!res2.ok) {
+            const t = await res2.text();
+            alert('Save failed:\n\n' + t);
+            return;
+          }
+
+          // نجاح
+          modal.hide();
+
+          // لو عندك Toast عالمي استخدمه
+          if (window.showToast) window.showToast('success', 'Saved successfully');
+
+          // تحديث الصفحة أو الجدول (أبسط شيء reload)
+          window.location.reload();
+        } catch (e) {
+          if (btn) btn.disabled = false;
+          console.error(e);
+          alert('Network error');
         }
-
-        if (!res2.ok) {
-          const t = await res2.text().catch(() => '');
-          alert(t || 'Failed to save');
-          return;
-        }
-
-        // close modal
-        if (modalInstance) modalInstance.hide();
-
-        // (optional) reload page to reflect status quickly
-        // location.reload();
-      } catch (e) {
-        if (btn) btn.disabled = false;
-        console.error(e);
-        alert('Network error');
-      }
-    });
+      });
+    }
+  } catch (err) {
+    console.error(err);
+    contentEl.innerHTML = `<div class="modal-body text-danger">Failed to load modal content.</div>`;
   }
 }
 
+// Click handler معزول: فقط .js-open-order-edit
 document.addEventListener('click', (e) => {
   const a = e.target.closest('.js-open-order-edit');
   if (!a) return;
 
   e.preventDefault();
   const url = a.dataset.url || a.getAttribute('href');
-  if (!url) return;
+  if (!url || url === '#') return;
 
   openOrderEditModal(url);
+});
+
+// تنظيف بقايا backdrop لهذا المودال فقط
+document.addEventListener('hidden.bs.modal', function (ev) {
+  if (ev.target && ev.target.id === 'orderEditModal') {
+    document.body.classList.remove('modal-open');
+    document.querySelectorAll('.modal-backdrop').forEach((b) => b.remove());
+  }
 });
