@@ -248,13 +248,14 @@
 
   {{-- ✅ هذا هو نفس الـ HTML لكن للتعديل (سيتم تحويله لـ Summernote) --}}
   <textarea
-    id="replyEditor"
-    name="provider_reply_html"
-    class="form-control"
-    rows="14"
-    data-summernote="1"
-    data-summernote-height="360"
-  >{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
+  id="replyEditor"
+  name="provider_reply_html"
+  class="form-control"
+  rows="14"
+  data-summernote="1"
+  data-summernote-height="360"
+>{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
+
 
   <div class="mt-3">
     <label class="form-label fw-semibold">Status</label>

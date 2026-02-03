@@ -4,6 +4,9 @@ window.$ = window.jQuery = $;
 import * as bootstrap from 'bootstrap';
 window.bootstrap = bootstrap;
 
+
+import { initModalEditors } from './modal-editors';
+
 // Select2
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
@@ -194,6 +197,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       $content.html(html);
 
+      await initModalEditors($content[0]);
+
+
+      
       initSelect2($content[0], $modal[0]);
       await initEditors($content[0]);
 
