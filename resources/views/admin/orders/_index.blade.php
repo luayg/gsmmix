@@ -1,123 +1,75 @@
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <h4 class="mb-0">{{ $title ?? 'Orders' }}</h4>
+{{-- resources/views/admin/orders/_index.blade.php --}}
+@php
+  /**
+   * Required variables (will fallback safely):
+   * $title, $routePrefix
+   */
+  $title = $title ?? 'Orders';
+  $routePrefix = $routePrefix ?? 'admin.orders.imei'; // ✅ fallback يمنع 500
+@endphp
 
-  <button class="btn btn-success js-open-modal"
-          data-url="{{ route($routePrefix.'.modal.create') }}">
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h4 class="mb-0">{{ $title }}</h4>
+
+  <button
+    class="btn btn-success js-open-modal"
+    data-url="{{ route($routePrefix . '.modal.create') }}">
     New order
   </button>
 </div>
 
-@php
-  // ✅ Fix: عرض اسم الخدمة لو كان JSON translation
-  $pickName = function ($v) {
-    if (is_string($v)) {
-      $s = trim($v);
-      if ($s !== '' && $s[0] === '{') {
-        $j = json_decode($s, true);
-        if (is_array($j)) {
-          return $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
-        }
-      }
-      return $v;
-    }
-    return (string)$v;
-  };
-@endphp
-
-<form class="row g-2 mb-3" method="get">
-  <div class="col-md-5">
-    <input type="text" class="form-control" name="q" value="{{ request('q') }}"
-           placeholder="Search: IMEI / remote id / email">
-  </div>
-
-  <div class="col-md-3">
-    <select class="form-select" name="status">
-      <option value="">All status</option>
-      @foreach(['waiting','inprogress','success','rejected','cancelled'] as $st)
-        <option value="{{ $st }}" @selected(request('status')===$st)>{{ ucfirst($st) }}</option>
-      @endforeach
-    </select>
-  </div>
-
-  <div class="col-md-3">
-    <select class="form-select" name="provider">
-      <option value="">All providers</option>
-      @foreach(($providers ?? collect([])) as $p)
-        <option value="{{ $p->id }}" @selected((string)request('provider')===(string)$p->id)>
-          {{ $p->name }}
-        </option>
-      @endforeach
-    </select>
-  </div>
-
-  <div class="col-md-1">
-    <button class="btn btn-primary w-100">Go</button>
-  </div>
-</form>
-
 <div class="card">
-  <div class="table-responsive">
-    <table class="table table-striped mb-0">
-      <thead>
-        <tr>
-          <th style="width:80px">ID</th>
-          <th style="width:170px">Date</th>
-          <th>Device</th>
-          <th>Service</th>
-          <th style="width:160px">Provider</th>
-          <th style="width:120px">Status</th>
-          <th style="width:160px">Actions</th>
-        </tr>
-      </thead>
+  <div class="card-body">
 
-      <tbody>
-      @forelse($rows as $row)
-        <tr>
-          <td>#{{ $row->id }}</td>
-          <td>{{ optional($row->created_at)->format('Y-m-d H:i') }}</td>
-          <td>{{ $row->device }}</td>
+    <div class="table-responsive">
+      <table class="table table-striped table-bordered align-middle mb-0 dataTable">
+        <thead>
+          <tr>
+            <th style="width:90px;">ID</th>
+            <th style="width:170px;">Date</th>
+            <th>Device</th>
+            <th>Service</th>
+            <th style="width:140px;">Provider</th>
+            <th style="width:120px;">Status</th>
+            <th style="width:140px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @forelse(($orders ?? []) as $o)
+            <tr>
+              <td>{{ $o->id }}</td>
+              <td>{{ $o->created_at }}</td>
+              <td>{{ $o->device ?? $o->imei ?? '-' }}</td>
+              <td>{{ $o->service_name ?? '-' }}</td>
+              <td>{{ $o->provider_name ?? $o->provider ?? '-' }}</td>
+              <td>
+                @php($st = strtolower($o->status ?? ''))
+                @if($st === 'success')
+                  <span class="badge bg-success">SUCCESS</span>
+                @elseif($st === 'rejected' || $st === 'reject')
+                  <span class="badge bg-danger">REJECTED</span>
+                @elseif($st === 'waiting')
+                  <span class="badge bg-secondary">WAITING</span>
+                @else
+                  <span class="badge bg-light text-dark">{{ $o->status ?? '-' }}</span>
+                @endif
+              </td>
+              <td class="text-nowrap">
+                <a class="btn btn-sm btn-primary js-open-modal"
+                   data-url="{{ route($routePrefix . '.modal.view', $o->id) }}">View</a>
 
-          {{-- ✅ Fix here --}}
-          <td>{{ $row->service ? $pickName($row->service->name) : '—' }}</td>
-
-          <td>{{ $row->provider?->name ?? '—' }}</td>
-          <td>
-            @php
-              $badge = [
-                'waiting' => 'bg-secondary',
-                'inprogress' => 'bg-info',
-                'success' => 'bg-success',
-                'rejected' => 'bg-danger',
-                'cancelled' => 'bg-dark',
-              ][$row->status] ?? 'bg-secondary';
-            @endphp
-            <span class="badge {{ $badge }}">{{ strtoupper($row->status) }}</span>
-          </td>
-          <td class="d-flex gap-2">
-            <a href="#"
-               class="btn btn-sm btn-primary js-open-modal"
-               data-url="{{ route($routePrefix.'.modal.view', $row->id) }}">
-              View
-            </a>
-            <a href="#"
-               class="btn btn-sm btn-warning js-open-modal"
-               data-url="{{ route($routePrefix.'.modal.edit', $row->id) }}">
-              Edit
-            </a>
-          </td>
-        </tr>
-      @empty
-        <tr>
-          <td colspan="7" class="text-center text-muted p-4">No orders</td>
-        </tr>
-      @endforelse
-      </tbody>
-    </table>
-  </div>
-
-  @if(method_exists($rows,'links'))
-    <div class="card-body">
-      {{ $rows->links() }}
+                <a class="btn btn-sm btn-warning js-open-modal"
+                   data-url="{{ route($routePrefix . '.modal.edit', $o->id) }}">Edit</a>
+              </td>
+            </tr>
+          @empty
+            <tr>
+              <td colspan="7" class="text-center text-muted py-4">No orders</td>
+            </tr>
+          @endforelse
+        </tbody>
+      </table>
     </div>
-  @endif
+
+  </div>
 </div>
