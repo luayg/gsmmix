@@ -4,17 +4,12 @@ window.$ = window.jQuery = $;
 import * as bootstrap from 'bootstrap';
 window.bootstrap = bootstrap;
 
-
 import { initModalEditors } from './modal-editors';
 
 // Select2
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 import 'select2/dist/js/select2.full.min.js';
-
-// ✅ Summernote (CSS + JS محلي من npm)
-import 'summernote/dist/summernote-lite.css';
-import 'summernote/dist/summernote-lite.js';
 
 // DataTables
 import 'datatables.net-bs5';
@@ -53,7 +48,6 @@ window.showToast = window.showToast || function (variant = 'success', message = 
   el.addEventListener('hidden.bs.toast', () => el.remove());
 };
 
-// Select2 init
 function initSelect2(scopeEl, dropdownParentEl) {
   if (!$.fn || typeof $.fn.select2 !== 'function') return;
   const $root = $(scopeEl);
@@ -72,98 +66,6 @@ function initSelect2(scopeEl, dropdownParentEl) {
   });
 }
 
-const loadCssOnce = (id, href) => {
-  if (document.getElementById(id)) return;
-  const l = document.createElement('link');
-  l.id = id;
-  l.rel = 'stylesheet';
-  l.href = href;
-  document.head.appendChild(l);
-};
-
-const loadScriptOnce = (id, src) => new Promise((resolve, reject) => {
-  if (document.getElementById(id)) return resolve();
-  const s = document.createElement('script');
-  s.id = id;
-  s.src = src;
-  s.async = false;
-  s.onload = resolve;
-  s.onerror = reject;
-  document.body.appendChild(s);
-});
-
-// ✅ نفس فكرة service-modal: ضمن وجود summernote حتى داخل ajax modal
-async function ensureSummernoteCDN() {
-  loadCssOnce('sn-css', 'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css');
-
-  // إذا summernote موجود خلاص
-  if (window.jQuery && window.jQuery.fn && window.jQuery.fn.summernote) return true;
-
-  // تأكد jQuery
-  if (!window.jQuery) {
-    await loadScriptOnce('jq-cdn', 'https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
-    window.$ = window.jQuery;
-  }
-
-  // حمّل summernote
-  await loadScriptOnce('sn-cdn', 'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
-
-  return !!(window.jQuery && window.jQuery.fn && window.jQuery.fn.summernote);
-}
-
-
-
-
-
-// ✅ Summernote init
-async function initEditors(scopeEl) {
-  // ✅ ضمن وجود summernote (حتى لو build ما حمله)
-  const ok = await ensureSummernoteCDN();
-  if (!ok) {
-    console.error('Summernote failed to load');
-    return;
-  }
-
-  const root = scopeEl instanceof Element ? scopeEl : document;
-  const textareas = root.querySelectorAll('textarea[data-summernote="1"]');
-  if (!textareas.length) return;
-
-  window.jQuery(textareas).each(function () {
-    const $t = window.jQuery(this);
-
-    // لو متفعّل مسبقًا لا تعيده
-    if ($t.next('.note-editor').length) return;
-
-    const h = Number($t.attr('data-summernote-height') || 360);
-
-    $t.summernote({
-      height: h,
-      focus: false,
-      toolbar: [
-        ['style', ['style']],
-        ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
-        ['fontsize', ['fontsize']],
-        ['color', ['color']],
-        ['para', ['ul', 'ol', 'paragraph']],
-        ['height', ['height']],
-        ['insert', ['link', 'picture', 'table', 'hr']],
-        ['view', ['codeview']]
-      ],
-      callbacks: {
-        onImageUpload: function (files) {
-          for (const f of files) {
-            const reader = new FileReader();
-            reader.onload = (e) => $t.summernote('insertImage', e.target.result);
-            reader.readAsDataURL(f);
-          }
-        }
-      }
-    });
-  });
-}
-
-
-// Ajax modal loader + ajax submit
 document.addEventListener('DOMContentLoaded', () => {
   const token = document.querySelector('meta[name="csrf-token"]')?.content || window.CSRF_TOKEN || '';
   let MODAL_REQ_ID = 0;
@@ -197,13 +99,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
       $content.html(html);
 
+      // Select2
+      initSelect2($content[0], $modal[0]);
+
+      // ✅ Editors (Summernote) — مصدر واحد فقط
       await initModalEditors($content[0]);
 
-
-      
-      initSelect2($content[0], $modal[0]);
-      await initEditors($content[0]);
-
+      // Ajax submit
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
         ev.preventDefault();
 
