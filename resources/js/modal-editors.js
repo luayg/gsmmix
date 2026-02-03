@@ -1,25 +1,36 @@
 import $ from 'jquery';
 window.$ = window.jQuery = $;
 
-// ✅ حمّل summernote من npm (نفس build / نفس jquery)
-import 'summernote/dist/summernote-lite.css';
-import 'summernote/dist/summernote-lite.js';
+let __snReady = false;
+
+async function ensureSummernote() {
+  if (__snReady) return true;
+
+  // ✅ تحميل بعد ضمان window.jQuery (حل تعارض ترتيب imports)
+  await import('summernote/dist/summernote-lite.css');
+  await import('summernote/dist/summernote-lite.js');
+
+  __snReady = true;
+  return true;
+}
 
 export async function initModalEditors(container) {
   const root = container instanceof Element ? container : document;
   const areas = root.querySelectorAll('textarea[data-summernote="1"]');
   if (!areas.length) return;
 
-  // ✅ لو summernote غير موجود على نفس jquery => هذا هو سبب عدم ظهور toolbar
-  if (!$.fn || typeof $.fn.summernote !== 'function') {
-    console.error('summernote is not attached to this jQuery instance');
+  await ensureSummernote();
+
+  const jq = window.jQuery || $;
+
+  if (!jq.fn || typeof jq.fn.summernote !== 'function') {
+    console.error('Summernote NOT attached to current jQuery instance:', jq?.fn?.jquery);
     return;
   }
 
-  $(areas).each(function () {
-    const $t = $(this);
+  jq(areas).each(function () {
+    const $t = jq(this);
 
-    // already initialized
     if ($t.next('.note-editor').length) return;
 
     const h = Number($t.attr('data-summernote-height') || 360);
@@ -37,7 +48,6 @@ export async function initModalEditors(container) {
         ['insert', ['link', 'picture', 'table', 'hr']],
         ['view', ['codeview']]
       ],
-      fontSizes: ['8','9','10','11','12','14','16','18','20','24','28','32','36','48'],
       callbacks: {
         onImageUpload: function (files) {
           for (const f of files) {

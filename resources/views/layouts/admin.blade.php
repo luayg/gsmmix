@@ -15,8 +15,7 @@
     'resources/js/admin.js',
   ])
 
-  {{-- حمّل المودال المشترك مرة واحدة فقط --}}
-  @include('admin.partials.service-modal')
+ 
 
   @stack('styles')
 
@@ -70,5 +69,10 @@
 
   @stack('modals')
   @stack('scripts')
+ {{-- حمّل المودال المشترك مرة واحدة فقط --}}
+  @include('admin.partials.service-modal')
+
+
+
 </body>
 </html>

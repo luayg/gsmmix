@@ -241,9 +241,7 @@
       <div class="col-lg-6">
   <div class="mb-2 fw-semibold">Reply</div>
 
-  {{-- ✅ هذا Preview مثل Result (يرندر HTML فعلياً) --}}
-  <div class="border rounded bg-white p-2 mb-2" style="max-height:360px; overflow:auto;">
-    {!! $providerReplyHtml !!}
+  
   </div>
 
   {{-- ✅ هذا هو نفس الـ HTML لكن للتعديل (سيتم تحويله لـ Summernote) --}}
@@ -268,15 +266,7 @@
     </select>
   </div>
 
-  <div class="mt-3">
-    <label class="form-label fw-semibold">Comments</label>
-    <input type="text" name="comments" class="form-control" value="{{ $row?->comments ?? '' }}">
-  </div>
-
-  <div class="mt-3">
-    <label class="form-label text-muted">Response (optional)</label>
-    <textarea name="response" class="form-control" rows="4" placeholder="اختياري"></textarea>
-  </div>
+  
 </div>
 
   <div class="modal-footer">
