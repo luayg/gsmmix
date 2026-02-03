@@ -69,10 +69,55 @@ function initSelect2(scopeEl, dropdownParentEl) {
   });
 }
 
+const loadCssOnce = (id, href) => {
+  if (document.getElementById(id)) return;
+  const l = document.createElement('link');
+  l.id = id;
+  l.rel = 'stylesheet';
+  l.href = href;
+  document.head.appendChild(l);
+};
+
+const loadScriptOnce = (id, src) => new Promise((resolve, reject) => {
+  if (document.getElementById(id)) return resolve();
+  const s = document.createElement('script');
+  s.id = id;
+  s.src = src;
+  s.async = false;
+  s.onload = resolve;
+  s.onerror = reject;
+  document.body.appendChild(s);
+});
+
+// ✅ نفس فكرة service-modal: ضمن وجود summernote حتى داخل ajax modal
+async function ensureSummernoteCDN() {
+  loadCssOnce('sn-css', 'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css');
+
+  // إذا summernote موجود خلاص
+  if (window.jQuery && window.jQuery.fn && window.jQuery.fn.summernote) return true;
+
+  // تأكد jQuery
+  if (!window.jQuery) {
+    await loadScriptOnce('jq-cdn', 'https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
+    window.$ = window.jQuery;
+  }
+
+  // حمّل summernote
+  await loadScriptOnce('sn-cdn', 'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
+
+  return !!(window.jQuery && window.jQuery.fn && window.jQuery.fn.summernote);
+}
+
+
+
+
+
 // ✅ Summernote init
 async function initEditors(scopeEl) {
-  if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.summernote !== 'function') {
-    showToast('danger', 'Summernote not attached to jQuery (build issue).', { title: 'Error', delay: 7000 });
+  // ✅ ضمن وجود summernote (حتى لو build ما حمله)
+  const ok = await ensureSummernoteCDN();
+  if (!ok) {
+    console.error('Summernote failed to load');
     return;
   }
 
@@ -82,6 +127,8 @@ async function initEditors(scopeEl) {
 
   window.jQuery(textareas).each(function () {
     const $t = window.jQuery(this);
+
+    // لو متفعّل مسبقًا لا تعيده
     if ($t.next('.note-editor').length) return;
 
     const h = Number($t.attr('data-summernote-height') || 360);
@@ -99,9 +146,7 @@ async function initEditors(scopeEl) {
         ['insert', ['link', 'picture', 'table', 'hr']],
         ['view', ['codeview']]
       ],
-      fontSizes: ['8','9','10','11','12','14','16','18','20','24','28','32','36','48'],
       callbacks: {
-        // ✅ إدراج صورة Base64 مباشرة
         onImageUpload: function (files) {
           for (const f of files) {
             const reader = new FileReader();
@@ -113,6 +158,7 @@ async function initEditors(scopeEl) {
     });
   });
 }
+
 
 // Ajax modal loader + ajax submit
 document.addEventListener('DOMContentLoaded', () => {
