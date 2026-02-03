@@ -190,6 +190,15 @@
 
   </div>
 </div>
+{{-- ✅ Provider Reply --}}
+@if(!empty($resp['provider_reply_html']))
+  <div class="mt-4">
+    <label class="form-label">Provider Reply</label>
+    <div class="border rounded p-3 bg-white">
+      {!! $resp['provider_reply_html'] !!}
+    </div>
+  </div>
+@endif
 
 <div class="modal-footer">
   <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>

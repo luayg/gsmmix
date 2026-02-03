@@ -234,29 +234,65 @@ abstract class BaseOrdersController extends Controller
     }
 
     public function update(Request $request, int $id)
-    {
-        $row = ($this->orderModel)::findOrFail($id);
+{
+    $row = ($this->orderModel)::findOrFail($id);
 
-        $data = $request->validate([
-            'status'   => ['required','in:waiting,inprogress,success,rejected,cancelled'],
-            'comments' => ['nullable','string'],
-            'response' => ['nullable'],
-        ]);
+    $data = $request->validate([
+        'status'             => ['required','in:waiting,inprogress,success,rejected,cancelled'],
+        'comments'           => ['nullable','string'],
 
-        $row->status   = $data['status'];
-        $row->comments = (string)($data['comments'] ?? '');
+        // response raw (json/text)
+        'response'           => ['nullable'],
 
-        if (isset($data['response'])) {
-            if (is_string($data['response'])) {
-                $decoded = json_decode($data['response'], true);
-                $row->response = is_array($decoded) ? $decoded : ['raw' => $data['response']];
-            } elseif (is_array($data['response'])) {
-                $row->response = $data['response'];
-            }
-        }
+        // ✅ Provider reply html (Summernote)
+        'provider_reply_html' => ['nullable','string'],
+    ]);
 
-        $row->save();
+    $row->status   = $data['status'];
+    $row->comments = (string)($data['comments'] ?? '');
 
-        return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
+    // ---- normalize existing response to array if possible ----
+    $currentResp = $row->response;
+
+    if (is_string($currentResp)) {
+        $decoded = json_decode($currentResp, true);
+        $currentResp = is_array($decoded) ? $decoded : ['raw' => $row->response];
+    } elseif (!is_array($currentResp) && $currentResp !== null) {
+        $currentResp = ['raw' => $currentResp];
+    } elseif ($currentResp === null) {
+        $currentResp = [];
     }
+
+    // ---- apply provided response (if any) ----
+    if (array_key_exists('response', $data)) {
+        if (is_string($data['response'])) {
+            $decoded = json_decode($data['response'], true);
+
+            // إذا JSON صحيح نخزنه array
+            if (is_array($decoded)) {
+                $currentResp = array_merge($currentResp, $decoded);
+            } else {
+                // نص عادي
+                $currentResp['raw'] = $data['response'];
+            }
+        } elseif (is_array($data['response'])) {
+            $currentResp = array_merge($currentResp, $data['response']);
+        }
+    }
+
+    // ✅ save provider reply HTML داخل response
+    if (!empty($data['provider_reply_html'])) {
+        $currentResp['provider_reply_html'] = $data['provider_reply_html'];
+        $currentResp['provider_reply_updated_at'] = now()->toDateTimeString();
+    } else {
+        // لو حاب تمسحها لو تركها فاضية
+        // unset($currentResp['provider_reply_html']);
+    }
+
+    $row->response = $currentResp;
+    $row->save();
+
+    return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
+}
+
 }
