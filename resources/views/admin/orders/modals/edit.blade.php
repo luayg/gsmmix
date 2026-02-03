@@ -1,15 +1,19 @@
+{{-- resources/views/admin/orders/modals/edit.blade.php --}}
+
 @php
   $row = $row ?? ($order ?? null);
   $routePrefix = $routePrefix ?? 'admin.orders.imei';
 
-  // ✅ تنظيف: JSON name + decode entities + إزالة الزوائد
+  // تنظيف نصوص + فك entities + إزالة رموز غير مرغوبة (✖ ❌ …)
   $cleanText = function ($v) {
     $v = (string)$v;
-    $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8'); // يحل مشكلة &amp;#10060;
+    $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $v = str_replace(["✖","❌","✘"], '', $v);
     $v = str_replace(["\r\n", "\r"], "\n", $v);
     return trim($v);
   };
 
+  // اسم خدمة: يدعم JSON {"en":...} + تنظيف
   $pickName = function ($v) use ($cleanText) {
     if (is_string($v)) {
       $s = trim($v);
@@ -23,7 +27,7 @@
     return $cleanText($v);
   };
 
-  // Normalize response to array
+  // response -> array
   $resp = $row?->response ?? null;
   if (is_string($resp)) {
     $decoded = json_decode($resp, true);
@@ -31,7 +35,7 @@
   }
   if (!is_array($resp)) $resp = [];
 
-  $items = isset($resp['result_items']) && is_array($resp['result_items']) ? $resp['result_items'] : [];
+  $items = (isset($resp['result_items']) && is_array($resp['result_items'])) ? $resp['result_items'] : [];
   $img   = $resp['result_image'] ?? null;
 
   $isSafeImg = function ($url) {
@@ -40,18 +44,43 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
-  // ✅ اسم الخدمة الصحيح + تنظيف
+  // تنسيق القيم مثل Result (Badges)
+  $renderValue = function ($label, $value) use ($cleanText) {
+    $labelL = mb_strtolower($cleanText($label));
+    $val    = $cleanText($value);
+    $valL   = mb_strtolower($val);
+
+    if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
+    if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
+
+    if (str_contains($labelL, 'find my') || str_contains($labelL, 'fmi')) {
+      if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
+      if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
+    }
+
+    if (str_contains($labelL, 'icloud')) {
+      if (str_contains($valL, 'lost'))  return '<span class="badge bg-danger">'.e($val).'</span>';
+      if (str_contains($valL, 'clean')) return '<span class="badge bg-success">'.e($val).'</span>';
+      return '<span class="badge bg-secondary">'.e($val).'</span>';
+    }
+
+    if (in_array($valL, ['activated','unlocked','clean'], true)) return '<span class="badge bg-success">'.e($val).'</span>';
+    if (in_array($valL, ['expired'], true)) return '<span class="badge bg-danger">'.e($val).'</span>';
+    if (str_contains($valL, 'lost')) return '<span class="badge bg-danger">'.e($val).'</span>';
+
+    return e($val);
+  };
+
+  // Service / API service names
   $serviceName = $row?->service?->name ?? ($row->service_name ?? '—');
   $serviceName = $pickName($serviceName);
 
-  // ✅ API service (بنفس الاسم حالياً)
   $apiServiceName = $serviceName;
 
-  // ✅ Provider name
   $providerName = $row?->provider?->name ?? ($row->provider_name ?? '—');
   $providerName = $cleanText($providerName);
 
-  // ✅ Reply: إذا ما عندك provider_reply_html نولدها من response الموجود
+  // Reply editor value:
   $providerReplyHtml = $resp['provider_reply_html'] ?? '';
 
   if (trim((string)$providerReplyHtml) === '') {
@@ -60,23 +89,25 @@
     } elseif (!empty($resp['message'])) {
       $providerReplyHtml = '<div>'.e($cleanText($resp['message'])).'</div>';
     } elseif (!empty($items)) {
-      // توليد Reply من result_items
       $html = '';
       if ($img && $isSafeImg($img)) {
-        $html .= '<div style="text-align:center;margin-bottom:10px;"><img src="'.e($img).'" style="max-width:260px;height:auto;" /></div>';
+        $html .= '<div style="text-align:center;margin-bottom:10px;">'
+              .  '<img src="'.e($img).'" style="max-width:260px;height:auto;" />'
+              .  '</div>';
       }
       $html .= '<table class="table table-sm table-bordered"><tbody>';
       foreach ($items as $it) {
         $label = is_array($it) ? ($it['label'] ?? '') : '';
         $value = is_array($it) ? ($it['value'] ?? '') : '';
-        $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.e($cleanText($value)).'</td></tr>';
+        $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.$renderValue($label, $value).'</td></tr>';
       }
       $html .= '</tbody></table>';
       $providerReplyHtml = $html;
+    } else {
+      $providerReplyHtml = '';
     }
   }
 
-  // بقية الحقول
   $userEmail = $cleanText($row?->email ?? ($row->user_email ?? '—'));
   $device    = $cleanText($row?->device ?? ($row->imei ?? '—'));
   $remoteId  = $cleanText($row?->remote_id ?? '—');
@@ -99,3 +130,138 @@
 
   $curStatus = $row?->status ?? 'waiting';
 @endphp
+
+<div class="modal-header" style="background:#f39c12; color:#fff;">
+  <div class="d-flex align-items-center gap-2">
+    <strong>Order #{{ $row?->id ?? '' }}</strong>
+    <span class="opacity-75">|</span>
+    <span class="opacity-75">Edit</span>
+  </div>
+  <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+</div>
+
+<form class="js-ajax-form" method="POST" action="{{ route($routePrefix.'.update', $row?->id ?? 0) }}">
+  @csrf
+
+  {{-- ✅ هذا هو المهم: نخلي جسم المودال قابل للسكرول حتى توصل لـ Result Preview --}}
+  <div class="modal-body" style="max-height: calc(100vh - 210px); overflow: auto;">
+    <div class="row g-3">
+
+      {{-- LEFT --}}
+      <div class="col-lg-6">
+        <div class="table-responsive">
+          <table class="table table-bordered align-middle mb-0">
+            <tbody>
+              <tr><th style="width:180px;">Service</th><td>{{ $serviceName }}</td></tr>
+              <tr><th>User</th><td>{{ $userEmail }}</td></tr>
+              <tr><th>IMEI/Serial number</th><td>{{ $device }}</td></tr>
+              <tr><th>Comments</th><td>{{ $row?->comments ?? '—' }}</td></tr>
+
+              <tr><th>Order date</th><td>{{ $createdAt }}</td></tr>
+              <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
+
+              <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>
+              <tr><th>Order price</th><td>{{ $fmt($orderPrice) }}</td></tr>
+
+              <tr>
+                <th>Status</th>
+                <td>
+                  @php($st = strtolower($curStatus))
+                  @if($st==='success') <span class="badge bg-success">Success</span>
+                  @elseif($st==='rejected') <span class="badge bg-danger">Rejected</span>
+                  @elseif($st==='inprogress') <span class="badge bg-info">In progress</span>
+                  @elseif($st==='cancelled') <span class="badge bg-dark">Cancelled</span>
+                  @else <span class="badge bg-secondary">Waiting</span>
+                  @endif
+                </td>
+              </tr>
+
+              <tr><th>Final price</th><td>{{ $fmt($orderPrice) }}</td></tr>
+              <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
+
+              <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
+              <tr><th>Reply</th><td class="text-muted">تعديل الرد من اليمين</td></tr>
+
+              <tr><th>API order ID</th><td>{{ $remoteId }}</td></tr>
+              <tr><th>API name</th><td>{{ $providerName }}</td></tr>
+              <tr><th>API service</th><td>{{ $apiServiceName }}</td></tr>
+              <tr><th>API processing price</th><td>{{ $fmt($apiCost) }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        {{-- Result Preview --}}
+        <div class="mt-3">
+          <div class="fw-semibold mb-2">Result Preview</div>
+          <div class="border rounded p-2 bg-white">
+            <?php if (!empty($img) && $isSafeImg($img)) { ?>
+              <div class="mb-2 text-center">
+                <img src="{{ $img }}" alt="Result image" style="max-width:260px;height:auto;" class="img-fluid rounded shadow-sm">
+              </div>
+            <?php } ?>
+
+            <?php if (is_array($items) && count($items)) { ?>
+              <table class="table table-sm table-striped table-bordered mb-0">
+                <tbody>
+                <?php foreach ($items as $it) {
+                  $label = is_array($it) ? ($it['label'] ?? '') : '';
+                  $value = is_array($it) ? ($it['value'] ?? '') : '';
+                ?>
+                  <tr>
+                    <th style="width:220px;"><?php echo htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8'); ?></th>
+                    <td><?php echo $renderValue($label, $value); ?></td>
+                  </tr>
+                <?php } ?>
+                </tbody>
+              </table>
+            <?php } else { ?>
+              <span class="text-muted">—</span>
+            <?php } ?>
+          </div>
+        </div>
+      </div>
+
+      {{-- RIGHT --}}
+      <div class="col-lg-6">
+        <div class="mb-2 fw-semibold">Reply</div>
+
+        {{-- ✅ الآن سيظهر Toolbar لأن admin.js صار يحمل Summernote محلياً --}}
+        <textarea
+          id="replyEditor"
+          name="provider_reply_html"
+          class="form-control"
+          rows="14"
+          data-summernote="1"
+          data-summernote-height="360"
+        >{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
+
+        <div class="mt-3">
+          <label class="form-label fw-semibold">Status</label>
+          <select name="status" class="form-select select2" required>
+            <option value="waiting"    @selected($curStatus==='waiting')>Waiting</option>
+            <option value="inprogress" @selected($curStatus==='inprogress')>In progress</option>
+            <option value="success"    @selected($curStatus==='success')>Success</option>
+            <option value="rejected"   @selected($curStatus==='rejected')>Rejected</option>
+            <option value="cancelled"  @selected($curStatus==='cancelled')>Cancelled</option>
+          </select>
+        </div>
+
+        <div class="mt-3">
+          <label class="form-label fw-semibold">Comments</label>
+          <input type="text" name="comments" class="form-control" value="{{ $row?->comments ?? '' }}">
+        </div>
+
+        <div class="mt-3">
+          <label class="form-label text-muted">Response (optional)</label>
+          <textarea name="response" class="form-control" rows="4" placeholder="اختياري"></textarea>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="modal-footer">
+    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
+    <button type="submit" class="btn btn-success">Save</button>
+  </div>
+</form>
