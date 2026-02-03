@@ -210,28 +210,46 @@ abstract class BaseOrdersController extends Controller
     }
 
     public function modalView(int $id)
-    {
-        $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
+{
+    $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
 
-        return view('admin.orders.modals.view', [
-            'title'       => "View Order #{$row->id}",
-            'kind'        => $this->kind,
-            'routePrefix' => $this->routePrefix,
-            'row'         => $row,
-        ]);
-    }
+    return view('admin.orders.modals.view', [
+        'title'       => "View Order #{$row->id}",
+        'kind'        => $this->kind,
+        'routePrefix' => $this->routePrefix,
+
+        'row'         => $row,
+        'order'       => $row, // ✅ لا يضر ويساعد لو view قديم
+    ]);
+}
+
 
     public function modalEdit(int $id)
-    {
-        $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
+{
+    $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
 
-        return view('admin.orders.modals.edit', [
-            'title'       => "Edit Order #{$row->id}",
-            'kind'        => $this->kind,
-            'routePrefix' => $this->routePrefix,
-            'row'         => $row,
-        ]);
+    // decode response for optional provider reply
+    $resp = $row->response;
+    if (is_string($resp)) {
+        $decoded = json_decode($resp, true);
+        $resp = is_array($decoded) ? $decoded : [];
     }
+    if (!is_array($resp)) $resp = [];
+
+    return view('admin.orders.modals.edit', [
+        'title'       => "Edit Order #{$row->id}",
+        'kind'        => $this->kind,
+        'routePrefix' => $this->routePrefix,
+
+        // ✅ compatibility (old blade expects $order)
+        'row'         => $row,
+        'order'       => $row,
+
+        // ✅ optional for provider reply feature
+        'providerReplyHtml' => $resp['provider_reply_html'] ?? '',
+        'replyPreviewHtml'  => $resp['provider_reply_html'] ?? '',
+    ]);
+}
 
     public function update(Request $request, int $id)
 {
