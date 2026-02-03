@@ -3,10 +3,10 @@ window.$ = window.jQuery = $;
 
 let __snReady = false;
 
+// ✅ تحميل Summernote بعد ضمان window.jQuery (حل تضارب import hoisting)
 async function ensureSummernote() {
   if (__snReady) return true;
 
-  // ✅ تحميل بعد ضمان window.jQuery (حل تعارض ترتيب imports)
   await import('summernote/dist/summernote-lite.css');
   await import('summernote/dist/summernote-lite.js');
 
@@ -31,6 +31,7 @@ export async function initModalEditors(container) {
   jq(areas).each(function () {
     const $t = jq(this);
 
+    // already initialized
     if ($t.next('.note-editor').length) return;
 
     const h = Number($t.attr('data-summernote-height') || 360);

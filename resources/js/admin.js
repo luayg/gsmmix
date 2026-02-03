@@ -5,6 +5,7 @@ import * as bootstrap from 'bootstrap';
 window.bootstrap = bootstrap;
 
 import { initModalEditors } from './modal-editors';
+window.initModalEditors = initModalEditors; // ✅ مهم: حتى service-modal يستخدم نفس المحرر
 
 // Select2
 import 'select2/dist/css/select2.min.css';
@@ -48,6 +49,7 @@ window.showToast = window.showToast || function (variant = 'success', message = 
   el.addEventListener('hidden.bs.toast', () => el.remove());
 };
 
+// Select2 init
 function initSelect2(scopeEl, dropdownParentEl) {
   if (!$.fn || typeof $.fn.select2 !== 'function') return;
   const $root = $(scopeEl);
@@ -66,6 +68,7 @@ function initSelect2(scopeEl, dropdownParentEl) {
   });
 }
 
+// Ajax modal loader + ajax submit
 document.addEventListener('DOMContentLoaded', () => {
   const token = document.querySelector('meta[name="csrf-token"]')?.content || window.CSRF_TOKEN || '';
   let MODAL_REQ_ID = 0;

@@ -86,30 +86,27 @@
     });
   }
 
-  const loadCssOnce=(id,href)=>{ if(document.getElementById(id)) return;
-    const l=document.createElement('link'); l.id=id; l.rel='stylesheet'; l.href=href; document.head.appendChild(l);
-  };
-  const loadScriptOnce=(id,src)=>new Promise((res,rej)=>{
-    if(document.getElementById(id)) return res();
-    const s=document.createElement('script'); s.id=id; s.src=src; s.async=false;
-    s.onload=res; s.onerror=rej; document.body.appendChild(s);
-  });
-
+  // ✅ مهم جداً: ممنوع تحميل jQuery/Summernote/Select2 من CDN هنا
+  // لأن ذلك يسبب أكثر من نسخة jQuery ويكسر Toolbar داخل Edit Orders.
   async function ensureSummernote(){
-    loadCssOnce('sn-css','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css');
-    if(!window.jQuery || !window.jQuery.fn?.summernote){
-      await loadScriptOnce('jq','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
-      window.$=window.jQuery;
-      await loadScriptOnce('sn','https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
+    if (!window.jQuery) {
+      console.error('jQuery not found (Vite should provide it).');
+      return false;
     }
+    if (!window.initModalEditors) {
+      console.error('initModalEditors not found on window. Add: window.initModalEditors = initModalEditors in resources/js/admin.js');
+      return false;
+    }
+    return true;
   }
 
   async function ensureSelect2(){
-    if(!window.jQuery) await loadScriptOnce('jq','https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js');
-    if(!$.fn?.select2){
-      loadCssOnce('sel2-css','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css');
-      await loadScriptOnce('sel2','https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js');
+    if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
+      // لا نوقف المودال، فقط نحذر
+      console.warn('Select2 not available (Vite should provide it).');
+      return false;
     }
+    return true;
   }
 
   function slugify(text){
@@ -409,13 +406,11 @@
     if(btn){
       btn.disabled = true;
 
-      // ✅ نظّف الألوان السابقة
       btn.classList.remove(
         'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary',
         'btn-light','border-success','text-success','btn-outline-success','btn-outline-primary'
       );
 
-      // ✅ Add + لون فاتح
       btn.classList.add('btn-outline-primary');
       btn.textContent = 'Add';
 
@@ -439,11 +434,9 @@
       return el;
     };
 
-    // name_en = name (إذا لم يكن موجوداً)
     const nameVal = clean(form.querySelector('[name="name"]')?.value || '');
     ensureHidden('name_en', nameVal);
 
-    // main_type = main_field_type (إذا لم يكن موجوداً)
     const mainFieldVal = clean(
       form.querySelector('[name="main_type"]')?.value ||
       form.querySelector('[name="main_field_type"]')?.value ||
@@ -451,7 +444,6 @@
     );
     ensureHidden('main_type', mainFieldVal);
 
-    // احتياط: type
     const typeVal = clean(form.querySelector('[name="type"]')?.value || '');
     if (typeVal) ensureHidden('type', typeVal);
   }
@@ -480,10 +472,21 @@
     })(body);
 
     initTabs(body);
-    await ensureSummernote();
+
+    // ✅ Summernote/Select2 من Vite فقط
+    const okSn = await ensureSummernote();
     await ensureSelect2();
 
-    jQuery(body).find('#infoEditor').summernote({ placeholder:'Description, notes, terms…', height:320 });
+    // ✅ فعل محرر infoEditor عبر نفس initModalEditors (بدون CDN)
+    if (okSn) {
+      const infoEl = body.querySelector('#infoEditor');
+      if (infoEl) {
+        infoEl.classList.remove('d-none');
+        infoEl.setAttribute('data-summernote', '1');
+        infoEl.setAttribute('data-summernote-height', '320');
+        await window.initModalEditors(body);
+      }
+    }
 
     const providerId = btn.dataset.providerId;
     const remoteId   = btn.dataset.remoteId;
@@ -630,10 +633,10 @@
 
     ev.preventDefault();
 
-    // ✅ جهّز الحقول المطلوبة قبل الإرسال
     ensureRequiredFields(form);
 
-    const infoEditor = jQuery(form).find('#infoEditor');
+    // ✅ خذ HTML من المحرر (Summernote)
+    const infoEditor = window.jQuery(form).find('#infoEditor');
     if (infoEditor.length && infoEditor.summernote) {
       const html = infoEditor.summernote('code');
       const hidden = form.querySelector('#infoHidden');
@@ -664,11 +667,8 @@
       if(res.ok){
         const rid = form.querySelector('[name="remote_id"]')?.value;
 
-        // ✅ (1) حدّث زر الصف لنفس Remote ID فوراً
         markCloneAsAdded(rid);
 
-        // ✅ (2) أطلق حدث لكي Import Wizard يعطّل الخدمة فورًا بدون خروج/دخول
-        // مهم: listener موجود على window في services.blade.php
         const provider_id = form.querySelector('[name="supplier_id"]')?.value || '';
         const kind = (form.querySelector('[name="type"]')?.value || '').toLowerCase();
 
@@ -680,15 +680,12 @@
           }
         }));
 
-        // ✅ (3) اغلق مودال الإضافة فقط
         bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
 
-        // ✅ Toast اختياري
         if (window.showToast) {
           window.showToast('success', '✅ Service created successfully', { title: 'Done' });
         }
 
-        // ✅ Refresh datatable إن وجدت
         if (window.$ && $.fn?.DataTable) {
           try {
             $('.dataTable').each(function(){
