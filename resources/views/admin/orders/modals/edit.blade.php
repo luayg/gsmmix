@@ -4,23 +4,20 @@
   $row = $row ?? ($order ?? null);
   $routePrefix = $routePrefix ?? 'admin.orders.imei';
 
-  // safe clean
   $cleanText = function ($v) {
-    $v = (string) $v;
+    $v = (string)$v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $v = str_replace(["✖","❌","✘"], '', $v);
     $v = str_replace(["\r\n", "\r"], "\n", $v);
     return trim($v);
   };
 
-  // decode json name + clean
   $pickName = function ($v) use ($cleanText) {
     if (is_string($v)) {
       $s = trim($v);
       if ($s !== '' && isset($s[0]) && $s[0] === '{') {
         $j = json_decode($s, true);
         if (is_array($j)) {
-          $v = $j['en'] ?? $j['fallback'] ?? (reset($j) ?: $v);
+          $v = $j['en'] ?? $j['fallback'] ?? (is_array($j) ? reset($j) : $v) ?? $v;
         }
       }
     }
@@ -44,95 +41,77 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
-  // badge rules
-  $renderValue = function ($label, $value) use ($cleanText) {
-    $label = strtolower($cleanText($label));
-    $val   = $cleanText($value);
-    $valL  = strtolower($val);
-
-    if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
-    if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
-
-    if (strpos($label, 'icloud') !== false) {
-      if (strpos($valL, 'lost') !== false)  return '<span class="badge bg-danger">'.e($val).'</span>';
-      if (strpos($valL, 'clean') !== false) return '<span class="badge bg-success">'.e($val).'</span>';
-      return '<span class="badge bg-secondary">'.e($val).'</span>';
-    }
-
-    if (in_array($valL, ['activated','unlocked','clean'], true)) return '<span class="badge bg-success">'.e($val).'</span>';
-    if (in_array($valL, ['expired'], true)) return '<span class="badge bg-danger">'.e($val).'</span>';
-    if (strpos($valL, 'lost') !== false) return '<span class="badge bg-danger">'.e($val).'</span>';
-
-    return e($val);
-  };
-
-  // Names
-  $serviceName = $row?->service?->name ?? ($row?->service_name ?? '—');
+  // ✅ اسم الخدمة الصحيح
+  $serviceName = $row?->service?->name ?? ($row->service_name ?? '—');
   $serviceName = $pickName($serviceName);
-
   $apiServiceName = $serviceName;
 
-  $providerName = $row?->provider?->name ?? ($row?->provider_name ?? '—');
+  // ✅ Provider name
+  $providerName = $row?->provider?->name ?? ($row->provider_name ?? '—');
   $providerName = $cleanText($providerName);
 
-  // Reply HTML (provider) - prefer saved html if exists
-  $providerReplyHtml = $resp['provider_reply_html'] ?? '';
+  // ✅ Reply HTML (نخزنه ونعدله داخل المحرر)
+  $providerReplyHtml = (string)($resp['provider_reply_html'] ?? '');
 
-  // generate reply if empty
-  if (trim((string) $providerReplyHtml) === '') {
-    // 1) if result_items exist => build table + image
+  // ✅ إذا فاضي: نبنيه من result_items / result_text
+  if (trim($providerReplyHtml) === '') {
     if (!empty($items)) {
       $html = '';
       if ($img && $isSafeImg($img)) {
-        $html .= '<div class="mb-2 text-center"><img src="'.e($img).'" class="img-fluid rounded shadow-sm" style="max-width:260px;height:auto;"></div>';
+        $html .= '<div style="text-align:center;margin-bottom:10px;">'
+              .  '<img src="'.e($img).'" style="max-width:260px;height:auto;" />'
+              .  '</div>';
       }
-      $html .= '<table class="table table-sm table-striped table-bordered mb-0"><tbody>';
+
+      $html .= '<table class="table table-sm table-striped table-bordered"><tbody>';
       foreach ($items as $it) {
         $label = is_array($it) ? ($it['label'] ?? '') : '';
         $value = is_array($it) ? ($it['value'] ?? '') : '';
-        $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.$renderValue($label, $value).'</td></tr>';
+        $html .= '<tr>'
+              .  '<th style="width:220px;">'.e($cleanText($label)).'</th>'
+              .  '<td>'.e($cleanText($value)).'</td>'
+              .  '</tr>';
       }
       $html .= '</tbody></table>';
+
       $providerReplyHtml = $html;
     } else {
-      // 2) parse result_text lines "Key: Value" into table
       $txt = $cleanText($resp['result_text'] ?? '');
-      $parsed = [];
       if ($txt !== '') {
         $lines = preg_split("/\n+/", $txt);
+        $parsed = [];
         foreach ($lines as $line) {
           $line = trim($line);
           if ($line === '') continue;
           if (strpos($line, ':') !== false) {
-            [$k, $v] = array_pad(explode(':', $line, 2), 2, '');
-            $k = trim($k); $v = trim($v);
-            if ($k !== '' && $v !== '') $parsed[] = ['label' => $k, 'value' => $v];
+            [$k,$v] = array_map('trim', explode(':', $line, 2));
+            if ($k !== '' && $v !== '') $parsed[] = [$k,$v];
           }
         }
-      }
 
-      if (count($parsed)) {
-        $html = '';
-        if ($img && $isSafeImg($img)) {
-          $html .= '<div class="mb-2 text-center"><img src="'.e($img).'" class="img-fluid rounded shadow-sm" style="max-width:260px;height:auto;"></div>';
+        if (count($parsed)) {
+          $html = '';
+          if ($img && $isSafeImg($img)) {
+            $html .= '<div style="text-align:center;margin-bottom:10px;">'
+                  .  '<img src="'.e($img).'" style="max-width:260px;height:auto;" />'
+                  .  '</div>';
+          }
+          $html .= '<table class="table table-sm table-striped table-bordered"><tbody>';
+          foreach ($parsed as $pair) {
+            $html .= '<tr><th style="width:220px;">'.e($cleanText($pair[0])).'</th><td>'.e($cleanText($pair[1])).'</td></tr>';
+          }
+          $html .= '</tbody></table>';
+          $providerReplyHtml = $html;
+        } else {
+          $providerReplyHtml = '<pre style="white-space:pre-wrap;">'.e($txt).'</pre>';
         }
-        $html .= '<table class="table table-sm table-striped table-bordered mb-0"><tbody>';
-        foreach ($parsed as $it) {
-          $html .= '<tr><th style="width:220px;">'.e($cleanText($it['label'])).'</th><td>'.$renderValue($it['label'], $it['value']).'</td></tr>';
-        }
-        $html .= '</tbody></table>';
-        $providerReplyHtml = $html;
-      } else {
-        // 3) fallback message
-        $msg = $cleanText($resp['message'] ?? '');
-        $providerReplyHtml = $msg !== '' ? '<div>'.e($msg).'</div>' : '';
       }
     }
   }
 
-  // other fields
-  $userEmail = $cleanText($row?->email ?? ($row?->user_email ?? '—'));
-  $device    = $cleanText($row?->device ?? ($row?->imei ?? '—'));
+  // بقية الحقول
+  $userEmail = $cleanText($row?->email ?? ($row->user_email ?? '—'));
+  $device    = $cleanText($row?->device ?? ($row->imei ?? '—'));
   $remoteId  = $cleanText($row?->remote_id ?? '—');
   $ip        = $cleanText($row?->ip ?? '—');
 
@@ -154,7 +133,7 @@
   $curStatus = $row?->status ?? 'waiting';
 @endphp
 
-<div class="modal-header" style="background:#f39c12;color:#fff;">
+<div class="modal-header" style="background:#f39c12; color:#fff;">
   <div class="d-flex align-items-center gap-2">
     <strong>Order #{{ $row?->id ?? '' }}</strong>
     <span class="opacity-75">|</span>
@@ -181,7 +160,6 @@
               <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
               <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>
               <tr><th>Order price</th><td>{{ $fmt($orderPrice) }}</td></tr>
-
               <tr>
                 <th>Status</th>
                 <td>
@@ -194,7 +172,6 @@
                   @endif
                 </td>
               </tr>
-
               <tr><th>Final price</th><td>{{ $fmt($orderPrice) }}</td></tr>
               <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
               <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
@@ -206,7 +183,7 @@
           </table>
         </div>
 
-        {{-- Result Preview --}}
+        {{-- ✅ Result Preview فقط باليسار (مثل الصورة القديمة) --}}
         <div class="mt-3">
           <div class="fw-semibold mb-2">Result Preview</div>
           <div class="border rounded p-2 bg-white">
@@ -219,16 +196,16 @@
             @if(is_array($items) && count($items))
               <table class="table table-sm table-striped table-bordered mb-0">
                 <tbody>
-                  @foreach($items as $it)
-                    @php
-                      $label = is_array($it) ? ($it['label'] ?? '') : '';
-                      $value = is_array($it) ? ($it['value'] ?? '') : '';
-                    @endphp
-                    <tr>
-                      <th style="width:220px;">{{ $cleanText($label) }}</th>
-                      <td>{!! $renderValue($label, $value) !!}</td>
-                    </tr>
-                  @endforeach
+                @foreach($items as $it)
+                  @php
+                    $label = is_array($it) ? ($it['label'] ?? '') : '';
+                    $value = is_array($it) ? ($it['value'] ?? '') : '';
+                  @endphp
+                  <tr>
+                    <th style="width:220px;">{{ $cleanText($label) }}</th>
+                    <td>{{ $cleanText($value) }}</td>
+                  </tr>
+                @endforeach
                 </tbody>
               </table>
             @else
@@ -242,7 +219,7 @@
       <div class="col-lg-6">
         <div class="mb-2 fw-semibold">Reply</div>
 
-        {{-- ✅ هذا هو محرر Summernote (المطلوب Toolbar + صورة + ألوان) --}}
+        {{-- ✅ Editor فقط (بدون Preview مكرر + بدون Comments/Response) --}}
         <textarea
           id="replyEditor"
           name="provider_reply_html"
@@ -262,7 +239,6 @@
             <option value="cancelled"  @selected($curStatus==='cancelled')>Cancelled</option>
           </select>
         </div>
-
       </div>
 
     </div>
