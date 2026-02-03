@@ -218,36 +218,25 @@ abstract class BaseOrdersController extends Controller
         'kind'        => $this->kind,
         'routePrefix' => $this->routePrefix,
 
-        'row'         => $row,
-        'order'       => $row, // ✅ لا يضر ويساعد لو view قديم
+        'row'   => $row,
+        'order' => $row, // ✅ احتياط لو أي view قديم يتوقع order
     ]);
 }
+
 
 
     public function modalEdit(int $id)
 {
     $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
 
-    // decode response for optional provider reply
-    $resp = $row->response;
-    if (is_string($resp)) {
-        $decoded = json_decode($resp, true);
-        $resp = is_array($decoded) ? $decoded : [];
-    }
-    if (!is_array($resp)) $resp = [];
-
     return view('admin.orders.modals.edit', [
         'title'       => "Edit Order #{$row->id}",
         'kind'        => $this->kind,
         'routePrefix' => $this->routePrefix,
 
-        // ✅ compatibility (old blade expects $order)
-        'row'         => $row,
-        'order'       => $row,
-
-        // ✅ optional for provider reply feature
-        'providerReplyHtml' => $resp['provider_reply_html'] ?? '',
-        'replyPreviewHtml'  => $resp['provider_reply_html'] ?? '',
+        // ✅ مهم: المودال الحالي يتوقع $order
+        'row'   => $row,
+        'order' => $row,
     ]);
 }
 
