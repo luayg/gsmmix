@@ -4,7 +4,7 @@
   $row = $row ?? ($order ?? null);
   $routePrefix = $routePrefix ?? 'admin.orders.imei';
 
-  // safe clean (بدون mbstring)
+  // safe clean
   $cleanText = function ($v) {
     $v = (string)$v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -44,7 +44,7 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
-  // simple badge rules (بدون mb)
+  // badges for values
   $renderValue = function ($label, $value) use ($cleanText) {
     $label = strtolower($cleanText($label));
     $val   = $cleanText($value);
@@ -69,15 +69,16 @@
   // Names
   $serviceName = $row?->service?->name ?? ($row->service_name ?? '—');
   $serviceName = $pickName($serviceName);
+
   $apiServiceName = $serviceName;
 
   $providerName = $row?->provider?->name ?? ($row->provider_name ?? '—');
   $providerName = $cleanText($providerName);
 
-  // Reply HTML
+  // Reply HTML (editable)
   $providerReplyHtml = $resp['provider_reply_html'] ?? '';
 
-  // generate if empty
+  // generate Reply if empty
   if (trim((string)$providerReplyHtml) === '') {
     if (!empty($items)) {
       $html = '';
@@ -94,9 +95,7 @@
       }
       $html .= '</tbody></table>';
       $providerReplyHtml = $html;
-
     } else {
-      // parse result_text into table if possible
       $txt = $cleanText($resp['result_text'] ?? '');
       $parsed = [];
       if ($txt !== '') {
@@ -169,9 +168,10 @@
 <form class="js-ajax-form" method="POST" action="{{ route($routePrefix.'.update', $row?->id ?? 0) }}">
   @csrf
 
-  <div class="modal-body" style="max-height: calc(100vh - 210px); overflow: auto;">
+  <div class="modal-body" style="max-height: calc(100vh - 210px); overflow:auto;">
     <div class="row g-3">
 
+      {{-- LEFT --}}
       <div class="col-lg-6">
         <div class="table-responsive">
           <table class="table table-bordered align-middle mb-0">
@@ -179,11 +179,11 @@
               <tr><th style="width:180px;">Service</th><td>{{ $serviceName }}</td></tr>
               <tr><th>User</th><td>{{ $userEmail }}</td></tr>
               <tr><th>IMEI/Serial number</th><td>{{ $device }}</td></tr>
-              <tr><th>Comments</th><td>{{ $row?->comments ?? '—' }}</td></tr>
               <tr><th>Order date</th><td>{{ $createdAt }}</td></tr>
               <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
               <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>
               <tr><th>Order price</th><td>{{ $fmt($orderPrice) }}</td></tr>
+
               <tr>
                 <th>Status</th>
                 <td>
@@ -196,10 +196,10 @@
                   @endif
                 </td>
               </tr>
+
               <tr><th>Final price</th><td>{{ $fmt($orderPrice) }}</td></tr>
               <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
               <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
-              <tr><th>Reply</th><td class="text-muted">تعديل الرد من اليمين</td></tr>
               <tr><th>API order ID</th><td>{{ $remoteId }}</td></tr>
               <tr><th>API name</th><td>{{ $providerName }}</td></tr>
               <tr><th>API service</th><td>{{ $apiServiceName }}</td></tr>
@@ -211,63 +211,62 @@
         <div class="mt-3">
           <div class="fw-semibold mb-2">Result Preview</div>
           <div class="border rounded p-2 bg-white">
-            <?php if (!empty($img) && $isSafeImg($img)) { ?>
+            @if(!empty($img) && $isSafeImg($img))
               <div class="mb-2 text-center">
                 <img src="{{ $img }}" alt="Result image" style="max-width:260px;height:auto;" class="img-fluid rounded shadow-sm">
               </div>
-            <?php } ?>
+            @endif
 
-            <?php if (is_array($items) && count($items)) { ?>
+            @if(is_array($items) && count($items))
               <table class="table table-sm table-striped table-bordered mb-0">
                 <tbody>
-                <?php foreach ($items as $it) {
-                  $label = is_array($it) ? ($it['label'] ?? '') : '';
-                  $value = is_array($it) ? ($it['value'] ?? '') : '';
-                ?>
-                  <tr>
-                    <th style="width:220px;"><?php echo htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8'); ?></th>
-                    <td><?php echo $renderValue($label, $value); ?></td>
-                  </tr>
-                <?php } ?>
+                  @foreach($items as $it)
+                    @php
+                      $label = is_array($it) ? ($it['label'] ?? '') : '';
+                      $value = is_array($it) ? ($it['value'] ?? '') : '';
+                    @endphp
+                    <tr>
+                      <th style="width:220px;">{{ $cleanText($label) }}</th>
+                      <td>{!! $renderValue($label, $value) !!}</td>
+                    </tr>
+                  @endforeach
                 </tbody>
               </table>
-            <?php } else { ?>
+            @else
               <span class="text-muted">—</span>
-            <?php } ?>
+            @endif
           </div>
         </div>
       </div>
 
+      {{-- RIGHT --}}
       <div class="col-lg-6">
-  <div class="mb-2 fw-semibold">Reply</div>
+        <div class="mb-2 fw-semibold">Reply</div>
 
-  
+        {{-- ✅ Editable Summernote (يظهر Toolbar إذا jQuery/Summernote صحيحين) --}}
+        <textarea
+          id="replyEditor"
+          name="provider_reply_html"
+          class="form-control"
+          data-summernote="1"
+          data-summernote-height="420"
+        >{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
+
+        <div class="mt-3">
+          <label class="form-label fw-semibold">Status</label>
+          <select name="status" class="form-select select2" required>
+            <option value="waiting"    @selected($curStatus==='waiting')>Waiting</option>
+            <option value="inprogress" @selected($curStatus==='inprogress')>In progress</option>
+            <option value="success"    @selected($curStatus==='success')>Success</option>
+            <option value="rejected"   @selected($curStatus==='rejected')>Rejected</option>
+            <option value="cancelled"  @selected($curStatus==='cancelled')>Cancelled</option>
+          </select>
+        </div>
+
+      </div>
+
+    </div>
   </div>
-
-  {{-- ✅ هذا هو نفس الـ HTML لكن للتعديل (سيتم تحويله لـ Summernote) --}}
-  <textarea
-  id="replyEditor"
-  name="provider_reply_html"
-  class="form-control"
-  rows="14"
-  data-summernote="1"
-  data-summernote-height="360"
->{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
-
-
-  <div class="mt-3">
-    <label class="form-label fw-semibold">Status</label>
-    <select name="status" class="form-select select2" required>
-      <option value="waiting"    @selected($curStatus==='waiting')>Waiting</option>
-      <option value="inprogress" @selected($curStatus==='inprogress')>In progress</option>
-      <option value="success"    @selected($curStatus==='success')>Success</option>
-      <option value="rejected"   @selected($curStatus==='rejected')>Rejected</option>
-      <option value="cancelled"  @selected($curStatus==='cancelled')>Cancelled</option>
-    </select>
-  </div>
-
-  
-</div>
 
   <div class="modal-footer">
     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>

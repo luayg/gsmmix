@@ -5,7 +5,6 @@ import * as bootstrap from 'bootstrap';
 window.bootstrap = bootstrap;
 
 import { initModalEditors } from './modal-editors';
-window.initModalEditors = initModalEditors; // ✅ مهم: حتى service-modal يستخدم نفس المحرر
 
 // Select2
 import 'select2/dist/css/select2.min.css';
@@ -24,9 +23,9 @@ import 'datatables.net-buttons/js/buttons.html5';
 window.showToast = window.showToast || function (variant = 'success', message = 'Done', opts = {}) {
   const bg = {
     success: 'bg-success text-white',
-    danger : 'bg-danger text-white',
+    danger: 'bg-danger text-white',
     warning: 'bg-warning',
-    info   : 'bg-primary text-white'
+    info: 'bg-primary text-white'
   }[variant] || 'bg-dark text-white';
 
   const id = 't' + Date.now() + Math.random().toString(16).slice(2);
@@ -102,13 +101,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       $content.html(html);
 
-      // Select2
-      initSelect2($content[0], $modal[0]);
-
-      // ✅ Editors (Summernote) — مصدر واحد فقط
+      // ✅ هنا فقط تفعيل summernote (بدون CDN / بدون jQuery ثاني)
       await initModalEditors($content[0]);
 
-      // Ajax submit
+      initSelect2($content[0], $modal[0]);
+
+      // Ajax submit داخل المودال
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
         ev.preventDefault();
 
