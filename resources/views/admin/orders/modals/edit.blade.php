@@ -239,41 +239,44 @@
       </div>
 
       <div class="col-lg-6">
-        <div class="mb-2 fw-semibold">Reply</div>
+  <div class="mb-2 fw-semibold">Reply</div>
 
-        {{-- اتركه textarea الآن (حتى لا يسبب 500) --}}
-        {{-- بعد ما يرجع يشتغل 100% نفعّل toolbar مرة ثانية --}}
-        <textarea
-          id="replyEditor"
-          name="provider_reply_html"
-          class="form-control"
-          rows="14"
-        >{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
-
-        <div class="mt-3">
-          <label class="form-label fw-semibold">Status</label>
-          <select name="status" class="form-select select2" required>
-            <option value="waiting"    @selected($curStatus==='waiting')>Waiting</option>
-            <option value="inprogress" @selected($curStatus==='inprogress')>In progress</option>
-            <option value="success"    @selected($curStatus==='success')>Success</option>
-            <option value="rejected"   @selected($curStatus==='rejected')>Rejected</option>
-            <option value="cancelled"  @selected($curStatus==='cancelled')>Cancelled</option>
-          </select>
-        </div>
-
-        <div class="mt-3">
-          <label class="form-label fw-semibold">Comments</label>
-          <input type="text" name="comments" class="form-control" value="{{ $row?->comments ?? '' }}">
-        </div>
-
-        <div class="mt-3">
-          <label class="form-label text-muted">Response (optional)</label>
-          <textarea name="response" class="form-control" rows="4" placeholder="اختياري"></textarea>
-        </div>
-      </div>
-
-    </div>
+  {{-- ✅ هذا Preview مثل Result (يرندر HTML فعلياً) --}}
+  <div class="border rounded bg-white p-2 mb-2" style="max-height:360px; overflow:auto;">
+    {!! $providerReplyHtml !!}
   </div>
+
+  {{-- ✅ هذا هو نفس الـ HTML لكن للتعديل (سيتم تحويله لـ Summernote) --}}
+  <textarea
+    id="replyEditor"
+    name="provider_reply_html"
+    class="form-control"
+    rows="14"
+    data-summernote="1"
+    data-summernote-height="360"
+  >{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
+
+  <div class="mt-3">
+    <label class="form-label fw-semibold">Status</label>
+    <select name="status" class="form-select select2" required>
+      <option value="waiting"    @selected($curStatus==='waiting')>Waiting</option>
+      <option value="inprogress" @selected($curStatus==='inprogress')>In progress</option>
+      <option value="success"    @selected($curStatus==='success')>Success</option>
+      <option value="rejected"   @selected($curStatus==='rejected')>Rejected</option>
+      <option value="cancelled"  @selected($curStatus==='cancelled')>Cancelled</option>
+    </select>
+  </div>
+
+  <div class="mt-3">
+    <label class="form-label fw-semibold">Comments</label>
+    <input type="text" name="comments" class="form-control" value="{{ $row?->comments ?? '' }}">
+  </div>
+
+  <div class="mt-3">
+    <label class="form-label text-muted">Response (optional)</label>
+    <textarea name="response" class="form-control" rows="4" placeholder="اختياري"></textarea>
+  </div>
+</div>
 
   <div class="modal-footer">
     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
