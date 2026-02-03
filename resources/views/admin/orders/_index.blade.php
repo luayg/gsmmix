@@ -24,6 +24,7 @@
   $status = request('status', '');
   $prov   = request('provider', '');
 @endphp
+@vite('resources/js/orders-imei-edit.js')
 
 <div class="d-flex align-items-center justify-content-between mb-3">
   <h4 class="mb-0">{{ $title }}</h4>
@@ -124,7 +125,7 @@
                 <a class="btn btn-sm btn-primary js-open-modal"
                    data-url="{{ route($routePrefix . '.modal.view', $o->id) }}">View</a>
 
-                <a class="btn btn-sm btn-warning js-open-modal"
+                <a class="btn btn-sm btn-warning js-open-order-edit"
                    data-url="{{ route($routePrefix . '.modal.edit', $o->id) }}">Edit</a>
               </td>
             </tr>
@@ -136,6 +137,16 @@
         </tbody>
       </table>
     </div>
+
+    {{-- Orders IMEI Edit Modal (isolated) --}}
+<div class="modal fade" id="orderEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content"></div>
+  </div>
+</div>
+
+
+
 
     {{-- Pagination --}}
     @if(isset($rows) && method_exists($rows, 'links'))
