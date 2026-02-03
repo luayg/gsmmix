@@ -4,7 +4,6 @@
   $row = $row ?? ($order ?? null);
   $routePrefix = $routePrefix ?? 'admin.orders.imei';
 
-  // تنظيف نصوص + فك entities + إزالة رموز غير مرغوبة (✖ ❌ …)
   $cleanText = function ($v) {
     $v = (string)$v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -13,7 +12,6 @@
     return trim($v);
   };
 
-  // اسم خدمة: يدعم JSON {"en":...} + تنظيف
   $pickName = function ($v) use ($cleanText) {
     if (is_string($v)) {
       $s = trim($v);
@@ -27,7 +25,6 @@
     return $cleanText($v);
   };
 
-  // response -> array
   $resp = $row?->response ?? null;
   if (is_string($resp)) {
     $decoded = json_decode($resp, true);
@@ -44,7 +41,7 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
-  // تنسيق القيم مثل Result (Badges)
+  // Badges
   $renderValue = function ($label, $value) use ($cleanText) {
     $labelL = mb_strtolower($cleanText($label));
     $val    = $cleanText($value);
@@ -71,7 +68,6 @@
     return e($val);
   };
 
-  // Service / API service names
   $serviceName = $row?->service?->name ?? ($row->service_name ?? '—');
   $serviceName = $pickName($serviceName);
 
@@ -80,22 +76,21 @@
   $providerName = $row?->provider?->name ?? ($row->provider_name ?? '—');
   $providerName = $cleanText($providerName);
 
-  // Reply editor value:
+  // Reply HTML (حفظ إن وجد)
   $providerReplyHtml = $resp['provider_reply_html'] ?? '';
 
+  // ✅ لو غير موجود: نولّد Reply كـ Table ملوّن
   if (trim((string)$providerReplyHtml) === '') {
-    if (!empty($resp['result_text'])) {
-      $providerReplyHtml = '<pre style="white-space:pre-wrap;">'.e($cleanText($resp['result_text'])).'</pre>';
-    } elseif (!empty($resp['message'])) {
-      $providerReplyHtml = '<div>'.e($cleanText($resp['message'])).'</div>';
-    } elseif (!empty($items)) {
+
+    // 1) إذا عندنا result_items استخدمها
+    if (!empty($items)) {
       $html = '';
       if ($img && $isSafeImg($img)) {
         $html .= '<div style="text-align:center;margin-bottom:10px;">'
               .  '<img src="'.e($img).'" style="max-width:260px;height:auto;" />'
               .  '</div>';
       }
-      $html .= '<table class="table table-sm table-bordered"><tbody>';
+      $html .= '<table class="table table-sm table-striped table-bordered"><tbody>';
       foreach ($items as $it) {
         $label = is_array($it) ? ($it['label'] ?? '') : '';
         $value = is_array($it) ? ($it['value'] ?? '') : '';
@@ -103,8 +98,47 @@
       }
       $html .= '</tbody></table>';
       $providerReplyHtml = $html;
+
     } else {
-      $providerReplyHtml = '';
+      // 2) إذا result_text موجود: حوّله لجدول بدل <pre>
+      $txt = $resp['result_text'] ?? '';
+      $txt = $cleanText($txt);
+
+      $parsed = [];
+      if ($txt !== '') {
+        $lines = preg_split("/\n+/", $txt);
+        foreach ($lines as $line) {
+          $line = trim($line);
+          if ($line === '') continue;
+          // key: value
+          if (str_contains($line, ':')) {
+            [$k, $v] = array_map('trim', explode(':', $line, 2));
+            if ($k !== '' && $v !== '') {
+              $parsed[] = ['label' => $k, 'value' => $v];
+            }
+          }
+        }
+      }
+
+      if (count($parsed)) {
+        $html = '';
+        if ($img && $isSafeImg($img)) {
+          $html .= '<div style="text-align:center;margin-bottom:10px;">'
+                .  '<img src="'.e($img).'" style="max-width:260px;height:auto;" />'
+                .  '</div>';
+        }
+        $html .= '<table class="table table-sm table-striped table-bordered"><tbody>';
+        foreach ($parsed as $it) {
+          $label = $it['label'];
+          $value = $it['value'];
+          $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.$renderValue($label, $value).'</td></tr>';
+        }
+        $html .= '</tbody></table>';
+        $providerReplyHtml = $html;
+      } else {
+        // 3) fallback message
+        $providerReplyHtml = !empty($resp['message']) ? '<div>'.e($cleanText($resp['message'])).'</div>' : '';
+      }
     }
   }
 
@@ -143,11 +177,9 @@
 <form class="js-ajax-form" method="POST" action="{{ route($routePrefix.'.update', $row?->id ?? 0) }}">
   @csrf
 
-  {{-- ✅ هذا هو المهم: نخلي جسم المودال قابل للسكرول حتى توصل لـ Result Preview --}}
   <div class="modal-body" style="max-height: calc(100vh - 210px); overflow: auto;">
     <div class="row g-3">
 
-      {{-- LEFT --}}
       <div class="col-lg-6">
         <div class="table-responsive">
           <table class="table table-bordered align-middle mb-0">
@@ -156,13 +188,10 @@
               <tr><th>User</th><td>{{ $userEmail }}</td></tr>
               <tr><th>IMEI/Serial number</th><td>{{ $device }}</td></tr>
               <tr><th>Comments</th><td>{{ $row?->comments ?? '—' }}</td></tr>
-
               <tr><th>Order date</th><td>{{ $createdAt }}</td></tr>
               <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
-
               <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>
               <tr><th>Order price</th><td>{{ $fmt($orderPrice) }}</td></tr>
-
               <tr>
                 <th>Status</th>
                 <td>
@@ -175,13 +204,10 @@
                   @endif
                 </td>
               </tr>
-
               <tr><th>Final price</th><td>{{ $fmt($orderPrice) }}</td></tr>
               <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
-
               <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
               <tr><th>Reply</th><td class="text-muted">تعديل الرد من اليمين</td></tr>
-
               <tr><th>API order ID</th><td>{{ $remoteId }}</td></tr>
               <tr><th>API name</th><td>{{ $providerName }}</td></tr>
               <tr><th>API service</th><td>{{ $apiServiceName }}</td></tr>
@@ -190,42 +216,40 @@
           </table>
         </div>
 
-        {{-- Result Preview --}}
         <div class="mt-3">
           <div class="fw-semibold mb-2">Result Preview</div>
           <div class="border rounded p-2 bg-white">
-            <?php if (!empty($img) && $isSafeImg($img)) { ?>
+            @if(!empty($img) && $isSafeImg($img))
               <div class="mb-2 text-center">
                 <img src="{{ $img }}" alt="Result image" style="max-width:260px;height:auto;" class="img-fluid rounded shadow-sm">
               </div>
-            <?php } ?>
+            @endif
 
-            <?php if (is_array($items) && count($items)) { ?>
+            @if(is_array($items) && count($items))
               <table class="table table-sm table-striped table-bordered mb-0">
                 <tbody>
-                <?php foreach ($items as $it) {
-                  $label = is_array($it) ? ($it['label'] ?? '') : '';
-                  $value = is_array($it) ? ($it['value'] ?? '') : '';
-                ?>
+                @foreach($items as $it)
+                  @php
+                    $label = is_array($it) ? ($it['label'] ?? '') : '';
+                    $value = is_array($it) ? ($it['value'] ?? '') : '';
+                  @endphp
                   <tr>
-                    <th style="width:220px;"><?php echo htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8'); ?></th>
-                    <td><?php echo $renderValue($label, $value); ?></td>
+                    <th style="width:220px;">{{ $cleanText($label) }}</th>
+                    <td>{!! $renderValue($label, $value) !!}</td>
                   </tr>
-                <?php } ?>
+                @endforeach
                 </tbody>
               </table>
-            <?php } else { ?>
+            @else
               <span class="text-muted">—</span>
-            <?php } ?>
+            @endif
           </div>
         </div>
       </div>
 
-      {{-- RIGHT --}}
       <div class="col-lg-6">
         <div class="mb-2 fw-semibold">Reply</div>
 
-        {{-- ✅ الآن سيظهر Toolbar لأن admin.js صار يحمل Summernote محلياً --}}
         <textarea
           id="replyEditor"
           name="provider_reply_html"

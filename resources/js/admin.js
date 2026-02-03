@@ -9,10 +9,11 @@ import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 import 'select2/dist/js/select2.full.min.js';
 
-// Summernote CSS (JS سنحمّله ديناميكيًا بعد تثبيت window.jQuery)
+// ✅ Summernote (CSS + JS محلي من npm)
 import 'summernote/dist/summernote-lite.css';
+import 'summernote/dist/summernote-lite.js';
 
-// DataTables (كما كان عندك)
+// DataTables
 import 'datatables.net-bs5';
 import 'datatables.net-responsive-bs5';
 import 'datatables.net-buttons-bs5';
@@ -20,15 +21,13 @@ import 'datatables.net-buttons/js/dataTables.buttons';
 import 'datatables.net-buttons/js/buttons.colVis';
 import 'datatables.net-buttons/js/buttons.html5';
 
-// =======================================================
 // Toast helper
-// =======================================================
 window.showToast = window.showToast || function (variant = 'success', message = 'Done', opts = {}) {
   const bg = {
     success: 'bg-success text-white',
-    danger: 'bg-danger text-white',
+    danger : 'bg-danger text-white',
     warning: 'bg-warning',
-    info: 'bg-primary text-white'
+    info   : 'bg-primary text-white'
   }[variant] || 'bg-dark text-white';
 
   const id = 't' + Date.now() + Math.random().toString(16).slice(2);
@@ -51,25 +50,7 @@ window.showToast = window.showToast || function (variant = 'success', message = 
   el.addEventListener('hidden.bs.toast', () => el.remove());
 };
 
-// =======================================================
-// Summernote loader (LOCAL)
-// =======================================================
-let __summernoteLoaded = false;
-
-async function ensureSummernote() {
-  if (__summernoteLoaded) return true;
-  try {
-    // مهم: تحميل JS بعد تثبيت window.jQuery
-    await import('summernote/dist/summernote-lite.js');
-    __summernoteLoaded = true;
-    return true;
-  } catch (e) {
-    console.error('Summernote load failed', e);
-    showToast('danger', 'Summernote failed to load (check npm build).', { title: 'Error', delay: 7000 });
-    return false;
-  }
-}
-
+// Select2 init
 function initSelect2(scopeEl, dropdownParentEl) {
   if (!$.fn || typeof $.fn.select2 !== 'function') return;
   const $root = $(scopeEl);
@@ -88,14 +69,10 @@ function initSelect2(scopeEl, dropdownParentEl) {
   });
 }
 
-// ✅ تفعيل Summernote داخل نطاق معيّن (المودال)
+// ✅ Summernote init
 async function initEditors(scopeEl) {
-  const ok = await ensureSummernote();
-  if (!ok) return;
-
   if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.summernote !== 'function') {
-    console.warn('Summernote not available on jQuery');
-    showToast('danger', 'Summernote not attached to jQuery.', { title: 'Error', delay: 7000 });
+    showToast('danger', 'Summernote not attached to jQuery (build issue).', { title: 'Error', delay: 7000 });
     return;
   }
 
@@ -105,7 +82,7 @@ async function initEditors(scopeEl) {
 
   window.jQuery(textareas).each(function () {
     const $t = window.jQuery(this);
-    if ($t.next('.note-editor').length) return; // already initialized
+    if ($t.next('.note-editor').length) return;
 
     const h = Number($t.attr('data-summernote-height') || 360);
 
@@ -122,15 +99,13 @@ async function initEditors(scopeEl) {
         ['insert', ['link', 'picture', 'table', 'hr']],
         ['view', ['codeview']]
       ],
-      fontSizes: ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32', '36', '48'],
+      fontSizes: ['8','9','10','11','12','14','16','18','20','24','28','32','36','48'],
       callbacks: {
-        // ✅ إدراج صورة مباشرة Base64 (بدون سيرفر)
+        // ✅ إدراج صورة Base64 مباشرة
         onImageUpload: function (files) {
           for (const f of files) {
             const reader = new FileReader();
-            reader.onload = (e) => {
-              $t.summernote('insertImage', e.target.result);
-            };
+            reader.onload = (e) => $t.summernote('insertImage', e.target.result);
             reader.readAsDataURL(f);
           }
         }
@@ -139,20 +114,13 @@ async function initEditors(scopeEl) {
   });
 }
 
-// =======================================================
-// Ajax modal loader
-// =======================================================
+// Ajax modal loader + ajax submit
 document.addEventListener('DOMContentLoaded', () => {
-  if (window.__bindOpenModalOnce__) return;
-  window.__bindOpenModalOnce__ = true;
-
-  const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  const token = document.querySelector('meta[name="csrf-token"]')?.content || window.CSRF_TOKEN || '';
   let MODAL_REQ_ID = 0;
 
   $(document).on('click', '.js-open-modal', async function (e) {
     e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
 
     const url = $(this).data('url') || $(this).attr('href');
     if (!url || url === '#') return;
@@ -176,20 +144,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       if (!res.ok) throw new Error('Failed to load modal');
       const html = await res.text();
-
       if (myReq !== MODAL_REQ_ID) return;
 
       $content.html(html);
 
-      // ✅ مهم: بعد حقن HTML فعّل select2 + summernote
       initSelect2($content[0], $modal[0]);
       await initEditors($content[0]);
 
-      // Ajax submit
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
         ev.preventDefault();
-        ev.stopPropagation();
-        ev.stopImmediatePropagation();
 
         const form = ev.currentTarget;
         const fd = new FormData(form);
@@ -222,6 +185,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const j = await res2.json().catch(async () => ({ ok: true, msg: await res2.text() }));
 
           bootstrap.Modal.getInstance($modal[0])?.hide();
+
           $('.dataTable').each(function () {
             try { $(this).DataTable()?.ajax?.reload(null, false); } catch (_) {}
           });
@@ -242,7 +206,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// cleanup backdrops (منع تكدس backdrop)
 document.addEventListener('hidden.bs.modal', function () {
   document.body.classList.remove('modal-open');
   document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
