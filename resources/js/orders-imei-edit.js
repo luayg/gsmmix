@@ -1,96 +1,115 @@
-import $ from 'jquery';
-window.$ = window.jQuery = $;
-
-import * as bootstrap from 'bootstrap';
+// resources/js/orders-imei-edit.js
 import { initModalEditors } from './modal-editors';
 
-document.addEventListener('DOMContentLoaded', () => {
-  const token =
-    document.querySelector('meta[name="csrf-token"]')?.content ||
-    window.CSRF_TOKEN ||
-    '';
+function getCsrf() {
+  return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+}
 
-  let REQ_ID = 0;
+function qs(sel, root = document) {
+  return root.querySelector(sel);
+}
 
-  // فتح Edit فقط عبر زر خاص
-  $(document).on('click', '.js-open-order-edit', async function (e) {
-    e.preventDefault();
+function qsa(sel, root = document) {
+  return Array.from(root.querySelectorAll(sel));
+}
 
-    const url = $(this).data('url') || $(this).attr('href');
-    if (!url || url === '#') return;
+async function openOrderEditModal(url) {
+  const modalEl = document.getElementById('orderEditModal');
+  if (!modalEl) return;
 
-    const myReq = ++REQ_ID;
+  const contentEl = modalEl.querySelector('.modal-content');
+  contentEl.innerHTML = `
+    <div class="modal-body py-5 text-center text-muted">
+      <div class="spinner-border" role="status" aria-hidden="true"></div>
+      <div class="mt-3">Loading…</div>
+    </div>
+  `;
 
-    const $modal = $('#orderEditModal');
-    const $content = $modal.find('.modal-content');
+  // Use bootstrap if available, otherwise fallback
+  const bs = window.bootstrap;
+  let modalInstance = null;
+  if (bs?.Modal) {
+    modalInstance = bs.Modal.getOrCreateInstance(modalEl);
+    modalInstance.show();
+  } else {
+    // minimal fallback
+    modalEl.classList.add('show');
+    modalEl.style.display = 'block';
+  }
 
-    $content.html(`
-      <div class="modal-body py-5 text-center text-muted">
-        <div class="spinner-border" role="status" aria-hidden="true"></div>
-        <div class="mt-3">Loading…</div>
-      </div>
-    `);
+  const res = await fetch(url, {
+    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+  });
 
-    const inst = bootstrap.Modal.getOrCreateInstance($modal[0]);
-    inst.show();
+  if (!res.ok) {
+    contentEl.innerHTML = `<div class="modal-body text-danger">Failed to load edit modal.</div>`;
+    return;
+  }
 
-    try {
-      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
-      if (!res.ok) throw new Error('Failed to load edit modal');
-      const html = await res.text();
-      if (myReq !== REQ_ID) return;
+  const html = await res.text();
+  contentEl.innerHTML = html;
 
-      $content.html(html);
+  // init summernote inside this modal only
+  await initModalEditors(contentEl);
 
-      // ✅ تفعيل Summernote داخل مودال edit فقط
-      await initModalEditors($content[0]);
+  // bind ajax submit (only inside this modal)
+  const form = contentEl.querySelector('form.js-ajax-form');
+  if (form) {
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
 
-      // Submit Ajax داخل edit modal (لو الفورم يحمل js-ajax-form)
-      $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
-        ev.preventDefault();
+      const btn = form.querySelector('[type="submit"]');
+      if (btn) btn.disabled = true;
 
-        const form = ev.currentTarget;
+      try {
         const fd = new FormData(form);
         const method = (form.method || 'POST').toUpperCase();
 
-        try {
-          const res2 = await fetch(form.action, {
-            method,
-            headers: {
-              'X-CSRF-TOKEN': token,
-              'Accept': 'application/json',
-              'X-Requested-With': 'XMLHttpRequest'
-            },
-            body: fd
-          });
+        const res2 = await fetch(form.action, {
+          method,
+          headers: {
+            'X-CSRF-TOKEN': getCsrf(),
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+          },
+          body: fd
+        });
 
-          if (res2.status === 422) {
-            const j = await res2.json().catch(() => ({}));
-            const msgs = Object.values(j.errors || {}).flat().join('\n');
-            alert(msgs || 'Validation error');
-            return;
-          }
+        if (btn) btn.disabled = false;
 
-          if (!res2.ok) {
-            const txt = await res2.text();
-            alert(txt || 'Failed to submit');
-            return;
-          }
-
-          inst.hide();
-          // لو عندك reload للجدول (اختياري)
-          // location.reload();
-
-        } catch (err) {
-          console.error(err);
-          alert('Network error');
+        if (res2.status === 422) {
+          const j = await res2.json().catch(() => ({}));
+          alert(Object.values(j.errors || {}).flat().join("\n") || 'Validation error');
+          return;
         }
-      });
 
-    } catch (err) {
-      console.error(err);
-      if (myReq !== REQ_ID) return;
-      $content.html(`<div class="modal-body text-danger">Failed to load modal content.</div>`);
-    }
-  });
+        if (!res2.ok) {
+          const t = await res2.text().catch(() => '');
+          alert(t || 'Failed to save');
+          return;
+        }
+
+        // close modal
+        if (modalInstance) modalInstance.hide();
+
+        // (optional) reload page to reflect status quickly
+        // location.reload();
+      } catch (e) {
+        if (btn) btn.disabled = false;
+        console.error(e);
+        alert('Network error');
+      }
+    });
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('.js-open-order-edit');
+  if (!a) return;
+
+  e.preventDefault();
+  const url = a.dataset.url || a.getAttribute('href');
+  if (!url) return;
+
+  openOrderEditModal(url);
 });

@@ -7,6 +7,7 @@
   $cleanText = function ($v) {
     $v = (string)$v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $v = str_replace(["✖","❌","✘"], '', $v);
     $v = str_replace(["\r\n", "\r"], "\n", $v);
     return trim($v);
   };
@@ -32,56 +33,18 @@
   }
   if (!is_array($resp)) $resp = [];
 
-  $items = (isset($resp['result_items']) && is_array($resp['result_items'])) ? $resp['result_items'] : [];
-  $img   = $resp['result_image'] ?? null;
-
-  $isSafeImg = function ($url) {
-    if (!is_string($url)) return false;
-    $u = trim($url);
-    return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
-  };
-
-  $renderValue = function ($label, $value) use ($cleanText) {
-    $label = strtolower($cleanText($label));
-    $val   = $cleanText($value);
-    $valL  = strtolower($val);
-
-    if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
-    if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
-
-    if (strpos($label, 'icloud') !== false) {
-      if (strpos($valL, 'lost') !== false)  return '<span class="badge bg-danger">'.e($val).'</span>';
-      if (strpos($valL, 'clean') !== false) return '<span class="badge bg-success">'.e($val).'</span>';
-      return '<span class="badge bg-secondary">'.e($val).'</span>';
-    }
-
-    if (in_array($valL, ['activated','unlocked','clean'], true)) return '<span class="badge bg-success">'.e($val).'</span>';
-    if (in_array($valL, ['expired'], true)) return '<span class="badge bg-danger">'.e($val).'</span>';
-    if (strpos($valL, 'lost') !== false) return '<span class="badge bg-danger">'.e($val).'</span>';
-
-    return e($val);
-  };
+  // Reply HTML (what we edit)
+  $providerReplyHtml = (string)($resp['provider_reply_html'] ?? '');
+  $providerReplyHtml = trim($providerReplyHtml);
 
   // Names
   $serviceName = $row?->service?->name ?? ($row->service_name ?? '—');
   $serviceName = $pickName($serviceName);
+
   $providerName = $row?->provider?->name ?? ($row->provider_name ?? '—');
   $providerName = $cleanText($providerName);
 
-  // Reply HTML: حاول تاخذ html جاهز، أو ابنِ جدول من result_items
-  $providerReplyHtml = $resp['provider_reply_html'] ?? '';
-  if (trim((string)$providerReplyHtml) === '' && !empty($items)) {
-    $html = '<table class="table table-sm table-striped table-bordered"><tbody>';
-    foreach ($items as $it) {
-      $label = is_array($it) ? ($it['label'] ?? '') : '';
-      $value = is_array($it) ? ($it['value'] ?? '') : '';
-      $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.$renderValue($label, $value).'</td></tr>';
-    }
-    $html .= '</tbody></table>';
-    $providerReplyHtml = $html;
-  }
-
-  // other fields
+  // fields
   $userEmail = $cleanText($row?->email ?? ($row->user_email ?? '—'));
   $device    = $cleanText($row?->device ?? ($row->imei ?? '—'));
   $remoteId  = $cleanText($row?->remote_id ?? '—');
@@ -92,9 +55,11 @@
 
   $apiOrder  = ($row?->api_order ?? false) ? 'Yes' : 'No';
 
-  // ✅ تصحيح mapping الأسعار (حسب مشكلتك الحالية)
-  $orderPrice = $row?->order_price; // سعر العميل
-  $apiCost    = $row?->price;       // تكلفة الـ API
+  // IMPORTANT: keep your original meaning:
+  // - Order price: customer price (price)
+  // - API processing price: provider cost (order_price)
+  $orderPrice = $row?->price;
+  $apiCost    = $row?->order_price;
   $profit     = $row?->profit;
 
   $fmt = function ($v) {
@@ -121,7 +86,7 @@
   <div class="modal-body" style="max-height: calc(100vh - 210px); overflow:auto;">
     <div class="row g-3">
 
-      {{-- LEFT --}}
+      {{-- Left: info table --}}
       <div class="col-lg-6">
         <div class="table-responsive">
           <table class="table table-bordered align-middle mb-0">
@@ -138,55 +103,24 @@
               <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
 
               <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
+
               <tr><th>API order ID</th><td>{{ $remoteId }}</td></tr>
               <tr><th>API name</th><td>{{ $providerName }}</td></tr>
               <tr><th>API processing price</th><td>{{ $fmt($apiCost) }}</td></tr>
             </tbody>
           </table>
         </div>
-
-        {{-- Result Preview (يبقى في اليسار فقط) --}}
-        <div class="mt-3">
-          <div class="fw-semibold mb-2">Result Preview</div>
-          <div class="border rounded p-2 bg-white">
-            @if (!empty($img) && $isSafeImg($img))
-              <div class="mb-2 text-center">
-                <img src="{{ $img }}" alt="Result image" style="max-width:260px;height:auto;" class="img-fluid rounded shadow-sm">
-              </div>
-            @endif
-
-            @if (is_array($items) && count($items))
-              <table class="table table-sm table-striped table-bordered mb-0">
-                <tbody>
-                @foreach ($items as $it)
-                  @php
-                    $label = is_array($it) ? ($it['label'] ?? '') : '';
-                    $value = is_array($it) ? ($it['value'] ?? '') : '';
-                  @endphp
-                  <tr>
-                    <th style="width:220px;">{{ $cleanText($label) }}</th>
-                    <td>{!! $renderValue($label, $value) !!}</td>
-                  </tr>
-                @endforeach
-                </tbody>
-              </table>
-            @else
-              <span class="text-muted">—</span>
-            @endif
-          </div>
-        </div>
       </div>
 
-      {{-- RIGHT --}}
+      {{-- Right: editor + status --}}
       <div class="col-lg-6">
         <div class="mb-2 fw-semibold">Reply</div>
 
-        {{-- ✅ فقط Editor (بدون Preview ولا صورة ولا fields إضافية) --}}
+        {{-- Summernote editor --}}
         <textarea
-          id="replyEditor"
           name="provider_reply_html"
           class="form-control"
-          rows="14"
+          rows="12"
           data-summernote="1"
           data-summernote-height="360"
         >{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
@@ -201,8 +135,8 @@
             <option value="cancelled"  @selected($curStatus==='cancelled')>Cancelled</option>
           </select>
         </div>
-      </div>
 
+      </div>
     </div>
   </div>
 
