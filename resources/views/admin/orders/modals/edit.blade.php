@@ -6,7 +6,7 @@
 
   // safe clean
   $cleanText = function ($v) {
-    $v = (string)$v;
+    $v = (string) $v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $v = str_replace(["✖","❌","✘"], '', $v);
     $v = str_replace(["\r\n", "\r"], "\n", $v);
@@ -20,7 +20,7 @@
       if ($s !== '' && isset($s[0]) && $s[0] === '{') {
         $j = json_decode($s, true);
         if (is_array($j)) {
-          $v = $j['en'] ?? $j['fallback'] ?? (is_array($j) ? reset($j) : $v) ?? $v;
+          $v = $j['en'] ?? $j['fallback'] ?? (reset($j) ?: $v);
         }
       }
     }
@@ -44,7 +44,7 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
-  // badges for values
+  // badge rules
   $renderValue = function ($label, $value) use ($cleanText) {
     $label = strtolower($cleanText($label));
     $val   = $cleanText($value);
@@ -67,27 +67,26 @@
   };
 
   // Names
-  $serviceName = $row?->service?->name ?? ($row->service_name ?? '—');
+  $serviceName = $row?->service?->name ?? ($row?->service_name ?? '—');
   $serviceName = $pickName($serviceName);
 
   $apiServiceName = $serviceName;
 
-  $providerName = $row?->provider?->name ?? ($row->provider_name ?? '—');
+  $providerName = $row?->provider?->name ?? ($row?->provider_name ?? '—');
   $providerName = $cleanText($providerName);
 
-  // Reply HTML (editable)
+  // Reply HTML (provider) - prefer saved html if exists
   $providerReplyHtml = $resp['provider_reply_html'] ?? '';
 
-  // generate Reply if empty
-  if (trim((string)$providerReplyHtml) === '') {
+  // generate reply if empty
+  if (trim((string) $providerReplyHtml) === '') {
+    // 1) if result_items exist => build table + image
     if (!empty($items)) {
       $html = '';
       if ($img && $isSafeImg($img)) {
-        $html .= '<div style="text-align:center;margin-bottom:10px;">'
-              .  '<img src="'.e($img).'" style="max-width:260px;height:auto;" />'
-              .  '</div>';
+        $html .= '<div class="mb-2 text-center"><img src="'.e($img).'" class="img-fluid rounded shadow-sm" style="max-width:260px;height:auto;"></div>';
       }
-      $html .= '<table class="table table-sm table-striped table-bordered"><tbody>';
+      $html .= '<table class="table table-sm table-striped table-bordered mb-0"><tbody>';
       foreach ($items as $it) {
         $label = is_array($it) ? ($it['label'] ?? '') : '';
         $value = is_array($it) ? ($it['value'] ?? '') : '';
@@ -96,6 +95,7 @@
       $html .= '</tbody></table>';
       $providerReplyHtml = $html;
     } else {
+      // 2) parse result_text lines "Key: Value" into table
       $txt = $cleanText($resp['result_text'] ?? '');
       $parsed = [];
       if ($txt !== '') {
@@ -104,10 +104,9 @@
           $line = trim($line);
           if ($line === '') continue;
           if (strpos($line, ':') !== false) {
-            $parts = explode(':', $line, 2);
-            $k = trim($parts[0] ?? '');
-            $v = trim($parts[1] ?? '');
-            if ($k !== '' && $v !== '') $parsed[] = ['label'=>$k,'value'=>$v];
+            [$k, $v] = array_pad(explode(':', $line, 2), 2, '');
+            $k = trim($k); $v = trim($v);
+            if ($k !== '' && $v !== '') $parsed[] = ['label' => $k, 'value' => $v];
           }
         }
       }
@@ -115,17 +114,16 @@
       if (count($parsed)) {
         $html = '';
         if ($img && $isSafeImg($img)) {
-          $html .= '<div style="text-align:center;margin-bottom:10px;">'
-                .  '<img src="'.e($img).'" style="max-width:260px;height:auto;" />'
-                .  '</div>';
+          $html .= '<div class="mb-2 text-center"><img src="'.e($img).'" class="img-fluid rounded shadow-sm" style="max-width:260px;height:auto;"></div>';
         }
-        $html .= '<table class="table table-sm table-striped table-bordered"><tbody>';
+        $html .= '<table class="table table-sm table-striped table-bordered mb-0"><tbody>';
         foreach ($parsed as $it) {
           $html .= '<tr><th style="width:220px;">'.e($cleanText($it['label'])).'</th><td>'.$renderValue($it['label'], $it['value']).'</td></tr>';
         }
         $html .= '</tbody></table>';
         $providerReplyHtml = $html;
       } else {
+        // 3) fallback message
         $msg = $cleanText($resp['message'] ?? '');
         $providerReplyHtml = $msg !== '' ? '<div>'.e($msg).'</div>' : '';
       }
@@ -133,8 +131,8 @@
   }
 
   // other fields
-  $userEmail = $cleanText($row?->email ?? ($row->user_email ?? '—'));
-  $device    = $cleanText($row?->device ?? ($row->imei ?? '—'));
+  $userEmail = $cleanText($row?->email ?? ($row?->user_email ?? '—'));
+  $device    = $cleanText($row?->device ?? ($row?->imei ?? '—'));
   $remoteId  = $cleanText($row?->remote_id ?? '—');
   $ip        = $cleanText($row?->ip ?? '—');
 
@@ -156,7 +154,7 @@
   $curStatus = $row?->status ?? 'waiting';
 @endphp
 
-<div class="modal-header" style="background:#f39c12; color:#fff;">
+<div class="modal-header" style="background:#f39c12;color:#fff;">
   <div class="d-flex align-items-center gap-2">
     <strong>Order #{{ $row?->id ?? '' }}</strong>
     <span class="opacity-75">|</span>
@@ -208,6 +206,7 @@
           </table>
         </div>
 
+        {{-- Result Preview --}}
         <div class="mt-3">
           <div class="fw-semibold mb-2">Result Preview</div>
           <div class="border rounded p-2 bg-white">
@@ -243,11 +242,12 @@
       <div class="col-lg-6">
         <div class="mb-2 fw-semibold">Reply</div>
 
-        {{-- ✅ Editable Summernote (يظهر Toolbar إذا jQuery/Summernote صحيحين) --}}
+        {{-- ✅ هذا هو محرر Summernote (المطلوب Toolbar + صورة + ألوان) --}}
         <textarea
           id="replyEditor"
           name="provider_reply_html"
           class="form-control"
+          rows="14"
           data-summernote="1"
           data-summernote-height="420"
         >{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
