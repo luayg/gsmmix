@@ -4,6 +4,7 @@
   $row = $row ?? ($order ?? null);
   $routePrefix = $routePrefix ?? 'admin.orders.imei';
 
+  // safe clean (بدون mbstring)
   $cleanText = function ($v) {
     $v = (string)$v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -12,19 +13,21 @@
     return trim($v);
   };
 
+  // decode json name + clean
   $pickName = function ($v) use ($cleanText) {
     if (is_string($v)) {
       $s = trim($v);
-      if ($s !== '' && $s[0] === '{') {
+      if ($s !== '' && isset($s[0]) && $s[0] === '{') {
         $j = json_decode($s, true);
         if (is_array($j)) {
-          $v = $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
+          $v = $j['en'] ?? $j['fallback'] ?? (is_array($j) ? reset($j) : $v) ?? $v;
         }
       }
     }
     return $cleanText($v);
   };
 
+  // response -> array
   $resp = $row?->response ?? null;
   if (is_string($resp)) {
     $decoded = json_decode($resp, true);
@@ -41,48 +44,41 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
-  // Badges
+  // simple badge rules (بدون mb)
   $renderValue = function ($label, $value) use ($cleanText) {
-    $labelL = mb_strtolower($cleanText($label));
-    $val    = $cleanText($value);
-    $valL   = mb_strtolower($val);
+    $label = strtolower($cleanText($label));
+    $val   = $cleanText($value);
+    $valL  = strtolower($val);
 
     if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
     if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
 
-    if (str_contains($labelL, 'find my') || str_contains($labelL, 'fmi')) {
-      if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
-      if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
-    }
-
-    if (str_contains($labelL, 'icloud')) {
-      if (str_contains($valL, 'lost'))  return '<span class="badge bg-danger">'.e($val).'</span>';
-      if (str_contains($valL, 'clean')) return '<span class="badge bg-success">'.e($val).'</span>';
+    if (strpos($label, 'icloud') !== false) {
+      if (strpos($valL, 'lost') !== false)  return '<span class="badge bg-danger">'.e($val).'</span>';
+      if (strpos($valL, 'clean') !== false) return '<span class="badge bg-success">'.e($val).'</span>';
       return '<span class="badge bg-secondary">'.e($val).'</span>';
     }
 
     if (in_array($valL, ['activated','unlocked','clean'], true)) return '<span class="badge bg-success">'.e($val).'</span>';
     if (in_array($valL, ['expired'], true)) return '<span class="badge bg-danger">'.e($val).'</span>';
-    if (str_contains($valL, 'lost')) return '<span class="badge bg-danger">'.e($val).'</span>';
+    if (strpos($valL, 'lost') !== false) return '<span class="badge bg-danger">'.e($val).'</span>';
 
     return e($val);
   };
 
+  // Names
   $serviceName = $row?->service?->name ?? ($row->service_name ?? '—');
   $serviceName = $pickName($serviceName);
-
   $apiServiceName = $serviceName;
 
   $providerName = $row?->provider?->name ?? ($row->provider_name ?? '—');
   $providerName = $cleanText($providerName);
 
-  // Reply HTML (حفظ إن وجد)
+  // Reply HTML
   $providerReplyHtml = $resp['provider_reply_html'] ?? '';
 
-  // ✅ لو غير موجود: نولّد Reply كـ Table ملوّن
+  // generate if empty
   if (trim((string)$providerReplyHtml) === '') {
-
-    // 1) إذا عندنا result_items استخدمها
     if (!empty($items)) {
       $html = '';
       if ($img && $isSafeImg($img)) {
@@ -100,22 +96,19 @@
       $providerReplyHtml = $html;
 
     } else {
-      // 2) إذا result_text موجود: حوّله لجدول بدل <pre>
-      $txt = $resp['result_text'] ?? '';
-      $txt = $cleanText($txt);
-
+      // parse result_text into table if possible
+      $txt = $cleanText($resp['result_text'] ?? '');
       $parsed = [];
       if ($txt !== '') {
         $lines = preg_split("/\n+/", $txt);
         foreach ($lines as $line) {
           $line = trim($line);
           if ($line === '') continue;
-          // key: value
-          if (str_contains($line, ':')) {
-            [$k, $v] = array_map('trim', explode(':', $line, 2));
-            if ($k !== '' && $v !== '') {
-              $parsed[] = ['label' => $k, 'value' => $v];
-            }
+          if (strpos($line, ':') !== false) {
+            $parts = explode(':', $line, 2);
+            $k = trim($parts[0] ?? '');
+            $v = trim($parts[1] ?? '');
+            if ($k !== '' && $v !== '') $parsed[] = ['label'=>$k,'value'=>$v];
           }
         }
       }
@@ -129,19 +122,18 @@
         }
         $html .= '<table class="table table-sm table-striped table-bordered"><tbody>';
         foreach ($parsed as $it) {
-          $label = $it['label'];
-          $value = $it['value'];
-          $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.$renderValue($label, $value).'</td></tr>';
+          $html .= '<tr><th style="width:220px;">'.e($cleanText($it['label'])).'</th><td>'.$renderValue($it['label'], $it['value']).'</td></tr>';
         }
         $html .= '</tbody></table>';
         $providerReplyHtml = $html;
       } else {
-        // 3) fallback message
-        $providerReplyHtml = !empty($resp['message']) ? '<div>'.e($cleanText($resp['message'])).'</div>' : '';
+        $msg = $cleanText($resp['message'] ?? '');
+        $providerReplyHtml = $msg !== '' ? '<div>'.e($msg).'</div>' : '';
       }
     }
   }
 
+  // other fields
   $userEmail = $cleanText($row?->email ?? ($row->user_email ?? '—'));
   $device    = $cleanText($row?->device ?? ($row->imei ?? '—'));
   $remoteId  = $cleanText($row?->remote_id ?? '—');
@@ -219,30 +211,29 @@
         <div class="mt-3">
           <div class="fw-semibold mb-2">Result Preview</div>
           <div class="border rounded p-2 bg-white">
-            @if(!empty($img) && $isSafeImg($img))
+            <?php if (!empty($img) && $isSafeImg($img)) { ?>
               <div class="mb-2 text-center">
                 <img src="{{ $img }}" alt="Result image" style="max-width:260px;height:auto;" class="img-fluid rounded shadow-sm">
               </div>
-            @endif
+            <?php } ?>
 
-            @if(is_array($items) && count($items))
+            <?php if (is_array($items) && count($items)) { ?>
               <table class="table table-sm table-striped table-bordered mb-0">
                 <tbody>
-                @foreach($items as $it)
-                  @php
-                    $label = is_array($it) ? ($it['label'] ?? '') : '';
-                    $value = is_array($it) ? ($it['value'] ?? '') : '';
-                  @endphp
+                <?php foreach ($items as $it) {
+                  $label = is_array($it) ? ($it['label'] ?? '') : '';
+                  $value = is_array($it) ? ($it['value'] ?? '') : '';
+                ?>
                   <tr>
-                    <th style="width:220px;">{{ $cleanText($label) }}</th>
-                    <td>{!! $renderValue($label, $value) !!}</td>
+                    <th style="width:220px;"><?php echo htmlspecialchars((string)$label, ENT_QUOTES, 'UTF-8'); ?></th>
+                    <td><?php echo $renderValue($label, $value); ?></td>
                   </tr>
-                @endforeach
+                <?php } ?>
                 </tbody>
               </table>
-            @else
+            <?php } else { ?>
               <span class="text-muted">—</span>
-            @endif
+            <?php } ?>
           </div>
         </div>
       </div>
@@ -250,13 +241,13 @@
       <div class="col-lg-6">
         <div class="mb-2 fw-semibold">Reply</div>
 
+        {{-- اتركه textarea الآن (حتى لا يسبب 500) --}}
+        {{-- بعد ما يرجع يشتغل 100% نفعّل toolbar مرة ثانية --}}
         <textarea
           id="replyEditor"
           name="provider_reply_html"
           class="form-control"
           rows="14"
-          data-summernote="1"
-          data-summernote-height="360"
         >{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
 
         <div class="mt-3">
