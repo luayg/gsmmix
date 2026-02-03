@@ -17,36 +17,17 @@ import 'datatables.net-buttons/js/dataTables.buttons';
 import 'datatables.net-buttons/js/buttons.colVis';
 import 'datatables.net-buttons/js/buttons.html5';
 
-import 'select2/dist/js/select2.full.min.js';
+import 'select2/dist/js/select2.full.min.js';   // full لتعمل AJAX/tags
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 
-/**
- * ⚠️ مهم جداً (سبب مشكلتك):
- * في ES Modules (Vite) الـ import ينفّذ قبل كود الملف،
- * لذلك Summernote قد لا يجد jQuery على window وقت التحميل → لن يظهر toolbar.
- * الحل: تحميل Summernote "ديناميكياً" بعد تجهيز window.$
- */
-let __summernoteLoader = null;
-async function ensureSummernoteLoaded() {
-  if (__summernoteLoader) return __summernoteLoader;
-
-  __summernoteLoader = (async () => {
-    // JS
-    await import('summernote/dist/summernote-lite.js');
-    // CSS
-    await import('summernote/dist/summernote-lite.css');
-  })();
-
-  return __summernoteLoader;
-}
 
 /* =================================================================
  * Helpers
  * ================================================================= */
 
+/** هل Select2 محمَّل على jQuery الحالي؟ */
 const hasSelect2 = () => !!$.fn && typeof $.fn.select2 === 'function';
-const hasSummernote = () => !!$.fn && typeof $.fn.summernote === 'function';
 
 /** تهيئة Select2 بأمان داخل جذر معيّن (مثل المودال) */
 function initSelect2Safe($root, $dropdownParent = null) {
@@ -69,7 +50,7 @@ function initSelect2Safe($root, $dropdownParent = null) {
   });
 }
 
-/** Toast helper */
+/** Toast helper (يظهر أعلى يمين الشاشة) */
 window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
   const bg = {
     success: 'bg-success text-white',
@@ -98,95 +79,21 @@ window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
   el.addEventListener('hidden.bs.toast', () => el.remove());
 };
 
-/* =================================================================
- * Summernote upload + init
- * ================================================================= */
 
-// ✅ UploadController يتوقع الاسم image
-async function uploadSummernoteImage(file, token) {
-  const fd = new FormData();
-  fd.append('image', file);
-
-  const res = await fetch('/admin/uploads/summernote-image', {
-    method: 'POST',
-    headers: {
-      'X-CSRF-TOKEN': token,
-      'X-Requested-With': 'XMLHttpRequest',
-      'Accept': 'application/json'
-    },
-    body: fd
-  });
-
-  if (!res.ok) throw new Error(await res.text());
-  const j = await res.json();
-  if (!j?.url) throw new Error('Invalid upload response');
-  return j.url;
-}
-
-async function initSummernoteSafe($root, token) {
-  // حمّل Summernote بعد تجهيز window.$
-  await ensureSummernoteLoaded();
-
-  if (!hasSummernote()) {
-    console.warn('Summernote not attached to jQuery (toolbar will not show).');
-    return;
-  }
-
-  const $areas = $root.find('textarea[data-summernote="1"]');
-  if (!$areas.length) return;
-
-  $areas.each(function () {
-    const $t = $(this);
-
-    // لو تم تفعيله سابقاً
-    try {
-      if ($t.next('.note-editor').length) $t.summernote('destroy');
-    } catch (_) {}
-
-    const h = Number($t.attr('data-summernote-height') || 420);
-
-    $t.summernote({
-      height: h,
-      // نفس شكل التولبار تقريباً مثل المثال
-      toolbar: [
-        ['style', ['style']],
-        ['font', ['fontname', 'fontsize', 'bold', 'italic', 'underline', 'strikethrough', 'clear']],
-        ['color', ['color']],
-        ['para', ['ul', 'ol', 'paragraph']],
-        ['table', ['table']],
-        ['insert', ['link', 'picture']],
-        ['view', ['codeview']]
-      ],
-      fontNames: ['Arial', 'Lato', 'Tahoma', 'Times New Roman', 'Courier New', 'Verdana'],
-      fontSizes: ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32'],
-      callbacks: {
-        onImageUpload: async function (files) {
-          for (const f of files) {
-            try {
-              const url = await uploadSummernoteImage(f, token);
-              $t.summernote('insertImage', url);
-            } catch (e) {
-              console.error(e);
-              window.showToast?.('danger', 'Image upload failed', { title: 'Error', delay: 5000 });
-            }
-          }
-        }
-      }
-    });
-  });
-}
 
 /* =================================================================
  * Ajax Modal Loader (مرة واحدة للموقع) - FIX double-binding
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
+  // امنع إعادة الربط لو سبق الربط
   if (window.__bindOpenModalOnce__) return;
   window.__bindOpenModalOnce__ = true;
 
   const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
-  let MODAL_REQ_ID = 0;
+  let MODAL_REQ_ID = 0; // يزيد مع كل نقره
 
   $(document).on('click', '.js-open-modal', async function (e) {
+    // امنع أي مستمعين/تصرّفات أخرى
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -194,11 +101,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = $(this).data('url') || $(this).attr('href');
     if (!url || url === '#') return;
 
+    // عرّف رقم الطلب الحالي
     const myReq = ++MODAL_REQ_ID;
 
     const $modal   = $('#ajaxModal');
     const $content = $modal.find('.modal-content');
 
+    // شاشة انتظار
     $content.html(`
       <div class="modal-body py-5 text-center text-muted">
         <div class="spinner-border" role="status" aria-hidden="true"></div>
@@ -214,15 +123,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('Failed to load modal');
       const html = await res.text();
 
+      // لو جاء ردّ قديم، تجاهله
       if (myReq !== MODAL_REQ_ID) return;
 
       $content.html(html);
 
       // init select2 داخل المودال لو موجود
-      initSelect2Safe($content, $modal);
-
-      // ✅ فعل Summernote بعد تحميل المودال (سيُظهر toolbar)
-      await initSummernoteSafe($content, token);
+      if (typeof initSelect2Safe === 'function') initSelect2Safe($content, $modal);
 
       // إرسال Ajax للنماذج داخل المودال
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
@@ -274,6 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } catch (err) {
       console.error(err);
+      // لو ردّ قديم تجاهله
       if (myReq !== MODAL_REQ_ID) return;
       $content.html(`<div class="modal-body text-danger">Failed to load modal content.</div>`);
       showToast?.('danger', 'Failed to load modal content', { title: 'Error' });
@@ -281,10 +189,12 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+
 /* =================================================================
  * Lazy-load لسكربتات الصفحات
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', async () => {
+  // Users
   if (document.getElementById('usersPage')) {
     await import('./pages/users-index.js');
     return;
@@ -297,17 +207,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     await import('./pages/roles.js');
     return;
   }
-  if (document.getElementById('permsPage')) {
+  if (document.getElementById('permsPage')) { // permissions
     await import('./pages/permissions.js');
     return;
   }
-  if (document.querySelector('.service-create-form')) {
-    import('./pages/service-custom-fields.js');
-  }
+  // Service create / edit
+if (document.querySelector('.service-create-form')) {
+  import('./pages/service-custom-fields.js');
+}
+
 });
 
+
 /* =================================================================
- * سلوك السايدبار على الموبايل
+ * سلوك السايدبار على الموبايل (زر الفتح/الإغلاق + الخلفية)
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
   const sidebar  = document.querySelector('.admin-sidebar');
@@ -334,6 +247,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeSidebar(); });
 });
 
+
 /* =================================================================
  * زر إظهار/إخفاء كلمة المرور داخل input-group
  * ================================================================= */
@@ -344,6 +258,7 @@ document.addEventListener('click', (e) => {
   if (!input) return;
   input.type = input.type === 'password' ? 'text' : 'password';
 });
+
 
 /* =================================================================
  * موضع التوست داخل content-wrapper
@@ -364,11 +279,13 @@ function positionToastStack() {
 document.addEventListener('DOMContentLoaded', positionToastStack);
 window.addEventListener('resize', positionToastStack);
 
+// لو عندك زر إظهار/إخفاء السايدبار، أعد التموضع بعد الأنيميشن
 const btnRepos = document.getElementById('btnToggleSidebar');
 if (btnRepos) {
   btnRepos.addEventListener('click', () => {
-    setTimeout(positionToastStack, 250);
+    setTimeout(positionToastStack, 250); // زمن انتقال الـsidebar في CSS
   });
 }
 
+// في حال تشغيل التوستر من الدالة العامة، أعد التموضع قبل إظهاره
 window.addEventListener('show-toast-reposition', positionToastStack);

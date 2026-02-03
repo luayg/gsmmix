@@ -9,97 +9,93 @@ use Illuminate\Support\Facades\DB;
 class ImeiOrdersController extends Controller
 {
     /**
-     * صفحة القائمة (إن كانت موجودة عندك سابقاً اتركها كما هي)
-     * هذا Stub بسيط حتى لا يكسر المشروع إذا كان يعتمد عليها.
+     * صفحة IMEI Orders
      */
     public function index()
     {
-        return view('admin.orders.imei.index');
+        // مهم جداً: هذا المتغير يُستخدم داخل resources/views/admin/orders/_index.blade.php
+        // إذا لم يُمرّر سيظهر خطأ Undefined variable $routePrefix
+        $title = 'IMEI Orders';
+        $routePrefix = 'admin.orders.imei';
+
+        return view('admin.orders.imei.index', compact('title', 'routePrefix'));
     }
 
     /**
-     * فتح مودال Edit (AJAX)
-     * IMPORTANT: هذا هو الذي كان يعطيك 500.
+     * Modal: Create
+     */
+    public function modalCreate()
+    {
+        // إن كان عندك create modal مختلف اتركه كما هو
+        return view('admin.orders.modals.create');
+    }
+
+    /**
+     * Modal: View
+     */
+    public function modalView($id)
+    {
+        $row = $this->getOrderRow($id);
+        abort_if(!$row, 404);
+
+        return view('admin.orders.modals.view', compact('row'));
+    }
+
+    /**
+     * Modal: Edit
      */
     public function modalEdit($id)
     {
-        // غيّر اسم الجدول لو جدولك مختلف
-        $order = DB::table('orders')->where('id', $id)->first();
+        $order = $this->getOrderRow($id);
+        abort_if(!$order, 404);
 
-        if (!$order) {
-            abort(404, 'Order not found');
-        }
-
-        // حاول قراءة result_items (لو مخزن JSON)
-        $resultItems = [];
-        if (!empty($order->result_items)) {
-            $decoded = json_decode($order->result_items, true);
-            if (is_array($decoded)) $resultItems = $decoded;
-        }
-
-        // صورة من داخل result_items إن وجدت
-        $imageUrl = null;
-        foreach ($resultItems as $it) {
-            if (!is_array($it)) continue;
-            if (($it['type'] ?? '') === 'image' && !empty($it['value'])) {
-                $imageUrl = $it['value'];
-                break;
-            }
-            if (!empty($it['image'])) {
-                $imageUrl = $it['image'];
-                break;
-            }
-        }
-
-        // Provider reply: خزنها عندك غالباً في reply أو provider_reply
-        // سنستخدم reply كـ editable HTML
-        $replyHtml = $order->reply ?? '';
-
-        // لو الرد جاي JSON (labels/values) نحوله HTML بسيط
-        $maybeJson = json_decode($replyHtml, true);
-        if (is_array($maybeJson)) {
-            $tmp = '';
-            foreach ($maybeJson as $row) {
-                if (!is_array($row)) continue;
-                $label = $row['label'] ?? '';
-                $value = $row['value'] ?? '';
-                if ($label === '' && $value === '') continue;
-                $tmp .= '<div><strong>'.e($label).'</strong>: '.e($value).'</div>';
-            }
-            if ($tmp !== '') $replyHtml = $tmp;
-        }
-
-        return view('admin.orders.modals.edit', [
-            'order'      => $order,
-            'resultItems'=> $resultItems,
-            'imageUrl'   => $imageUrl,
-            'replyHtml'  => $replyHtml,
-        ]);
+        return view('admin.orders.modals.edit', compact('order'));
     }
 
     /**
-     * تحديث الطلب من مودال Edit
-     * route: POST /admin/orders/imei/{id}
+     * Update order from Edit modal
      */
     public function update(Request $request, $id)
     {
-        // غيّر اسم الجدول لو مختلف
-        $order = DB::table('orders')->where('id', $id)->first();
-        if (!$order) {
-            return response()->json(['ok' => false, 'msg' => 'Order not found'], 404);
-        }
+        $order = DB::table('imei_orders')->where('id', (int)$id)->first();
+        abort_if(!$order, 404);
 
-        $status   = $request->input('status');
-        $comments = $request->input('comments');
-        $reply    = $request->input('reply'); // HTML من summernote
-
-        DB::table('orders')->where('id', $id)->update([
-            'status'     => $status,
-            'comments'   => $comments,
-            'reply'      => $reply,
-            'updated_at' => now(),
+        $data = $request->validate([
+            'status'         => ['nullable', 'string', 'max:50'],
+            'comments'       => ['nullable', 'string'],
+            // هذا هو "Provider reply (editable)" (HTML)
+            'provider_reply' => ['nullable', 'string'],
         ]);
 
+        // mapping للحقول الصحيحة في جدول imei_orders
+        DB::table('imei_orders')
+            ->where('id', (int)$id)
+            ->update([
+                'status'     => $data['status'] ?? $order->status,
+                'comments'   => $data['comments'] ?? $order->comments,
+                'reply_text' => $data['provider_reply'] ?? $order->reply_text,
+                'updated_at' => now(),
+            ]);
+
         return response()->json(['ok' => true, 'msg' => 'Saved successfully']);
+    }
+
+    /**
+     * Helper: جلب الطلب + أسماء الخدمة/المزوّد + تكلفة المعالجة
+     * يعتمد على الجداول الموجودة في SQL: imei_orders, imei_services, api_providers
+     */
+    private function getOrderRow($id)
+    {
+        return DB::table('imei_orders as o')
+            ->leftJoin('imei_services as s', 's.id', '=', 'o.service_id')
+            ->leftJoin('api_providers as p', 'p.id', '=', 'o.supplier_id')
+            ->select([
+                'o.*',
+                's.name as service_name',
+                's.cost as api_processing_price',
+                'p.name as provider_name',
+            ])
+            ->where('o.id', (int)$id)
+            ->first();
     }
 }
