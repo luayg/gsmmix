@@ -1,226 +1,215 @@
-{{-- resources/views/admin/orders/modals/edit.blade.php --}}
-
-@php
-    // اجعل الصفحة “تتحمل” أي شكل بيانات حتى لا تكسر المودال وتسبب 500
-    $orderId     = $order->id ?? null;
-    $serviceName = $order->service_name ?? ($order->service->name ?? '—');
-    $userEmail   = $order->user_email ?? ($order->user->email ?? '—');
-    $device      = $order->device ?? $order->imei ?? '—';
-    $provider    = $order->provider ?? ($order->api_provider ?? '—');
-
-    $apiOrderId  = $order->remote_id ?? $order->api_order_id ?? '—';
-    $orderIp     = $order->order_ip ?? $order->ip ?? '—';
-
-    $orderPrice  = $order->price ?? $order->order_price ?? null;
-    $apiCost     = $order->cost ?? $order->api_processing_price ?? null;
-    $profit      = $order->profit ?? null;
-
-    $statusVal   = $order->status ?? 'waiting';
-
-    // reply html (المفروض هذا اللي تبي تعدله داخل الـ editor)
-    $replyHtml   = $order->reply ?? $order->reply_html ?? '';
-
-    // result preview items (قد تكون array أو json)
-    $resultItems = $order->result_items ?? $order->result ?? $order->result_json ?? null;
-    if (is_string($resultItems)) {
-        $tmp = json_decode($resultItems, true);
-        $resultItems = is_array($tmp) ? $tmp : [];
-    }
-    if (!is_array($resultItems)) $resultItems = [];
-
-    // Image URL داخل النتيجة (ممكن تكون محفوظة ضمن resultItems أو حقل مستقل)
-    $resultImage = $order->result_image ?? $order->image_url ?? null;
-    if (!$resultImage) {
-        foreach ($resultItems as $it) {
-            if (!is_array($it)) continue;
-            $lbl = strtolower((string)($it['label'] ?? ''));
-            if (in_array($lbl, ['image','photo','picture','device image','device photo','result image'], true)) {
-                $resultImage = $it['value'] ?? null;
-                break;
-            }
-        }
-    }
-
-    // خيارات الحالة (عدّلها إذا عندك statuses جاهزة من الكنترولر)
-    $statuses = $statuses ?? [
-        'success'  => 'Success',
-        'waiting'  => 'Waiting',
-        'rejected' => 'Rejected',
-        'failed'   => 'Failed',
-    ];
-@endphp
-
 <div class="modal-header">
-    <h5 class="modal-title">Edit Order #{{ $orderId ?? '' }}</h5>
+    <h5 class="modal-title">Edit Order #{{ $order->id ?? '' }}</h5>
     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
-<form class="js-ajax-form" method="POST" action="{{ $orderId ? route('admin.orders.imei.update', $orderId) : '#' }}">
+<style>
+  /* يخلي المودال قابل للتمرير حتى تشوف Result Preview كامل */
+  #ajaxModal .modal-dialog { max-width: 1200px; }
+  #ajaxModal .modal-body{
+    max-height: calc(100vh - 180px);
+    overflow-y: auto;
+  }
+  .reply-preview-box{
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 12px;
+    background: #fff;
+  }
+  .result-preview-card{
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 12px;
+    background: #fff;
+  }
+  .result-preview-image{
+    max-height: 320px; /* تكبير الصورة */
+    width: auto;
+    max-width: 100%;
+    border-radius: 12px;
+    box-shadow: 0 8px 18px rgba(0,0,0,.12);
+  }
+  /* تحسين جدول النتائج */
+  .mini-table td, .mini-table th { padding: 6px 10px; }
+  .mini-table th { width: 260px; background: #f8f9fa; }
+</style>
+
+<form class="js-ajax-form" method="POST" action="{{ route('admin.orders.imei.update', $order->id) }}">
     @csrf
 
-    <div class="modal-body" style="max-height:70vh; overflow:auto;">
-
-        {{-- TOP: order info + reply editor --}}
+    <div class="modal-body">
         <div class="row g-3">
-            <div class="col-lg-5">
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered align-middle mb-0">
-                        <tbody>
-                            <tr>
-                                <th style="width:180px;">Service</th>
-                                <td>{{ $serviceName }}</td>
-                            </tr>
-                            <tr>
-                                <th>User</th>
-                                <td>{{ $userEmail }}</td>
-                            </tr>
-                            <tr>
-                                <th>Device</th>
-                                <td>{{ $device }}</td>
-                            </tr>
-                            <tr>
-                                <th>Provider</th>
-                                <td>{{ $provider }}</td>
-                            </tr>
-                            <tr>
-                                <th>API order ID</th>
-                                <td>{{ $apiOrderId }}</td>
-                            </tr>
-                            <tr>
-                                <th>Order IP</th>
-                                <td>{{ $orderIp }}</td>
-                            </tr>
-                            <tr>
-                                <th>Order price</th>
-                                <td>
-                                    {{ is_null($orderPrice) ? '—' : number_format((float)$orderPrice, 2) . ' USD' }}
-                                </td>
-                            </tr>
-                            <tr>
-                                <th>API processing price</th>
-                                <td>
-                                    {{ is_null($apiCost) ? '—' : number_format((float)$apiCost, 2) . ' USD' }}
-                                </td>
-                            </tr>
-                            <tr>
-                                <th>Profit</th>
-                                <td>
-                                    {{ is_null($profit) ? '—' : number_format((float)$profit, 2) . ' USD' }}
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
 
-                <div class="row g-2 mt-3">
+            {{-- LEFT: Order details --}}
+            <div class="col-md-6">
+                <table class="table table-bordered align-middle mb-2">
+                    <tbody>
+                        <tr><th style="width:180px">Service</th><td>{{ $order->service ?? '—' }}</td></tr>
+                        <tr><th>User</th><td>{{ $order->user ?? $order->email ?? '—' }}</td></tr>
+                        <tr><th>Device</th><td>{{ $order->device ?? $order->imei ?? '—' }}</td></tr>
+                        <tr><th>Provider</th><td>{{ $order->provider ?? '—' }}</td></tr>
+                        <tr><th>API order ID</th><td>{{ $order->remote_id ?? $order->api_order_id ?? '—' }}</td></tr>
+                        <tr><th>Order IP</th><td>{{ $order->order_ip ?? '—' }}</td></tr>
+                        <tr><th>Order price</th><td>{{ $order->price ?? $order->order_price ?? '—' }}</td></tr>
+                        <tr><th>API processing price</th><td>{{ $order->cost ?? $order->api_processing_price ?? '—' }}</td></tr>
+                        <tr><th>Profit</th><td>{{ $order->profit ?? '—' }}</td></tr>
+                    </tbody>
+                </table>
+
+                <div class="row g-2 mb-2">
                     <div class="col-md-6">
                         <label class="form-label mb-1">Status</label>
-                        <select name="status" class="form-select form-select-sm">
-                            @foreach($statuses as $k => $v)
-                                <option value="{{ $k }}" {{ (string)$statusVal === (string)$k ? 'selected' : '' }}>
-                                    {{ $v }}
-                                </option>
-                            @endforeach
+                        <select name="status" class="form-select">
+                            @php $st = $order->status ?? 'waiting'; @endphp
+                            <option value="success"  {{ $st=='success' ? 'selected' : '' }}>Success</option>
+                            <option value="rejected" {{ $st=='rejected' ? 'selected' : '' }}>Rejected</option>
+                            <option value="waiting"  {{ $st=='waiting' ? 'selected' : '' }}>Waiting</option>
                         </select>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label mb-1">Comments</label>
-                        <input type="text" name="comments" class="form-control form-control-sm"
-                               value="{{ old('comments', $order->comments ?? '') }}">
+                        <input type="text" name="comments" class="form-control" value="{{ $order->comments ?? '' }}">
                     </div>
                 </div>
 
+                {{-- Result Preview (غير قابل للتعديل) --}}
+                <div class="result-preview-card">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>Result (Preview)</strong>
+                        <small class="text-muted">Auto-rendered</small>
+                    </div>
+
+                    @if(!empty($imageUrl))
+                        <div class="text-center mb-3">
+                            <img class="result-preview-image" src="{{ $imageUrl }}" alt="Result Image">
+                        </div>
+                    @endif
+
+                    <table class="table table-bordered mini-table mb-0">
+                        <tbody>
+                        @if(!empty($resultItems))
+                            @foreach($resultItems as $it)
+                                @if(is_array($it))
+                                    @php
+                                        $label = $it['label'] ?? $it['key'] ?? '';
+                                        $value = $it['value'] ?? $it['val'] ?? '';
+                                        $type  = $it['type'] ?? '';
+                                        if ($type === 'image') continue;
+                                    @endphp
+                                    @if($label !== '')
+                                        <tr>
+                                            <th>{{ $label }}</th>
+                                            <td>{!! e($value) !!}</td>
+                                        </tr>
+                                    @endif
+                                @endif
+                            @endforeach
+                        @else
+                            <tr><td class="text-muted">—</td></tr>
+                        @endif
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
-            <div class="col-lg-7">
-                <div class="border rounded p-2">
-                    <div class="d-flex align-items-center justify-content-between">
-                        <div class="fw-semibold">Provider reply (editable)</div>
-                        <small class="text-muted">Save بعد التعديل</small>
+            {{-- RIGHT: Provider reply editable --}}
+            <div class="col-md-6">
+                <div class="reply-preview-box">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong>Provider reply (editable)</strong>
+                        <small class="text-muted">بعد التعديل اضغط Save</small>
                     </div>
 
-                    {{-- IMPORTANT:
-                         هذا textarea لازم يتفعل عليه Summernote من admin.js (data-summernote="1")
-                         إذا ما تفعّل، سيظهر HTML كنص.
-                    --}}
+                    {{-- ✅ هذا هو المهم: textarea تتحول لـ Summernote --}}
                     <textarea
+                        id="replyEditor"
                         name="reply"
-                        class="form-control form-control-sm mt-2"
                         data-summernote="1"
-                        data-summernote-height="260"
-                    >{{ old('reply', $replyHtml) }}</textarea>
+                        data-summernote-height="420"
+                        class="form-control"
+                    >{!! $replyHtml ?? '' !!}</textarea>
 
-                    {{-- Preview نفس شكل Result Preview (يعرض HTML فعلياً) --}}
-                    <div class="mt-3">
-                        <div class="fw-semibold mb-1">Reply Preview</div>
-                        <div class="border rounded bg-light p-2" style="min-height:120px;">
-                            {!! $replyHtml ?: '<span class="text-muted">—</span>' !!}
-                        </div>
-                    </div>
-
-                    {{-- Raw JSON (advanced) --}}
-                    <details class="mt-2">
+                    <details class="mt-3">
                         <summary class="text-muted">Raw response JSON (advanced)</summary>
-                        <pre class="small mb-0" style="white-space:pre-wrap;">{{ $order->last_response ?? $order->raw_response ?? '—' }}</pre>
+                        <pre class="mt-2 mb-0" style="white-space:pre-wrap;max-height:260px;overflow:auto;border:1px solid #eee;padding:10px;border-radius:8px;">
+{{ $order->last_response ?? $order->raw_response ?? $order->provider_reply ?? '—' }}
+                        </pre>
                     </details>
                 </div>
             </div>
+
         </div>
-
-        {{-- RESULT PREVIEW --}}
-        <div class="mt-4">
-            <div class="d-flex align-items-center justify-content-between">
-                <div class="fw-semibold">Result (Preview)</div>
-                <small class="text-muted">Auto-rendered</small>
-            </div>
-
-            <div class="border rounded p-3 mt-2">
-
-                @if($resultImage)
-                    <div class="text-center mb-3">
-                        <img src="{{ $resultImage }}"
-                             alt="Result image"
-                             style="max-width:260px; width:100%; height:auto; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,.12);">
-                    </div>
-                @endif
-
-                @if(count($resultItems))
-                    <div class="table-responsive">
-                        <table class="table table-sm table-bordered align-middle mb-0">
-                            <tbody>
-                            @foreach($resultItems as $it)
-                                @php
-                                    $label = is_array($it) ? ($it['label'] ?? '') : '';
-                                    $value = is_array($it) ? ($it['value'] ?? '') : '';
-                                    $badge = is_array($it) ? ($it['badge'] ?? null) : null; // اختياري
-                                @endphp
-                                <tr>
-                                    <th style="width:220px;">{{ $label }}</th>
-                                    <td>
-                                        @if(is_array($badge))
-                                            <span class="badge {{ $badge['class'] ?? 'bg-secondary' }}">
-                                                {{ $badge['text'] ?? $value }}
-                                            </span>
-                                        @else
-                                            {!! e($value) !!}
-                                        @endif
-                                    </td>
-                                </tr>
-                            @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @else
-                    <div class="text-muted">—</div>
-                @endif
-
-            </div>
-        </div>
-
     </div>
 
     <div class="modal-footer">
-        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
-        <button type="submit" class="btn btn-success btn-sm">Save</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="submit" class="btn btn-success">Save</button>
     </div>
 </form>
+
+<script>
+(function () {
+    // ✅ ضمان تفعيل Summernote داخل المودال حتى لو init العام تعثر
+    try {
+        if (!window.jQuery || !jQuery.fn || typeof jQuery.fn.summernote !== 'function') {
+            console.warn('Summernote is not available on this page.');
+            return;
+        }
+
+        var $t = jQuery('#ajaxModal .modal-content').find('#replyEditor');
+
+        if (!$t.length) return;
+
+        // destroy لو كان متفعل قبل
+        try { if ($t.next('.note-editor').length) $t.summernote('destroy'); } catch(e){}
+
+        var token = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+        $t.summernote({
+            height: 420,
+            toolbar: [
+                ['style', ['style']],
+                ['font', ['fontname', 'fontsize', 'bold', 'italic', 'underline', 'strikethrough', 'clear']],
+                ['color', ['color']],
+                ['para', ['ul', 'ol', 'paragraph']],
+                ['table', ['table']],
+                ['insert', ['link', 'picture']],
+                ['view', ['codeview']]
+            ],
+            fontNames: ['Arial', 'Lato', 'Tahoma', 'Times New Roman', 'Courier New', 'Verdana'],
+            fontSizes: ['8', '9', '10', '11', '12', '14', '16', '18', '20', '24', '28', '32'],
+            callbacks: {
+                onImageUpload: function(files) {
+                    for (var i=0; i<files.length; i++) {
+                        (function(file){
+                            var fd = new FormData();
+                            fd.append('image', file);
+
+                            fetch('/admin/uploads/summernote-image', {
+                                method: 'POST',
+                                headers: {
+                                    'X-CSRF-TOKEN': token,
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                    'Accept': 'application/json'
+                                },
+                                body: fd
+                            }).then(function(res){
+                                if(!res.ok) return res.text().then(function(t){ throw new Error(t); });
+                                return res.json();
+                            }).then(function(j){
+                                if (j && j.url) $t.summernote('insertImage', j.url);
+                            }).catch(function(err){
+                                console.error(err);
+                                if (window.showToast) window.showToast('danger', 'Image upload failed', { title: 'Error', delay: 5000 });
+                            });
+                        })(files[i]);
+                    }
+                }
+            }
+        });
+
+    } catch (e) {
+        console.error(e);
+    }
+})();
+</script>
