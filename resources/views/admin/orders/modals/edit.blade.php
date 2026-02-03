@@ -7,7 +7,6 @@
   $cleanText = function ($v) {
     $v = (string)$v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $v = str_replace(["✖","❌","✘"], '', $v);
     $v = str_replace(["\r\n", "\r"], "\n", $v);
     return trim($v);
   };
@@ -25,6 +24,7 @@
     return $cleanText($v);
   };
 
+  // response -> array
   $resp = $row?->response ?? null;
   if (is_string($resp)) {
     $decoded = json_decode($resp, true);
@@ -62,37 +62,26 @@
     return e($val);
   };
 
+  // Names
   $serviceName = $row?->service?->name ?? ($row->service_name ?? '—');
   $serviceName = $pickName($serviceName);
-  $apiServiceName = $serviceName;
-
   $providerName = $row?->provider?->name ?? ($row->provider_name ?? '—');
   $providerName = $cleanText($providerName);
 
-  // build providerReplyHtml (table) if empty
+  // Reply HTML: حاول تاخذ html جاهز، أو ابنِ جدول من result_items
   $providerReplyHtml = $resp['provider_reply_html'] ?? '';
-  if (trim((string)$providerReplyHtml) === '') {
-    if (!empty($items)) {
-      $html = '';
-      if ($img && $isSafeImg($img)) {
-        $html .= '<div style="text-align:center;margin-bottom:10px;">'
-              .  '<img src="'.e($img).'" style="max-width:260px;height:auto;" />'
-              .  '</div>';
-      }
-      $html .= '<table class="table table-sm table-striped table-bordered"><tbody>';
-      foreach ($items as $it) {
-        $label = is_array($it) ? ($it['label'] ?? '') : '';
-        $value = is_array($it) ? ($it['value'] ?? '') : '';
-        $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.$renderValue($label, $value).'</td></tr>';
-      }
-      $html .= '</tbody></table>';
-      $providerReplyHtml = $html;
-    } else {
-      $msg = $cleanText($resp['message'] ?? '');
-      $providerReplyHtml = $msg !== '' ? '<div>'.e($msg).'</div>' : '';
+  if (trim((string)$providerReplyHtml) === '' && !empty($items)) {
+    $html = '<table class="table table-sm table-striped table-bordered"><tbody>';
+    foreach ($items as $it) {
+      $label = is_array($it) ? ($it['label'] ?? '') : '';
+      $value = is_array($it) ? ($it['value'] ?? '') : '';
+      $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.$renderValue($label, $value).'</td></tr>';
     }
+    $html .= '</tbody></table>';
+    $providerReplyHtml = $html;
   }
 
+  // other fields
   $userEmail = $cleanText($row?->email ?? ($row->user_email ?? '—'));
   $device    = $cleanText($row?->device ?? ($row->imei ?? '—'));
   $remoteId  = $cleanText($row?->remote_id ?? '—');
@@ -103,8 +92,9 @@
 
   $apiOrder  = ($row?->api_order ?? false) ? 'Yes' : 'No';
 
-  $orderPrice = $row?->price;
-  $apiCost    = $row?->order_price;
+  // ✅ تصحيح mapping الأسعار (حسب مشكلتك الحالية)
+  $orderPrice = $row?->order_price; // سعر العميل
+  $apiCost    = $row?->price;       // تكلفة الـ API
   $profit     = $row?->profit;
 
   $fmt = function ($v) {
@@ -125,7 +115,7 @@
   <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
-<form class="js-order-edit-form" method="POST" action="{{ route($routePrefix.'.update', $row?->id ?? 0) }}">
+<form class="js-ajax-form" method="POST" action="{{ route($routePrefix.'.update', $row?->id ?? 0) }}">
   @csrf
 
   <div class="modal-body" style="max-height: calc(100vh - 210px); overflow:auto;">
@@ -142,24 +132,56 @@
               <tr><th>Order date</th><td>{{ $createdAt }}</td></tr>
               <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
               <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>
+
               <tr><th>Order price</th><td>{{ $fmt($orderPrice) }}</td></tr>
               <tr><th>Final price</th><td>{{ $fmt($orderPrice) }}</td></tr>
               <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
+
               <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
               <tr><th>API order ID</th><td>{{ $remoteId }}</td></tr>
               <tr><th>API name</th><td>{{ $providerName }}</td></tr>
-              <tr><th>API service</th><td>{{ $apiServiceName }}</td></tr>
               <tr><th>API processing price</th><td>{{ $fmt($apiCost) }}</td></tr>
             </tbody>
           </table>
+        </div>
+
+        {{-- Result Preview (يبقى في اليسار فقط) --}}
+        <div class="mt-3">
+          <div class="fw-semibold mb-2">Result Preview</div>
+          <div class="border rounded p-2 bg-white">
+            @if (!empty($img) && $isSafeImg($img))
+              <div class="mb-2 text-center">
+                <img src="{{ $img }}" alt="Result image" style="max-width:260px;height:auto;" class="img-fluid rounded shadow-sm">
+              </div>
+            @endif
+
+            @if (is_array($items) && count($items))
+              <table class="table table-sm table-striped table-bordered mb-0">
+                <tbody>
+                @foreach ($items as $it)
+                  @php
+                    $label = is_array($it) ? ($it['label'] ?? '') : '';
+                    $value = is_array($it) ? ($it['value'] ?? '') : '';
+                  @endphp
+                  <tr>
+                    <th style="width:220px;">{{ $cleanText($label) }}</th>
+                    <td>{!! $renderValue($label, $value) !!}</td>
+                  </tr>
+                @endforeach
+                </tbody>
+              </table>
+            @else
+              <span class="text-muted">—</span>
+            @endif
+          </div>
         </div>
       </div>
 
       {{-- RIGHT --}}
       <div class="col-lg-6">
-        <div class="mb-2 fw-semibold">Reply (edit)</div>
+        <div class="mb-2 fw-semibold">Reply</div>
 
-        {{-- textarea only (Summernote) --}}
+        {{-- ✅ فقط Editor (بدون Preview ولا صورة ولا fields إضافية) --}}
         <textarea
           id="replyEditor"
           name="provider_reply_html"
