@@ -1,17 +1,25 @@
 // resources/js/orders-imei-edit.js
 import { initModalEditors } from './modal-editors';
 
+console.log('orders-imei-edit loaded ✅');
+
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('.js-open-order-edit');
   if (!btn) return;
 
+  // ✅ prevent any global handlers (like js-open-modal / ajaxModal)
   e.preventDefault();
+  e.stopPropagation();
+  e.stopImmediatePropagation();
 
   const url = btn.dataset.url || btn.getAttribute('href');
   if (!url || url === '#') return;
 
   const modalEl = document.getElementById('orderEditModal');
-  if (!modalEl) return;
+  if (!modalEl) {
+    console.error('❌ orderEditModal not found. Make sure it is inside @push("modals") in _index.blade.php');
+    return;
+  }
 
   const contentEl = modalEl.querySelector('.modal-content');
   if (!contentEl) return;
@@ -23,7 +31,10 @@ document.addEventListener('click', async (e) => {
     </div>
   `;
 
-  const modal = window.bootstrap?.Modal.getOrCreateInstance(modalEl) || new window.bootstrap.Modal(modalEl);
+  const modal =
+    window.bootstrap?.Modal.getOrCreateInstance(modalEl) ||
+    new window.bootstrap.Modal(modalEl);
+
   modal.show();
 
   try {
@@ -38,8 +49,9 @@ document.addEventListener('click', async (e) => {
       modalEl.removeEventListener('shown.bs.modal', onShown);
       try {
         await initModalEditors(contentEl);
+        console.log('✅ initModalEditors done');
       } catch (err) {
-        console.error(err);
+        console.error('❌ initModalEditors error:', err);
       }
     };
 
