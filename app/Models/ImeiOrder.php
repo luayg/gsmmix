@@ -20,7 +20,7 @@ class ImeiOrder extends Model
         'processing'   => 'boolean',
         'replied_at'   => 'datetime',
 
-        // ✅ مهم لتفادي Array to string conversion
+        // ✅ الأهم (عشان refund يقرأ charged_amount صح)
         'request'      => 'array',
         'response'     => 'array',
         'params'       => 'array',

@@ -8,7 +8,6 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use App\Models\ServiceGroupPrice;
 use Illuminate\Support\Facades\DB;
 
 abstract class BaseOrdersController extends Controller
@@ -69,34 +68,6 @@ abstract class BaseOrdersController extends Controller
         $users = User::query()->orderByDesc('id')->limit(500)->get();
         $services = ($this->serviceModel)::query()->orderByDesc('id')->limit(1000)->get();
 
-        // ✅ group prices map: [service_id => [group_id => final_price]]
-        $serviceIds = $services->pluck('id')->map(fn($x)=>(int)$x)->all();
-
-        $servicePriceMap = [];
-        if (!empty($serviceIds) && class_exists(\App\Models\ServiceGroupPrice::class)) {
-            $rows = ServiceGroupPrice::query()
-                ->where('service_type', $this->kind) // 'imei'
-                ->whereIn('service_id', $serviceIds)
-                ->get();
-
-            foreach ($rows as $r) {
-                $sid = (int)$r->service_id;
-                $gid = (int)$r->group_id;
-
-                $price = (float)($r->price ?? 0);
-                $discount = (float)($r->discount ?? 0);
-                $dtype = (int)($r->discount_type ?? 1); // 1 fixed, 2 percent
-
-                if ($discount > 0) {
-                    if ($dtype === 2) $price = $price - ($price * ($discount / 100));
-                    else $price = $price - $discount;
-                }
-
-                if (!isset($servicePriceMap[$sid])) $servicePriceMap[$sid] = [];
-                $servicePriceMap[$sid][$gid] = max(0.0, (float)$price);
-            }
-        }
-
         return view('admin.orders.modals.create', [
             'title'       => "Create {$this->title}",
             'kind'        => $this->kind,
@@ -105,12 +76,15 @@ abstract class BaseOrdersController extends Controller
             'supportsQty' => $this->supportsQuantity(),
             'users'       => $users,
             'services'    => $services,
-            'servicePriceMap' => $servicePriceMap,
         ]);
     }
 
+    // =========================
+    // PRICING (user group)
+    // =========================
     private function calcServiceSellPriceForUser($service, User $user): float
     {
+        // IMEI group pricing
         if ($this->kind === 'imei') {
             $gid = (int)($user->group_id ?? 0);
 
@@ -124,7 +98,7 @@ abstract class BaseOrdersController extends Controller
                 if ($gp && (float)($gp->price ?? 0) > 0) {
                     $price = (float)$gp->price;
                     $discount = (float)($gp->discount ?? 0);
-                    $dtype = (int)($gp->discount_type ?? 1);
+                    $dtype = (int)($gp->discount_type ?? 1); // 1 fixed, 2 percent
 
                     if ($discount > 0) {
                         if ($dtype === 2) $price = $price - ($price * ($discount / 100));
@@ -135,6 +109,7 @@ abstract class BaseOrdersController extends Controller
             }
         }
 
+        // fallback explicit columns
         foreach ([
             $service->price ?? null,
             $service->sell_price ?? null,
@@ -145,13 +120,17 @@ abstract class BaseOrdersController extends Controller
             if ($p !== null && $p !== '' && is_numeric($p) && (float)$p > 0) return (float)$p;
         }
 
+        // fallback cost + profit
         $cost = (float)($service->cost ?? 0);
         $profit = (float)($service->profit ?? 0);
-        $profitType = (int)($service->profit_type ?? 1);
+        $profitType = (int)($service->profit_type ?? 1); // 1 fixed, 2 percent
         if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit/100)));
         return max(0.0, $cost + $profit);
     }
 
+    // =========================
+    // CHARGE / REFUND helpers
+    // =========================
     private function refundOrderIfNeeded(Model $order, string $reason): void
     {
         $req = (array)($order->request ?? []);
@@ -179,6 +158,89 @@ abstract class BaseOrdersController extends Controller
         });
     }
 
+    private function rechargeOrderIfNeeded(Model $order, string $reason): void
+{
+    $req = (array)($order->request ?? []);
+
+    // لازم يكون فيه Refund سابقًا
+    if (empty($req['refunded_at'])) return;
+
+    // لا تعيد الخصم أكثر من مرة
+    if (!empty($req['recharged_at'])) return;
+
+    $uid = (int)($order->user_id ?? 0);
+    if ($uid <= 0) return;
+
+    $amount = (float)($req['charged_amount'] ?? 0);
+    if ($amount <= 0) return;
+
+    DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+        $u = User::query()->lockForUpdate()->find($uid);
+        if (!$u) return;
+
+        $bal = (float)($u->balance ?? 0);
+        if ($bal < $amount) {
+            // إذا ما عنده رصيد كافي لإعادة الخصم، لا نغير شيء
+            return;
+        }
+
+        $u->balance = $bal - $amount;
+        $u->save();
+
+        $req['recharged_at'] = now()->toDateTimeString();
+        $req['recharged_amount'] = $amount;
+        $req['recharged_reason'] = $reason;
+
+        // (اختياري) لو تحب تمسح refunded_at عشان تعتبرها "رجعت للوضع الطبيعي"
+        // unset($req['refunded_at'], $req['refunded_amount'], $req['refunded_reason']);
+
+        $order->request = $req;
+        $order->save();
+    });
+}
+
+
+    private function chargeOrderIfNeeded(Model $order, string $reason): void
+    {
+        $req = (array)($order->request ?? []);
+
+        $uid = (int)($order->user_id ?? 0);
+        if ($uid <= 0) return;
+
+        $amount = (float)($req['charged_amount'] ?? 0);
+        if ($amount <= 0) return;
+
+        // إذا لم يتم refund سابقاً، لا نعيد الخصم مرة ثانية
+        if (empty($req['refunded_at'])) return;
+
+        // إذا سبق وأعدنا الخصم بعد refund لا نكرر
+        if (!empty($req['recharged_at'])) return;
+
+        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+            $u = User::query()->lockForUpdate()->find($uid);
+            if (!$u) return;
+
+            $bal = (float)($u->balance ?? 0);
+            if ($bal < $amount) {
+                // إذا الرصيد غير كافي لا نخصم ولا نكمل
+                throw new \RuntimeException('INSUFFICIENT_BALANCE_RECHARGE');
+            }
+
+            $u->balance = $bal - $amount;
+            $u->save();
+
+            $req['recharged_at'] = now()->toDateTimeString();
+            $req['recharged_amount'] = $amount;
+            $req['recharged_reason'] = $reason;
+
+            $order->request = $req;
+            $order->save();
+        });
+    }
+
+    // =========================
+    // STORE
+    // =========================
     public function store(Request $request)
     {
         $rules = [
@@ -301,7 +363,8 @@ abstract class BaseOrdersController extends Controller
                     $order->params = $params;
                     $order->ip = $request->ip();
 
-                    $order->request = array_merge((array)$order->request, [
+                    // ✅ store charged amount for refund/recharge
+                    $order->request = array_merge((array)($order->request ?? []), [
                         'charged_amount' => (float)$sellPrice,
                         'charged_at'     => now()->toDateTimeString(),
                     ]);
@@ -339,7 +402,7 @@ abstract class BaseOrdersController extends Controller
                             $order->status = 'waiting';
                             $order->replied_at = null;
 
-                            $order->request = array_merge((array)$order->request, [
+                            $order->request = array_merge((array)($order->request ?? []), [
                                 'dispatch_failed_at' => now()->toDateTimeString(),
                                 'dispatch_error'     => $e->getMessage(),
                                 'dispatch_retry'     => ((int) data_get($order->request, 'dispatch_retry', 0)) + 1,
@@ -401,56 +464,17 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
-    private function rechargeOrderIfNeeded(Model $order, string $reason): void
-{
-    $req = (array)($order->request ?? []);
-
-    // لازم يكون فيه Refund سابقاً
-    if (empty($req['refunded_at'])) return;
-
-    // منع التكرار
-    if (!empty($req['recharged_at'])) return;
-
-    $uid = (int)($order->user_id ?? 0);
-    if ($uid <= 0) return;
-
-    $amount = (float)($req['charged_amount'] ?? 0);
-    if ($amount <= 0) return;
-
-    DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
-        $u = User::query()->lockForUpdate()->find($uid);
-        if (!$u) return;
-
-        $balance = (float)($u->balance ?? 0);
-
-        // إذا ما فيه رصيد كافي، نوقف ونخليها واضحة
-        if ($balance < $amount) {
-            throw new \RuntimeException('INSUFFICIENT_BALANCE_RECHARGE');
-        }
-
-        $u->balance = $balance - $amount;
-        $u->save();
-
-        $req['recharged_at'] = now()->toDateTimeString();
-        $req['recharged_amount'] = $amount;
-        $req['recharged_reason'] = $reason;
-
-        $order->request = $req;
-        $order->save();
-    });
-}
-
-
-
-
+    // =========================
+    // UPDATE (manual status change)
+    // =========================
     public function update(Request $request, int $id)
     {
         $row = ($this->orderModel)::findOrFail($id);
 
         $data = $request->validate([
-            'status'             => ['required','in:waiting,inprogress,success,rejected,cancelled'],
-            'comments'           => ['nullable','string'],
-            'response'           => ['nullable'],
+            'status'              => ['required','in:waiting,inprogress,success,rejected,cancelled'],
+            'comments'            => ['nullable','string'],
+            'response'            => ['nullable'],
             'provider_reply_html' => ['nullable','string'],
         ]);
 
@@ -488,29 +512,33 @@ abstract class BaseOrdersController extends Controller
         $row->response = $currentResp;
         $row->save();
 
-        // ✅ Recharge only when moved from rejected/cancelled -> success/inprogress
-if (
-    ($newStatus === 'success' || $newStatus === 'inprogress') &&
-    ($oldStatus === 'rejected' || $oldStatus === 'cancelled') &&
-    $oldStatus !== $newStatus
-) {
-    try {
-        $this->rechargeOrderIfNeeded($row, 'manual_'.$newStatus);
-    } catch (\RuntimeException $e) {
-        if ($e->getMessage() === 'INSUFFICIENT_BALANCE_RECHARGE') {
-            // رجّع الحالة كما كانت لأن ما فيه رصيد كافي لإعادة الخصم
-            $row->status = $oldStatus;
-            $row->save();
-
-            return redirect()->back()
-                ->withErrors(['user_id' => 'Insufficient balance to set this order to '.$newStatus.' (recharge required).']);
-        }
-        throw $e;
-    }
+        // ✅ Refund when moved into rejected/cancelled
+if (($newStatus === 'rejected' || $newStatus === 'cancelled') && $oldStatus !== $newStatus) {
+    $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
 }
 
-        if (($newStatus === 'rejected' || $newStatus === 'cancelled') && $oldStatus !== $newStatus) {
-            $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
+// ✅ If order was refunded then admin sets it to success later => recharge once
+if ($newStatus === 'success' && $oldStatus !== $newStatus) {
+    $this->rechargeOrderIfNeeded($row, 'manual_success_recharge');
+}
+
+
+        // ✅ إذا رجعته من rejected/cancelled إلى success => خصم مرة ثانية (recharge)
+        if ($newStatus === 'success' && $oldStatus !== $newStatus) {
+            try {
+                $this->chargeOrderIfNeeded($row, 'manual_success');
+            } catch (\RuntimeException $e) {
+                if ($e->getMessage() === 'INSUFFICIENT_BALANCE_RECHARGE') {
+                    // رجّع الحالة القديمة لو الرصيد لا يكفي
+                    $row->status = $oldStatus ?: $row->status;
+                    $row->save();
+
+                    return redirect()->back()
+                        ->withErrors(['status' => 'User balance is not enough to set Success again (recharge required).'])
+                        ->withInput();
+                }
+                throw $e;
+            }
         }
 
         return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
