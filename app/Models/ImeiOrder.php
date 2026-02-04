@@ -1,4 +1,3 @@
-// C:\xampp\htdocs\gsmmix\app\Models\ImeiOrder.php
 <?php
 
 namespace App\Models;
@@ -21,10 +20,10 @@ class ImeiOrder extends Model
         'processing'   => 'boolean',
         'replied_at'   => 'datetime',
 
-        // ✅ مهم لتجنب Array to string conversion عند الحفظ
-        'params'       => 'array',
+        // ✅ مهم لتفادي Array to string conversion
         'request'      => 'array',
         'response'     => 'array',
+        'params'       => 'array',
     ];
 
     public function service(){ return $this->belongsTo(ImeiService::class, 'service_id'); }

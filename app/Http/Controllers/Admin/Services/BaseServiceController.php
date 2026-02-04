@@ -3,334 +3,476 @@
 namespace App\Http\Controllers\Admin\Services;
 
 use App\Http\Controllers\Controller;
+use App\Models\ApiProvider;
+use App\Models\User;
 use App\Models\ServiceGroupPrice;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
-abstract class BaseServiceController extends Controller
+abstract class BaseOrdersController extends Controller
 {
     /** @var class-string<Model> */
-    protected string $model;
-    protected string $viewPrefix;   // server | file | imei
-    protected string $routePrefix;  // admin.services.server | file | imei
-    protected string $table;        // server_services | file_services | imei_services
+    protected string $orderModel;
 
-    protected function rowsQuery()
+    /** @var class-string<Model> */
+    protected string $serviceModel;
+
+    protected string $kind;        // imei|server|file|product
+    protected string $title;       // IMEI Orders ...
+    protected string $routePrefix; // admin.orders.imei ...
+
+    protected function deviceLabel(): string { return 'Device'; }
+    protected function supportsQuantity(): bool { return false; }
+
+    public function index(Request $request)
     {
-        /** @var Model $m */
-        $m = app($this->model);
-        return $m->newQuery()->with('group')->orderBy('id', 'asc');
-    }
+        $q      = trim((string)$request->get('q', ''));
+        $status = trim((string)$request->get('status', ''));
+        $prov   = trim((string)$request->get('provider', ''));
 
-    public function index(Request $r)
-    {
-        $q = $this->rowsQuery();
+        $rows = ($this->orderModel)::query()
+            ->with(['service','provider'])
+            ->orderByDesc('id');
 
-        if ($r->filled('q')) {
-            $term = $r->q;
-            $q->where(function ($qq) use ($term) {
-                $qq->where('alias', 'like', "%$term%")
-                    ->orWhere('name', 'like', "%$term%");
+        if ($q !== '') {
+            $rows->where(function ($w) use ($q) {
+                $w->where('device', 'like', "%{$q}%")
+                  ->orWhere('email', 'like', "%{$q}%")
+                  ->orWhere('remote_id', 'like', "%{$q}%");
             });
         }
 
-        if ($r->filled('api_provider_id')) {
-            // فلتر مزود API على supplier_id
-            $q->where('supplier_id', (int)$r->api_provider_id);
+        if ($status !== '' && in_array($status, ['waiting','inprogress','success','rejected','cancelled'], true)) {
+            $rows->where('status', $status);
         }
 
-        $rows = $q->paginate(20)->withQueryString();
+        if ($prov !== '') {
+            $rows->where('supplier_id', (int)$prov);
+        }
 
-        $apis = app($this->model)->newQuery()
-            ->select('supplier_id')
-            ->whereNotNull('supplier_id')
-            ->groupBy('supplier_id')
-            ->pluck('supplier_id');
+        $rows = $rows->paginate(20)->withQueryString();
+        $providers = ApiProvider::query()->orderBy('name')->get();
 
-        return view("admin.services.{$this->viewPrefix}.index", [
-            'rows' => $rows,
-            'apis' => $apis,
+        return view("admin.orders.{$this->kind}.index", [
+            'title'       => $this->title,
+            'kind'        => $this->kind,
             'routePrefix' => $this->routePrefix,
-            'viewPrefix'  => $this->viewPrefix,
+            'rows'        => $rows,
+            'providers'   => $providers,
         ]);
     }
 
-    public function create()
+    public function modalCreate()
     {
-        $row = app($this->model)->newInstance();
-        return view("admin.services.{$this->viewPrefix}.form", $this->viewData($row));
-    }
+        $users = User::query()
+            ->select(['id','email','balance','group_id'])
+            ->orderByDesc('id')
+            ->limit(500)
+            ->get();
 
-    public function store(Request $r)
-    {
-        $data = $this->validated($r);
+        $services = ($this->serviceModel)::query()
+            ->select([
+                'id','name','price','sell_price','final_price','customer_price','retail_price',
+                'cost','profit','profit_type','allow_bulk','main_field'
+            ])
+            ->orderByDesc('id')
+            ->limit(1000)
+            ->get();
 
-        // ✅ منع التكرار بنفس (supplier_id + remote_id)
-        $supplierId = (int)($data['supplier_id'] ?? 0);
-        $remoteId   = (string)($data['remote_id'] ?? '');
+        // ✅ تجهيز أسعار الخدمات لكل Group موجود في المستخدمين (IMEI فقط)
+        $servicePriceMap = []; // [service_id][group_id] = final_price_for_group
+        if ($this->kind === 'imei' && class_exists(ServiceGroupPrice::class)) {
+            $groupIds = $users->pluck('group_id')->filter(fn($v) => (int)$v > 0)->unique()->values()->all();
+            $serviceIds = $services->pluck('id')->values()->all();
 
-        if ($supplierId > 0 && $remoteId !== '') {
-            /** @var Model $m */
-            $m = app($this->model);
-            $existing = $m->newQuery()
-                ->where('supplier_id', $supplierId)
-                ->where('remote_id', $remoteId)
-                ->first();
+            if (!empty($groupIds) && !empty($serviceIds)) {
+                $gps = ServiceGroupPrice::query()
+                    ->where('service_type', 'imei')
+                    ->whereIn('service_id', $serviceIds)
+                    ->whereIn('group_id', $groupIds)
+                    ->get(['service_id','group_id','price','discount','discount_type']);
 
-            if ($existing) {
-                if ($r->ajax() || $r->wantsJson()) {
-                    return response()->json([
-                        'ok'      => true,
-                        'already' => true,
-                        'message' => 'Already exists',
-                        'id'      => $existing->getKey(),
-                    ]);
+                foreach ($gps as $gp) {
+                    $price = (float)($gp->price ?? 0);
+                    $discount = (float)($gp->discount ?? 0);
+                    $dtype = (int)($gp->discount_type ?? 1); // 1 fixed, 2 percent
+
+                    if ($discount > 0) {
+                        if ($dtype === 2) $price = $price - ($price * ($discount / 100));
+                        else $price = $price - $discount;
+                    }
+
+                    $serviceId = (int)$gp->service_id;
+                    $groupId   = (int)$gp->group_id;
+
+                    if (!isset($servicePriceMap[$serviceId])) $servicePriceMap[$serviceId] = [];
+                    $servicePriceMap[$serviceId][$groupId] = max(0.0, (float)$price);
                 }
-
-                return redirect()->route("{$this->routePrefix}.edit", $existing)->with('ok', 'Already exists');
             }
         }
 
-        /** @var Model $row */
-        $row = app($this->model)->create($data);
+        return view('admin.orders.modals.create', [
+            'title'          => "Create {$this->title}",
+            'kind'           => $this->kind,
+            'routePrefix'    => $this->routePrefix,
+            'deviceLabel'    => $this->deviceLabel(),
+            'supportsQty'    => $this->supportsQuantity(),
+            'users'          => $users,
+            'services'       => $services,
+            'servicePriceMap'=> $servicePriceMap,
+        ]);
+    }
 
-        // ✅ Save group prices (if provided)
-        $this->saveGroupPricesFromJson((int)$row->id, $r->input('group_prices_json'));
+    private function calcServiceSellPriceForUser($service, User $user): float
+    {
+        // IMEI group pricing
+        if ($this->kind === 'imei' && class_exists(ServiceGroupPrice::class)) {
+            $gid = (int)($user->group_id ?? 0);
 
-        if ($r->ajax() || $r->wantsJson()) {
-            return response()->json([
-                'ok'      => true,
-                'message' => 'Created',
-                'id'      => $row->id,
-            ]);
+            if ($gid > 0) {
+                $gp = ServiceGroupPrice::query()
+                    ->where('service_type', 'imei')
+                    ->where('service_id', (int)$service->id)
+                    ->where('group_id', $gid)
+                    ->first();
+
+                if ($gp && (float)($gp->price ?? 0) > 0) {
+                    $price = (float)$gp->price;
+                    $discount = (float)($gp->discount ?? 0);
+                    $dtype = (int)($gp->discount_type ?? 1);
+
+                    if ($discount > 0) {
+                        if ($dtype === 2) $price = $price - ($price * ($discount / 100));
+                        else $price = $price - $discount;
+                    }
+
+                    return max(0.0, (float)$price);
+                }
+            }
         }
 
-        return redirect()->route("{$this->routePrefix}.edit", $row)->with('ok', 'Created');
-    }
-
-    public function edit($id)
-    {
-        $row = app($this->model)->findOrFail($id);
-        return view("admin.services.{$this->viewPrefix}.form", $this->viewData($row));
-    }
-
-    public function update(Request $r, $id)
-    {
-        /** @var Model $row */
-        $row = app($this->model)->findOrFail($id);
-
-        $data = $this->validated($r);
-        $row->update($data);
-
-        $this->saveGroupPricesFromJson((int)$row->id, $r->input('group_prices_json'));
-
-        if ($r->ajax() || $r->wantsJson()) {
-            return response()->json([
-                'ok'      => true,
-                'message' => 'Saved',
-                'id'      => $row->id,
-            ]);
+        foreach ([
+            $service->price ?? null,
+            $service->sell_price ?? null,
+            $service->final_price ?? null,
+            $service->customer_price ?? null,
+            $service->retail_price ?? null,
+        ] as $p) {
+            if ($p !== null && $p !== '' && is_numeric($p) && (float)$p > 0) return (float)$p;
         }
 
-        return back()->with('ok', 'Saved');
+        $cost = (float)($service->cost ?? 0);
+        $profit = (float)($service->profit ?? 0);
+        $profitType = (int)($service->profit_type ?? 1); // 1 fixed, 2 percent
+        if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit / 100)));
+        return max(0.0, $cost + $profit);
     }
 
-    public function destroy($id)
+    private function refundOrderIfNeeded(Model $order, string $reason): void
     {
-        $row = app($this->model)->findOrFail($id);
-        $row->delete();
+        $req = (array)($order->request ?? []);
+        if (!empty($req['refunded_at'])) return;
 
-        return back()->with('ok', 'Deleted');
+        $uid = (int)($order->user_id ?? 0);
+        if ($uid <= 0) return;
+
+        $amount = (float)($req['charged_amount'] ?? 0);
+        if ($amount <= 0) return;
+
+        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+            $u = User::query()->lockForUpdate()->find($uid);
+            if (!$u) return;
+
+            $u->balance = (float)($u->balance ?? 0) + $amount;
+            $u->save();
+
+            $req['refunded_at']     = now()->toDateTimeString();
+            $req['refunded_amount'] = $amount;
+            $req['refunded_reason'] = $reason;
+
+            $order->request = $req;
+            $order->save();
+        });
     }
 
-    public function show($id)
+    public function store(Request $request)
     {
-        $row = app($this->model)->findOrFail($id);
-        return view("admin.services.{$this->viewPrefix}.show", [
-            'row' => $row,
+        $rules = [
+            'user_id'    => ['required','integer'],
+            'service_id' => ['required','integer'],
+            'comments'   => ['nullable','string'],
+            'bulk'       => ['nullable','boolean'],
+            'devices'    => ['nullable','string'],
+        ];
+
+        if ($this->kind === 'file') {
+            $rules['file'] = ['required','file','max:51200'];
+        } else {
+            $rules['device'] = ['nullable','string','max:255'];
+        }
+
+        if ($this->supportsQuantity()) {
+            $rules['quantity'] = ['nullable','integer','min:1','max:999'];
+        }
+
+        if ($this->kind === 'server') {
+            $rules['required'] = ['nullable','array'];
+        }
+
+        $data = $request->validate($rules);
+
+        $userId = (int)($data['user_id'] ?? 0);
+        $user = User::find($userId);
+        if (!$user) {
+            return redirect()->back()->withErrors(['user_id' => 'User not found.'])->withInput();
+        }
+
+        $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
+
+        $supplierId = (int)($service->supplier_id ?? 0);
+        $provider   = $supplierId ? ApiProvider::find($supplierId) : null;
+
+        $hasRemote = !empty($service->remote_id);
+        $isApi = $provider && (int)$provider->active === 1 && $hasRemote;
+
+        // ✅ price based on user group
+        $sellPrice = (float)$this->calcServiceSellPriceForUser($service, $user);
+
+        $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
+        $profitOne = $sellPrice - $costPrice;
+
+        $params = ['kind' => $this->kind];
+        if ($this->kind === 'server' && isset($data['required']) && is_array($data['required'])) {
+            $params['required'] = $data['required'];
+        }
+
+        $bulk = (bool)($data['bulk'] ?? false);
+        $devices = [];
+
+        if ($this->kind !== 'file') {
+            if ($bulk) {
+                $raw = (string)($data['devices'] ?? '');
+                $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
+                $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
+
+                if (count($lines) < 1) {
+                    return redirect()->back()->withErrors(['devices' => 'Bulk list is empty.'])->withInput();
+                }
+                if (count($lines) > 200) {
+                    return redirect()->back()->withErrors(['devices' => 'Too many lines (max 200).'])->withInput();
+                }
+                $devices = $lines;
+            } else {
+                $one = trim((string)($data['device'] ?? ''));
+                if ($one === '') {
+                    return redirect()->back()->withErrors(['device' => 'Device is required.'])->withInput();
+                }
+                $devices = [$one];
+            }
+        }
+
+        $countOrders = ($this->kind === 'file') ? 1 : count($devices);
+        $totalCharge = $sellPrice * $countOrders;
+
+        try {
+            DB::transaction(function () use (
+                $request, $data, $userId, $user, $service, $provider, $isApi,
+                $sellPrice, $costPrice, $profitOne, $params, $devices, $countOrders, $totalCharge
+            ) {
+                $u = User::query()->lockForUpdate()->findOrFail($userId);
+                $balance = (float)($u->balance ?? 0);
+
+                if ($totalCharge > 0 && $balance < $totalCharge) {
+                    throw new \RuntimeException('INSUFFICIENT_BALANCE');
+                }
+
+                if ($totalCharge > 0) {
+                    $u->balance = $balance - $totalCharge;
+                    $u->save();
+                }
+
+                $createOne = function (string $deviceValue = '') use (
+                    $request, $data, $u, $service, $provider, $isApi,
+                    $sellPrice, $costPrice, $profitOne, $params
+                ) {
+                    /** @var Model $order */
+                    $order = new ($this->orderModel);
+
+                    $order->comments    = (string)($data['comments'] ?? '');
+                    $order->user_id     = $u->id;
+                    $order->email       = $u->email ?: null;
+
+                    $order->service_id  = (int)$service->id;
+                    $order->supplier_id = $provider?->id;
+
+                    if ($this->supportsQuantity()) {
+                        $order->quantity = (int)($data['quantity'] ?? 1);
+                    }
+
+                    $order->status     = 'waiting';
+                    $order->processing = 0;
+                    $order->api_order  = $isApi ? 1 : 0;
+
+                    $order->price       = $sellPrice;
+                    $order->order_price = $costPrice;
+                    $order->profit      = $profitOne;
+
+                    $order->params = $params;
+                    $order->ip = $request->ip();
+
+                    // ✅ store charged amount for refund
+                    $order->request = array_merge((array)($order->request ?? []), [
+                        'charged_amount' => (float)$sellPrice,
+                        'charged_at'     => now()->toDateTimeString(),
+                    ]);
+
+                    if ($this->kind === 'file') {
+                        $file = $request->file('file');
+                        $original = $file->getClientOriginalName();
+                        $path = $file->store('orders/files');
+                        $order->device = $original;
+                        $order->storage_path = $path;
+                    } else {
+                        $order->device = $deviceValue;
+                    }
+
+                    $order->save();
+
+                    if ($isApi) {
+                        try {
+                            $order->processing = 1;
+                            $order->status = 'inprogress';
+                            $order->save();
+
+                            if (class_exists(\App\Services\Orders\OrderDispatcher::class)) {
+                                $dispatcher = app(\App\Services\Orders\OrderDispatcher::class);
+                                $dispatcher->send($this->kind, (int)$order->id);
+                            } else {
+                                $order->status = 'waiting';
+                                $order->processing = 0;
+                                $order->save();
+                            }
+                        } catch (\Throwable $e) {
+                            Log::error('Auto dispatch failed', ['id'=>$order->id,'err'=>$e->getMessage()]);
+
+                            $order->processing = 0;
+                            $order->status = 'waiting';
+                            $order->replied_at = null;
+
+                            $order->request = array_merge((array)($order->request ?? []), [
+                                'dispatch_failed_at' => now()->toDateTimeString(),
+                                'dispatch_error'     => $e->getMessage(),
+                                'dispatch_retry'     => ((int) data_get($order->request, 'dispatch_retry', 0)) + 1,
+                            ]);
+
+                            $order->response = [
+                                'type'    => 'info',
+                                'message' => 'Provider is unreachable. Will retry automatically.',
+                            ];
+
+                            $order->save();
+                        }
+                    }
+
+                    return $order;
+                };
+
+                if ($this->kind === 'file') {
+                    $createOne('');
+                } else {
+                    foreach ($devices as $dv) $createOne($dv);
+                }
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'INSUFFICIENT_BALANCE') {
+                return redirect()->back()
+                    ->withErrors(['user_id' => 'No enough balance for this order.'])
+                    ->withInput();
+            }
+            throw $e;
+        }
+
+        return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order created.');
+    }
+
+    public function modalView(int $id)
+    {
+        $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
+
+        return view('admin.orders.modals.view', [
+            'title'       => "View Order #{$row->id}",
+            'kind'        => $this->kind,
             'routePrefix' => $this->routePrefix,
+            'row'   => $row,
+            'order' => $row,
         ]);
     }
 
-    public function copy($id)
+    public function modalEdit(int $id)
     {
-        $row = app($this->model)->findOrFail($id);
-        $clone = $row->replicate();
-        $clone->alias = Str::slug(($clone->alias ?: 'service') . '-copy-' . time());
-        $clone->save();
+        $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
 
-        return redirect()->route("{$this->routePrefix}.edit", $clone)->with('ok', 'Copied');
-    }
-
-    protected function viewData($row): array
-    {
-        $groups = \App\Models\ServiceGroup::orderBy('ordering')->orderBy('id')->get();
-        $apis   = app($this->model)->newQuery()
-            ->select('supplier_id')->whereNotNull('supplier_id')->groupBy('supplier_id')->pluck('supplier_id');
-
-        // JSONs
-        $row->name_json = json_decode($row->name ?? '{}', true) ?: [];
-        $row->time_json = json_decode($row->time ?? '{}', true) ?: [];
-        $row->info_json = json_decode($row->info ?? '{}', true) ?: [];
-
-        $main = json_decode($row->main_field ?? '{}', true) ?: [];
-        $row->main_type    = Arr::get($main, 'type', 'imei');
-        $row->main_label   = Arr::get($main, 'label.en', 'IMEI');
-        $row->main_allowed = Arr::get($main, 'rules.allowed', 'numbers');
-        $row->min_qty      = Arr::get($main, 'rules.minimum', 15);
-        $row->max_qty      = Arr::get($main, 'rules.maximum', 15);
-
-        $row->meta = json_decode($row->params ?? '{}', true) ?: [];
-
-        return [
-            'row' => $row,
-            'groups' => $groups,
-            'apis' => $apis,
+        return view('admin.orders.modals.edit', [
+            'title'       => "Edit Order #{$row->id}",
+            'kind'        => $this->kind,
             'routePrefix' => $this->routePrefix,
-            'viewPrefix'  => $this->viewPrefix,
-        ];
+            'row'   => $row,
+            'order' => $row,
+        ]);
     }
 
-    protected function validated(Request $r): array
+    public function update(Request $request, int $id)
     {
-        // ==========================================================
-        // ✅ FIX دائم: لو الواجهة أرسلت name/time/info بدل *_en
-        // أو main_field_type بدل main_type
-        // ==========================================================
-        $r->merge([
-            'name_en'   => $r->input('name_en') ?: $r->input('name'),
-            'time_en'   => $r->input('time_en') ?: $r->input('time'),
-            'info_en'   => $r->input('info_en') ?: $r->input('info'),
-            'main_type' => $r->input('main_type') ?: $r->input('main_field_type'),
+        $row = ($this->orderModel)::findOrFail($id);
+
+        $data = $request->validate([
+            'status'              => ['required','in:waiting,inprogress,success,rejected,cancelled'],
+            'comments'            => ['nullable','string'],
+            'response'            => ['nullable'],
+            'provider_reply_html' => ['nullable','string'],
         ]);
 
-        $v = $r->validate([
-            'alias'           => 'nullable|string|max:255',
-            'group_id'        => 'nullable|integer|exists:service_groups,id',
-            'type'            => 'required|string|max:255',
-            'allowed'         => 'nullable|string|max:50',
-            'main_type'       => 'required|string|max:50',
-            'main_label'      => 'nullable|string|max:255',
-            'min_qty'         => 'nullable|integer',
-            'max_qty'         => 'nullable|integer',
-            'price'           => 'nullable|numeric',
-            'converted_price' => 'nullable|numeric',
-            'cost'            => 'nullable|numeric',
-            'profit'          => 'nullable|numeric',
-            'profit_type'     => 'nullable|integer',
+        $oldStatus = strtolower((string)($row->status ?? ''));
+        $newStatus = strtolower((string)($data['status'] ?? ''));
 
-            // ✅ مزود + remote id (تأتي من المودال)
-            'supplier_id'     => 'nullable|integer',
-            'source'          => 'nullable|integer',
-            'remote_id'       => 'nullable',
+        $row->status   = $data['status'];
+        $row->comments = (string)($data['comments'] ?? '');
 
-            'info_en'         => 'nullable|string',
-            'name_en'         => 'required|string',
-            'time_en'         => 'nullable|string',
-
-            // Meta
-            'meta_keywords'    => 'nullable|string',
-            'meta_description' => 'nullable|string',
-            'after_head_open'   => 'nullable|string',
-            'before_head_close' => 'nullable|string',
-            'after_body_open'   => 'nullable|string',
-            'before_body_close' => 'nullable|string',
-
-            // Toggles
-            'active'              => 'sometimes|boolean',
-            'allow_bulk'          => 'sometimes|boolean',
-            'allow_duplicates'    => 'sometimes|boolean',
-            'reply_with_latest'   => 'sometimes|boolean',
-            'allow_submit_verify' => 'sometimes|boolean',
-            'allow_cancel'        => 'sometimes|boolean',
-            'reply_expiration'    => 'sometimes|boolean',
-
-            // Additional tab
-            'custom_fields_json' => 'nullable|string',
-            'group_prices_json'  => 'nullable|string',
-        ]);
-
-        $name = ['en' => $v['name_en'], 'fallback' => $v['name_en']];
-        $time = ['en' => $v['time_en'] ?? '', 'fallback' => $v['time_en'] ?? ''];
-        $info = ['en' => $v['info_en'] ?? '', 'fallback' => $v['info_en'] ?? ''];
-
-        $main = [
-            'type'  => $v['main_type'],
-            'rules' => [
-                'allowed' => $v['allowed'] ?? null,
-                'minimum' => $v['min_qty'] ?? null,
-                'maximum' => $v['max_qty'] ?? null
-            ],
-            'label' => [
-                'en' => $v['main_label'] ?? '',
-                'fallback' => $v['main_label'] ?? ''
-            ],
-        ];
-
-        $params = [
-            'meta_keywords'           => $v['meta_keywords'] ?? '',
-            'meta_description'        => $v['meta_description'] ?? '',
-            'after_head_tag_opening'  => $v['after_head_open'] ?? '',
-            'before_head_tag_closing' => $v['before_head_close'] ?? '',
-            'after_body_tag_opening'  => $v['after_body_open'] ?? '',
-            'before_body_tag_closing' => $v['before_body_close'] ?? '',
-        ];
-
-        $customFields = [];
-        if (!empty($v['custom_fields_json'])) {
-            $decoded = json_decode($v['custom_fields_json'], true);
-            if (is_array($decoded)) $customFields = $decoded;
+        $currentResp = $row->response;
+        if (is_string($currentResp)) {
+            $decoded = json_decode($currentResp, true);
+            $currentResp = is_array($decoded) ? $decoded : ['raw' => $row->response];
+        } elseif (!is_array($currentResp) && $currentResp !== null) {
+            $currentResp = ['raw' => $currentResp];
+        } elseif ($currentResp === null) {
+            $currentResp = [];
         }
-        $params['custom_fields'] = $customFields;
 
-        return [
-            'alias'            => $v['alias'] ?? null,
-            'group_id'         => $v['group_id'] ?? null,
-            'type'             => $v['type'],
-            'name'             => json_encode($name, JSON_UNESCAPED_UNICODE),
-            'time'             => json_encode($time, JSON_UNESCAPED_UNICODE),
-            'info'             => json_encode($info, JSON_UNESCAPED_UNICODE),
-            'main_field'       => json_encode($main, JSON_UNESCAPED_UNICODE),
-            'params'           => json_encode($params, JSON_UNESCAPED_UNICODE),
-            'cost'             => $v['cost'] ?? 0,
-            'profit'           => $v['profit'] ?? 0,
-            'profit_type'      => $v['profit_type'] ?? 1,
-            'source'           => $v['source'] ?? null,
-            'supplier_id'      => $v['supplier_id'] ?? null,
-            'remote_id'        => $v['remote_id'] ?? null,
-
-            'active'           => (int)$r->boolean('active'),
-            'allow_bulk'       => (int)$r->boolean('allow_bulk'),
-            'allow_duplicates' => (int)$r->boolean('allow_duplicates'),
-            'reply_with_latest'=> (int)$r->boolean('reply_with_latest'),
-            'allow_report'     => (int)$r->boolean('allow_submit_verify'),
-            'allow_cancel'     => (int)$r->boolean('allow_cancel'),
-            'reply_expiration' => (int)$r->boolean('reply_expiration'),
-        ];
-    }
-
-    private function saveGroupPricesFromJson(int $serviceId, ?string $json): void
-    {
-        if (!$json) return;
-
-        $rows = json_decode($json, true);
-        if (!is_array($rows)) return;
-
-        foreach ($rows as $r) {
-            $groupId = (int)($r['group_id'] ?? 0);
-            if ($groupId <= 0) continue;
-
-            ServiceGroupPrice::updateOrCreate([
-                'service_id'   => $serviceId,
-                'service_type' => $this->viewPrefix,
-                'group_id'     => $groupId,
-            ], [
-                'price'         => (float)($r['price'] ?? 0),
-                'discount'      => (float)($r['discount'] ?? 0),
-                'discount_type' => (int)($r['discount_type'] ?? 1),
-            ]);
+        if (array_key_exists('response', $data)) {
+            if (is_string($data['response'])) {
+                $decoded = json_decode($data['response'], true);
+                if (is_array($decoded)) $currentResp = array_merge($currentResp, $decoded);
+                else $currentResp['raw'] = $data['response'];
+            } elseif (is_array($data['response'])) {
+                $currentResp = array_merge($currentResp, $data['response']);
+            }
         }
+
+        if (!empty($data['provider_reply_html'])) {
+            $currentResp['provider_reply_html'] = $data['provider_reply_html'];
+            $currentResp['provider_reply_updated_at'] = now()->toDateTimeString();
+        }
+
+        $row->response = $currentResp;
+        $row->save();
+
+        // ✅ Refund only when moved into rejected/cancelled
+        if (($newStatus === 'rejected' || $newStatus === 'cancelled') && $oldStatus !== $newStatus) {
+            $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
+        }
+
+        return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
     }
 }

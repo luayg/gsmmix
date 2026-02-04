@@ -1,4 +1,3 @@
-// C:\xampp\htdocs\gsmmix\app\Console\Commands\SyncImeiOrders.php
 <?php
 
 namespace App\Console\Commands;
@@ -26,7 +25,6 @@ class SyncImeiOrders extends Command
     {
         $src = trim($src);
         if ($src === '') return null;
-
         if (str_starts_with($src, 'data:image/')) return $src;
         if (str_starts_with($src, '//')) return 'https:' . $src;
         if (preg_match('~^https?://~i', $src)) return $src;
@@ -40,16 +38,13 @@ class SyncImeiOrders extends Command
 
     private function extractFirstImgSrc(string $html): ?string
     {
-        if (!preg_match('~<img[^>]+src=["\']([^"\']+)["\']~i', $html, $m)) {
-            return null;
-        }
+        if (!preg_match('~<img[^>]+src=["\']([^"\']+)["\']~i', $html, $m)) return null;
         return $m[1] ?? null;
     }
 
     private function cleanHtmlResultToLines(string $html): array
     {
         $html = preg_replace('/<\s*br\s*\/?\s*>/i', "\n", $html) ?? $html;
-
         $text = strip_tags($html);
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = str_replace(["\r\n", "\r"], "\n", $text);
@@ -57,7 +52,6 @@ class SyncImeiOrders extends Command
 
         $lines = array_map('trim', explode("\n", $text));
         $lines = array_values(array_filter($lines, fn($l) => $l !== ''));
-
         return $lines;
     }
 
@@ -97,7 +91,7 @@ class SyncImeiOrders extends Command
             $u->balance = (float)($u->balance ?? 0) + $amount;
             $u->save();
 
-            $req['refunded_at'] = now()->toDateTimeString();
+            $req['refunded_at']     = now()->toDateTimeString();
             $req['refunded_amount'] = $amount;
             $req['refunded_reason'] = $reason;
 
@@ -126,9 +120,7 @@ class SyncImeiOrders extends Command
             $providerId = (int)($order->supplier_id ?? $order->service?->supplier_id ?? 0);
             $provider = $providerId ? ApiProvider::find($providerId) : null;
 
-            if (!$provider || (int)$provider->active !== 1) {
-                continue;
-            }
+            if (!$provider || (int)$provider->active !== 1) continue;
 
             $ref = (string)$order->remote_id;
             if ($ref === '') continue;
@@ -147,7 +139,6 @@ class SyncImeiOrders extends Command
                 continue;
             }
 
-            // ERROR برسائل تقنية => لا نرفض
             if (isset($raw['ERROR'][0]['MESSAGE'])) {
                 $m = strtolower((string)$raw['ERROR'][0]['MESSAGE']);
                 if (
@@ -173,7 +164,6 @@ class SyncImeiOrders extends Command
                 ];
                 $order->save();
 
-                // ✅ refund on rejected
                 $this->refundIfNeeded($order, 'sync_rejected_error');
                 continue;
             }
@@ -223,7 +213,6 @@ class SyncImeiOrders extends Command
                 $order->response = $ui;
                 $order->save();
 
-                // ✅ refund only if rejected
                 if ($order->status === 'rejected') {
                     $this->refundIfNeeded($order, 'sync_rejected_status3');
                 }

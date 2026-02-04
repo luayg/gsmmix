@@ -1,8 +1,4 @@
-{{-- resources/views/admin/orders/modals/create.blade.php --}}
-
 @php
-  use App\Models\ServiceGroupPrice;
-
   $cleanText = function ($v) {
     $v = (string)$v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -22,28 +18,9 @@
   };
 
   $fmtMoney = function ($v) {
-    $v = is_numeric($v) ? (float)$v : 0.0;
-    return '$' . number_format($v, 2);
+    if (!is_numeric($v)) $v = 0;
+    return '$' . number_format((float)$v, 2);
   };
-
-  // ⬇️ نجهّز group prices لكل خدمة مرة واحدة (للاستخدام بالـ JS)
-  $serviceIds = collect($services ?? [])->pluck('id')->filter()->values()->all();
-
-  $gpRows = ServiceGroupPrice::query()
-    ->where('service_type', 'imei')
-    ->whereIn('service_id', $serviceIds)
-    ->get(['service_id','group_id','price','discount','discount_type']);
-
-  $gpMap = [];
-  foreach ($gpRows as $r) {
-    $sid = (int)$r->service_id;
-    $gid = (int)$r->group_id;
-    $gpMap[$sid][$gid] = [
-      'price' => (float)($r->price ?? 0),
-      'discount' => (float)($r->discount ?? 0),
-      'discount_type' => (int)($r->discount_type ?? 1), // 1=fixed, 2=percent
-    ];
-  }
 
   $isFileKind = ($kind ?? '') === 'file';
 @endphp
@@ -58,7 +35,7 @@
 
   <div class="modal-body">
     @if ($errors->any())
-      <div class="alert alert-danger mb-3">
+      <div class="alert alert-danger">
         <ul class="mb-0">
           @foreach ($errors->all() as $error)
             <li>{{ $error }}</li>
@@ -68,103 +45,90 @@
     @endif
 
     @if(session('err'))
-      <div class="alert alert-danger mb-3">{{ session('err') }}</div>
+      <div class="alert alert-danger">{{ session('err') }}</div>
     @endif
 
     <div class="row g-3">
 
-      {{-- User --}}
       <div class="col-12">
         <label class="form-label">User</label>
-
-        <select class="form-select js-select2 js-user" name="user_id" required data-placeholder="Choose user...">
+        <select class="form-select js-select2 js-step-user" name="user_id" required data-placeholder="Choose user...">
           <option value=""></option>
           @foreach($users as $u)
             @php
               $bal = is_numeric($u->balance ?? null) ? (float)$u->balance : 0.0;
-              $gid = (int)($u->group_id ?? 0);
               $label = $cleanText($u->email) . ' — ' . $fmtMoney($bal);
+              $gid = (int)($u->group_id ?? 0);
             @endphp
-            <option value="{{ $u->id }}" data-balance="{{ $bal }}" data-group-id="{{ $gid }}">
+            <option value="{{ $u->id }}" data-balance="{{ $bal }}" data-group="{{ $gid }}">
               {{ $label }}
             </option>
           @endforeach
         </select>
       </div>
 
-      {{-- Service (hidden until user selected) --}}
-      <div class="col-12 d-none" id="wrapService">
+      <div class="col-12 js-step-service d-none">
         <label class="form-label">Service</label>
-
         <select class="form-select js-select2 js-service" name="service_id" required data-placeholder="Search service...">
           <option value=""></option>
           @foreach($services as $s)
             @php
-              $sid = (int)$s->id;
-
-              // base price fallback (لو ما في group price)
-              $baseSell = null;
-              if (isset($s->price) && is_numeric($s->price)) $baseSell = (float)$s->price;
-              elseif (isset($s->sell_price) && is_numeric($s->sell_price)) $baseSell = (float)$s->sell_price;
-
-              $cost = is_numeric($s->cost ?? null) ? (float)$s->cost : 0.0;
-              $profit = is_numeric($s->profit ?? null) ? (float)$s->profit : 0.0;
-              $profitType = (int)($s->profit_type ?? 1); // 1 fixed, 2 percent
-
-              if ($baseSell === null) {
-                $baseSell = $profitType === 2 ? ($cost + ($cost * $profit / 100.0)) : ($cost + $profit);
-              }
-
-              $name = $pickName($s->name ?? '');
-              $groupPricesJson = json_encode($gpMap[$sid] ?? [], JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+              $name = $pickName($s->name);
+              $allowBulk = (int)($s->allow_bulk ?? 0);
+              $gp = $servicePriceMap[$s->id] ?? [];
+              $gpJson = json_encode($gp, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             @endphp
-
             <option
-              value="{{ $sid }}"
-              data-base-price="{{ (float)$baseSell }}"
-              data-group-prices='@json($gpMap[$sid] ?? [])'
-            >
-              {{ $name }}
-            </option>
+              value="{{ $s->id }}"
+              data-name="{{ $name }}"
+              data-allow-bulk="{{ $allowBulk }}"
+              data-group-prices='{{ $gpJson }}'
+            >{{ $name }}</option>
           @endforeach
         </select>
       </div>
 
-      {{-- Fields (hidden until service selected) --}}
-      <div class="col-12 d-none" id="wrapFields">
+      <div class="col-12 js-step-fields d-none">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" value="1" id="bulkToggle" name="bulk">
+          <label class="form-check-label" for="bulkToggle">Bulk</label>
+        </div>
+      </div>
+
+      <div class="col-12 js-step-fields d-none" id="singleDeviceWrap">
         @if($isFileKind)
           <label class="form-label">Upload file</label>
           <input type="file" class="form-control" name="file" required>
         @else
           <label class="form-label">{{ $deviceLabel ?? 'Device' }}</label>
-          <input type="text" class="form-control" name="device" required placeholder="Enter IMEI / SN">
+          <input type="text" class="form-control" name="device" placeholder="Enter IMEI / SN">
         @endif
       </div>
 
+      <div class="col-12 js-step-fields d-none d-none" id="bulkDevicesWrap">
+        <label class="form-label">Devices (one per line)</label>
+        <textarea class="form-control" name="devices" rows="6" placeholder="Enter one IMEI per line"></textarea>
+      </div>
+
       @if(!empty($supportsQty))
-        <div class="col-12 d-none" id="wrapQty">
-          <label class="form-label">Quantity</label>
-          <input type="number" class="form-control" name="quantity" min="1" value="1">
-        </div>
+      <div class="col-12 js-step-fields d-none">
+        <label class="form-label">Quantity</label>
+        <input type="number" class="form-control" name="quantity" min="1" value="1">
+      </div>
       @endif
 
-      <div class="col-12 d-none" id="wrapComments">
+      <div class="col-12 js-step-fields d-none">
         <label class="form-label">Comments</label>
         <textarea class="form-control" name="comments" rows="3"></textarea>
       </div>
 
-      {{-- Summary --}}
-      <div class="col-12 d-none" id="wrapSummary">
-        <div class="alert alert-info mb-0">
-          <div class="d-flex flex-wrap gap-3 align-items-center">
-            <div><strong>Price:</strong> <span id="selectedPrice">$0.00</span></div>
-            <div><strong>Balance:</strong> <span id="selectedBalance">$0.00</span></div>
-            <div><strong>After:</strong> <span id="balanceAfter">$0.00</span></div>
-          </div>
-          <div class="mt-2 text-danger d-none" id="balanceError">
-            Insufficient balance
-          </div>
+      <div class="col-12 js-step-fields d-none">
+        <div class="d-flex flex-wrap gap-3 align-items-center">
+          <div><strong>Price:</strong> <span id="selectedPrice">$0.00</span></div>
+          <div><strong>Balance:</strong> <span id="selectedBalance">$0.00</span></div>
+          <div><strong>After:</strong> <span id="balanceAfter">$0.00</span></div>
         </div>
+        <div class="mt-2 text-danger d-none" id="balanceError">Insufficient balance.</div>
       </div>
 
     </div>
@@ -176,19 +140,25 @@
   </div>
 </form>
 
+@push('scripts')
 <script>
 (function () {
+  function money(v){
+    v = Number(v || 0);
+    return '$' + v.toFixed(2);
+  }
+
   const form = document.getElementById('createOrderForm');
   if (!form) return;
 
-  const userSel = form.querySelector('.js-user');
-  const serviceSel = form.querySelector('.js-service');
+  const userSel = form.querySelector('.js-step-user');
+  const serviceWrap = form.querySelector('.js-step-service');
+  const serviceSel  = form.querySelector('.js-service');
+  const fieldsWraps = form.querySelectorAll('.js-step-fields');
 
-  const wrapService  = document.getElementById('wrapService');
-  const wrapFields   = document.getElementById('wrapFields');
-  const wrapQty      = document.getElementById('wrapQty');
-  const wrapComments = document.getElementById('wrapComments');
-  const wrapSummary  = document.getElementById('wrapSummary');
+  const bulkToggle = document.getElementById('bulkToggle');
+  const singleWrap = document.getElementById('singleDeviceWrap');
+  const bulkWrap   = document.getElementById('bulkDevicesWrap');
 
   const selectedPriceEl   = document.getElementById('selectedPrice');
   const selectedBalanceEl = document.getElementById('selectedBalance');
@@ -196,86 +166,92 @@
   const balanceErrorEl    = document.getElementById('balanceError');
   const btnCreate         = document.getElementById('btnCreateOrder');
 
-  function show(el){ if (el) el.classList.remove('d-none'); }
-  function hide(el){ if (el) el.classList.add('d-none'); }
+  function show(el){ el && el.classList.remove('d-none'); }
+  function hide(el){ el && el.classList.add('d-none'); }
 
-  function money(v){
-    v = Number(v || 0);
-    return '$' + v.toFixed(2);
+  function hideAllFields(){ fieldsWraps.forEach(w => hide(w)); }
+  function showAllFields(){ fieldsWraps.forEach(w => show(w)); }
+
+  function userGroupId(){
+    const opt = userSel?.selectedOptions?.[0];
+    return opt ? Number(opt.getAttribute('data-group') || 0) : 0;
   }
 
-  function computeServicePriceForUser(){
-    const userOpt = userSel?.selectedOptions?.[0];
-    const gid = userOpt ? Number(userOpt.getAttribute('data-group-id') || 0) : 0;
+  function userBalance(){
+    const opt = userSel?.selectedOptions?.[0];
+    return opt ? Number(opt.getAttribute('data-balance') || 0) : 0;
+  }
 
-    const svcOpt = serviceSel?.selectedOptions?.[0];
-    if (!svcOpt) return 0;
+  function serviceAllowBulk(){
+    const opt = serviceSel?.selectedOptions?.[0];
+    return opt ? Number(opt.getAttribute('data-allow-bulk') || 0) : 0;
+  }
 
-    const base = Number(svcOpt.getAttribute('data-base-price') || 0);
+  function servicePriceForUser(){
+    const opt = serviceSel?.selectedOptions?.[0];
+    if (!opt) return 0;
+
+    const gid = userGroupId();
+    const gpRaw = opt.getAttribute('data-group-prices') || '{}';
+
     let gp = {};
-    try { gp = JSON.parse(svcOpt.getAttribute('data-group-prices') || '{}'); } catch(e){ gp = {}; }
+    try { gp = JSON.parse(gpRaw); } catch(e){ gp = {}; }
 
-    // إذا فيه تسعير خاص للجروب
-    if (gp && gp[String(gid)]) {
-      const row = gp[String(gid)];
-      let price = Number(row.price || 0);
+    const p = gp[String(gid)];
+    if (typeof p === 'number') return p;
+    if (typeof p === 'string' && p !== '' && !isNaN(p)) return Number(p);
 
-      // لو price=0 استخدم base
-      if (!price) price = base;
+    return 0;
+  }
 
-      const discount = Number(row.discount || 0);
-      const dt = Number(row.discount_type || 1); // 1 fixed 2 percent
-      if (discount > 0) {
-        if (dt === 2) price = price - (price * discount / 100.0);
-        else price = price - discount;
-      }
-      if (price < 0) price = 0;
-      return price;
+  function updateServiceOptionLabels(){
+    const gid = userGroupId();
+    Array.from(serviceSel.options).forEach(opt => {
+      const name = opt.getAttribute('data-name') || opt.textContent || '';
+      if (!opt.value) return;
+
+      const gpRaw = opt.getAttribute('data-group-prices') || '{}';
+      let gp = {};
+      try { gp = JSON.parse(gpRaw); } catch(e){ gp = {}; }
+
+      let price = gp[String(gid)];
+      if (typeof price === 'string') price = Number(price);
+
+      if (!price || isNaN(price)) price = 0;
+
+      opt.textContent = name + ' — ' + money(price);
+    });
+
+    if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
+      window.jQuery(serviceSel).trigger('change.select2');
+    }
+  }
+
+  function updateBulkUI(){
+    const allowBulk = serviceAllowBulk();
+
+    if (!allowBulk) {
+      bulkToggle.checked = false;
+      bulkToggle.disabled = true;
+      show(singleWrap);
+      hide(bulkWrap);
+      return;
     }
 
-    return base;
-  }
+    bulkToggle.disabled = false;
 
-  function updateServiceOptionText(){
-    // لتحديث النص المعروض داخل القائمة بعد اختيار user (حتى تشوف السعر الصحيح)
-    const userOpt = userSel?.selectedOptions?.[0];
-    const gid = userOpt ? Number(userOpt.getAttribute('data-group-id') || 0) : 0;
-
-    for (const opt of serviceSel.options) {
-      if (!opt.value) continue;
-
-      let base = Number(opt.getAttribute('data-base-price') || 0);
-      let gp = {};
-      try { gp = JSON.parse(opt.getAttribute('data-group-prices') || '{}'); } catch(e){ gp = {}; }
-
-      let price = base;
-
-      if (gp && gp[String(gid)]) {
-        const row = gp[String(gid)];
-        price = Number(row.price || 0) || base;
-
-        const discount = Number(row.discount || 0);
-        const dt = Number(row.discount_type || 1);
-        if (discount > 0) {
-          if (dt === 2) price = price - (price * discount / 100.0);
-          else price = price - discount;
-        }
-        if (price < 0) price = 0;
-      }
-
-      // نحافظ على الاسم الأصلي قبل — إن وجد
-      const raw = opt.textContent || '';
-      const nameOnly = raw.split('—')[0].trim();
-      opt.textContent = nameOnly + ' — ' + money(price);
-      opt.setAttribute('data-price-live', String(price));
+    if (bulkToggle.checked) {
+      hide(singleWrap);
+      show(bulkWrap);
+    } else {
+      show(singleWrap);
+      hide(bulkWrap);
     }
   }
 
   function updateSummary(){
-    const userOpt = userSel?.selectedOptions?.[0];
-    const balance = userOpt ? Number(userOpt.getAttribute('data-balance') || 0) : 0;
-
-    const price = computeServicePriceForUser();
+    const balance = userBalance();
+    const price = servicePriceForUser();
 
     if (selectedPriceEl) selectedPriceEl.textContent = money(price);
     if (selectedBalanceEl) selectedBalanceEl.textContent = money(balance);
@@ -292,50 +268,78 @@
     }
   }
 
-  function resetAfterUserChange(){
-    serviceSel.value = '';
-    hide(wrapFields);
-    hide(wrapQty);
-    hide(wrapComments);
-    hide(wrapSummary);
-    btnCreate.disabled = true;
+  function initSelect2(){
+    if (!window.jQuery || !window.jQuery.fn || !window.jQuery.fn.select2) return;
+
+    const $ = window.jQuery;
+    const $modal = $(form).closest('.modal');
+
+    $(userSel).select2({
+      dropdownParent: $modal,
+      width: '100%',
+      placeholder: userSel.getAttribute('data-placeholder') || 'Choose user...',
+      allowClear: true
+    });
+
+    $(serviceSel).select2({
+      dropdownParent: $modal,
+      width: '100%',
+      placeholder: serviceSel.getAttribute('data-placeholder') || 'Search service...',
+      allowClear: true
+    });
+
+    $(userSel).on('change', function(){
+      if (userSel.value) {
+        show(serviceWrap);
+        updateServiceOptionLabels();
+      } else {
+        hide(serviceWrap);
+        serviceSel.value = '';
+        hideAllFields();
+      }
+      updateSummary();
+    });
+
+    $(serviceSel).on('change', function(){
+      if (serviceSel.value) {
+        showAllFields();
+        updateBulkUI();
+      } else {
+        hideAllFields();
+      }
+      updateSummary();
+    });
   }
 
-  // Init hidden state
-  hide(wrapService);
-  hide(wrapFields);
-  hide(wrapQty);
-  hide(wrapComments);
-  hide(wrapSummary);
+  hide(serviceWrap);
+  hideAllFields();
 
-  // Vanilla handlers
   userSel.addEventListener('change', function(){
     if (userSel.value) {
-      show(wrapService);
-      updateServiceOptionText();
+      show(serviceWrap);
+      updateServiceOptionLabels();
     } else {
-      hide(wrapService);
-      resetAfterUserChange();
+      hide(serviceWrap);
+      serviceSel.value = '';
+      hideAllFields();
     }
     updateSummary();
   });
 
   serviceSel.addEventListener('change', function(){
     if (serviceSel.value) {
-      show(wrapFields);
-      show(wrapComments);
-      show(wrapSummary);
-      if (wrapQty) show(wrapQty);
+      showAllFields();
+      updateBulkUI();
     } else {
-      hide(wrapFields);
-      hide(wrapQty);
-      hide(wrapComments);
-      hide(wrapSummary);
+      hideAllFields();
     }
     updateSummary();
   });
 
-  // Prevent submit if insufficient
+  bulkToggle.addEventListener('change', function(){
+    updateBulkUI();
+  });
+
   form.addEventListener('submit', function(e){
     updateSummary();
     if (btnCreate.disabled) {
@@ -344,33 +348,7 @@
     }
   });
 
-  // Select2 inside ajax modal (must be inline script, not @push)
-  function initSelect2(){
-    if (!window.jQuery || !window.jQuery.fn || !window.jQuery.fn.select2) return;
-    const $ = window.jQuery;
-
-    const $modal = $(form).closest('.modal');
-
-    $(userSel).select2({
-      dropdownParent: $modal,
-      width: '100%',
-      placeholder: userSel.getAttribute('data-placeholder') || 'Choose user...',
-      allowClear: true
-    }).on('change', function(){
-      // ensure vanilla change runs too
-      userSel.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-
-    $(serviceSel).select2({
-      dropdownParent: $modal,
-      width: '100%',
-      placeholder: serviceSel.getAttribute('data-placeholder') || 'Search service...',
-      allowClear: true
-    }).on('change', function(){
-      serviceSel.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-  }
-
   requestAnimationFrame(initSelect2);
 })();
 </script>
+@endpush
