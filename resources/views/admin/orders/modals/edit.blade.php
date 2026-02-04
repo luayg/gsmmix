@@ -161,12 +161,13 @@
         <div class="mb-3">
           <label class="form-label">Reply</label>
           <textarea
-            name="reply"
-            class="form-control js-editor"
-            rows="12"
-            data-summernote="1"
-            data-summernote-height="320"
-          >{!! $providerReplyHtml !!}</textarea>
+  name="reply"
+  class="form-control js-editor"
+  rows="12"
+  data-editor="tinymce"
+  data-editor-height="320"
+>{!! $providerReplyHtml !!}</textarea>
+
 
           <div class="form-text">
             يمكنك تعديل الرد بتنسيق كامل (مثل صورة 77).

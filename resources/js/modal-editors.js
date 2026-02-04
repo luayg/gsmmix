@@ -1,14 +1,5 @@
 // resources/js/modal-editors.js
-// IMPORTANT: يعتمد على window.jQuery الموجود من صفحة الأدمن (بدون استيراد jquery داخل Vite)
-
-function loadCssOnce(id, href) {
-  if (document.getElementById(id)) return;
-  const l = document.createElement('link');
-  l.id = id;
-  l.rel = 'stylesheet';
-  l.href = href;
-  document.head.appendChild(l);
-}
+// TinyMCE initializer (no jQuery, no Bootstrap plugin dependency)
 
 function loadScriptOnce(id, src) {
   return new Promise((resolve, reject) => {
@@ -16,122 +7,81 @@ function loadScriptOnce(id, src) {
     const s = document.createElement('script');
     s.id = id;
     s.src = src;
-    s.async = false;
+    s.async = true;
     s.onload = () => resolve();
     s.onerror = (e) => reject(e);
-    document.body.appendChild(s);
+    document.head.appendChild(s);
   });
 }
 
-function injectFixCssOnce() {
-  if (document.getElementById('orders-sn-fix-z')) return;
+async function ensureTinyMce() {
+  if (window.tinymce) return;
 
-  const st = document.createElement('style');
-  st.id = 'orders-sn-fix-z';
-  st.textContent = `
-    .note-editor.note-frame { border: 1px solid #dee2e6; }
-    .note-editor .note-toolbar { z-index: 1060; }
-    .note-dropdown-menu, .note-modal, .note-popover { z-index: 20000 !important; }
-  `;
-  document.head.appendChild(st);
-}
-
-async function ensureSummernoteOnPageJquery() {
-  const $ = window.jQuery;
-  if (!$) throw new Error('window.jQuery is missing (admin layout must provide it).');
-
-  // إذا Summernote موجود بالفعل على نفس jQuery
-  if ($.fn && typeof $.fn.summernote === 'function') return;
-
-  // حمّل Summernote BS5 (FULL)
-  loadCssOnce(
-    'orders-sn-bs5-css',
-    'https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-bs5.min.css'
-  );
-
+  // TinyMCE CDN
   await loadScriptOnce(
-    'orders-sn-bs5-js',
-    'https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-bs5.min.js'
+    'tinymce-cdn',
+    'https://cdn.jsdelivr.net/npm/tinymce@6/tinymce.min.js'
   );
 
-  // تأكيد أنه ركب على نفس jQuery
-  if (!$.fn || typeof $.fn.summernote !== 'function') {
-    throw new Error('Summernote loaded but NOT attached to window.jQuery (jQuery duplication/conflict).');
+  if (!window.tinymce) {
+    throw new Error('TinyMCE failed to load.');
   }
 }
 
-function waitFrames(n = 2) {
-  return new Promise((resolve) => {
-    const step = () => {
-      n -= 1;
-      if (n <= 0) return resolve();
-      requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  });
-}
-
-async function buildOneTextarea(ta) {
-  const $ = window.jQuery;
-  const $ta = $(ta);
-
-  // تنظيف أي بقايا قديمة بدون استدعاء destroy إذا كان يسبب مشاكل
-  try {
-    if ($ta.next('.note-editor').length) {
-      $ta.next('.note-editor').remove();
-    }
-    // امسح بيانات قديمة
-    $ta.removeData('summernote');
-  } catch (_) {}
-
-  const height = Number(ta.getAttribute('data-summernote-height') || 320);
-
-  // حاول init + لو فشل اطبع الخطأ الحقيقي
-  try {
-    $ta.summernote({
-      height,
-      dialogsInBody: true,
-      placeholder: ta.getAttribute('placeholder') || '',
-      toolbar: [
-        ['style', ['style']],
-        ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
-        ['fontsize', ['fontsize']],
-        ['color', ['color']],
-        ['para', ['ul', 'ol', 'paragraph']],
-        ['table', ['table']],
-        ['insert', ['link', 'picture']],
-        ['view', ['fullscreen', 'codeview']],
-        ['misc', ['undo', 'redo', 'help']]
-      ]
-    });
-  } catch (e) {
-    console.error('❌ Summernote init threw error:', e);
-    throw e;
-  }
-
-  // انتظر رسم DOM
-  await waitFrames(3);
-
-  // تأكد أنه انبنى
-  const editor = ta.parentElement?.querySelector('.note-editor');
-  if (!editor) {
-    console.warn('⚠️ Summernote did not build editor for textarea:', ta);
-  }
+function uniqueId(prefix = 'ed') {
+  return prefix + '-' + Math.random().toString(16).slice(2) + Date.now();
 }
 
 export async function initModalEditors(scopeEl = document) {
   const scope = scopeEl instanceof Element ? scopeEl : document;
-
-  const textareas = scope.querySelectorAll('textarea[data-summernote="1"]');
+  const textareas = scope.querySelectorAll('textarea[data-editor="tinymce"]');
   if (!textareas.length) return;
 
-  await ensureSummernoteOnPageJquery();
-  injectFixCssOnce();
+  await ensureTinyMce();
 
-  // ملاحظة مهمة: لا تحاول init قبل ما يكون المودال ظاهر/مرسوم
-  await waitFrames(2);
+  // مهم: إذا كان هناك محررات قديمة داخل نفس المودال، امسحها أولاً
+  for (const ta of textareas) {
+    if (!ta.id) ta.id = uniqueId('reply');
+    const existing = window.tinymce.get(ta.id);
+    if (existing) {
+      existing.remove();
+    }
+  }
 
   for (const ta of textareas) {
-    await buildOneTextarea(ta);
+    const height = Number(ta.getAttribute('data-editor-height') || 320);
+
+    await window.tinymce.init({
+      target: ta,
+      height,
+      menubar: false,
+      branding: false,
+      promotion: false,
+      convert_urls: false,
+      relative_urls: false,
+
+      plugins: [
+        'lists', 'link', 'image', 'table', 'code', 'fullscreen'
+      ],
+      toolbar:
+        'undo redo | bold italic underline strikethrough | ' +
+        'fontsize | forecolor backcolor | ' +
+        'alignleft aligncenter alignright alignjustify | ' +
+        'bullist numlist | table | link image | fullscreen code',
+
+      // مهم داخل المودال: اجعل الـ dialog فوق كل شيء
+      dialog_type: 'modal',
+
+      setup: (editor) => {
+        // عند Submit لازم نرجّع المحتوى للـ textarea
+        const form = ta.closest('form');
+        if (form && !form.dataset.tinymceBound) {
+          form.dataset.tinymceBound = '1';
+          form.addEventListener('submit', () => {
+            window.tinymce.triggerSave();
+          });
+        }
+      }
+    });
   }
 }
