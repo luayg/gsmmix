@@ -164,9 +164,10 @@
   name="reply"
   class="form-control js-editor"
   rows="12"
-  data-editor="tinymce"
+  data-editor="quill"
   data-editor-height="320"
 >{!! $providerReplyHtml !!}</textarea>
+
 
 
           <div class="form-text">

@@ -6,6 +6,7 @@ function nextFrame() {
 }
 
 async function runInitSafely(modalEl, contentEl) {
+  // انتظر كم فريم لضمان DOM + animation
   await nextFrame();
   await nextFrame();
 
@@ -32,6 +33,7 @@ document.addEventListener('click', async (e) => {
   const contentEl = modalEl.querySelector('.modal-content');
   if (!contentEl) return;
 
+  // bootstrap من layout/admin.js
   const BS = window.bootstrap;
   if (!BS?.Modal) {
     console.error('❌ bootstrap.Modal not found on window.bootstrap');
@@ -55,11 +57,13 @@ document.addEventListener('click', async (e) => {
     const html = await res.text();
     contentEl.innerHTML = html;
 
+    // لو المودال ظاهر بالفعل نفذ مباشرة
     if (modalEl.classList.contains('show')) {
       await runInitSafely(modalEl, contentEl);
       return;
     }
 
+    // غير ذلك انتظر shown
     const onShown = async () => {
       modalEl.removeEventListener('shown.bs.modal', onShown);
       await runInitSafely(modalEl, contentEl);
