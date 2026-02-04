@@ -1,12 +1,12 @@
 // resources/js/orders-imei-edit.js
-import { initModalEditors, syncEditorsBeforeSubmit } from './modal-editors';
+import { initModalEditors } from './modal-editors';
 
 function nextFrame() {
   return new Promise((r) => requestAnimationFrame(() => r()));
 }
 
 async function runInitSafely(modalEl, contentEl) {
-  // wait for DOM + bootstrap animation paint
+  // انتظر كم فريم لضمان DOM + animation
   await nextFrame();
   await nextFrame();
 
@@ -33,13 +33,13 @@ document.addEventListener('click', async (e) => {
   const contentEl = modalEl.querySelector('.modal-content');
   if (!contentEl) return;
 
+  // bootstrap من layout/admin.js
   const BS = window.bootstrap;
   if (!BS?.Modal) {
     console.error('❌ bootstrap.Modal not found on window.bootstrap');
     return;
   }
 
-  // Loading UI
   contentEl.innerHTML = `
     <div class="modal-body py-5 text-center text-muted">
       <div class="spinner-border" role="status" aria-hidden="true"></div>
@@ -57,28 +57,13 @@ document.addEventListener('click', async (e) => {
     const html = await res.text();
     contentEl.innerHTML = html;
 
-    // ✅ VERY IMPORTANT:
-    // sync editor -> textarea BEFORE form submit so "reply" is saved
-    // Use capture=true so it runs before any AJAX handler in admin.js
-    const onSubmitCapture = (ev) => {
-      const form = ev.target;
-      if (!(form instanceof HTMLFormElement)) return;
-      if (!contentEl.contains(form)) return;
-
-      // ✅ write editor html back into textarea[name="reply"]
-      syncEditorsBeforeSubmit();
-    };
-
-    // remove old listener if any (avoid duplicates when reopening modal)
-    contentEl.removeEventListener('submit', onSubmitCapture, true);
-    contentEl.addEventListener('submit', onSubmitCapture, true);
-
-    // init editors
+    // لو المودال ظاهر بالفعل نفذ مباشرة
     if (modalEl.classList.contains('show')) {
       await runInitSafely(modalEl, contentEl);
       return;
     }
 
+    // غير ذلك انتظر shown
     const onShown = async () => {
       modalEl.removeEventListener('shown.bs.modal', onShown);
       await runInitSafely(modalEl, contentEl);

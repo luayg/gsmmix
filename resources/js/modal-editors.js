@@ -1,126 +1,135 @@
 // resources/js/modal-editors.js
-// TinyMCE loader + initializer (works inside Bootstrap 5 modal)
-// - No jQuery dependency
-// - Adds color buttons
-// - Provides syncEditorsBeforeSubmit() so Reply is saved correctly
+// Quill editor initializer for Bootstrap 5 modals (NO jQuery, NO Summernote)
+// الهدف: محرر غني داخل Ajax Modal بدون تعارضات
 
-function loadScriptOnce(id, src) {
-  return new Promise((resolve, reject) => {
-    if (document.getElementById(id)) return resolve();
-    const s = document.createElement('script');
-    s.id = id;
-    s.src = src;
-    s.async = false;
-    s.onload = () => resolve();
-    s.onerror = (e) => reject(e);
-    document.body.appendChild(s);
-  });
+import Quill from 'quill';
+import 'quill/dist/quill.snow.css';
+
+function injectFixCssOnce() {
+  if (document.getElementById('orders-quill-fix')) return;
+
+  const st = document.createElement('style');
+  st.id = 'orders-quill-fix';
+  st.textContent = `
+    /* Quill inside Bootstrap modal: ensure toolbar + popups above modal */
+    .ql-toolbar.ql-snow { position: sticky; top: 0; z-index: 1060; background: #fff; }
+    .ql-container.ql-snow { border-radius: .375rem; }
+    .ql-editor { min-height: 260px; }
+
+    /* If modal body has overflow, sticky toolbar stays visible */
+    .modal-body .ql-toolbar { z-index: 1060; }
+
+    /* Quill dropdowns */
+    .ql-snow .ql-tooltip { z-index: 20000 !important; }
+
+    /* Keep editor width correct */
+    .quill-wrap { border: 1px solid #dee2e6; border-radius: .375rem; overflow: hidden; }
+  `;
+  document.head.appendChild(st);
 }
 
-function uniqueId(prefix = 'rt') {
-  return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now()}`;
+function nextFrame() {
+  return new Promise((r) => requestAnimationFrame(() => r()));
 }
 
-async function ensureTinyMce() {
-  // already loaded
-  if (window.tinymce && typeof window.tinymce.init === 'function') return;
-
-  // ✅ TinyMCE CDN (stable)
-  // لو عندك API KEY ضعها بدل no-api-key
-  await loadScriptOnce(
-    'orders-tinymce-js',
-    'https://cdn.tiny.cloud/1/no-api-key/tinymce/6/tinymce.min.js'
-  );
-
-  if (!window.tinymce) {
-    throw new Error('TinyMCE loaded but window.tinymce is missing.');
-  }
-}
-
-function buildSelectorForTextareas(textareas) {
-  // Give each textarea an id and build selector by ids (safe inside modal injections)
-  const ids = [];
-  for (const ta of textareas) {
-    if (!ta.id) ta.id = uniqueId('reply');
-    ids.push(`#${CSS.escape(ta.id)}`);
-  }
-  return ids.join(',');
+async function waitFrames(n = 2) {
+  for (let i = 0; i < n; i++) await nextFrame();
 }
 
 /**
- * Call this BEFORE submitting any form that contains editors
- * so textarea values get updated.
+ * يبني Quill بدل textarea
+ * - نخفي textarea (لكن نترك name كما هو)
+ * - ننشئ div editor ونملأه بـ HTML من textarea.value
+ * - عند submit نعيد html إلى textarea.value
  */
-export function syncEditorsBeforeSubmit() {
-  try {
-    if (window.tinymce?.triggerSave) {
-      window.tinymce.triggerSave(); // ✅ writes editor content back into textarea
-    }
-  } catch (e) {
-    console.warn('tinymce.triggerSave() failed:', e);
+async function buildOneTextarea(ta) {
+  // منع إعادة التهيئة
+  if (ta.dataset.quillReady === '1') return;
+
+  // لازم يكون داخل DOM
+  if (!ta.isConnected) return;
+
+  // أنشئ wrapper
+  const wrap = document.createElement('div');
+  wrap.className = 'quill-wrap';
+
+  const editorDiv = document.createElement('div');
+  editorDiv.className = 'quill-editor';
+  wrap.appendChild(editorDiv);
+
+  // ضع الـ wrapper بعد textarea
+  ta.insertAdjacentElement('afterend', wrap);
+
+  // اخفِ textarea
+  ta.style.display = 'none';
+
+  // انتظر رندر DOM (خصوصًا داخل modal)
+  await waitFrames(2);
+
+  // Toolbar configuration
+  const toolbar = [
+    [{ header: [1, 2, 3, false] }],
+    ['bold', 'italic', 'underline', 'strike'],
+    [{ color: [] }, { background: [] }],
+    [{ align: [] }],
+    [{ list: 'ordered' }, { list: 'bullet' }],
+    ['blockquote', 'code-block'],
+    ['link', 'image'],
+    ['clean'],
+  ];
+
+  const quill = new Quill(editorDiv, {
+    theme: 'snow',
+    modules: {
+      toolbar,
+      // clipboard: { matchVisual: false }, // لو احتجت
+    },
+  });
+
+  // حمّل HTML من textarea (مهم: textarea يحفظ HTML كنص)
+  const initialHtml = ta.value || '';
+  quill.clipboard.dangerouslyPasteHTML(initialHtml);
+
+  // حدّد ارتفاع لو موجود
+  const height = Number(ta.getAttribute('data-editor-height') || ta.getAttribute('data-summernote-height') || 320);
+  quill.root.style.minHeight = Math.max(200, height - 60) + 'px';
+
+  // عند إرسال الفورم: ارجع HTML للـ textarea
+  const form = ta.closest('form');
+  if (form && !form.dataset.quillHooked) {
+    form.dataset.quillHooked = '1';
+    form.addEventListener('submit', () => {
+      // حدّث كل textareas المحولة داخل نفس الفورم
+      form.querySelectorAll('textarea[data-editor="quill"][data-quill-ready="1"]').forEach((t) => {
+        const inst = t.__quillInstance;
+        if (inst) t.value = inst.root.innerHTML;
+      });
+    });
   }
+
+  // خزّن instance
+  ta.__quillInstance = quill;
+  ta.dataset.quillReady = '1';
+  ta.setAttribute('data-quill-ready', '1');
 }
 
 export async function initModalEditors(scopeEl = document) {
+  injectFixCssOnce();
+
   const scope = scopeEl instanceof Element ? scopeEl : document;
 
-  // We keep your same attribute to avoid editing blade:
-  const textareas = scope.querySelectorAll('textarea[data-summernote="1"]');
+  // ✅ نشتغل فقط على textareas التي نحددها
+  const textareas = scope.querySelectorAll('textarea[data-editor="quill"]');
   if (!textareas.length) return;
 
-  await ensureTinyMce();
+  // انتظر قليلًا حتى Bootstrap modal/DOM يستقر
+  await waitFrames(2);
 
-  // Remove any previous instances for these textareas (important when modal reopens)
   for (const ta of textareas) {
-    if (ta.id && window.tinymce?.get(ta.id)) {
-      try { window.tinymce.get(ta.id).remove(); } catch (_) {}
+    try {
+      await buildOneTextarea(ta);
+    } catch (e) {
+      console.error('❌ Quill init failed for textarea:', ta, e);
     }
   }
-
-  const selector = buildSelectorForTextareas(textareas);
-
-  await window.tinymce.init({
-    selector,
-
-    // ✅ UI inside modal
-    menubar: false,
-    branding: false,
-    height: 320,
-
-    // ✅ Plugins you need (table + code + fullscreen + lists + link + colors)
-    plugins: [
-      'lists', 'link', 'table', 'code', 'fullscreen',
-      'autoresize', 'charmap', 'searchreplace', 'visualblocks',
-      'wordcount'
-    ],
-
-    // ✅ Toolbar WITH colors
-    toolbar:
-      'undo redo | blocks | bold italic underline strikethrough | ' +
-      'forecolor backcolor | alignleft aligncenter alignright alignjustify | ' +
-      'bullist numlist | table link | fullscreen code',
-
-    // Better inside Bootstrap modal
-    // puts dropdowns/menus inside body so they don't get clipped
-    fixed_toolbar_container: false,
-
-    // Keep HTML as-is (you already store HTML tables/images)
-    valid_elements: '*[*]',
-    extended_valid_elements: '*[*]',
-
-    // Avoid content CSS surprises
-    content_style: `
-      body { font-family: Arial, sans-serif; font-size: 14px; }
-      table { border-collapse: collapse; width: 100%; }
-      table, td, th { border: 1px solid #000; }
-      td, th { padding: 6px; }
-      img { max-width: 100%; height: auto; }
-    `,
-
-    setup: (editor) => {
-      editor.on('init', () => {
-        // optional: console.log('TinyMCE ready:', editor.id);
-      });
-    }
-  });
 }
