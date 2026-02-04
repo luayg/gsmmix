@@ -1,9 +1,5 @@
 {{-- resources/views/admin/orders/_index.blade.php --}}
 @php
-  /**
-   * Expected variables from BaseOrdersController@index:
-   * $title, $kind, $routePrefix, $rows (Paginator), $providers (Collection)
-   */
   $title       = $title ?? 'Orders';
   $routePrefix = $routePrefix ?? 'admin.orders.imei';
   $kind        = $kind ?? 'imei';
@@ -124,7 +120,6 @@
                 <a class="btn btn-sm btn-primary js-open-modal"
                    data-url="{{ route($routePrefix . '.modal.view', $o->id) }}">View</a>
 
-                {{-- ✅ isolated edit --}}
                 <a class="btn btn-sm btn-warning js-open-order-edit"
                    data-url="{{ route($routePrefix . '.modal.edit', $o->id) }}">Edit</a>
               </td>
@@ -138,7 +133,13 @@
       </table>
     </div>
 
-    {{-- Pagination --}}
+    {{-- Orders IMEI Edit Modal (isolated) --}}
+    <div class="modal fade" id="orderEditModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content"></div>
+      </div>
+    </div>
+
     @if(isset($rows) && method_exists($rows, 'links'))
       <div class="mt-3">
         {!! $rows->links() !!}
@@ -147,12 +148,3 @@
 
   </div>
 </div>
-
-{{-- ✅ IMPORTANT: put the isolated modal in the modals stack (like service-modal) --}}
-@push('modals')
-  <div class="modal fade" id="orderEditModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-      <div class="modal-content"></div>
-    </div>
-  </div>
-@endpush

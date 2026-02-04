@@ -1,30 +1,28 @@
 // resources/js/orders-imei-edit.js
+import $ from 'jquery';
+import * as bootstrap from 'bootstrap';
 import { initModalEditors } from './modal-editors';
 
-console.log('orders-imei-edit loaded ✅');
+// اربط globals (فقط إذا غير موجودة) لتفادي كسر أي شيء بالـ admin
+if (!window.jQuery) window.jQuery = $;
+if (!window.$) window.$ = $;
+if (!window.bootstrap) window.bootstrap = bootstrap;
 
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('.js-open-order-edit');
   if (!btn) return;
 
-  // ✅ prevent any global handlers (like js-open-modal / ajaxModal)
   e.preventDefault();
-  e.stopPropagation();
-  e.stopImmediatePropagation();
 
   const url = btn.dataset.url || btn.getAttribute('href');
   if (!url || url === '#') return;
 
   const modalEl = document.getElementById('orderEditModal');
-  if (!modalEl) {
-    console.error('❌ orderEditModal not found. Make sure it exists in DOM.');
-    return;
-  }
+  if (!modalEl) return;
 
   const contentEl = modalEl.querySelector('.modal-content');
   if (!contentEl) return;
 
-  // loader
   contentEl.innerHTML = `
     <div class="modal-body py-5 text-center text-muted">
       <div class="spinner-border" role="status" aria-hidden="true"></div>
@@ -32,11 +30,7 @@ document.addEventListener('click', async (e) => {
     </div>
   `;
 
-  // show modal first (OK)
-  const modal =
-    window.bootstrap?.Modal.getOrCreateInstance(modalEl) ||
-    new window.bootstrap.Modal(modalEl);
-
+  const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
   modal.show();
 
   try {
@@ -46,16 +40,17 @@ document.addEventListener('click', async (e) => {
     const html = await res.text();
     contentEl.innerHTML = html;
 
-    // ✅ IMPORTANT FIX:
-    // modal is already shown, so shown.bs.modal will NOT fire now.
-    // initialize editors immediately.
-    try {
-      await initModalEditors(contentEl);
-      console.log('✅ initModalEditors done');
-    } catch (err) {
-      console.error('❌ initModalEditors error:', err);
-    }
+    // ✅ انتظر ظهور المودال بالكامل ثم شغّل summernote
+    const onShown = async () => {
+      modalEl.removeEventListener('shown.bs.modal', onShown);
+      try {
+        await initModalEditors(contentEl);
+      } catch (err) {
+        console.error('initModalEditors failed:', err);
+      }
+    };
 
+    modalEl.addEventListener('shown.bs.modal', onShown);
   } catch (err) {
     console.error(err);
     contentEl.innerHTML = `<div class="modal-body text-danger">Failed to load modal content.</div>`;
