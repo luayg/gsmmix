@@ -4,16 +4,38 @@
   $routePrefix = $routePrefix ?? 'admin.orders.imei';
   $kind        = $kind ?? 'imei';
 
-  $pickName = function ($v) {
-    if (is_string($v)) {
-      $s = trim($v);
-      if ($s !== '' && $s[0] === '{') {
-        $j = json_decode($s, true);
-        if (is_array($j)) return $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
+  // تنظيف نص عام (فك HTML entities مثل &#10060; => ❌ + إزالة وسوم + توحيد مسافات)
+  $cleanText = function ($v) {
+    $v = (string)$v;
+    $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $v = strip_tags($v);
+    $v = str_replace(["\r\n", "\r"], "\n", $v);
+    $v = preg_replace("/[ \t]+/", " ", $v) ?? $v;
+    $v = preg_replace("/\n{2,}/", "\n", $v) ?? $v;
+    return trim($v);
+  };
+
+  // استخراج اسم الخدمة حتى لو كان JSON أو فيه entities
+  $pickName = function ($v) use ($cleanText) {
+    if ($v === null) return '—';
+
+    // فك entities أولاً (مهم إذا كان JSON مخزن كـ string وفيه &quot; إلخ)
+    $raw = html_entity_decode((string)$v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $s = trim($raw);
+
+    // إذا يبدو JSON
+    if ($s !== '' && isset($s[0]) && $s[0] === '{') {
+      $j = json_decode($s, true);
+      if (is_array($j)) {
+        $v = $j['en'] ?? $j['fallback'] ?? reset($j) ?? $raw;
+      } else {
+        $v = $raw;
       }
-      return $v;
+    } else {
+      $v = $raw;
     }
-    return (string)$v;
+
+    return $cleanText($v);
   };
 
   $q      = request('q', '');
@@ -108,11 +130,12 @@
                 @elseif($st === 'rejected')
                   <span class="badge bg-danger">REJECTED</span>
                 @elseif($st === 'inprogress')
-                  <span class="badge bg-info">IN PROGRESS</span>
+                  <span class="badge bg-primary">IN PROGRESS</span>
                 @elseif($st === 'cancelled')
                   <span class="badge bg-dark">CANCELLED</span>
                 @else
-                  <span class="badge bg-secondary">WAITING</span>
+                  {{-- waiting --}}
+                  <span class="badge bg-warning text-dark">WAITING</span>
                 @endif
               </td>
 
@@ -134,16 +157,15 @@
     </div>
 
     {{-- Orders IMEI Edit Modal (isolated) --}}
-<div class="modal fade" id="orderEditModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content"></div>
-  </div>
-</div>
-
+    <div class="modal fade" id="orderEditModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content"></div>
+      </div>
+    </div>
 
     @if(isset($rows) && method_exists($rows, 'links'))
-      <div class="mt-3">
-        {!! $rows->links() !!}
+      <div class="mt-3 d-flex justify-content-center">
+        {!! $rows->links('pagination::bootstrap-5') !!}
       </div>
     @endif
 
