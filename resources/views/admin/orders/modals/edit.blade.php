@@ -61,10 +61,10 @@
   };
 
   // Names
-  $serviceName = $pickName($row?->service?->name ?? ($row->service_name ?? '—'));
+  $serviceName  = $pickName($row?->service?->name ?? ($row->service_name ?? '—'));
   $providerName = $cleanText($row?->provider?->name ?? ($row->provider_name ?? '—'));
 
-  // Reply HTML build (table + image) => this is what editor edits
+  // Reply HTML build (table + image)
   $providerReplyHtml = (string)($resp['provider_reply_html'] ?? '');
 
   if (trim($providerReplyHtml) === '') {
@@ -99,15 +99,15 @@
 
   $apiOrder  = ($row?->api_order ?? false) ? 'Yes' : 'No';
 
-  // ✅ أسعار: نعرضها كما هي بدون خلط (price = سعر العميل, order_price = تكلفة API)
-    // FIX: correct mapping
-  $orderPrice = $row?->order_price;               // what user pays
-  $apiCost    = $row?->price;                     // provider cost (api processing)
-  $finalPrice = $row?->final_price ?? $orderPrice;
-  $profit     = $row?->profit ?? (
-    (is_numeric($orderPrice) && is_numeric($apiCost)) ? ($orderPrice - $apiCost) : null
+  // ✅ أسعار (الأكثر منطقية لشكل لوحة GSM):
+  // price = سعر العميل
+  // order_price = تكلفة الـ API
+  $customerPrice = $row?->price;
+  $apiCost       = $row?->order_price;
+  $finalPrice    = $row?->final_price ?? $customerPrice;
+  $profit        = $row?->profit ?? (
+    (is_numeric($finalPrice) && is_numeric($apiCost)) ? ((float)$finalPrice - (float)$apiCost) : null
   );
-
 
   $fmt = function ($v) {
     if ($v === null || $v === '') return '—';
@@ -144,7 +144,7 @@
               <tr><th>Order date</th><td>{{ $createdAt }}</td></tr>
               <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
               <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>
-              <tr><th>Order price</th><td>{{ $fmt($orderPrice) }}</td></tr>
+              <tr><th>Order price</th><td>{{ $fmt($customerPrice) }}</td></tr>
               <tr><th>Final price</th><td>{{ $fmt($finalPrice) }}</td></tr>
               <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
               <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
@@ -156,23 +156,22 @@
         </div>
       </div>
 
-      {{-- Reply (edit) --}}
-<div class="mb-3">
-  <label class="form-label">Reply</label>
+      {{-- RIGHT: Reply + Status --}}
+      <div class="col-lg-6">
+        <div class="mb-3">
+          <label class="form-label">Reply</label>
+          <textarea
+            name="reply"
+            class="form-control js-editor"
+            rows="12"
+            data-summernote="1"
+            data-summernote-height="320"
+          >{!! $providerReplyHtml !!}</textarea>
 
-  <textarea
-    name="reply"
-    class="form-control js-editor"
-    rows="10"
-    data-summernote="1"
-    data-summernote-height="320"
-  >{!! $reply !!}</textarea>
-
-  <div class="form-text">
-    يمكنك تعديل الرد بتنسيق كامل (مثل صورة 77).
-  </div>
-</div>
-
+          <div class="form-text">
+            يمكنك تعديل الرد بتنسيق كامل (مثل صورة 77).
+          </div>
+        </div>
 
         <div class="mt-3">
           <label class="form-label fw-semibold">Status</label>

@@ -1,5 +1,5 @@
 // resources/js/modal-editors.js
-// Isolated Summernote loader + initializer (NO jQuery import, NO global override)
+// Isolated Summernote(BS5) loader + initializer (NO jQuery import, NO global override)
 
 function loadCssOnce(id, href) {
   if (document.getElementById(id)) return;
@@ -23,32 +23,50 @@ function loadScriptOnce(id, src) {
   });
 }
 
-async function ensureSummernoteOnSameJquery() {
+async function ensureSummernoteBs5OnSameJquery() {
   // IMPORTANT: use the page jQuery only
   const $ = window.jQuery;
   if (!$) throw new Error('window.jQuery is missing (admin layout must provide it).');
 
+  // already attached
   if ($.fn && typeof $.fn.summernote === 'function') return;
 
-  // Load summernote assets ONCE (no jQuery load here!)
-  loadCssOnce('orders-sn-css', 'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css');
-  await loadScriptOnce('orders-sn-js', 'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
+  // ✅ BS5 build (NOT lite)
+  loadCssOnce(
+    'orders-sn-bs5-css',
+    'https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-bs5.min.css'
+  );
 
-  // After load, verify it attached to SAME jQuery
+  await loadScriptOnce(
+    'orders-sn-bs5-js',
+    'https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-bs5.min.js'
+  );
+
   if (!$.fn || typeof $.fn.summernote !== 'function') {
-    throw new Error('Summernote loaded but not attached to window.jQuery (possible jQuery duplication).');
+    throw new Error('Summernote BS5 loaded but not attached to window.jQuery (possible jQuery duplication).');
   }
 }
 
 export async function initModalEditors(scopeEl = document) {
   const scope = scopeEl instanceof Element ? scopeEl : document;
 
-  // Find editors
   const textareas = scope.querySelectorAll('textarea[data-summernote="1"]');
   if (!textareas.length) return;
 
-  await ensureSummernoteOnSameJquery();
+  await ensureSummernoteBs5OnSameJquery();
   const $ = window.jQuery;
+
+  // ✅ زِد الـ z-index عشان القوائم تظهر فوق المودال
+  if (!document.getElementById('orders-sn-fix-z')) {
+    const st = document.createElement('style');
+    st.id = 'orders-sn-fix-z';
+    st.textContent = `
+      .note-editor.note-frame { border: 1px solid #dee2e6; }
+      .note-editor .note-toolbar { z-index: 1060; }
+      .note-dropdown-menu, .note-modal, .note-popover { z-index: 20000 !important; }
+    `;
+    document.head.appendChild(st);
+  }
 
   for (const ta of textareas) {
     const $ta = $(ta);
@@ -60,7 +78,7 @@ export async function initModalEditors(scopeEl = document) {
       }
     } catch (_) {}
 
-    const height = Number(ta.getAttribute('data-summernote-height') || 260);
+    const height = Number(ta.getAttribute('data-summernote-height') || 320);
 
     $ta.summernote({
       height,
@@ -69,13 +87,13 @@ export async function initModalEditors(scopeEl = document) {
       toolbar: [
         ['style', ['style']],
         ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
+        ['fontsize', ['fontsize']],
         ['color', ['color']],
         ['para', ['ul', 'ol', 'paragraph']],
         ['table', ['table']],
         ['insert', ['link', 'picture']],
-        ['view', ['codeview']],
-        ['help', ['help']],
-        ['history', ['undo', 'redo']]
+        ['view', ['fullscreen', 'codeview']],
+        ['misc', ['undo', 'redo', 'help']]
       ]
     });
   }

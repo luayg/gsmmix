@@ -23,7 +23,6 @@ document.addEventListener('click', async (e) => {
     </div>
   `;
 
-  // show modal
   const modal = window.bootstrap?.Modal.getOrCreateInstance(modalEl) || new window.bootstrap.Modal(modalEl);
   modal.show();
 
@@ -34,9 +33,17 @@ document.addEventListener('click', async (e) => {
     const html = await res.text();
     contentEl.innerHTML = html;
 
-    // IMPORTANT: init after injection
-    await initModalEditors(contentEl);
+    // ✅ init after modal is fully visible
+    const onShown = async () => {
+      modalEl.removeEventListener('shown.bs.modal', onShown);
+      try {
+        await initModalEditors(contentEl);
+      } catch (err) {
+        console.error(err);
+      }
+    };
 
+    modalEl.addEventListener('shown.bs.modal', onShown);
   } catch (err) {
     console.error(err);
     contentEl.innerHTML = `<div class="modal-body text-danger">Failed to load modal content.</div>`;
