@@ -3,7 +3,6 @@ import $ from 'jquery';
 import * as bootstrap from 'bootstrap';
 import { initModalEditors } from './modal-editors';
 
-// اربط globals (فقط إذا غير موجودة) لتفادي كسر أي شيء بالـ admin
 if (!window.jQuery) window.jQuery = $;
 if (!window.$) window.$ = $;
 if (!window.bootstrap) window.bootstrap = bootstrap;
@@ -13,7 +12,6 @@ document.addEventListener('click', async (e) => {
   if (!btn) return;
 
   e.preventDefault();
-
   const url = btn.dataset.url || btn.getAttribute('href');
   if (!url || url === '#') return;
 
@@ -23,6 +21,7 @@ document.addEventListener('click', async (e) => {
   const contentEl = modalEl.querySelector('.modal-content');
   if (!contentEl) return;
 
+  // إظهار مؤشر التحميل
   contentEl.innerHTML = `
     <div class="modal-body py-5 text-center text-muted">
       <div class="spinner-border" role="status" aria-hidden="true"></div>
@@ -40,17 +39,13 @@ document.addEventListener('click', async (e) => {
     const html = await res.text();
     contentEl.innerHTML = html;
 
-    // ✅ انتظر ظهور المودال بالكامل ثم شغّل summernote
-    const onShown = async () => {
-      modalEl.removeEventListener('shown.bs.modal', onShown);
-      try {
-        await initModalEditors(contentEl);
-      } catch (err) {
-        console.error('initModalEditors failed:', err);
-      }
-    };
+    // ✅ التعديل: استدعاء المحرر بعد حقن المحرر مباشرة 
+    // نستخدم تأخير 300ms لضمان أن المودال انتهى من التحريك (Fade animation)
+    setTimeout(async () => {
+      await initModalEditors(contentEl);
+      console.log('✅ Summernote logic executed on modal content');
+    }, 300);
 
-    modalEl.addEventListener('shown.bs.modal', onShown);
   } catch (err) {
     console.error(err);
     contentEl.innerHTML = `<div class="modal-body text-danger">Failed to load modal content.</div>`;
