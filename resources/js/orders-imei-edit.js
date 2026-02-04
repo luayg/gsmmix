@@ -1,4 +1,4 @@
-// resources/js/orders-imei-edit.js
+// C:\xampp\htdocs\gsmmix\resources\js\orders-imei-edit.js
 import { initModalEditors } from './modal-editors';
 
 function nextFrame() {
@@ -16,6 +16,26 @@ async function runInitSafely(modalEl, contentEl) {
   } catch (e) {
     console.error('❌ initModalEditors failed', e);
   }
+}
+
+function cleanupQuillIn(modalEl) {
+  // ✅ تنظيف بسيط حتى ما تتكرر instances وتسبب أعطال
+  const textareas = modalEl.querySelectorAll('textarea[data-editor="quill"]');
+  textareas.forEach((ta) => {
+    try {
+      if (ta.__quillWrap && ta.__quillWrap.isConnected) ta.__quillWrap.remove();
+    } catch (_) {}
+    try {
+      // رجّع textarea طبيعي
+      ta.style.display = '';
+      ta.dataset.quillReady = '0';
+      ta.removeAttribute('data-quill-ready');
+    } catch (_) {}
+    try {
+      ta.__quillInstance = null;
+      ta.__quillWrap = null;
+    } catch (_) {}
+  });
 }
 
 document.addEventListener('click', async (e) => {
@@ -40,6 +60,14 @@ document.addEventListener('click', async (e) => {
     return;
   }
 
+  // ✅ hook cleanup مرة واحدة
+  if (!modalEl.__quillCleanupHooked) {
+    modalEl.__quillCleanupHooked = true;
+    modalEl.addEventListener('hidden.bs.modal', () => {
+      cleanupQuillIn(modalEl);
+    });
+  }
+
   contentEl.innerHTML = `
     <div class="modal-body py-5 text-center text-muted">
       <div class="spinner-border" role="status" aria-hidden="true"></div>
@@ -48,6 +76,16 @@ document.addEventListener('click', async (e) => {
   `;
 
   const modal = BS.Modal.getOrCreateInstance(modalEl);
+
+  // ✅ اربط shown قبل show حتى لا يفوتك
+  let shownResolve;
+  const shownPromise = new Promise((r) => (shownResolve = r));
+  const onShownOnce = async () => {
+    modalEl.removeEventListener('shown.bs.modal', onShownOnce);
+    shownResolve(true);
+  };
+  modalEl.addEventListener('shown.bs.modal', onShownOnce);
+
   modal.show();
 
   try {
@@ -57,19 +95,15 @@ document.addEventListener('click', async (e) => {
     const html = await res.text();
     contentEl.innerHTML = html;
 
-    // لو المودال ظاهر بالفعل نفذ مباشرة
-    if (modalEl.classList.contains('show')) {
-      await runInitSafely(modalEl, contentEl);
-      return;
+    // انتظر shown لو لم يكن ظاهر فعليًا بعد
+    if (!modalEl.classList.contains('show')) {
+      await shownPromise;
+    } else {
+      await nextFrame();
+      await nextFrame();
     }
 
-    // غير ذلك انتظر shown
-    const onShown = async () => {
-      modalEl.removeEventListener('shown.bs.modal', onShown);
-      await runInitSafely(modalEl, contentEl);
-    };
-    modalEl.addEventListener('shown.bs.modal', onShown);
-
+    await runInitSafely(modalEl, contentEl);
   } catch (err) {
     console.error(err);
     contentEl.innerHTML = `<div class="modal-body text-danger">Failed to load modal content.</div>`;

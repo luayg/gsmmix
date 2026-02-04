@@ -38,24 +38,31 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
+  // ✅ Badge inline-style (عشان Quill ما يشيل الألوان)
+  $badge = function ($text, $bg, $fg = '#fff') {
+    $t = e((string)$text);
+    return '<span style="display:inline-block;padding:.25em .45em;font-size:75%;font-weight:700;line-height:1;'
+        . 'color:'.$fg.';background:'.$bg.';border-radius:.25rem;vertical-align:baseline;">'.$t.'</span>';
+  };
+
   // Badge rendering
-  $renderValue = function ($label, $value) use ($cleanText) {
+  $renderValue = function ($label, $value) use ($cleanText, $badge) {
     $label = strtolower($cleanText($label));
     $val   = $cleanText($value);
     $valL  = strtolower($val);
 
-    if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
-    if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
+    if ($valL === 'on')  return $badge('ON',  '#dc3545');
+    if ($valL === 'off') return $badge('OFF', '#198754');
 
     if (strpos($label, 'icloud') !== false) {
-      if (strpos($valL, 'lost') !== false)  return '<span class="badge bg-danger">'.e($val).'</span>';
-      if (strpos($valL, 'clean') !== false) return '<span class="badge bg-success">'.e($val).'</span>';
-      return '<span class="badge bg-secondary">'.e($val).'</span>';
+      if (strpos($valL, 'lost') !== false)  return $badge($val, '#dc3545');
+      if (strpos($valL, 'clean') !== false) return $badge($val, '#198754');
+      return $badge($val, '#6c757d');
     }
 
-    if (in_array($valL, ['activated','unlocked','clean'], true)) return '<span class="badge bg-success">'.e($val).'</span>';
-    if (in_array($valL, ['expired'], true)) return '<span class="badge bg-danger">'.e($val).'</span>';
-    if (strpos($valL, 'lost') !== false) return '<span class="badge bg-danger">'.e($val).'</span>';
+    if (in_array($valL, ['activated','unlocked','clean'], true)) return $badge($val, '#198754');
+    if (in_array($valL, ['expired'], true)) return $badge($val, '#dc3545');
+    if (strpos($valL, 'lost') !== false) return $badge($val, '#dc3545');
 
     return e($val);
   };
@@ -99,9 +106,7 @@
 
   $apiOrder  = ($row?->api_order ?? false) ? 'Yes' : 'No';
 
-  // ✅ أسعار (الأكثر منطقية لشكل لوحة GSM):
-  // price = سعر العميل
-  // order_price = تكلفة الـ API
+  // prices
   $customerPrice = $row?->price;
   $apiCost       = $row?->order_price;
   $finalPrice    = $row?->final_price ?? $customerPrice;
@@ -160,18 +165,18 @@
       <div class="col-lg-6">
         <div class="mb-3">
           <label class="form-label">Reply</label>
+
+          {{-- ✅ هذا هو المهم: data-editor="quill" --}}
           <textarea
-  name="reply"
-  class="form-control js-editor"
-  rows="12"
-  data-editor="quill"
-  data-editor-height="320"
->{!! $providerReplyHtml !!}</textarea>
-
-
+            name="reply"
+            class="form-control js-editor"
+            rows="12"
+            data-editor="quill"
+            data-editor-height="320"
+          >{!! $providerReplyHtml !!}</textarea>
 
           <div class="form-text">
-            يمكنك تعديل الرد بتنسيق كامل (مثل صورة 77).
+            يمكنك تعديل الرد بتنسيق كامل.
           </div>
         </div>
 

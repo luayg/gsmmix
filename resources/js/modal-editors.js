@@ -1,6 +1,6 @@
 // resources/js/modal-editors.js
-// Quill editor initializer for Bootstrap 5 modals (NO jQuery, NO Summernote)
-// الهدف: محرر غني داخل Ajax Modal بدون تعارضات
+// Quill editor initializer for Bootstrap 5 modals
+// الهدف: محرر غني داخل Ajax Modal بدون تعارضات + ضمان حفظ القيمة داخل textarea قبل أي Ajax submit
 
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
@@ -15,14 +15,8 @@ function injectFixCssOnce() {
     .ql-toolbar.ql-snow { position: sticky; top: 0; z-index: 1060; background: #fff; }
     .ql-container.ql-snow { border-radius: .375rem; }
     .ql-editor { min-height: 260px; }
-
-    /* If modal body has overflow, sticky toolbar stays visible */
     .modal-body .ql-toolbar { z-index: 1060; }
-
-    /* Quill dropdowns */
     .ql-snow .ql-tooltip { z-index: 20000 !important; }
-
-    /* Keep editor width correct */
     .quill-wrap { border: 1px solid #dee2e6; border-radius: .375rem; overflow: hidden; }
   `;
   document.head.appendChild(st);
@@ -36,20 +30,12 @@ async function waitFrames(n = 2) {
   for (let i = 0; i < n; i++) await nextFrame();
 }
 
-/**
- * يبني Quill بدل textarea
- * - نخفي textarea (لكن نترك name كما هو)
- * - ننشئ div editor ونملأه بـ HTML من textarea.value
- * - عند submit نعيد html إلى textarea.value
- */
+// يحول textarea إلى Quill + يضمن مزامنة القيمة للحفظ
 async function buildOneTextarea(ta) {
-  // منع إعادة التهيئة
   if (ta.dataset.quillReady === '1') return;
-
-  // لازم يكون داخل DOM
   if (!ta.isConnected) return;
 
-  // أنشئ wrapper
+  // wrapper
   const wrap = document.createElement('div');
   wrap.className = 'quill-wrap';
 
@@ -57,16 +43,14 @@ async function buildOneTextarea(ta) {
   editorDiv.className = 'quill-editor';
   wrap.appendChild(editorDiv);
 
-  // ضع الـ wrapper بعد textarea
+  // ضع wrapper بعد textarea
   ta.insertAdjacentElement('afterend', wrap);
 
-  // اخفِ textarea
+  // اخفِ textarea لكن اتركه في الفورم للحفظ
   ta.style.display = 'none';
 
-  // انتظر رندر DOM (خصوصًا داخل modal)
   await waitFrames(2);
 
-  // Toolbar configuration
   const toolbar = [
     [{ header: [1, 2, 3, false] }],
     ['bold', 'italic', 'underline', 'strike'],
@@ -80,31 +64,38 @@ async function buildOneTextarea(ta) {
 
   const quill = new Quill(editorDiv, {
     theme: 'snow',
-    modules: {
-      toolbar,
-      // clipboard: { matchVisual: false }, // لو احتجت
-    },
+    modules: { toolbar },
   });
 
-  // حمّل HTML من textarea (مهم: textarea يحفظ HTML كنص)
+  // حمّل HTML من textarea
   const initialHtml = ta.value || '';
   quill.clipboard.dangerouslyPasteHTML(initialHtml);
 
-  // حدّد ارتفاع لو موجود
-  const height = Number(ta.getAttribute('data-editor-height') || ta.getAttribute('data-summernote-height') || 320);
+  // حدّد ارتفاع
+  const height = Number(
+    ta.getAttribute('data-editor-height') ||
+    ta.getAttribute('data-summernote-height') ||
+    320
+  );
   quill.root.style.minHeight = Math.max(200, height - 60) + 'px';
 
-  // عند إرسال الفورم: ارجع HTML للـ textarea
+  // ✅ أهم سطرين لحل مشكلة عدم الحفظ:
+  // 1) مزامنة textarea في كل تغيير (حتى لو Ajax يمنع submit)
+  const syncToTextarea = () => { ta.value = quill.root.innerHTML; };
+  quill.on('text-change', syncToTextarea);
+  syncToTextarea();
+
+  // 2) مزامنة قبل submit في طور الالتقاط capture (قبل أي listener آخر)
   const form = ta.closest('form');
   if (form && !form.dataset.quillHooked) {
     form.dataset.quillHooked = '1';
+
     form.addEventListener('submit', () => {
-      // حدّث كل textareas المحولة داخل نفس الفورم
       form.querySelectorAll('textarea[data-editor="quill"][data-quill-ready="1"]').forEach((t) => {
         const inst = t.__quillInstance;
         if (inst) t.value = inst.root.innerHTML;
       });
-    });
+    }, true); // ✅ capture = true
   }
 
   // خزّن instance
@@ -118,11 +109,10 @@ export async function initModalEditors(scopeEl = document) {
 
   const scope = scopeEl instanceof Element ? scopeEl : document;
 
-  // ✅ نشتغل فقط على textareas التي نحددها
+  // نشتغل فقط على textareas التي نحددها
   const textareas = scope.querySelectorAll('textarea[data-editor="quill"]');
   if (!textareas.length) return;
 
-  // انتظر قليلًا حتى Bootstrap modal/DOM يستقر
   await waitFrames(2);
 
   for (const ta of textareas) {
