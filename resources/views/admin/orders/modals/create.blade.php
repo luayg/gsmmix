@@ -120,14 +120,10 @@
         </select>
       </div>
 
-      {{-- BULK toggle + fields (hidden until service chosen) --}}
-      <div class="col-12 js-step-fields d-none">
-        <div class="form-check">
-          <input class="form-check-input" type="checkbox" value="1" id="bulkToggle" name="bulk">
-          <label class="form-check-label" for="bulkToggle">Bulk</label>
-        </div>
-      </div>
+      {{-- ✅ bulk hidden input (we set it automatically based on service allow_bulk) --}}
+      <input type="hidden" name="bulk" id="bulkHidden" value="0">
 
+      {{-- SINGLE device --}}
       <div class="col-12 js-step-fields d-none" id="singleDeviceWrap">
         @if($isFileKind)
           <label class="form-label">Upload file</label>
@@ -138,6 +134,7 @@
         @endif
       </div>
 
+      {{-- BULK devices --}}
       <div class="col-12 js-step-fields d-none" id="bulkDevicesWrap">
         <label class="form-label">Devices (one per line)</label>
         <textarea class="form-control" name="devices" rows="6" placeholder="Enter one IMEI per line"></textarea>
@@ -188,9 +185,9 @@
   const serviceSel  = form.querySelector('.js-service');
   const fieldsWraps = form.querySelectorAll('.js-step-fields');
 
-  const bulkToggle = document.getElementById('bulkToggle');
   const singleWrap = document.getElementById('singleDeviceWrap');
   const bulkWrap   = document.getElementById('bulkDevicesWrap');
+  const bulkHidden = document.getElementById('bulkHidden');
 
   const selectedPriceEl   = document.getElementById('selectedPrice');
   const selectedBalanceEl = document.getElementById('selectedBalance');
@@ -257,25 +254,26 @@
     });
   }
 
-  function updateBulkUI(){
+  // ✅ no checkbox: if service allow_bulk=1 show bulk textarea directly, else show single input
+  function applyBulkModeByService(){
     const allowBulk = serviceAllowBulk();
 
-    if (!allowBulk) {
-      bulkToggle.checked = false;
-      bulkToggle.disabled = true;
-      show(singleWrap);
-      hide(bulkWrap);
-      return;
-    }
-
-    bulkToggle.disabled = false;
-
-    if (bulkToggle.checked) {
+    if (allowBulk) {
+      if (bulkHidden) bulkHidden.value = '1';
       hide(singleWrap);
       show(bulkWrap);
+
+      // if service is bulk, clear single device to avoid validation confusion
+      const deviceInput = singleWrap ? singleWrap.querySelector('input[name="device"]') : null;
+      if (deviceInput) deviceInput.value = '';
     } else {
+      if (bulkHidden) bulkHidden.value = '0';
       show(singleWrap);
       hide(bulkWrap);
+
+      // if service is single, clear bulk textarea
+      const bulkTa = bulkWrap ? bulkWrap.querySelector('textarea[name="devices"]') : null;
+      if (bulkTa) bulkTa.value = '';
     }
   }
 
@@ -302,6 +300,7 @@
   // Initial state
   hide(serviceWrap);
   hideAllFields();
+  if (bulkHidden) bulkHidden.value = '0';
   updateSummary();
 
   userSel.addEventListener('change', function(){
@@ -312,6 +311,7 @@
       hide(serviceWrap);
       serviceSel.value = '';
       hideAllFields();
+      if (bulkHidden) bulkHidden.value = '0';
     }
     updateSummary();
   });
@@ -319,15 +319,12 @@
   serviceSel.addEventListener('change', function(){
     if (serviceSel.value) {
       showAllFields();
-      updateBulkUI();
+      applyBulkModeByService();
     } else {
       hideAllFields();
+      if (bulkHidden) bulkHidden.value = '0';
     }
     updateSummary();
-  });
-
-  bulkToggle.addEventListener('change', function(){
-    updateBulkUI();
   });
 
   form.addEventListener('submit', function(e){
