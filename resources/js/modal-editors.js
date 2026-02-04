@@ -1,5 +1,5 @@
 // resources/js/modal-editors.js
-let SN_LOADING = null;
+// Isolated Summernote loader + initializer (NO jQuery import, NO global override)
 
 function loadCssOnce(id, href) {
   if (document.getElementById(id)) return;
@@ -18,91 +18,65 @@ function loadScriptOnce(id, src) {
     s.src = src;
     s.async = false;
     s.onload = () => resolve();
-    s.onerror = () => reject(new Error('Failed to load: ' + src));
+    s.onerror = (e) => reject(e);
     document.body.appendChild(s);
   });
 }
 
-async function ensureSummernoteLoaded() {
-  // لازم يكون موجود jQuery الأساسي من admin.js
-  if (!window.jQuery) {
-    console.warn('[modal-editors] window.jQuery is missing. (admin.js should provide it)');
-    return false;
+async function ensureSummernoteOnSameJquery() {
+  // IMPORTANT: use the page jQuery only
+  const $ = window.jQuery;
+  if (!$) throw new Error('window.jQuery is missing (admin layout must provide it).');
+
+  if ($.fn && typeof $.fn.summernote === 'function') return;
+
+  // Load summernote assets ONCE (no jQuery load here!)
+  loadCssOnce('orders-sn-css', 'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css');
+  await loadScriptOnce('orders-sn-js', 'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js');
+
+  // After load, verify it attached to SAME jQuery
+  if (!$.fn || typeof $.fn.summernote !== 'function') {
+    throw new Error('Summernote loaded but not attached to window.jQuery (possible jQuery duplication).');
   }
-
-  // لو Summernote موجود على نفس jQuery خلاص
-  if (window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function') {
-    return true;
-  }
-
-  // تحميل مرة واحدة فقط
-  if (!SN_LOADING) {
-    SN_LOADING = (async () => {
-      loadCssOnce(
-        'summernote-lite-css',
-        'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css'
-      );
-
-      await loadScriptOnce(
-        'summernote-lite-js',
-        'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js'
-      );
-
-      // تأكيد أنه تركّب على نفس jQuery
-      if (!window.jQuery.fn || typeof window.jQuery.fn.summernote !== 'function') {
-        throw new Error('Summernote did not attach to window.jQuery');
-      }
-    })().catch((e) => {
-      console.error('[modal-editors] ', e);
-      return false;
-    });
-  }
-
-  const ok = await SN_LOADING;
-  return ok !== false;
 }
 
-export async function initModalEditors(container) {
-  const root = container instanceof Element ? container : document;
+export async function initModalEditors(scopeEl = document) {
+  const scope = scopeEl instanceof Element ? scopeEl : document;
 
-  // ندعم الحالتين: data-summernote أو class js-editor
-  const areas = root.querySelectorAll('textarea[data-summernote="1"], textarea.js-editor');
-  if (!areas.length) return;
+  // Find editors
+  const textareas = scope.querySelectorAll('textarea[data-summernote="1"]');
+  if (!textareas.length) return;
 
-  const ok = await ensureSummernoteLoaded();
-  if (!ok) return;
-
+  await ensureSummernoteOnSameJquery();
   const $ = window.jQuery;
 
-  $(areas).each(function () {
-    const $t = $(this);
+  for (const ta of textareas) {
+    const $ta = $(ta);
 
-    // already initialized
-    if ($t.next('.note-editor').length) return;
+    // prevent double init
+    try {
+      if ($ta.next('.note-editor').length || $ta.data('summernote')) {
+        $ta.summernote('destroy');
+      }
+    } catch (_) {}
 
-    const h = Number($t.attr('data-summernote-height') || 320);
+    const height = Number(ta.getAttribute('data-summernote-height') || 260);
 
-    $t.summernote({
-      height: h,
-      focus: false,
+    $ta.summernote({
+      height,
+      dialogsInBody: true,
+      placeholder: ta.getAttribute('placeholder') || '',
       toolbar: [
-        ['fontsize', ['fontsize']],
+        ['style', ['style']],
         ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
         ['color', ['color']],
         ['para', ['ul', 'ol', 'paragraph']],
-        ['insert', ['link', 'picture', 'table', 'hr']],
-        ['view', ['codeview']]
-      ],
-      fontSizes: ['8','9','10','11','12','14','16','18','20','24','28','32','36','48'],
-      callbacks: {
-        onImageUpload: function (files) {
-          for (const f of files) {
-            const reader = new FileReader();
-            reader.onload = (e) => $t.summernote('insertImage', e.target.result);
-            reader.readAsDataURL(f);
-          }
-        }
-      }
+        ['table', ['table']],
+        ['insert', ['link', 'picture']],
+        ['view', ['codeview']],
+        ['help', ['help']],
+        ['history', ['undo', 'redo']]
+      ]
     });
-  });
+  }
 }

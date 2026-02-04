@@ -100,9 +100,14 @@
   $apiOrder  = ($row?->api_order ?? false) ? 'Yes' : 'No';
 
   // ✅ أسعار: نعرضها كما هي بدون خلط (price = سعر العميل, order_price = تكلفة API)
-  $orderPrice = $row?->price;
-  $apiCost    = $row?->order_price;
-  $profit     = $row?->profit;
+    // FIX: correct mapping
+  $orderPrice = $row?->order_price;               // what user pays
+  $apiCost    = $row?->price;                     // provider cost (api processing)
+  $finalPrice = $row?->final_price ?? $orderPrice;
+  $profit     = $row?->profit ?? (
+    (is_numeric($orderPrice) && is_numeric($apiCost)) ? ($orderPrice - $apiCost) : null
+  );
+
 
   $fmt = function ($v) {
     if ($v === null || $v === '') return '—';
@@ -140,7 +145,7 @@
               <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
               <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>
               <tr><th>Order price</th><td>{{ $fmt($orderPrice) }}</td></tr>
-              <tr><th>Final price</th><td>{{ $fmt($orderPrice) }}</td></tr>
+              <tr><th>Final price</th><td>{{ $fmt($finalPrice) }}</td></tr>
               <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
               <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
               <tr><th>API order ID</th><td>{{ $remoteId }}</td></tr>
