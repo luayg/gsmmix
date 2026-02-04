@@ -1,8 +1,21 @@
 // resources/js/orders-imei-edit.js
 import { initModalEditors } from './modal-editors';
 
-function wait(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+function nextFrame() {
+  return new Promise((r) => requestAnimationFrame(() => r()));
+}
+
+async function runInitSafely(modalEl, contentEl) {
+  // ننتظر إطارين لضمان DOM + Bootstrap animation
+  await nextFrame();
+  await nextFrame();
+
+  try {
+    await initModalEditors(contentEl);
+    console.log('✅ initModalEditors done');
+  } catch (e) {
+    console.error('❌ initModalEditors failed', e);
+  }
 }
 
 document.addEventListener('click', async (e) => {
@@ -20,10 +33,10 @@ document.addEventListener('click', async (e) => {
   const contentEl = modalEl.querySelector('.modal-content');
   if (!contentEl) return;
 
-  // لازم Bootstrap يكون global من layout/admin
+  // تأكد bootstrap موجود (من layout/admin.js)
   const BS = window.bootstrap;
   if (!BS?.Modal) {
-    console.error('Bootstrap Modal not found on window.bootstrap (check admin layout).');
+    console.error('❌ bootstrap.Modal not found on window.bootstrap');
     return;
   }
 
@@ -44,28 +57,19 @@ document.addEventListener('click', async (e) => {
     const html = await res.text();
     contentEl.innerHTML = html;
 
-    // ✅ انتظر حتى ينتهي ظهور المودال فعلاً
-    const runInit = async () => {
-      // 1) انتظر animation
-      await wait(80);
-      // 2) انتظر DOM يرسم
-      await wait(0);
-      // 3) شغّل المحررات على محتوى المودال فقط
-      await initModalEditors(contentEl);
-      console.log('✅ Summernote logic executed on modal content');
-    };
-
-    // إذا المودال حالياً ظاهر (غالباً نعم) شغّل مباشرة
-    // وإلا اربطه على shown
+    // إذا المودال أصلاً ظاهر (غالباً نعم)، نفّذ init مباشرة بعد تحديث DOM
     if (modalEl.classList.contains('show')) {
-      await runInit();
-    } else {
-      const onShown = async () => {
-        modalEl.removeEventListener('shown.bs.modal', onShown);
-        await runInit();
-      };
-      modalEl.addEventListener('shown.bs.modal', onShown);
+      await runInitSafely(modalEl, contentEl);
+      return;
     }
+
+    // إذا لم يكن ظاهر بعد لأي سبب، انتظر shown
+    const onShown = async () => {
+      modalEl.removeEventListener('shown.bs.modal', onShown);
+      await runInitSafely(modalEl, contentEl);
+    };
+    modalEl.addEventListener('shown.bs.modal', onShown);
+
   } catch (err) {
     console.error(err);
     contentEl.innerHTML = `<div class="modal-body text-danger">Failed to load modal content.</div>`;
