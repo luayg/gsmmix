@@ -401,6 +401,48 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
+    private function rechargeOrderIfNeeded(Model $order, string $reason): void
+{
+    $req = (array)($order->request ?? []);
+
+    // لازم يكون فيه Refund سابقاً
+    if (empty($req['refunded_at'])) return;
+
+    // منع التكرار
+    if (!empty($req['recharged_at'])) return;
+
+    $uid = (int)($order->user_id ?? 0);
+    if ($uid <= 0) return;
+
+    $amount = (float)($req['charged_amount'] ?? 0);
+    if ($amount <= 0) return;
+
+    DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+        $u = User::query()->lockForUpdate()->find($uid);
+        if (!$u) return;
+
+        $balance = (float)($u->balance ?? 0);
+
+        // إذا ما فيه رصيد كافي، نوقف ونخليها واضحة
+        if ($balance < $amount) {
+            throw new \RuntimeException('INSUFFICIENT_BALANCE_RECHARGE');
+        }
+
+        $u->balance = $balance - $amount;
+        $u->save();
+
+        $req['recharged_at'] = now()->toDateTimeString();
+        $req['recharged_amount'] = $amount;
+        $req['recharged_reason'] = $reason;
+
+        $order->request = $req;
+        $order->save();
+    });
+}
+
+
+
+
     public function update(Request $request, int $id)
     {
         $row = ($this->orderModel)::findOrFail($id);
@@ -445,6 +487,27 @@ abstract class BaseOrdersController extends Controller
 
         $row->response = $currentResp;
         $row->save();
+
+        // ✅ Recharge only when moved from rejected/cancelled -> success/inprogress
+if (
+    ($newStatus === 'success' || $newStatus === 'inprogress') &&
+    ($oldStatus === 'rejected' || $oldStatus === 'cancelled') &&
+    $oldStatus !== $newStatus
+) {
+    try {
+        $this->rechargeOrderIfNeeded($row, 'manual_'.$newStatus);
+    } catch (\RuntimeException $e) {
+        if ($e->getMessage() === 'INSUFFICIENT_BALANCE_RECHARGE') {
+            // رجّع الحالة كما كانت لأن ما فيه رصيد كافي لإعادة الخصم
+            $row->status = $oldStatus;
+            $row->save();
+
+            return redirect()->back()
+                ->withErrors(['user_id' => 'Insufficient balance to set this order to '.$newStatus.' (recharge required).']);
+        }
+        throw $e;
+    }
+}
 
         if (($newStatus === 'rejected' || $newStatus === 'cancelled') && $oldStatus !== $newStatus) {
             $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
