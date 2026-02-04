@@ -8,6 +8,7 @@ use App\Models\ImeiOrder;
 use App\Models\ServerOrder;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class OrderDispatcher
 {
@@ -31,43 +32,31 @@ class OrderDispatcher
         }
     }
 
-    private function refundIfNeeded($order, string $reason = 'rejected'): void
+    private function refundIfNeeded($order, string $reason): void
     {
-        try {
-            $req = (array)($order->request ?? []);
-            if (!empty($req['refunded_at'])) return;
+        $req = (array)($order->request ?? []);
+        if (!empty($req['refunded_at'])) return;
 
-            $userId = (int)($order->user_id ?? 0);
-            if ($userId <= 0) return;
+        $uid = (int)($order->user_id ?? 0);
+        if ($uid <= 0) return;
 
-            $amount = (float)($order->price ?? 0);
-            if ($amount <= 0) {
-                $req['refunded_at'] = now()->toDateTimeString();
-                $req['refund_amount'] = 0;
-                $req['refund_reason'] = $reason;
-                $order->request = $req;
-                $order->save();
-                return;
-            }
+        $amount = (float)($req['charged_amount'] ?? 0);
+        if ($amount <= 0) return;
 
-            \DB::transaction(function () use ($order, $userId, $amount, $reason) {
-                $u = User::query()->lockForUpdate()->find($userId);
-                if (!$u) return;
+        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+            $u = User::query()->lockForUpdate()->find($uid);
+            if (!$u) return;
 
-                $u->balance = (float)($u->balance ?? 0) + $amount;
-                $u->save();
+            $u->balance = (float)($u->balance ?? 0) + $amount;
+            $u->save();
 
-                $req = (array)($order->request ?? []);
-                $req['refunded_at'] = now()->toDateTimeString();
-                $req['refund_amount'] = $amount;
-                $req['refund_reason'] = $reason;
+            $req['refunded_at'] = now()->toDateTimeString();
+            $req['refunded_amount'] = $amount;
+            $req['refunded_reason'] = $reason;
 
-                $order->request = $req;
-                $order->save();
-            });
-        } catch (\Throwable $e) {
-            Log::error('Refund failed', ['order_id'=>$order->id ?? null, 'err'=>$e->getMessage()]);
-        }
+            $order->request = $req;
+            $order->save();
+        });
     }
 
     private function resolveProvider($order): ?ApiProvider
@@ -81,7 +70,7 @@ class OrderDispatcher
             $order->processing = false;
             $order->save();
 
-            $this->refundIfNeeded($order, 'service_not_linked');
+            $this->refundIfNeeded($order, 'dispatch_rejected_service_not_linked');
             return null;
         }
 
@@ -93,11 +82,10 @@ class OrderDispatcher
             $order->processing = false;
             $order->save();
 
-            $this->refundIfNeeded($order, 'provider_missing');
+            $this->refundIfNeeded($order, 'dispatch_rejected_provider_missing');
             return null;
         }
 
-        // ✅ provider inactive => waiting (لا refund)
         if ((int)$provider->active !== 1) {
             $order->status = 'waiting';
             $order->processing = false;
@@ -112,8 +100,8 @@ class OrderDispatcher
 
     private function saveGatewayResult($order, array $result): void
     {
-        $order->request = array_merge((array)($order->request ?? []), [
-            'request'      => $result['request'] ?? null,
+        $order->request = array_merge((array)$order->request, [
+            'request' => $result['request'] ?? null,
             'response_raw' => $result['response_raw'] ?? null,
         ]);
 
@@ -141,14 +129,15 @@ class OrderDispatcher
             return;
         }
 
-        // non-retryable error => rejected + refund
         $order->status = $result['status'] ?? 'rejected';
         $order->processing = false;
         $order->replied_at = now();
         $order->save();
 
-        if ($order->status === 'rejected') {
-            $this->refundIfNeeded($order, 'dispatch_non_retryable');
+        // ✅ Refund فقط عند Rejected / Cancelled
+        $st = strtolower((string)$order->status);
+        if ($st === 'rejected' || $st === 'cancelled') {
+            $this->refundIfNeeded($order, 'dispatch_'.$st);
         }
     }
 

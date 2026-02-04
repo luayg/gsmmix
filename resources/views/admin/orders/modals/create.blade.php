@@ -1,4 +1,8 @@
+{{-- resources/views/admin/orders/modals/create.blade.php --}}
+
 @php
+  use App\Models\ServiceGroupPrice;
+
   $cleanText = function ($v) {
     $v = (string)$v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
@@ -22,7 +26,62 @@
     return '$' . number_format((float)$v, 2);
   };
 
+  $moneyJs = function ($v) {
+    $v = is_numeric($v) ? (float)$v : 0.0;
+    return number_format($v, 4, '.', ''); // keep precision for JS
+  };
+
+  $pickDefaultPrice = function ($svc) {
+    foreach ([
+      $svc->price ?? null,
+      $svc->sell_price ?? null,
+      $svc->final_price ?? null,
+      $svc->customer_price ?? null,
+      $svc->retail_price ?? null,
+    ] as $p) {
+      if ($p !== null && $p !== '' && is_numeric($p) && (float)$p > 0) return (float)$p;
+    }
+
+    $cost = (float)($svc->cost ?? 0);
+    $profit = (float)($svc->profit ?? 0);
+    $profitType = (int)($svc->profit_type ?? 1); // 1 fixed, 2 percent
+    if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit / 100)));
+    return max(0.0, $cost + $profit);
+  };
+
   $isFileKind = ($kind ?? '') === 'file';
+  $svcType = ($kind ?? 'imei'); // imei|server|file...
+
+  // Build group price map for all services in one query (NO controller changes required)
+  $serviceIds = collect($services ?? [])->pluck('id')->filter()->values()->all();
+
+  $gpRows = [];
+  if (!empty($serviceIds) && class_exists(ServiceGroupPrice::class)) {
+    $gpRows = ServiceGroupPrice::query()
+      ->where('service_type', $svcType)
+      ->whereIn('service_id', $serviceIds)
+      ->get();
+  }
+
+  // $serviceGroupPriceMap[service_id][group_id] = finalPrice
+  $serviceGroupPriceMap = [];
+  foreach ($gpRows as $gp) {
+    $sid = (int)($gp->service_id ?? 0);
+    $gid = (int)($gp->group_id ?? 0);
+    if ($sid <= 0 || $gid <= 0) continue;
+
+    $price = (float)($gp->price ?? 0);
+    $discount = (float)($gp->discount ?? 0);
+    $dtype = (int)($gp->discount_type ?? 1); // 1 fixed, 2 percent
+
+    if ($discount > 0) {
+      if ($dtype === 2) $price = $price - ($price * ($discount / 100));
+      else $price = $price - $discount;
+    }
+
+    if (!isset($serviceGroupPriceMap[$sid])) $serviceGroupPriceMap[$sid] = [];
+    $serviceGroupPriceMap[$sid][$gid] = max(0.0, (float)$price);
+  }
 @endphp
 
 <div class="modal-header">
@@ -50,44 +109,50 @@
 
     <div class="row g-3">
 
+      {{-- User --}}
       <div class="col-12">
         <label class="form-label">User</label>
-        <select class="form-select js-select2 js-step-user" name="user_id" required data-placeholder="Choose user...">
+        <select class="form-select js-step-user" name="user_id" required>
           <option value=""></option>
           @foreach($users as $u)
             @php
               $bal = is_numeric($u->balance ?? null) ? (float)$u->balance : 0.0;
-              $label = $cleanText($u->email) . ' — ' . $fmtMoney($bal);
               $gid = (int)($u->group_id ?? 0);
+              $label = $cleanText($u->email) . ' — ' . $fmtMoney($bal);
             @endphp
-            <option value="{{ $u->id }}" data-balance="{{ $bal }}" data-group="{{ $gid }}">
+            <option value="{{ $u->id }}" data-balance="{{ $moneyJs($bal) }}" data-group="{{ $gid }}">
               {{ $label }}
             </option>
           @endforeach
         </select>
       </div>
 
+      {{-- Service (hidden until user selected) --}}
       <div class="col-12 js-step-service d-none">
         <label class="form-label">Service</label>
-        <select class="form-select js-select2 js-service" name="service_id" required data-placeholder="Search service...">
+        <select class="form-select js-service" name="service_id" required>
           <option value=""></option>
           @foreach($services as $s)
             @php
+              $sid = (int)$s->id;
               $name = $pickName($s->name);
               $allowBulk = (int)($s->allow_bulk ?? 0);
-              $gp = $servicePriceMap[$s->id] ?? [];
+              $defaultPrice = (float)$pickDefaultPrice($s);
+              $gp = $serviceGroupPriceMap[$sid] ?? [];
               $gpJson = json_encode($gp, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             @endphp
             <option
-              value="{{ $s->id }}"
+              value="{{ $sid }}"
               data-name="{{ $name }}"
               data-allow-bulk="{{ $allowBulk }}"
+              data-default-price="{{ $moneyJs($defaultPrice) }}"
               data-group-prices='{{ $gpJson }}'
             >{{ $name }}</option>
           @endforeach
         </select>
       </div>
 
+      {{-- Fields (hidden until service selected) --}}
       <div class="col-12 js-step-fields d-none">
         <div class="form-check">
           <input class="form-check-input" type="checkbox" value="1" id="bulkToggle" name="bulk">
@@ -105,7 +170,7 @@
         @endif
       </div>
 
-      <div class="col-12 js-step-fields d-none d-none" id="bulkDevicesWrap">
+      <div class="col-12 js-step-fields d-none" id="bulkDevicesWrap">
         <label class="form-label">Devices (one per line)</label>
         <textarea class="form-control" name="devices" rows="6" placeholder="Enter one IMEI per line"></textarea>
       </div>
@@ -151,7 +216,7 @@
   const form = document.getElementById('createOrderForm');
   if (!form) return;
 
-  const userSel = form.querySelector('.js-step-user');
+  const userSel     = form.querySelector('.js-step-user');
   const serviceWrap = form.querySelector('.js-step-service');
   const serviceSel  = form.querySelector('.js-service');
   const fieldsWraps = form.querySelectorAll('.js-step-fields');
@@ -197,38 +262,43 @@
     let gp = {};
     try { gp = JSON.parse(gpRaw); } catch(e){ gp = {}; }
 
-    const p = gp[String(gid)];
-    if (typeof p === 'number') return p;
-    if (typeof p === 'string' && p !== '' && !isNaN(p)) return Number(p);
+    let price = gp[String(gid)];
 
-    return 0;
+    if (typeof price === 'string') price = Number(price);
+    if (typeof price === 'number' && !isNaN(price) && price > 0) return price;
+
+    const def = Number(opt.getAttribute('data-default-price') || 0);
+    return (!isNaN(def) && def > 0) ? def : 0;
   }
 
   function updateServiceOptionLabels(){
     const gid = userGroupId();
+
     Array.from(serviceSel.options).forEach(opt => {
-      const name = opt.getAttribute('data-name') || opt.textContent || '';
       if (!opt.value) return;
 
+      const name = opt.getAttribute('data-name') || opt.textContent || '';
       const gpRaw = opt.getAttribute('data-group-prices') || '{}';
+
       let gp = {};
       try { gp = JSON.parse(gpRaw); } catch(e){ gp = {}; }
 
       let price = gp[String(gid)];
       if (typeof price === 'string') price = Number(price);
 
-      if (!price || isNaN(price)) price = 0;
+      if (!(typeof price === 'number' && !isNaN(price) && price > 0)) {
+        const def = Number(opt.getAttribute('data-default-price') || 0);
+        price = (!isNaN(def) && def > 0) ? def : 0;
+      }
 
       opt.textContent = name + ' — ' + money(price);
     });
-
-    if (window.jQuery && window.jQuery.fn && window.jQuery.fn.select2) {
-      window.jQuery(serviceSel).trigger('change.select2');
-    }
   }
 
   function updateBulkUI(){
     const allowBulk = serviceAllowBulk();
+
+    if (!bulkToggle) return;
 
     if (!allowBulk) {
       bulkToggle.checked = false;
@@ -268,51 +338,10 @@
     }
   }
 
-  function initSelect2(){
-    if (!window.jQuery || !window.jQuery.fn || !window.jQuery.fn.select2) return;
-
-    const $ = window.jQuery;
-    const $modal = $(form).closest('.modal');
-
-    $(userSel).select2({
-      dropdownParent: $modal,
-      width: '100%',
-      placeholder: userSel.getAttribute('data-placeholder') || 'Choose user...',
-      allowClear: true
-    });
-
-    $(serviceSel).select2({
-      dropdownParent: $modal,
-      width: '100%',
-      placeholder: serviceSel.getAttribute('data-placeholder') || 'Search service...',
-      allowClear: true
-    });
-
-    $(userSel).on('change', function(){
-      if (userSel.value) {
-        show(serviceWrap);
-        updateServiceOptionLabels();
-      } else {
-        hide(serviceWrap);
-        serviceSel.value = '';
-        hideAllFields();
-      }
-      updateSummary();
-    });
-
-    $(serviceSel).on('change', function(){
-      if (serviceSel.value) {
-        showAllFields();
-        updateBulkUI();
-      } else {
-        hideAllFields();
-      }
-      updateSummary();
-    });
-  }
-
+  // Initial state
   hide(serviceWrap);
   hideAllFields();
+  updateSummary();
 
   userSel.addEventListener('change', function(){
     if (userSel.value) {
@@ -336,9 +365,11 @@
     updateSummary();
   });
 
-  bulkToggle.addEventListener('change', function(){
-    updateBulkUI();
-  });
+  if (bulkToggle) {
+    bulkToggle.addEventListener('change', function(){
+      updateBulkUI();
+    });
+  }
 
   form.addEventListener('submit', function(e){
     updateSummary();
@@ -347,8 +378,6 @@
       show(balanceErrorEl);
     }
   });
-
-  requestAnimationFrame(initSelect2);
 })();
 </script>
 @endpush

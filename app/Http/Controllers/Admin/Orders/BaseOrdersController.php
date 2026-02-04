@@ -11,7 +11,6 @@ use Illuminate\Support\Facades\Log;
 use App\Models\ServiceGroupPrice;
 use Illuminate\Support\Facades\DB;
 
-
 abstract class BaseOrdersController extends Controller
 {
     /** @var class-string<Model> */
@@ -70,6 +69,34 @@ abstract class BaseOrdersController extends Controller
         $users = User::query()->orderByDesc('id')->limit(500)->get();
         $services = ($this->serviceModel)::query()->orderByDesc('id')->limit(1000)->get();
 
+        // ✅ group prices map: [service_id => [group_id => final_price]]
+        $serviceIds = $services->pluck('id')->map(fn($x)=>(int)$x)->all();
+
+        $servicePriceMap = [];
+        if (!empty($serviceIds) && class_exists(\App\Models\ServiceGroupPrice::class)) {
+            $rows = ServiceGroupPrice::query()
+                ->where('service_type', $this->kind) // 'imei'
+                ->whereIn('service_id', $serviceIds)
+                ->get();
+
+            foreach ($rows as $r) {
+                $sid = (int)$r->service_id;
+                $gid = (int)$r->group_id;
+
+                $price = (float)($r->price ?? 0);
+                $discount = (float)($r->discount ?? 0);
+                $dtype = (int)($r->discount_type ?? 1); // 1 fixed, 2 percent
+
+                if ($discount > 0) {
+                    if ($dtype === 2) $price = $price - ($price * ($discount / 100));
+                    else $price = $price - $discount;
+                }
+
+                if (!isset($servicePriceMap[$sid])) $servicePriceMap[$sid] = [];
+                $servicePriceMap[$sid][$gid] = max(0.0, (float)$price);
+            }
+        }
+
         return view('admin.orders.modals.create', [
             'title'       => "Create {$this->title}",
             'kind'        => $this->kind,
@@ -78,12 +105,12 @@ abstract class BaseOrdersController extends Controller
             'supportsQty' => $this->supportsQuantity(),
             'users'       => $users,
             'services'    => $services,
+            'servicePriceMap' => $servicePriceMap,
         ]);
     }
 
     private function calcServiceSellPriceForUser($service, User $user): float
     {
-        // IMEI group pricing
         if ($this->kind === 'imei') {
             $gid = (int)($user->group_id ?? 0);
 
@@ -94,26 +121,20 @@ abstract class BaseOrdersController extends Controller
                     ->where('group_id', $gid)
                     ->first();
 
-                if ($gp) {
-                    $base = (float)($gp->price ?? 0);
-                    if ($base > 0) {
-                        $price = $base;
+                if ($gp && (float)($gp->price ?? 0) > 0) {
+                    $price = (float)$gp->price;
+                    $discount = (float)($gp->discount ?? 0);
+                    $dtype = (int)($gp->discount_type ?? 1);
 
-                        $discount = (float)($gp->discount ?? 0);
-                        $dtype = (int)($gp->discount_type ?? 1); // 1 fixed, 2 percent
-
-                        if ($discount > 0) {
-                            if ($dtype === 2) $price = $price - ($price * ($discount / 100));
-                            else $price = $price - $discount;
-                        }
-
-                        return max(0.0, (float)$price);
+                    if ($discount > 0) {
+                        if ($dtype === 2) $price = $price - ($price * ($discount / 100));
+                        else $price = $price - $discount;
                     }
+                    return max(0.0, (float)$price);
                 }
             }
         }
 
-        // fallback explicit columns
         foreach ([
             $service->price ?? null,
             $service->sell_price ?? null,
@@ -124,11 +145,10 @@ abstract class BaseOrdersController extends Controller
             if ($p !== null && $p !== '' && is_numeric($p) && (float)$p > 0) return (float)$p;
         }
 
-        // fallback cost + profit
         $cost = (float)($service->cost ?? 0);
         $profit = (float)($service->profit ?? 0);
-        $profitType = (int)($service->profit_type ?? 1); // 1 fixed, 2 percent
-        if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit / 100)));
+        $profitType = (int)($service->profit_type ?? 1);
+        if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit/100)));
         return max(0.0, $cost + $profit);
     }
 
@@ -199,9 +219,7 @@ abstract class BaseOrdersController extends Controller
         $hasRemote = !empty($service->remote_id);
         $isApi = $provider && (int)$provider->active === 1 && $hasRemote;
 
-        // ✅ price based on user group
         $sellPrice = (float)$this->calcServiceSellPriceForUser($service, $user);
-
         $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
         $profitOne = $sellPrice - $costPrice;
 
@@ -218,7 +236,6 @@ abstract class BaseOrdersController extends Controller
                 $raw = (string)($data['devices'] ?? '');
                 $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
                 $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
-
                 if (count($lines) < 1) {
                     return redirect()->back()->withErrors(['devices' => 'Bulk list is empty.'])->withInput();
                 }
@@ -241,7 +258,7 @@ abstract class BaseOrdersController extends Controller
         try {
             DB::transaction(function () use (
                 $request, $data, $userId, $service, $provider, $isApi,
-                $sellPrice, $costPrice, $profitOne, $params, $devices, $totalCharge
+                $sellPrice, $costPrice, $profitOne, $params, $devices, $countOrders, $totalCharge
             ) {
                 $u = User::query()->lockForUpdate()->findOrFail($userId);
                 $balance = (float)($u->balance ?? 0);
@@ -284,8 +301,7 @@ abstract class BaseOrdersController extends Controller
                     $order->params = $params;
                     $order->ip = $request->ip();
 
-                    // ✅ store charged amount for refund
-                    $order->request = array_merge((array)($order->request ?? []), [
+                    $order->request = array_merge((array)$order->request, [
                         'charged_amount' => (float)$sellPrice,
                         'charged_at'     => now()->toDateTimeString(),
                     ]);
@@ -323,7 +339,7 @@ abstract class BaseOrdersController extends Controller
                             $order->status = 'waiting';
                             $order->replied_at = null;
 
-                            $order->request = array_merge((array)($order->request ?? []), [
+                            $order->request = array_merge((array)$order->request, [
                                 'dispatch_failed_at' => now()->toDateTimeString(),
                                 'dispatch_error'     => $e->getMessage(),
                                 'dispatch_retry'     => ((int) data_get($order->request, 'dispatch_retry', 0)) + 1,
@@ -390,9 +406,9 @@ abstract class BaseOrdersController extends Controller
         $row = ($this->orderModel)::findOrFail($id);
 
         $data = $request->validate([
-            'status'              => ['required','in:waiting,inprogress,success,rejected,cancelled'],
-            'comments'            => ['nullable','string'],
-            'response'            => ['nullable'],
+            'status'             => ['required','in:waiting,inprogress,success,rejected,cancelled'],
+            'comments'           => ['nullable','string'],
+            'response'           => ['nullable'],
             'provider_reply_html' => ['nullable','string'],
         ]);
 
@@ -403,7 +419,6 @@ abstract class BaseOrdersController extends Controller
         $row->comments = (string)($data['comments'] ?? '');
 
         $currentResp = $row->response;
-
         if (is_string($currentResp)) {
             $decoded = json_decode($currentResp, true);
             $currentResp = is_array($decoded) ? $decoded : ['raw' => $row->response];
@@ -431,7 +446,6 @@ abstract class BaseOrdersController extends Controller
         $row->response = $currentResp;
         $row->save();
 
-        // ✅ Refund only when moved into rejected/cancelled
         if (($newStatus === 'rejected' || $newStatus === 'cancelled') && $oldStatus !== $newStatus) {
             $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
         }

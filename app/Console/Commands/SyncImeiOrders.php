@@ -38,7 +38,9 @@ class SyncImeiOrders extends Command
 
     private function extractFirstImgSrc(string $html): ?string
     {
-        if (!preg_match('~<img[^>]+src=["\']([^"\']+)["\']~i', $html, $m)) return null;
+        if (!preg_match('~<img[^>]+src=["\']([^"\']+)["\']~i', $html, $m)) {
+            return null;
+        }
         return $m[1] ?? null;
     }
 
@@ -91,7 +93,7 @@ class SyncImeiOrders extends Command
             $u->balance = (float)($u->balance ?? 0) + $amount;
             $u->save();
 
-            $req['refunded_at']     = now()->toDateTimeString();
+            $req['refunded_at'] = now()->toDateTimeString();
             $req['refunded_amount'] = $amount;
             $req['refunded_reason'] = $reason;
 
@@ -127,7 +129,7 @@ class SyncImeiOrders extends Command
 
             $res = $dhru->getImeiOrder($provider, $ref);
 
-            $order->request = array_merge((array)($order->request ?? []), [
+            $order->request = array_merge((array)$order->request, [
                 'last_status_check' => now()->toDateTimeString(),
                 'status_check_raw'  => $res['response_raw'] ?? null,
             ]);
@@ -141,6 +143,7 @@ class SyncImeiOrders extends Command
 
             if (isset($raw['ERROR'][0]['MESSAGE'])) {
                 $m = strtolower((string)$raw['ERROR'][0]['MESSAGE']);
+
                 if (
                     str_contains($m, 'command not found') ||
                     str_contains($m, 'invalid action') ||
@@ -213,7 +216,7 @@ class SyncImeiOrders extends Command
                 $order->response = $ui;
                 $order->save();
 
-                if ($order->status === 'rejected') {
+                if (strtolower((string)$order->status) === 'rejected') {
                     $this->refundIfNeeded($order, 'sync_rejected_status3');
                 }
 
