@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\ApiProvider;
 use App\Models\ImeiOrder;
+use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
 use Illuminate\Console\Command;
 
@@ -15,7 +16,6 @@ class SyncImeiOrders extends Command
     private function providerBaseUrl(ApiProvider $p): string
     {
         $u = rtrim((string)$p->url, '/');
-        // لو كان مخزن api/index.php احذفه للحصول على base
         $u = preg_replace('~/api/index\.php$~', '', $u) ?? $u;
         return rtrim($u, '/');
     }
@@ -25,16 +25,10 @@ class SyncImeiOrders extends Command
         $src = trim($src);
         if ($src === '') return null;
 
-        // data URI
         if (str_starts_with($src, 'data:image/')) return $src;
-
-        // protocol-relative
         if (str_starts_with($src, '//')) return 'https:' . $src;
-
-        // absolute
         if (preg_match('~^https?://~i', $src)) return $src;
 
-        // relative => ركّبه على base
         $base = $this->providerBaseUrl($p);
         if ($base === '') return null;
 
@@ -52,16 +46,9 @@ class SyncImeiOrders extends Command
 
     private function cleanHtmlResultToLines(string $html): array
     {
-        // بدّل <br> إلى \n
         $html = preg_replace('/<\s*br\s*\/?\s*>/i', "\n", $html) ?? $html;
-
-        // احذف كل الوسوم (span/img/..)
         $text = strip_tags($html);
-
-        // decode entities
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
-        // نظّف المسافات
         $text = str_replace(["\r\n", "\r"], "\n", $text);
         $text = preg_replace("/[ \t]+/", " ", $text) ?? $text;
 
@@ -87,6 +74,45 @@ class SyncImeiOrders extends Command
             $items[] = ['label' => '', 'value' => $line];
         }
         return $items;
+    }
+
+    private function refundIfNeeded(ImeiOrder $order, string $reason = 'rejected'): void
+    {
+        try {
+            $req = (array)($order->request ?? []);
+            if (!empty($req['refunded_at'])) return;
+
+            $userId = (int)($order->user_id ?? 0);
+            if ($userId <= 0) return;
+
+            $amount = (float)($order->price ?? 0);
+            if ($amount <= 0) {
+                $req['refunded_at'] = now()->toDateTimeString();
+                $req['refund_amount'] = 0;
+                $req['refund_reason'] = $reason;
+                $order->request = $req;
+                $order->save();
+                return;
+            }
+
+            \DB::transaction(function () use ($order, $userId, $amount, $reason) {
+                $u = User::query()->lockForUpdate()->find($userId);
+                if (!$u) return;
+
+                $u->balance = (float)($u->balance ?? 0) + $amount;
+                $u->save();
+
+                $req = (array)($order->request ?? []);
+                $req['refunded_at'] = now()->toDateTimeString();
+                $req['refund_amount'] = $amount;
+                $req['refund_reason'] = $reason;
+
+                $order->request = $req;
+                $order->save();
+            });
+        } catch (\Throwable $e) {
+            // لا نوقف السينك
+        }
     }
 
     public function handle(DhruOrderGateway $dhru): int
@@ -147,6 +173,7 @@ class SyncImeiOrders extends Command
                     continue;
                 }
 
+                // ✅ rejected نهائي => refund
                 $order->status = 'rejected';
                 $order->replied_at = now();
                 $order->response = [
@@ -155,6 +182,8 @@ class SyncImeiOrders extends Command
                     'reference_id' => $order->remote_id,
                 ];
                 $order->save();
+
+                $this->refundIfNeeded($order, 'sync_error_rejected');
                 continue;
             }
 
@@ -187,14 +216,12 @@ class SyncImeiOrders extends Command
                         ? $code
                         : json_encode($code, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 
-                    // ✅ استخراج صورة إن وجدت
                     $imgSrc = $this->extractFirstImgSrc($rawResult);
                     if ($imgSrc) {
                         $imgUrl = $this->resolveImageUrl($provider, $imgSrc);
                         if ($imgUrl) $ui['result_image'] = $imgUrl;
                     }
 
-                    // ✅ تنظيف وتحويل لجدول
                     $lines = $this->cleanHtmlResultToLines($rawResult);
                     $items = $this->linesToKeyValue($lines);
 
@@ -204,6 +231,12 @@ class SyncImeiOrders extends Command
 
                 $order->response = $ui;
                 $order->save();
+
+                // ✅ rejected نهائي من STATUS=3 => refund
+                if ($order->status === 'rejected') {
+                    $this->refundIfNeeded($order, 'sync_status_rejected');
+                }
+
                 continue;
             }
 

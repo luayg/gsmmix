@@ -6,6 +6,7 @@ use App\Models\ApiProvider;
 use App\Models\FileOrder;
 use App\Models\ImeiOrder;
 use App\Models\ServerOrder;
+use App\Models\User;
 use Illuminate\Support\Facades\Log;
 
 class OrderDispatcher
@@ -30,6 +31,45 @@ class OrderDispatcher
         }
     }
 
+    private function refundIfNeeded($order, string $reason = 'rejected'): void
+    {
+        try {
+            $req = (array)($order->request ?? []);
+            if (!empty($req['refunded_at'])) return;
+
+            $userId = (int)($order->user_id ?? 0);
+            if ($userId <= 0) return;
+
+            $amount = (float)($order->price ?? 0);
+            if ($amount <= 0) {
+                $req['refunded_at'] = now()->toDateTimeString();
+                $req['refund_amount'] = 0;
+                $req['refund_reason'] = $reason;
+                $order->request = $req;
+                $order->save();
+                return;
+            }
+
+            \DB::transaction(function () use ($order, $userId, $amount, $reason) {
+                $u = User::query()->lockForUpdate()->find($userId);
+                if (!$u) return;
+
+                $u->balance = (float)($u->balance ?? 0) + $amount;
+                $u->save();
+
+                $req = (array)($order->request ?? []);
+                $req['refunded_at'] = now()->toDateTimeString();
+                $req['refund_amount'] = $amount;
+                $req['refund_reason'] = $reason;
+
+                $order->request = $req;
+                $order->save();
+            });
+        } catch (\Throwable $e) {
+            Log::error('Refund failed', ['order_id'=>$order->id ?? null, 'err'=>$e->getMessage()]);
+        }
+    }
+
     private function resolveProvider($order): ?ApiProvider
     {
         $order->load(['service','provider']);
@@ -40,6 +80,8 @@ class OrderDispatcher
             $order->replied_at = now();
             $order->processing = false;
             $order->save();
+
+            $this->refundIfNeeded($order, 'service_not_linked');
             return null;
         }
 
@@ -50,10 +92,12 @@ class OrderDispatcher
             $order->replied_at = now();
             $order->processing = false;
             $order->save();
+
+            $this->refundIfNeeded($order, 'provider_missing');
             return null;
         }
 
-        // ✅ حتى لو provider inactive لا نرفض (حسب طلبك)، نخليها waiting
+        // ✅ provider inactive => waiting (لا refund)
         if ((int)$provider->active !== 1) {
             $order->status = 'waiting';
             $order->processing = false;
@@ -68,13 +112,11 @@ class OrderDispatcher
 
     private function saveGatewayResult($order, array $result): void
     {
-        // نخزن raw للتتبع
-        $order->request = [
-            'request' => $result['request'] ?? null,
+        $order->request = array_merge((array)($order->request ?? []), [
+            'request'      => $result['request'] ?? null,
             'response_raw' => $result['response_raw'] ?? null,
-        ];
+        ]);
 
-        // نخزن رد واجهة مختصر
         $order->response = $result['response_ui'] ?? null;
     }
 
@@ -85,7 +127,6 @@ class OrderDispatcher
         $retryable = (bool)($result['retryable'] ?? false);
 
         if ($retryable) {
-            // ✅ مطلوبك: يبقى waiting وينتظر
             $order->status = 'waiting';
             $order->processing = false;
             $order->save();
@@ -100,11 +141,15 @@ class OrderDispatcher
             return;
         }
 
-        // non-retryable error
+        // non-retryable error => rejected + refund
         $order->status = $result['status'] ?? 'rejected';
         $order->processing = false;
         $order->replied_at = now();
         $order->save();
+
+        if ($order->status === 'rejected') {
+            $this->refundIfNeeded($order, 'dispatch_non_retryable');
+        }
     }
 
     public function dispatchImei(ImeiOrder $order): void
@@ -121,7 +166,7 @@ class OrderDispatcher
             $this->applyResult($order, $result);
         } catch (\Throwable $e) {
             Log::error('dispatchImei failed', ['order_id'=>$order->id,'err'=>$e->getMessage()]);
-            $order->status = 'waiting';            // ✅ لا نرفض، نخليه waiting لإعادة المحاولة
+            $order->status = 'waiting';
             $order->processing = false;
             $order->response = ['type'=>'queued','message'=>'Dispatch error, will retry: '.$e->getMessage()];
             $order->save();

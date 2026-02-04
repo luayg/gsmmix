@@ -1,32 +1,47 @@
 {{-- resources/views/admin/orders/modals/create.blade.php --}}
 
 @php
-  $pickName = function ($v) {
+  $cleanText = function ($v) {
+    $v = (string)$v;
+    $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $v = str_replace(["\r\n", "\r"], "\n", $v);
+    return trim($v);
+  };
+
+  $pickName = function ($v) use ($cleanText) {
     if (is_string($v)) {
       $s = trim($v);
-
-      // لو JSON translations
       if ($s !== '' && isset($s[0]) && $s[0] === '{') {
         $j = json_decode($s, true);
-        if (is_array($j)) {
-          $v = $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
-        }
+        if (is_array($j)) $v = $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
       }
-
-      // decode entities + تنظيف
-      $v = html_entity_decode((string)$v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-      $v = trim($v);
-      return $v;
     }
-    return trim((string)$v);
+    return $cleanText($v);
   };
 
-  $pickPrice = function ($svc) {
-    $p = $svc->price ?? $svc->sell_price ?? 0;
-    return (float)$p;
+  // ✅ اختيار سعر البيع الحقيقي من عدة أعمدة محتملة (عدّل/أضف أسماء أعمدة لو عندك أعمدة أخرى)
+  $pickSellPrice = function ($svc) {
+    $candidates = [
+      $svc->sell_price ?? null,
+      $svc->price ?? null,
+      $svc->final_price ?? null,
+      $svc->customer_price ?? null,
+      $svc->retail_price ?? null,
+      $svc->user_price ?? null,
+      $svc->reseller_price ?? null,
+    ];
+    foreach ($candidates as $p) {
+      if ($p !== null && $p !== '' && is_numeric($p)) return (float)$p;
+    }
+    return 0.0;
   };
 
-  $isFileKind = ($kind ?? '') === 'file';
+  $fmtMoney = function ($v) {
+    $v = is_numeric($v) ? (float)$v : 0.0;
+    return '$' . number_format($v, 2);
+  };
+
+  $isFileKind = (($kind ?? '') === 'file');
 @endphp
 
 <div class="modal-header">
@@ -38,231 +53,228 @@
   @csrf
 
   <div class="modal-body">
+    @if ($errors->any())
+      <div class="alert alert-danger">
+        <ul class="mb-0">
+          @foreach ($errors->all() as $error)
+            <li>{{ $error }}</li>
+          @endforeach
+        </ul>
+      </div>
+    @endif
+
+    @if(session('err'))
+      <div class="alert alert-danger mb-2">{{ session('err') }}</div>
+    @endif
+
     <div class="row g-3">
 
-      {{-- STEP 1: USER --}}
+      {{-- User (always visible) --}}
       <div class="col-12">
-        <label class="form-label fw-semibold">User</label>
-        <select class="form-select" name="user_id" id="coUser">
-          <option value="">Choose user…</option>
+        <label class="form-label">User</label>
+
+        <select class="form-select js-select2 js-user" name="user_id" required data-placeholder="Choose user...">
+          <option value=""></option>
           @foreach($users as $u)
-            <option value="{{ $u->id }}">{{ $u->email }}</option>
+            @php
+              $bal = is_numeric($u->balance ?? null) ? (float)$u->balance : 0.0;
+              $label = $cleanText($u->email) . ' — ' . $fmtMoney($bal);
+            @endphp
+            <option value="{{ $u->id }}" data-balance="{{ $bal }}">{{ $label }}</option>
           @endforeach
         </select>
-        <div class="form-text">اختر مستخدم (مطلوب للخصم من الرصيد).</div>
       </div>
 
-      <div class="col-12 d-none" id="coEmailWrap">
-        <label class="form-label">User email (optional)</label>
-        <input type="text" class="form-control" name="email" placeholder="user@email.com">
-      </div>
+      {{-- Service (hidden until user selected) --}}
+      <div class="col-12 d-none" id="wrapService">
+        <label class="form-label">Service</label>
 
-      {{-- STEP 2: SERVICE --}}
-      <div class="col-12 d-none" id="coServiceWrap">
-        <label class="form-label fw-semibold">Service</label>
-        <select class="form-select" name="service_id" id="coService" required>
-          <option value="">Choose service…</option>
+        <select class="form-select js-select2 js-service" name="service_id" required data-placeholder="Search service...">
+          <option value=""></option>
           @foreach($services as $s)
-            @php($price = $pickPrice($s))
+            @php
+              $name  = $pickName($s->name);
+              $price = $pickSellPrice($s);
+            @endphp
             <option value="{{ $s->id }}" data-price="{{ $price }}">
-              {{ $pickName($s->name) }} — ${{ number_format($price, 2) }}
+              {{ $name }} — {{ $fmtMoney($price) }}
             </option>
           @endforeach
         </select>
-        <div class="form-text">عند اختيار الخدمة سيتم الإرسال تلقائياً إذا كانت مرتبطة بـ API.</div>
       </div>
 
-      {{-- STEP 3: INPUTS --}}
+      {{-- Bulk toggle (hidden until service selected) --}}
+      <div class="col-12 d-none" id="wrapBulk">
+        <div class="form-check">
+          <input class="form-check-input" type="checkbox" value="1" id="bulkToggle" name="bulk">
+          <label class="form-check-label" for="bulkToggle">Bulk</label>
+        </div>
+      </div>
+
+      {{-- IMEI/SN single (hidden until service selected, and when bulk off) --}}
+      <div class="col-12 d-none" id="wrapDeviceSingle">
+        @if(!$isFileKind)
+          <label class="form-label">{{ $deviceLabel ?? 'Device' }}</label>
+          <input type="text" class="form-control" name="device" id="deviceInput" placeholder="Enter IMEI / SN">
+        @endif
+      </div>
+
+      {{-- Bulk textarea (hidden until service selected, and when bulk on) --}}
+      <div class="col-12 d-none" id="wrapDeviceBulk">
+        <label class="form-label">Bulk list</label>
+        <textarea class="form-control" name="devices" rows="6" placeholder="One IMEI per line"></textarea>
+      </div>
+
+      {{-- File input (if file kind) --}}
       @if($isFileKind)
-        <div class="col-12 d-none" id="coFileWrap">
-          <label class="form-label fw-semibold">Upload file</label>
+        <div class="col-12 d-none" id="wrapFile">
+          <label class="form-label">Upload file</label>
           <input type="file" class="form-control" name="file">
-          <div class="form-text">سيتم رفع الملف وتخزينه ثم إرساله تلقائياً إذا كانت الخدمة مرتبطة بـ API.</div>
-        </div>
-      @else
-        <div class="col-12 d-none" id="coModeWrap">
-          <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
-            <label class="form-label fw-semibold mb-0">{{ $deviceLabel ?? 'Device' }}</label>
-
-            <div class="form-check form-switch">
-              <input class="form-check-input" type="checkbox" role="switch" id="coBulk" name="bulk" value="1">
-              <label class="form-check-label" for="coBulk">Bulk mode</label>
-            </div>
-          </div>
-
-          {{-- single --}}
-          <input type="text" class="form-control mt-2" name="device" id="coDeviceSingle" placeholder="Enter IMEI/SN">
-
-          {{-- bulk --}}
-          <textarea class="form-control mt-2 d-none" name="devices" id="coDeviceBulk" rows="6"
-                    placeholder="Paste IMEIs/SNs, one per line"></textarea>
-
-          <div class="form-text">
-            في Bulk: كل سطر = طلب منفصل. سيتم فحص الرصيد على إجمالي الطلبات قبل الإرسال.
-          </div>
         </div>
       @endif
 
-      @if(!empty($supportsQty))
-        <div class="col-12 d-none" id="coQtyWrap">
-          <label class="form-label fw-semibold">Quantity</label>
-          <input type="number" class="form-control" name="quantity" min="1" value="1">
-        </div>
-      @endif
-
-      <div class="col-12 d-none" id="coCommentsWrap">
-        <label class="form-label fw-semibold">Comments</label>
-        <textarea class="form-control" name="comments" rows="3" placeholder="Optional…"></textarea>
-      </div>
-
-      {{-- SUMMARY --}}
-      <div class="col-12 d-none" id="coSummaryWrap">
-        <div class="alert alert-info mb-0 d-flex align-items-center justify-content-between flex-wrap gap-2">
-          <div>
-            <strong>Summary:</strong>
-            <span id="coSummaryText">—</span>
-          </div>
-          <div class="fw-semibold">
-            Total: <span id="coTotal">$0.00</span>
-          </div>
-        </div>
-        <div class="form-text">
-          سيتم رفض الإرسال إذا كان رصيد المستخدم غير كافٍ.
-        </div>
+      {{-- Comments (hidden until service selected) --}}
+      <div class="col-12 d-none" id="wrapComments">
+        <label class="form-label">Comments</label>
+        <textarea class="form-control" name="comments" rows="3"></textarea>
       </div>
 
     </div>
   </div>
 
   <div class="modal-footer">
-    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
-    <button type="submit" class="btn btn-success" id="coSubmit" disabled>Create</button>
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+    <button type="submit" class="btn btn-success" id="btnCreate">Create</button>
   </div>
 </form>
 
+@push('scripts')
 <script>
 (function () {
-  const userSel = document.getElementById('coUser');
-  const svcSel  = document.getElementById('coService');
-  const submit  = document.getElementById('coSubmit');
+  const form = document.getElementById('createOrderForm');
+  if (!form) return;
 
-  const wService  = document.getElementById('coServiceWrap');
-  const wEmail    = document.getElementById('coEmailWrap');
-  const wComments = document.getElementById('coCommentsWrap');
-  const wSummary  = document.getElementById('coSummaryWrap');
+  const userSel    = form.querySelector('.js-user');
+  const serviceSel = form.querySelector('.js-service');
 
-  const isFileKind = {{ $isFileKind ? 'true' : 'false' }};
+  const wrapService      = document.getElementById('wrapService');
+  const wrapBulk         = document.getElementById('wrapBulk');
+  const bulkToggle       = document.getElementById('bulkToggle');
 
-  const wFile    = document.getElementById('coFileWrap');
-  const wMode    = document.getElementById('coModeWrap');
-  const bulkChk  = document.getElementById('coBulk');
-  const devOne   = document.getElementById('coDeviceSingle');
-  const devMany  = document.getElementById('coDeviceBulk');
+  const wrapDeviceSingle = document.getElementById('wrapDeviceSingle');
+  const wrapDeviceBulk   = document.getElementById('wrapDeviceBulk');
+  const deviceInput      = document.getElementById('deviceInput');
 
-  const sumText  = document.getElementById('coSummaryText');
-  const totalEl  = document.getElementById('coTotal');
+  const wrapComments     = document.getElementById('wrapComments');
+  const wrapFile         = document.getElementById('wrapFile');
 
-  function money(n){
-    n = Number(n || 0);
-    return '$' + n.toFixed(2);
+  function show(el){ if (el) el.classList.remove('d-none'); }
+  function hide(el){ if (el) el.classList.add('d-none'); }
+
+  function resetAfterUser() {
+    // reset service + below
+    if (serviceSel) serviceSel.value = '';
+    hide(wrapBulk);
+    hide(wrapDeviceSingle);
+    hide(wrapDeviceBulk);
+    hide(wrapComments);
+    hide(wrapFile);
+    if (bulkToggle) bulkToggle.checked = false;
+
+    // enforce required behavior
+    if (deviceInput) deviceInput.required = false;
   }
 
-  function countBulkLines() {
-    if (!devMany) return 0;
-    const lines = (devMany.value || '')
-      .split(/\r?\n/)
-      .map(s => s.trim())
-      .filter(Boolean);
-    return lines.length;
-  }
+  function updateAfterService() {
+    const hasService = !!(serviceSel && serviceSel.value);
 
-  function currentPrice() {
-    const opt = svcSel ? svcSel.options[svcSel.selectedIndex] : null;
-    if (!opt) return 0;
-    return Number(opt.getAttribute('data-price') || 0);
-  }
-
-  function refreshSummary() {
-    const userOk = !!(userSel && userSel.value);
-    const svcOk  = !!(svcSel && svcSel.value);
-
-    // Step gating
-    wService?.classList.toggle('d-none', !userOk);
-    wEmail?.classList.toggle('d-none', !userOk);
-
-    if (!userOk) {
-      wComments?.classList.add('d-none');
-      wSummary?.classList.add('d-none');
-      if (wFile) wFile.classList.add('d-none');
-      if (wMode) wMode.classList.add('d-none');
-      submit.disabled = true;
+    if (!hasService) {
+      hide(wrapBulk);
+      hide(wrapDeviceSingle);
+      hide(wrapDeviceBulk);
+      hide(wrapComments);
+      hide(wrapFile);
+      if (bulkToggle) bulkToggle.checked = false;
+      if (deviceInput) deviceInput.required = false;
       return;
     }
 
-    // show next after service chosen
-    wComments?.classList.toggle('d-none', !svcOk);
+    show(wrapBulk);
+    show(wrapComments);
 
-    if (isFileKind) {
-      if (wFile) wFile.classList.toggle('d-none', !svcOk);
+    // file kind
+    if (wrapFile) show(wrapFile);
+
+    // non-file: decide single vs bulk
+    if (wrapFile) {
+      // file kind doesn't need device
+      return;
+    }
+
+    const isBulk = !!(bulkToggle && bulkToggle.checked);
+    if (isBulk) {
+      hide(wrapDeviceSingle);
+      show(wrapDeviceBulk);
+      if (deviceInput) deviceInput.required = false;
     } else {
-      if (wMode) wMode.classList.toggle('d-none', !svcOk);
+      show(wrapDeviceSingle);
+      hide(wrapDeviceBulk);
+      if (deviceInput) deviceInput.required = true;
     }
-
-    // calculate total
-    const price = currentPrice();
-    let qty = 1;
-
-    if (!isFileKind && bulkChk && bulkChk.checked) {
-      qty = Math.max(1, countBulkLines());
-    }
-
-    const total = price * qty;
-
-    if (svcOk) {
-      wSummary?.classList.remove('d-none');
-      const svcText = svcSel.options[svcSel.selectedIndex]?.textContent?.trim() || '';
-      sumText.textContent = `User selected, ${svcText}${(!isFileKind && bulkChk && bulkChk.checked) ? ' (Bulk x' + qty + ')' : ''}`;
-      totalEl.textContent = money(total);
-    } else {
-      wSummary?.classList.add('d-none');
-    }
-
-    // enable submit if have required data
-    let inputOk = false;
-    if (svcOk) {
-      if (isFileKind) {
-        inputOk = true; // file required will be checked by backend validation
-      } else {
-        if (bulkChk && bulkChk.checked) {
-          inputOk = countBulkLines() > 0;
-        } else {
-          inputOk = !!(devOne && devOne.value.trim());
-        }
-      }
-    }
-
-    submit.disabled = !(userOk && svcOk && inputOk);
   }
 
-  // Bulk toggle
-  if (bulkChk && devOne && devMany) {
-    bulkChk.addEventListener('change', () => {
-      const on = bulkChk.checked;
-      devOne.classList.toggle('d-none', on);
-      devMany.classList.toggle('d-none', !on);
-      // important: make sure backend doesn't get both
-      if (on) devOne.value = '';
-      refreshSummary();
+  // initial state
+  hide(wrapService);
+  resetAfterUser();
+  updateAfterService();
+
+  userSel.addEventListener('change', function () {
+    if (userSel.value) {
+      show(wrapService);
+    } else {
+      hide(wrapService);
+      resetAfterUser();
+    }
+    updateAfterService();
+  });
+
+  serviceSel.addEventListener('change', function () {
+    updateAfterService();
+  });
+
+  if (bulkToggle) {
+    bulkToggle.addEventListener('change', function () {
+      updateAfterService();
     });
   }
 
-  // events
-  userSel?.addEventListener('change', refreshSummary);
-  svcSel?.addEventListener('change', refreshSummary);
-  devOne?.addEventListener('input', refreshSummary);
-  devMany?.addEventListener('input', refreshSummary);
+  // Select2 (search)
+  function initSelect2(){
+    if (!window.jQuery || !window.jQuery.fn || !window.jQuery.fn.select2) return;
+    const $ = window.jQuery;
 
-  // initial
-  refreshSummary();
+    const $modal = $(form).closest('.modal');
+
+    $(userSel).select2({
+      dropdownParent: $modal,
+      width: '100%',
+      placeholder: userSel.getAttribute('data-placeholder') || 'Choose user...',
+      allowClear: true
+    }).on('change', function(){
+      userSel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    $(serviceSel).select2({
+      dropdownParent: $modal,
+      width: '100%',
+      placeholder: serviceSel.getAttribute('data-placeholder') || 'Search service...',
+      allowClear: true
+    }).on('change', function(){
+      serviceSel.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  requestAnimationFrame(initSelect2);
 })();
 </script>
+@endpush
