@@ -1,3 +1,4 @@
+// C:\xampp\htdocs\gsmmix\app\Http\Controllers\Admin\Orders\BaseOrdersController.php
 <?php
 
 namespace App\Http\Controllers\Admin\Orders;
@@ -8,7 +9,7 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
 
 abstract class BaseOrdersController extends Controller
 {
@@ -33,8 +34,7 @@ abstract class BaseOrdersController extends Controller
 
         $rows = ($this->orderModel)::query()
             ->with(['service','provider'])
-            ->orderBy('id'); // ascending: 1,2,3...
-
+            ->orderByDesc('id');
 
         if ($q !== '') {
             $rows->where(function ($w) use ($q) {
@@ -80,319 +80,361 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
-    public function store(Request $request)
-{
-    $rules = [
-        'user_id'    => ['required','integer'], // ✅ صار مطلوب لخصم الرصيد
-        'email'      => ['nullable','string','max:255'],
-        'service_id' => ['required','integer'],
-        'comments'   => ['nullable','string'],
-        'bulk'       => ['nullable','boolean'],
-        'devices'    => ['nullable','string'],
-    ];
+    private function calcServiceSellPriceForUser($service, User $user): float
+    {
+        // IMEI group pricing
+        if ($this->kind === 'imei') {
+            $gid = (int)($user->group_id ?? 0);
 
-    // file kind: نحتاج ملف
-    if ($this->kind === 'file') {
-        $rules['file'] = ['required','file','max:51200']; // 50MB
-    } else {
-        // في non-bulk: device مطلوب
-        $rules['device'] = ['nullable','string','max:255'];
-    }
+            if ($gid > 0 && class_exists(\App\Models\ServiceGroupPrice::class)) {
+                $gp = \App\Models\ServiceGroupPrice::query()
+                    ->where('service_type', 'imei')
+                    ->where('service_id', (int)$service->id)
+                    ->where('group_id', $gid)
+                    ->first();
 
-    if ($this->supportsQuantity()) {
-        $rules['quantity'] = ['nullable','integer','min:1','max:999'];
-    }
+                if ($gp) {
+                    $base = (float)($gp->price ?? 0);
+                    if ($base > 0) {
+                        $price = $base;
 
-    if ($this->kind === 'server') {
-        $rules['required'] = ['nullable','array'];
-    }
+                        $discount = (float)($gp->discount ?? 0);
+                        $dtype = (int)($gp->discount_type ?? 1); // 1 fixed, 2 percent
 
-    $data = $request->validate($rules);
-
-    $userId = (int)($data['user_id'] ?? 0);
-    $email  = trim((string)($data['email'] ?? ''));
-
-    $user = User::find($userId);
-    if (!$user) {
-        return redirect()->back()->withErrors(['user_id' => 'User not found.'])->withInput();
-    }
-    if ($email === '') $email = (string)$user->email;
-
-    // service + provider resolution
-    $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
-    $supplierId = (int)($service->supplier_id ?? 0);
-    $provider   = $supplierId ? ApiProvider::find($supplierId) : null;
-
-    $hasRemote = !empty($service->remote_id);
-    $isApi = $provider && (int)$provider->active === 1 && $hasRemote;
-
-    // prices
-    $sellPrice = (float)($service->price ?? $service->sell_price ?? 0);
-    $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
-    $profitOne = $sellPrice - $costPrice;
-
-    // params
-    $params = ['kind' => $this->kind];
-    if ($this->kind === 'server' && isset($data['required']) && is_array($data['required'])) {
-        $params['required'] = $data['required'];
-    }
-
-    // ==========
-    // ✅ BULK parsing (non-file only)
-    // ==========
-    $bulk = (bool)($data['bulk'] ?? false);
-    $devices = [];
-
-    if ($this->kind !== 'file') {
-        if ($bulk) {
-            $raw = (string)($data['devices'] ?? '');
-            $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
-            $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
-
-            if (count($lines) < 1) {
-                return redirect()->back()->withErrors(['devices' => 'Bulk list is empty.'])->withInput();
-            }
-
-            // حد حماية
-            if (count($lines) > 200) {
-                return redirect()->back()->withErrors(['devices' => 'Too many lines (max 200).'])->withInput();
-            }
-
-            $devices = $lines;
-        } else {
-            $one = trim((string)($data['device'] ?? ''));
-            if ($one === '') {
-                return redirect()->back()->withErrors(['device' => 'Device is required.'])->withInput();
-            }
-            $devices = [$one];
-        }
-    }
-
-    // ==========
-    // ✅ BALANCE CHECK + DEDUCT (atomic)
-    // ==========
-    $countOrders = ($this->kind === 'file') ? 1 : count($devices);
-    $totalCharge = $sellPrice * $countOrders;
-
-    try {
-        \DB::transaction(function () use (
-            $request, $data, $userId, $email, $user,
-            $service, $provider, $isApi,
-            $sellPrice, $costPrice, $profitOne,
-            $params, $devices, $countOrders, $totalCharge
-        ) {
-            // lock user row
-            $u = User::query()->lockForUpdate()->findOrFail($userId);
-
-            // ✅ غيّر balance إذا اسم عمود الرصيد مختلف عندك
-            $balance = (float)($u->balance ?? 0);
-
-            if ($totalCharge > 0 && $balance < $totalCharge) {
-                throw new \RuntimeException('INSUFFICIENT_BALANCE');
-            }
-
-            // deduct
-            if ($totalCharge > 0) {
-                $u->balance = $balance - $totalCharge;
-                $u->save();
-            }
-
-            // create one or many orders
-            $createOne = function (string $deviceValue = '') use (
-                $request, $data, $email, $u, $service, $provider, $isApi,
-                $sellPrice, $costPrice, $profitOne, $params
-            ) {
-                /** @var Model $order */
-                $order = new ($this->orderModel);
-
-                $order->comments    = (string)($data['comments'] ?? '');
-                $order->user_id     = $u->id;
-                $order->email       = $email ?: null;
-
-                $order->service_id  = (int)$service->id;
-                $order->supplier_id = $provider?->id;
-
-                if ($this->supportsQuantity()) {
-                    $order->quantity = (int)($data['quantity'] ?? 1);
-                }
-
-                $order->status     = 'waiting';
-                $order->processing = 0;
-                $order->api_order  = $isApi ? 1 : 0;
-
-                $order->price       = $sellPrice;
-                $order->order_price = $costPrice;
-                $order->profit      = $profitOne;
-
-                $order->params = $params;
-                $order->ip = $request->ip();
-
-                // file kind
-                if ($this->kind === 'file') {
-                    $file = $request->file('file');
-                    $original = $file->getClientOriginalName();
-                    $path = $file->store('orders/files');
-                    $order->device = $original;
-                    $order->storage_path = $path;
-                } else {
-                    $order->device = $deviceValue;
-                }
-
-                $order->save();
-
-                // إرسال تلقائي لو API
-                if ($isApi) {
-                    try {
-                        $order->processing = 1;
-                        $order->status = 'inprogress';
-                        $order->save();
-
-                        if (class_exists(\App\Services\Orders\OrderDispatcher::class)) {
-                            $dispatcher = app(\App\Services\Orders\OrderDispatcher::class);
-                            $dispatcher->send($this->kind, (int)$order->id);
-                        } else {
-                            $order->status = 'waiting';
-                            $order->processing = 0;
-                            $order->save();
+                        if ($discount > 0) {
+                            if ($dtype === 2) $price = $price - ($price * ($discount / 100));
+                            else $price = $price - $discount;
                         }
-                    } catch (\Throwable $e) {
-                        \Log::error('Auto dispatch failed', ['id'=>$order->id,'err'=>$e->getMessage()]);
 
-                        // ✅ لا نرفض عند فشل الاتصال
-                        $order->processing = 0;
-                        $order->status = 'waiting';
-                        $order->replied_at = null;
-
-                        $order->request = array_merge((array)$order->request, [
-                            'dispatch_failed_at' => now()->toDateTimeString(),
-                            'dispatch_error'     => $e->getMessage(),
-                            'dispatch_retry'     => ((int) data_get($order->request, 'dispatch_retry', 0)) + 1,
-                        ]);
-
-                        $order->response = [
-                            'type'    => 'info',
-                            'message' => 'Provider is unreachable. Will retry automatically.',
-                        ];
-
-                        $order->save();
+                        return max(0.0, (float)$price);
                     }
                 }
-
-                return $order;
-            };
-
-            if ($this->kind === 'file') {
-                $createOne('');
-            } else {
-                foreach ($devices as $dv) {
-                    $createOne($dv);
-                }
             }
-        });
-    } catch (\RuntimeException $e) {
-        if ($e->getMessage() === 'INSUFFICIENT_BALANCE') {
-            return redirect()->back()
-                ->withErrors(['user_id' => 'No enough balance for this order.'])
-                ->withInput();
         }
-        throw $e;
+
+        // fallback explicit columns
+        foreach ([
+            $service->price ?? null,
+            $service->sell_price ?? null,
+            $service->final_price ?? null,
+            $service->customer_price ?? null,
+            $service->retail_price ?? null,
+        ] as $p) {
+            if ($p !== null && $p !== '' && is_numeric($p) && (float)$p > 0) return (float)$p;
+        }
+
+        // fallback cost + profit
+        $cost = (float)($service->cost ?? 0);
+        $profit = (float)($service->profit ?? 0);
+        $profitType = (int)($service->profit_type ?? 1); // 1 fixed, 2 percent
+        if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit / 100)));
+        return max(0.0, $cost + $profit);
     }
 
-    return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order created.');
-}
+    private function refundOrderIfNeeded(Model $order, string $reason): void
+    {
+        $req = (array)($order->request ?? []);
+        if (!empty($req['refunded_at'])) return;
 
+        $uid = (int)($order->user_id ?? 0);
+        if ($uid <= 0) return;
+
+        $amount = (float)($req['charged_amount'] ?? 0);
+        if ($amount <= 0) return;
+
+        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+            $u = User::query()->lockForUpdate()->find($uid);
+            if (!$u) return;
+
+            $u->balance = (float)($u->balance ?? 0) + $amount;
+            $u->save();
+
+            $req['refunded_at'] = now()->toDateTimeString();
+            $req['refunded_amount'] = $amount;
+            $req['refunded_reason'] = $reason;
+
+            $order->request = $req;
+            $order->save();
+        });
+    }
+
+    public function store(Request $request)
+    {
+        $rules = [
+            'user_id'    => ['required','integer'],
+            'service_id' => ['required','integer'],
+            'comments'   => ['nullable','string'],
+            'bulk'       => ['nullable','boolean'],
+            'devices'    => ['nullable','string'],
+        ];
+
+        if ($this->kind === 'file') {
+            $rules['file'] = ['required','file','max:51200'];
+        } else {
+            $rules['device'] = ['nullable','string','max:255'];
+        }
+
+        if ($this->supportsQuantity()) {
+            $rules['quantity'] = ['nullable','integer','min:1','max:999'];
+        }
+
+        if ($this->kind === 'server') {
+            $rules['required'] = ['nullable','array'];
+        }
+
+        $data = $request->validate($rules);
+
+        $userId = (int)($data['user_id'] ?? 0);
+        $user = User::find($userId);
+        if (!$user) {
+            return redirect()->back()->withErrors(['user_id' => 'User not found.'])->withInput();
+        }
+
+        $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
+
+        $supplierId = (int)($service->supplier_id ?? 0);
+        $provider   = $supplierId ? ApiProvider::find($supplierId) : null;
+
+        $hasRemote = !empty($service->remote_id);
+        $isApi = $provider && (int)$provider->active === 1 && $hasRemote;
+
+        // ✅ price based on user group
+        $sellPrice = (float)$this->calcServiceSellPriceForUser($service, $user);
+
+        $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
+        $profitOne = $sellPrice - $costPrice;
+
+        $params = ['kind' => $this->kind];
+        if ($this->kind === 'server' && isset($data['required']) && is_array($data['required'])) {
+            $params['required'] = $data['required'];
+        }
+
+        $bulk = (bool)($data['bulk'] ?? false);
+        $devices = [];
+
+        if ($this->kind !== 'file') {
+            if ($bulk) {
+                $raw = (string)($data['devices'] ?? '');
+                $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
+                $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
+
+                if (count($lines) < 1) {
+                    return redirect()->back()->withErrors(['devices' => 'Bulk list is empty.'])->withInput();
+                }
+                if (count($lines) > 200) {
+                    return redirect()->back()->withErrors(['devices' => 'Too many lines (max 200).'])->withInput();
+                }
+                $devices = $lines;
+            } else {
+                $one = trim((string)($data['device'] ?? ''));
+                if ($one === '') {
+                    return redirect()->back()->withErrors(['device' => 'Device is required.'])->withInput();
+                }
+                $devices = [$one];
+            }
+        }
+
+        $countOrders = ($this->kind === 'file') ? 1 : count($devices);
+        $totalCharge = $sellPrice * $countOrders;
+
+        try {
+            DB::transaction(function () use (
+                $request, $data, $userId, $service, $provider, $isApi,
+                $sellPrice, $costPrice, $profitOne, $params, $devices, $totalCharge
+            ) {
+                $u = User::query()->lockForUpdate()->findOrFail($userId);
+                $balance = (float)($u->balance ?? 0);
+
+                if ($totalCharge > 0 && $balance < $totalCharge) {
+                    throw new \RuntimeException('INSUFFICIENT_BALANCE');
+                }
+
+                if ($totalCharge > 0) {
+                    $u->balance = $balance - $totalCharge;
+                    $u->save();
+                }
+
+                $createOne = function (string $deviceValue = '') use (
+                    $request, $data, $u, $service, $provider, $isApi,
+                    $sellPrice, $costPrice, $profitOne, $params
+                ) {
+                    /** @var Model $order */
+                    $order = new ($this->orderModel);
+
+                    $order->comments    = (string)($data['comments'] ?? '');
+                    $order->user_id     = $u->id;
+                    $order->email       = $u->email ?: null;
+
+                    $order->service_id  = (int)$service->id;
+                    $order->supplier_id = $provider?->id;
+
+                    if ($this->supportsQuantity()) {
+                        $order->quantity = (int)($data['quantity'] ?? 1);
+                    }
+
+                    $order->status     = 'waiting';
+                    $order->processing = 0;
+                    $order->api_order  = $isApi ? 1 : 0;
+
+                    $order->price       = $sellPrice;
+                    $order->order_price = $costPrice;
+                    $order->profit      = $profitOne;
+
+                    $order->params = $params;
+                    $order->ip = $request->ip();
+
+                    // ✅ store charged amount for refund
+                    $order->request = array_merge((array)($order->request ?? []), [
+                        'charged_amount' => (float)$sellPrice,
+                        'charged_at'     => now()->toDateTimeString(),
+                    ]);
+
+                    if ($this->kind === 'file') {
+                        $file = $request->file('file');
+                        $original = $file->getClientOriginalName();
+                        $path = $file->store('orders/files');
+                        $order->device = $original;
+                        $order->storage_path = $path;
+                    } else {
+                        $order->device = $deviceValue;
+                    }
+
+                    $order->save();
+
+                    if ($isApi) {
+                        try {
+                            $order->processing = 1;
+                            $order->status = 'inprogress';
+                            $order->save();
+
+                            if (class_exists(\App\Services\Orders\OrderDispatcher::class)) {
+                                $dispatcher = app(\App\Services\Orders\OrderDispatcher::class);
+                                $dispatcher->send($this->kind, (int)$order->id);
+                            } else {
+                                $order->status = 'waiting';
+                                $order->processing = 0;
+                                $order->save();
+                            }
+                        } catch (\Throwable $e) {
+                            Log::error('Auto dispatch failed', ['id'=>$order->id,'err'=>$e->getMessage()]);
+
+                            $order->processing = 0;
+                            $order->status = 'waiting';
+                            $order->replied_at = null;
+
+                            $order->request = array_merge((array)($order->request ?? []), [
+                                'dispatch_failed_at' => now()->toDateTimeString(),
+                                'dispatch_error'     => $e->getMessage(),
+                                'dispatch_retry'     => ((int) data_get($order->request, 'dispatch_retry', 0)) + 1,
+                            ]);
+
+                            $order->response = [
+                                'type'    => 'info',
+                                'message' => 'Provider is unreachable. Will retry automatically.',
+                            ];
+
+                            $order->save();
+                        }
+                    }
+
+                    return $order;
+                };
+
+                if ($this->kind === 'file') {
+                    $createOne('');
+                } else {
+                    foreach ($devices as $dv) $createOne($dv);
+                }
+            });
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'INSUFFICIENT_BALANCE') {
+                return redirect()->back()
+                    ->withErrors(['user_id' => 'No enough balance for this order.'])
+                    ->withInput();
+            }
+            throw $e;
+        }
+
+        return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order created.');
+    }
 
     public function modalView(int $id)
-{
-    $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
+    {
+        $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
 
-    return view('admin.orders.modals.view', [
-        'title'       => "View Order #{$row->id}",
-        'kind'        => $this->kind,
-        'routePrefix' => $this->routePrefix,
-
-        'row'   => $row,
-        'order' => $row, // ✅ احتياط لو أي view قديم يتوقع order
-    ]);
-}
-
-
+        return view('admin.orders.modals.view', [
+            'title'       => "View Order #{$row->id}",
+            'kind'        => $this->kind,
+            'routePrefix' => $this->routePrefix,
+            'row'   => $row,
+            'order' => $row,
+        ]);
+    }
 
     public function modalEdit(int $id)
-{
-    $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
+    {
+        $row = ($this->orderModel)::query()->with(['service','provider'])->findOrFail($id);
 
-    return view('admin.orders.modals.edit', [
-        'title'       => "Edit Order #{$row->id}",
-        'kind'        => $this->kind,
-        'routePrefix' => $this->routePrefix,
-
-        // ✅ مهم: المودال الحالي يتوقع $order
-        'row'   => $row,
-        'order' => $row,
-    ]);
-}
+        return view('admin.orders.modals.edit', [
+            'title'       => "Edit Order #{$row->id}",
+            'kind'        => $this->kind,
+            'routePrefix' => $this->routePrefix,
+            'row'   => $row,
+            'order' => $row,
+        ]);
+    }
 
     public function update(Request $request, int $id)
-{
-    $row = ($this->orderModel)::findOrFail($id);
+    {
+        $row = ($this->orderModel)::findOrFail($id);
 
-    $data = $request->validate([
-        'status'             => ['required','in:waiting,inprogress,success,rejected,cancelled'],
-        'comments'           => ['nullable','string'],
+        $data = $request->validate([
+            'status'              => ['required','in:waiting,inprogress,success,rejected,cancelled'],
+            'comments'            => ['nullable','string'],
+            'response'            => ['nullable'],
+            'provider_reply_html' => ['nullable','string'],
+        ]);
 
-        // response raw (json/text)
-        'response'           => ['nullable'],
+        $oldStatus = strtolower((string)($row->status ?? ''));
+        $newStatus = strtolower((string)($data['status'] ?? ''));
 
-        // ✅ Provider reply html (Summernote)
-        'provider_reply_html' => ['nullable','string'],
-    ]);
+        $row->status   = $data['status'];
+        $row->comments = (string)($data['comments'] ?? '');
 
-    $row->status   = $data['status'];
-    $row->comments = (string)($data['comments'] ?? '');
+        $currentResp = $row->response;
 
-    // ---- normalize existing response to array if possible ----
-    $currentResp = $row->response;
-
-    if (is_string($currentResp)) {
-        $decoded = json_decode($currentResp, true);
-        $currentResp = is_array($decoded) ? $decoded : ['raw' => $row->response];
-    } elseif (!is_array($currentResp) && $currentResp !== null) {
-        $currentResp = ['raw' => $currentResp];
-    } elseif ($currentResp === null) {
-        $currentResp = [];
-    }
-
-    // ---- apply provided response (if any) ----
-    if (array_key_exists('response', $data)) {
-        if (is_string($data['response'])) {
-            $decoded = json_decode($data['response'], true);
-
-            // إذا JSON صحيح نخزنه array
-            if (is_array($decoded)) {
-                $currentResp = array_merge($currentResp, $decoded);
-            } else {
-                // نص عادي
-                $currentResp['raw'] = $data['response'];
-            }
-        } elseif (is_array($data['response'])) {
-            $currentResp = array_merge($currentResp, $data['response']);
+        if (is_string($currentResp)) {
+            $decoded = json_decode($currentResp, true);
+            $currentResp = is_array($decoded) ? $decoded : ['raw' => $row->response];
+        } elseif (!is_array($currentResp) && $currentResp !== null) {
+            $currentResp = ['raw' => $currentResp];
+        } elseif ($currentResp === null) {
+            $currentResp = [];
         }
+
+        if (array_key_exists('response', $data)) {
+            if (is_string($data['response'])) {
+                $decoded = json_decode($data['response'], true);
+                if (is_array($decoded)) $currentResp = array_merge($currentResp, $decoded);
+                else $currentResp['raw'] = $data['response'];
+            } elseif (is_array($data['response'])) {
+                $currentResp = array_merge($currentResp, $data['response']);
+            }
+        }
+
+        if (!empty($data['provider_reply_html'])) {
+            $currentResp['provider_reply_html'] = $data['provider_reply_html'];
+            $currentResp['provider_reply_updated_at'] = now()->toDateTimeString();
+        }
+
+        $row->response = $currentResp;
+        $row->save();
+
+        // ✅ Refund only when moved into rejected/cancelled
+        if (($newStatus === 'rejected' || $newStatus === 'cancelled') && $oldStatus !== $newStatus) {
+            $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
+        }
+
+        return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
     }
-
-    // ✅ save provider reply HTML داخل response
-    if (!empty($data['provider_reply_html'])) {
-        $currentResp['provider_reply_html'] = $data['provider_reply_html'];
-        $currentResp['provider_reply_updated_at'] = now()->toDateTimeString();
-    } else {
-        // لو حاب تمسحها لو تركها فاضية
-        // unset($currentResp['provider_reply_html']);
-    }
-
-    $row->response = $currentResp;
-    $row->save();
-
-    return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
-}
-
 }

@@ -1,3 +1,4 @@
+// C:\xampp\htdocs\gsmmix\app\Console\Commands\SyncImeiOrders.php
 <?php
 
 namespace App\Console\Commands;
@@ -7,6 +8,7 @@ use App\Models\ImeiOrder;
 use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 
 class SyncImeiOrders extends Command
 {
@@ -47,6 +49,7 @@ class SyncImeiOrders extends Command
     private function cleanHtmlResultToLines(string $html): array
     {
         $html = preg_replace('/<\s*br\s*\/?\s*>/i', "\n", $html) ?? $html;
+
         $text = strip_tags($html);
         $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
         $text = str_replace(["\r\n", "\r"], "\n", $text);
@@ -76,43 +79,31 @@ class SyncImeiOrders extends Command
         return $items;
     }
 
-    private function refundIfNeeded(ImeiOrder $order, string $reason = 'rejected'): void
+    private function refundIfNeeded(ImeiOrder $order, string $reason): void
     {
-        try {
-            $req = (array)($order->request ?? []);
-            if (!empty($req['refunded_at'])) return;
+        $req = (array)($order->request ?? []);
+        if (!empty($req['refunded_at'])) return;
 
-            $userId = (int)($order->user_id ?? 0);
-            if ($userId <= 0) return;
+        $uid = (int)($order->user_id ?? 0);
+        if ($uid <= 0) return;
 
-            $amount = (float)($order->price ?? 0);
-            if ($amount <= 0) {
-                $req['refunded_at'] = now()->toDateTimeString();
-                $req['refund_amount'] = 0;
-                $req['refund_reason'] = $reason;
-                $order->request = $req;
-                $order->save();
-                return;
-            }
+        $amount = (float)($req['charged_amount'] ?? 0);
+        if ($amount <= 0) return;
 
-            \DB::transaction(function () use ($order, $userId, $amount, $reason) {
-                $u = User::query()->lockForUpdate()->find($userId);
-                if (!$u) return;
+        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+            $u = User::query()->lockForUpdate()->find($uid);
+            if (!$u) return;
 
-                $u->balance = (float)($u->balance ?? 0) + $amount;
-                $u->save();
+            $u->balance = (float)($u->balance ?? 0) + $amount;
+            $u->save();
 
-                $req = (array)($order->request ?? []);
-                $req['refunded_at'] = now()->toDateTimeString();
-                $req['refund_amount'] = $amount;
-                $req['refund_reason'] = $reason;
+            $req['refunded_at'] = now()->toDateTimeString();
+            $req['refunded_amount'] = $amount;
+            $req['refunded_reason'] = $reason;
 
-                $order->request = $req;
-                $order->save();
-            });
-        } catch (\Throwable $e) {
-            // لا نوقف السينك
-        }
+            $order->request = $req;
+            $order->save();
+        });
     }
 
     public function handle(DhruOrderGateway $dhru): int
@@ -144,7 +135,7 @@ class SyncImeiOrders extends Command
 
             $res = $dhru->getImeiOrder($provider, $ref);
 
-            $order->request = array_merge((array)$order->request, [
+            $order->request = array_merge((array)($order->request ?? []), [
                 'last_status_check' => now()->toDateTimeString(),
                 'status_check_raw'  => $res['response_raw'] ?? null,
             ]);
@@ -173,7 +164,6 @@ class SyncImeiOrders extends Command
                     continue;
                 }
 
-                // ✅ rejected نهائي => refund
                 $order->status = 'rejected';
                 $order->replied_at = now();
                 $order->response = [
@@ -183,7 +173,8 @@ class SyncImeiOrders extends Command
                 ];
                 $order->save();
 
-                $this->refundIfNeeded($order, 'sync_error_rejected');
+                // ✅ refund on rejected
+                $this->refundIfNeeded($order, 'sync_rejected_error');
                 continue;
             }
 
@@ -232,9 +223,9 @@ class SyncImeiOrders extends Command
                 $order->response = $ui;
                 $order->save();
 
-                // ✅ rejected نهائي من STATUS=3 => refund
+                // ✅ refund only if rejected
                 if ($order->status === 'rejected') {
-                    $this->refundIfNeeded($order, 'sync_status_rejected');
+                    $this->refundIfNeeded($order, 'sync_rejected_status3');
                 }
 
                 continue;
