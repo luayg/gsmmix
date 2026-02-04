@@ -58,10 +58,39 @@ class DhruOrderGateway
     }
 
     /**
+     * رسائل ERROR التي نعتبرها "مؤقتة/قابلة لإعادة المحاولة"
+     * (مثل IP not allowed أو maintenance أو timeouts... إلخ)
+     */
+    private function isRetryableErrorMessage(?string $msg): bool
+    {
+        if ($msg === null) return false;
+        $m = mb_strtolower(trim($msg));
+
+        $needles = [
+            'ip', 'not allowed', 'whitelist', 'blocked', 'forbidden',
+            'timeout', 'timed out',
+            'connection', 'connect', 'refused', 'reset',
+            'temporarily', 'temporary', 'try again',
+            'maintenance', 'unavailable', 'service unavailable',
+            'server busy', 'busy',
+            'too many requests', 'rate limit', 'limit exceeded',
+            'bad gateway', 'gateway', 'cloudflare',
+            'dns', 'resolve', 'host',
+        ];
+
+        foreach ($needles as $n) {
+            if (str_contains($m, $n)) return true;
+        }
+
+        return false;
+    }
+
+    /**
      * send() موحّد:
-     * - إذا فشل اتصال/HTTP => retryable=true و status=waiting (لا نرفض)
+     * - إذا فشل اتصال/HTTP => retryable=true و status=waiting
      * - إذا SUCCESS => ok=true status=inprogress
-     * - إذا ERROR => ok=false status=rejected (هذا فقط لإرسال place... وليس للـ sync)
+     * - إذا ERROR => افتراضياً rejected
+     *   لكن لو رسالة ERROR تعتبر مؤقتة => retryable=true و status=waiting
      */
     private function send(ApiProvider $p, string $action, string $parametersXml): array
     {
@@ -116,6 +145,28 @@ class DhruOrderGateway
         }
 
         // ERROR
+        $errMsg = null;
+        if (isset($json['ERROR'][0]['MESSAGE'])) {
+            $errMsg = (string)$json['ERROR'][0]['MESSAGE'];
+        }
+
+        // ✅ لو الخطأ مؤقت/قابل لإعادة المحاولة => لا نرفض، نخليه waiting
+        if ($this->isRetryableErrorMessage($errMsg)) {
+            return [
+                'ok' => false,
+                'retryable' => true,
+                'status' => 'waiting',
+                'remote_id' => null,
+                'request' => ['url'=>$url,'payload'=>$payload,'http_status'=>$resp->status()],
+                'response_raw' => $json,
+                'response_ui' => [
+                    'type' => 'queued',
+                    'message' => $errMsg ? ('Temporary provider issue: '.$errMsg) : 'Temporary provider issue, queued.',
+                ],
+            ];
+        }
+
+        // ❌ غير قابل لإعادة المحاولة => rejected
         return [
             'ok' => false,
             'retryable' => false,
@@ -196,7 +247,6 @@ class DhruOrderGateway
     // =========================
 
     /**
-     * ✅ حسب الـ API kit اللي أرسلته:
      * action = getimeiorder
      * parameters: ID = (REFERENCEID)
      */
@@ -206,7 +256,6 @@ class DhruOrderGateway
             . '<ID>'.$this->xmlEscape($referenceId).'</ID>'
             . '</PARAMETERS>';
 
-        // ملاحظة: send() في حال الأخطاء المؤقتة يرجع waiting
         return $this->send($p, 'getimeiorder', $xml);
     }
 }

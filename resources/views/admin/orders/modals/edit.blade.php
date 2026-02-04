@@ -1,5 +1,4 @@
-{{-- C:\xampp\htdocs\gsmmix\resources\views\admin\orders\modals\edit.blade.php --}}
-
+{{-- resources/views/admin/orders/modals/edit.blade.php --}}
 @php
   $row = $row ?? ($order ?? null);
   $routePrefix = $routePrefix ?? 'admin.orders.imei';
@@ -39,24 +38,29 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
-  // Badge rendering
+  // ✅ Badge rendering (INLINE STYLES) حتى Quill ما يضيع الألوان
   $renderValue = function ($label, $value) use ($cleanText) {
     $label = strtolower($cleanText($label));
     $val   = $cleanText($value);
     $valL  = strtolower($val);
 
-    if ($valL === 'on')  return '<span class="badge bg-danger">ON</span>';
-    if ($valL === 'off') return '<span class="badge bg-success">OFF</span>';
+    $pill = function ($text, $bg, $fg = '#fff') {
+      $text = e($text);
+      return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;background:'.$bg.';color:'.$fg.';">'.$text.'</span>';
+    };
+
+    if ($valL === 'on')  return $pill('ON',  '#dc3545'); // red
+    if ($valL === 'off') return $pill('OFF', '#198754'); // green
 
     if (strpos($label, 'icloud') !== false) {
-      if (strpos($valL, 'lost') !== false)  return '<span class="badge bg-danger">'.e($val).'</span>';
-      if (strpos($valL, 'clean') !== false) return '<span class="badge bg-success">'.e($val).'</span>';
-      return '<span class="badge bg-secondary">'.e($val).'</span>';
+      if (strpos($valL, 'lost') !== false)  return $pill($val, '#dc3545');
+      if (strpos($valL, 'clean') !== false) return $pill($val, '#198754');
+      return $pill($val, '#6c757d'); // gray
     }
 
-    if (in_array($valL, ['activated','unlocked','clean'], true)) return '<span class="badge bg-success">'.e($val).'</span>';
-    if (in_array($valL, ['expired'], true)) return '<span class="badge bg-danger">'.e($val).'</span>';
-    if (strpos($valL, 'lost') !== false) return '<span class="badge bg-danger">'.e($val).'</span>';
+    if (in_array($valL, ['activated','unlocked','clean'], true)) return $pill($val, '#198754');
+    if (in_array($valL, ['expired'], true)) return $pill($val, '#dc3545');
+    if (strpos($valL, 'lost') !== false) return $pill($val, '#dc3545');
 
     return e($val);
   };
@@ -100,7 +104,7 @@
 
   $apiOrder  = ($row?->api_order ?? false) ? 'Yes' : 'No';
 
-  // price = سعر العميل | order_price = تكلفة الـ API
+  // prices
   $customerPrice = $row?->price;
   $apiCost       = $row?->order_price;
   $finalPrice    = $row?->final_price ?? $customerPrice;
@@ -128,6 +132,7 @@
 
 <form class="js-ajax-form" method="POST" action="{{ route($routePrefix.'.update', $row?->id ?? 0) }}">
   @csrf
+  {{-- ✅ لا تضع @method('PUT') لأن الراوت عندك يقبل POST فقط --}}
 
   <div class="modal-body" style="max-height: calc(100vh - 210px); overflow: auto;">
     <div class="row g-3">
@@ -161,7 +166,7 @@
           <label class="form-label">Reply</label>
 
           <textarea
-            name="reply"
+            name="provider_reply_html"
             class="form-control js-editor"
             rows="12"
             data-editor="quill"

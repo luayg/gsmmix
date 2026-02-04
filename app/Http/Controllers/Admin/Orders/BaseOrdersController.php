@@ -195,15 +195,31 @@ abstract class BaseOrdersController extends Controller
                     $order->processing = 0;
                     $order->save();
                 }
-            } catch (\Throwable $e) {
+                        } catch (\Throwable $e) {
                 Log::error('Auto dispatch failed', ['id'=>$order->id,'err'=>$e->getMessage()]);
 
+                // ✅ لا ترفض الطلب عند فشل الاتصال/الإرسال
+                // خلي الطلب Waiting ليُعاد إرسالُه لاحقاً بواسطة Scheduler/Command
                 $order->processing = 0;
-                $order->status = 'rejected';
-                $order->response = ['ERROR' => [['MESSAGE' => $e->getMessage()]]];
-                $order->replied_at = now();
+                $order->status = 'waiting';
+                $order->replied_at = null;
+
+                // خزّن رسالة تقنية للمتابعة فقط (بدون رفض)
+                $order->request = array_merge((array)$order->request, [
+                    'dispatch_failed_at' => now()->toDateTimeString(),
+                    'dispatch_error'     => $e->getMessage(),
+                    'dispatch_retry'     => ((int) data_get($order->request, 'dispatch_retry', 0)) + 1,
+                ]);
+
+                // رسالة UI خفيفة (اختياري)
+                $order->response = [
+                    'type'    => 'info',
+                    'message' => 'Provider is unreachable. Will retry automatically.',
+                ];
+
                 $order->save();
             }
+
         }
 
         return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order created.');

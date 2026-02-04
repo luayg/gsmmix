@@ -11,9 +11,20 @@ class Kernel extends ConsoleKernel
     {
         // ✅ نظام واحد فقط للمزامنة (ProviderManager + Adapters)
         $schedule->command('providers:sync')
-            ->hourly()
+            ->everyMinute()
             ->withoutOverlapping()
             ->onOneServer();
+        // إعادة إرسال الطلبات التي فشل إرسالها (كل دقيقة)
+    $schedule->command('orders:retry-imei --limit=20')->everyMinute();
+
+    // مزامنة نتائج الطلبات (مثلاً كل 5 دقائق)
+    $schedule->command('orders:sync-imei --limit=50')->everyMinute();
+
+    $schedule->command('orders:dispatch-pending-imei --limit=50')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
+
     }
 
     protected $commands = [
