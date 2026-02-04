@@ -1,11 +1,6 @@
-import $ from 'jquery';
+// resources/js/modal-editors.js
+let SN_LOADING = null;
 
-// ✅ لا تلمس global إذا مش موجود (لكن Summernote يحتاج window.jQuery غالباً)
-if (!window.jQuery) {
-  window.$ = window.jQuery = $;
-}
-
-// Helpers: load once
 function loadCssOnce(id, href) {
   if (document.getElementById(id)) return;
   const l = document.createElement('link');
@@ -22,85 +17,92 @@ function loadScriptOnce(id, src) {
     s.id = id;
     s.src = src;
     s.async = false;
-    s.onload = resolve;
-    s.onerror = reject;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load: ' + src));
     document.body.appendChild(s);
   });
 }
 
-// ✅ تحميل Summernote عند الحاجة (معزول لهذه الصفحة فقط لأن entry خاص بها)
 async function ensureSummernoteLoaded() {
-  // CSS
-  loadCssOnce(
-    'sn-lite-css',
-    'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css'
-  );
-
-  // JS (summernote يحتاج jQuery global)
-  if (!window.jQuery) window.$ = window.jQuery = $;
-
-  if (!window.jQuery.fn || typeof window.jQuery.fn.summernote !== 'function') {
-    await loadScriptOnce(
-      'sn-lite-js',
-      'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js'
-    );
+  // لازم يكون موجود jQuery الأساسي من admin.js
+  if (!window.jQuery) {
+    console.warn('[modal-editors] window.jQuery is missing. (admin.js should provide it)');
+    return false;
   }
 
-  return !!(window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function');
-}
-
-// Toolbar مثل الصورة 77 (قريب جداً)
-function summernoteOptions(height = 360) {
-  return {
-    height,
-    tabsize: 2,
-    toolbar: [
-      ['style', ['style']],
-      ['font', ['bold', 'italic', 'underline', 'clear']],
-      ['fontname', ['fontname']],
-      ['fontsize', ['fontsize']],
-      ['color', ['color']],
-      ['para', ['ul', 'ol', 'paragraph']],
-      ['table', ['table']],
-      ['insert', ['link', 'picture']],
-      ['view', ['fullscreen', 'codeview']],
-    ],
-  };
-}
-
-export async function initModalEditors(scopeEl = document) {
-  const ok = await ensureSummernoteLoaded();
-  if (!ok) {
-    console.warn('Summernote failed to load.');
-    return;
+  // لو Summernote موجود على نفس jQuery خلاص
+  if (window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function') {
+    return true;
   }
 
-  const $root = window.jQuery(scopeEl);
+  // تحميل مرة واحدة فقط
+  if (!SN_LOADING) {
+    SN_LOADING = (async () => {
+      loadCssOnce(
+        'summernote-lite-css',
+        'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.css'
+      );
 
-  // ✅ init any textarea[data-summernote="1"]
-  $root.find('textarea[data-summernote="1"]').each(function () {
-    const $el = window.jQuery(this);
-    const h = Number($el.data('summernote-height') || 360);
+      await loadScriptOnce(
+        'summernote-lite-js',
+        'https://cdn.jsdelivr.net/npm/summernote@0.8.18/dist/summernote-lite.min.js'
+      );
 
-    try {
-      // destroy if already initialised
-      if ($el.next('.note-editor').length) {
-        $el.summernote('destroy');
+      // تأكيد أنه تركّب على نفس jQuery
+      if (!window.jQuery.fn || typeof window.jQuery.fn.summernote !== 'function') {
+        throw new Error('Summernote did not attach to window.jQuery');
       }
-    } catch (_) {}
+    })().catch((e) => {
+      console.error('[modal-editors] ', e);
+      return false;
+    });
+  }
 
-    $el.summernote(summernoteOptions(h));
-  });
+  const ok = await SN_LOADING;
+  return ok !== false;
 }
 
-// optional: destroy editors (عشان ما يصير تداخل)
-export function destroyModalEditors(scopeEl = document) {
-  if (!window.jQuery?.fn?.summernote) return;
-  const $root = window.jQuery(scopeEl);
-  $root.find('textarea[data-summernote="1"]').each(function () {
-    const $el = window.jQuery(this);
-    try {
-      if ($el.next('.note-editor').length) $el.summernote('destroy');
-    } catch (_) {}
+export async function initModalEditors(container) {
+  const root = container instanceof Element ? container : document;
+
+  // ندعم الحالتين: data-summernote أو class js-editor
+  const areas = root.querySelectorAll('textarea[data-summernote="1"], textarea.js-editor');
+  if (!areas.length) return;
+
+  const ok = await ensureSummernoteLoaded();
+  if (!ok) return;
+
+  const $ = window.jQuery;
+
+  $(areas).each(function () {
+    const $t = $(this);
+
+    // already initialized
+    if ($t.next('.note-editor').length) return;
+
+    const h = Number($t.attr('data-summernote-height') || 320);
+
+    $t.summernote({
+      height: h,
+      focus: false,
+      toolbar: [
+        ['fontsize', ['fontsize']],
+        ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
+        ['color', ['color']],
+        ['para', ['ul', 'ol', 'paragraph']],
+        ['insert', ['link', 'picture', 'table', 'hr']],
+        ['view', ['codeview']]
+      ],
+      fontSizes: ['8','9','10','11','12','14','16','18','20','24','28','32','36','48'],
+      callbacks: {
+        onImageUpload: function (files) {
+          for (const f of files) {
+            const reader = new FileReader();
+            reader.onload = (e) => $t.summernote('insertImage', e.target.result);
+            reader.readAsDataURL(f);
+          }
+        }
+      }
+    });
   });
 }

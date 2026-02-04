@@ -151,18 +151,23 @@
         </div>
       </div>
 
-      {{-- RIGHT EDITOR --}}
-      <div class="col-lg-6">
-        <div class="mb-2 fw-semibold">Reply</div>
+      {{-- Reply (edit) --}}
+<div class="mb-3">
+  <label class="form-label">Reply</label>
 
-        <textarea
-          id="replyEditor"
-          name="provider_reply_html"
-          class="form-control"
-          rows="14"
-          data-summernote="1"
-          data-summernote-height="360"
-        >{!! old('provider_reply_html', $providerReplyHtml) !!}</textarea>
+  <textarea
+    name="reply"
+    class="form-control js-editor"
+    rows="10"
+    data-summernote="1"
+    data-summernote-height="320"
+  >{!! $reply !!}</textarea>
+
+  <div class="form-text">
+    يمكنك تعديل الرد بتنسيق كامل (مثل صورة 77).
+  </div>
+</div>
+
 
         <div class="mt-3">
           <label class="form-label fw-semibold">Status</label>
