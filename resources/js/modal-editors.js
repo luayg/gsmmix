@@ -1,22 +1,56 @@
 // resources/js/modal-editors.js
+// Summernote(BS5) loader + initializer (CDN) على نفس jQuery الموجودة في الصفحة
 
-import $ from 'jquery';
+function loadCssOnce(id, href) {
+  if (document.getElementById(id)) return;
+  const l = document.createElement('link');
+  l.id = id;
+  l.rel = 'stylesheet';
+  l.href = href;
+  document.head.appendChild(l);
+}
 
-let __summernoteLoaded = false;
+function loadScriptOnce(id, src) {
+  return new Promise((resolve, reject) => {
+    if (document.getElementById(id)) return resolve();
+    const s = document.createElement('script');
+    s.id = id;
+    s.src = src;
+    s.async = false;
+    s.onload = () => resolve();
+    s.onerror = (e) => reject(e);
+    document.body.appendChild(s);
+  });
+}
 
-async function ensureSummernoteLoaded() {
-  if (__summernoteLoaded) return;
-  if (!window.jQuery) window.jQuery = $;
-  if (!window.$) window.$ = $;
+async function ensureSummernoteBs5OnSameJquery() {
+  const $ = window.jQuery;
+  if (!$) throw new Error('window.jQuery is missing (admin layout must provide it).');
 
-  await import('summernote/dist/summernote-bs5.min.js');
-  await import('summernote/dist/summernote-bs5.min.css');
+  // إذا Summernote مركّب أصلاً على نفس jQuery → خلاص
+  if ($.fn && typeof $.fn.summernote === 'function') return;
 
-  __summernoteLoaded = true;
+  // CSS
+  loadCssOnce(
+    'orders-sn-bs5-css',
+    'https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-bs5.min.css'
+  );
+
+  // JS (bs5)
+  await loadScriptOnce(
+    'orders-sn-bs5-js',
+    'https://cdn.jsdelivr.net/npm/summernote@0.8.20/dist/summernote-bs5.min.js'
+  );
+
+  // تأكيد أنه ركب على نفس jQuery
+  if (!$.fn || typeof $.fn.summernote !== 'function') {
+    throw new Error('Summernote BS5 loaded but not attached to window.jQuery (jQuery duplication issue).');
+  }
 }
 
 function injectFixCssOnce() {
   if (document.getElementById('orders-sn-fix-z')) return;
+
   const st = document.createElement('style');
   st.id = 'orders-sn-fix-z';
   st.textContent = `
@@ -27,55 +61,55 @@ function injectFixCssOnce() {
   document.head.appendChild(st);
 }
 
+async function buildOneTextarea(ta) {
+  await ensureSummernoteBs5OnSameJquery();
+  injectFixCssOnce();
+
+  const $ = window.jQuery;
+  const $ta = $(ta);
+
+  // destroy فقط لو summernote فعلاً موجود على نفس jQuery
+  try {
+    if ($.fn?.summernote && ($ta.next('.note-editor').length || $ta.data('summernote'))) {
+      $ta.summernote('destroy');
+    }
+  } catch (_) {}
+
+  const height = Number(ta.getAttribute('data-summernote-height') || 320);
+
+  // IMPORTANT: textarea لازم تكون ظاهرة داخل modal (shown)
+  $ta.summernote({
+    height,
+    dialogsInBody: true,
+    placeholder: ta.getAttribute('placeholder') || '',
+    toolbar: [
+      ['style', ['style']],
+      ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
+      ['fontsize', ['fontsize']],
+      ['color', ['color']],
+      ['para', ['ul', 'ol', 'paragraph']],
+      ['table', ['table']],
+      ['insert', ['link', 'picture']],
+      ['view', ['fullscreen', 'codeview']],
+      ['misc', ['undo', 'redo', 'help']]
+    ]
+  });
+
+  // تحقّق بعد frame (مو فوراً)
+  await new Promise((r) => requestAnimationFrame(r));
+
+  const editor = ta.parentElement?.querySelector('.note-editor');
+  if (!editor) {
+    console.warn('⚠️ Summernote did not build editor for textarea:', ta);
+  }
+}
+
 export async function initModalEditors(scopeEl = document) {
   const scope = scopeEl instanceof Element ? scopeEl : document;
   const textareas = scope.querySelectorAll('textarea[data-summernote="1"]');
   if (!textareas.length) return;
 
-  await ensureSummernoteLoaded();
-  injectFixCssOnce();
-
-  if (!window.jQuery?.fn?.summernote) {
-    console.error('❌ Summernote still not attached to window.jQuery');
-    return;
-  }
-
   for (const ta of textareas) {
-    const $ta = window.jQuery(ta);
-
-    try {
-      if ($ta.next('.note-editor').length || $ta.data('summernote')) {
-        $ta.summernote('destroy');
-      }
-    } catch (_) {}
-
-    const height = Number(ta.getAttribute('data-summernote-height') || 320);
-
-    $ta.summernote({
-      height,
-      dialogsInBody: true,
-      placeholder: ta.getAttribute('placeholder') || '',
-      toolbar: [
-        ['style', ['style']],
-        ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
-        ['fontsize', ['fontsize']],
-        ['color', ['color']],
-        ['para', ['ul', 'ol', 'paragraph']],
-        ['table', ['table']],
-        ['insert', ['link', 'picture']],
-        ['view', ['fullscreen', 'codeview']],
-        ['misc', ['undo', 'redo', 'help']]
-      ]
-    });
-
-    // ✅ التعديل: الانتظار قليلاً قبل التحقق من وجود المحرر في الـ DOM
-    setTimeout(() => {
-      const parent = ta.parentElement;
-      const editor = parent ? parent.querySelector('.note-editor') : null;
-      if (!editor) {
-        console.warn('⚠️ Summernote did not build editor for textarea (Retrying...):', ta);
-        $ta.summernote(); // محاولة أخيرة في حال الفشل
-      }
-    }, 150);
+    await buildOneTextarea(ta);
   }
 }

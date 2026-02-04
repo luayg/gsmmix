@@ -134,11 +134,12 @@
     </div>
 
     {{-- Orders IMEI Edit Modal (isolated) --}}
-    <div class="modal fade" id="orderEditModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content"></div>
-      </div>
-    </div>
+<div class="modal fade" id="orderEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content"></div>
+  </div>
+</div>
+
 
     @if(isset($rows) && method_exists($rows, 'links'))
       <div class="mt-3">
