@@ -7,7 +7,6 @@ use App\Models\ImeiOrder;
 use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 
 class SyncImeiOrders extends Command
 {
@@ -75,9 +74,25 @@ class SyncImeiOrders extends Command
         return $items;
     }
 
+    private function normalizeJsonField($value): array
+    {
+        if (is_array($value)) return $value;
+
+        if (is_string($value)) {
+            $s = trim($value);
+            if ($s !== '') {
+                $decoded = json_decode($s, true);
+                if (is_array($decoded)) return $decoded;
+            }
+        }
+
+        return [];
+    }
+
     private function refundIfNeeded(ImeiOrder $order, string $reason): void
     {
-        $req = (array)($order->request ?? []);
+        $req = $this->normalizeJsonField($order->request ?? []);
+
         if (!empty($req['refunded_at'])) return;
 
         $uid = (int)($order->user_id ?? 0);
@@ -86,7 +101,7 @@ class SyncImeiOrders extends Command
         $amount = (float)($req['charged_amount'] ?? 0);
         if ($amount <= 0) return;
 
-        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+        \DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
             $u = User::query()->lockForUpdate()->find($uid);
             if (!$u) return;
 
@@ -129,7 +144,7 @@ class SyncImeiOrders extends Command
 
             $res = $dhru->getImeiOrder($provider, $ref);
 
-            $order->request = array_merge((array)$order->request, [
+            $order->request = array_merge($this->normalizeJsonField($order->request ?? []), [
                 'last_status_check' => now()->toDateTimeString(),
                 'status_check_raw'  => $res['response_raw'] ?? null,
             ]);
@@ -143,7 +158,6 @@ class SyncImeiOrders extends Command
 
             if (isset($raw['ERROR'][0]['MESSAGE'])) {
                 $m = strtolower((string)$raw['ERROR'][0]['MESSAGE']);
-
                 if (
                     str_contains($m, 'command not found') ||
                     str_contains($m, 'invalid action') ||
@@ -167,6 +181,7 @@ class SyncImeiOrders extends Command
                 ];
                 $order->save();
 
+                // ✅ refund on rejected
                 $this->refundIfNeeded($order, 'sync_rejected_error');
                 continue;
             }
@@ -216,7 +231,8 @@ class SyncImeiOrders extends Command
                 $order->response = $ui;
                 $order->save();
 
-                if (strtolower((string)$order->status) === 'rejected') {
+                // ✅ refund only if rejected
+                if ($order->status === 'rejected') {
                     $this->refundIfNeeded($order, 'sync_rejected_status3');
                 }
 
