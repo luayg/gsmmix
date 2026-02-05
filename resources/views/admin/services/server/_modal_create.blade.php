@@ -8,11 +8,8 @@
   @csrf
 
   {{-- ✅ Required by backend validation --}}
-  <input type="hidden" name="name_en" value="">
-  <input type="hidden" name="main_type" value="">
-
-  {{-- ✅ Required by backend validation (fix name_en required) --}}
   <input type="hidden" name="name_en" id="nameEnHidden" value="">
+  <input type="hidden" name="main_type" id="mainTypeHidden" value="">
 
   {{-- ✅ Custom fields JSON --}}
   <input type="hidden" name="custom_fields_json" id="customFieldsJson" value="[]">
@@ -39,9 +36,7 @@
             </div>
 
             <div class="col-12">
-              <label class="form-label mb-1">
-                Alias (Unique name containing only latin lowercase characters and dashes)
-              </label>
+              <label class="form-label mb-1">Alias (Unique name containing only latin lowercase characters and dashes)</label>
               <input name="alias" type="text" class="form-control" placeholder="unique-alias-like-this">
             </div>
 
@@ -182,11 +177,7 @@
               @foreach($toggles as $name => $label)
                 <input type="hidden" name="{{ $name }}" value="0">
                 <div class="form-check form-switch mb-1">
-                  <input class="form-check-input"
-                         type="checkbox"
-                         name="{{ $name }}"
-                         value="1"
-                         id="sw_{{ $name }}"
+                  <input class="form-check-input" type="checkbox" name="{{ $name }}" value="1" id="sw_{{ $name }}"
                          @checked(in_array($name,['active','allow_bulk']) ? true : false)>
                   <label class="form-check-label" for="sw_{{ $name }}">{{ $label }}</label>
                 </div>
@@ -229,6 +220,7 @@
           <input type="hidden" name="info" id="infoHidden">
           <small class="text-muted">Description, notes, terms…</small>
         </div>
+
       </div>
     </div>
 
@@ -357,29 +349,21 @@
 
 <script>
 (function(){
-  // ✅ اشتغل داخل scope الخاص بالمودال (بدون اعتماد على IDs عامة خارج المودال)
+  // ✅ اعمل داخل نفس الفورم (scope-safe)
   const form = (document.currentScript && document.currentScript.closest('form')) || document.getElementById('serviceCreateForm');
   if (!form) return;
 
   const qs  = (sel) => form.querySelector(sel);
   const qsa = (sel) => Array.from(form.querySelectorAll(sel));
 
-  // =========================
-  // Fix name_en required
-  // =========================
+  // =============== name_en mirror ===============
   const nameInput = qs('#nameInput');
   const nameEn    = qs('#nameEnHidden');
-
-  function syncNameEn(){
-    if(!nameEn) return;
-    nameEn.value = (nameInput?.value || '').trim();
-  }
+  function syncNameEn(){ if(nameEn) nameEn.value = (nameInput?.value || '').trim(); }
   nameInput?.addEventListener('input', syncNameEn);
   syncNameEn();
 
-  // =========================
-  // Presets
-  // =========================
+  // =============== Presets ===============
   const presets = {
     serial: { label: 'Serial', allowed: 'any',     min: 1,  max: 50 },
     imei:   { label: 'IMEI',   allowed: 'numbers', min: 15, max: 15 },
@@ -406,9 +390,7 @@
   mainType?.addEventListener('change', () => applyPreset(mainType.value));
   if(mainType) applyPreset(mainType.value);
 
-  // =========================
-  // Custom fields UI
-  // =========================
+  // =============== Custom fields UI ===============
   const wrap   = qs('#fieldsWrap');
   const tpl    = qs('#fieldTpl');
   const btnAdd = qs('#btnAddField');
@@ -461,15 +443,13 @@
     const typeSel  = card.querySelector('.js-field-type');
     const optsWrap = card.querySelector('.js-options-wrap');
 
-    function refreshOptions(){
+    const refreshOptions = () => {
       const t = typeSel?.value || 'text';
-      const show = (t === 'dropdown');
-      optsWrap?.classList.toggle('d-none', !show);
-    }
+      optsWrap?.classList.toggle('d-none', t !== 'dropdown');
+    };
 
     typeSel?.addEventListener('change', () => { refreshOptions(); serializeFieldsInScope(scope); });
     card.addEventListener('input', () => serializeFieldsInScope(scope));
-    card.addEventListener('change', () => serializeFieldsInScope(scope));
 
     card.querySelector('.js-remove-field')?.addEventListener('click', () => {
       card.remove();
@@ -479,7 +459,7 @@
     refreshOptions();
   }
 
-  function addFieldToScope(scope, defaults = null){
+  function addField(scope, defaults = null){
     const localWrap = scope.querySelector('#fieldsWrap');
     const localTpl  = scope.querySelector('#fieldTpl');
     if (!localWrap || !localTpl) return;
@@ -500,7 +480,7 @@
       cardEl.querySelector('.js-field-min').value = defaults.minimum ?? 0;
       cardEl.querySelector('.js-field-max').value = defaults.maximum ?? 0;
       cardEl.querySelector('.js-field-validation').value = defaults.validation || '';
-      cardEl.querySelector('.js-field-required').value = String(defaults.required ?? 1);
+      cardEl.querySelector('.js-field-required').value = String(defaults.required ?? 0);
       if (defaults.options) cardEl.querySelector('.js-field-options').value = defaults.options;
     }
 
@@ -510,22 +490,16 @@
 
   btnAdd.addEventListener('click', (e) => {
     e.preventDefault();
-    addFieldToScope(form, null);
+    addField(form);
   });
 
-  // =========================
-  // ✅ HOOKS for service-modal.js
-  // =========================
-
-  // HOOK: apply remote additional_fields and enforce inputs service_fields_1..n
+  // =============== ✅ HOOKS used by service-modal.blade.php ===============
   window.__serverServiceApplyRemoteFields__ = function(scope, additionalFields){
     try{
       if (!scope || !Array.isArray(additionalFields)) return;
 
       const localWrap = scope.querySelector('#fieldsWrap');
-      const localTpl  = scope.querySelector('#fieldTpl');
-      const localHidden = scope.querySelector('#customFieldsJson');
-      if (!localWrap || !localTpl || !localHidden) return;
+      if (!localWrap) return;
 
       // امسح الكروت فقط
       Array.from(localWrap.querySelectorAll('[data-field]')).forEach(x => x.remove());
@@ -533,12 +507,9 @@
       additionalFields.forEach((f, idx) => {
         const label = String(f.fieldname || f.name || '').trim();
         const input = 'service_fields_' + (idx + 1);
+        const req = (String(f.required || '').toLowerCase() === 'on') ? 1 : 0;
 
-        const reqRaw = (f.required ?? f.is_required ?? f.req ?? 0);
-        const required =
-          (reqRaw === true || reqRaw === 1 || String(reqRaw).toLowerCase() === 'on' || String(reqRaw).toLowerCase() === 'yes') ? 1 : 0;
-
-        addFieldToScope(scope, {
+        addField(scope, {
           active: 1,
           name: label || input,
           type: mapRemoteType(f.fieldtype || f.type || 'text'),
@@ -547,7 +518,7 @@
           minimum: 0,
           maximum: 0,
           validation: mapRemoteValidationByName(label),
-          required,
+          required: req,
           options: Array.isArray(f.fieldoptions) ? f.fieldoptions.join(',') : String(f.fieldoptions || '').trim(),
         });
       });
@@ -558,12 +529,6 @@
     }
   };
 
-  // HOOK: serialize helper (لو احتجته من الخارج)
-  window.__serverServiceSerializeCustomFields__ = function(scope){
-    try{ serializeFieldsInScope(scope); }catch(e){}
-  };
-
-  // HOOK: set main field type/label programmatically
   window.__serverServiceSetMainField__ = function(scope, type, label){
     try{
       if (!scope) return;

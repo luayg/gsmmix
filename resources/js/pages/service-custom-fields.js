@@ -41,4 +41,3 @@ document.addEventListener('DOMContentLoaded', () => {
   wrap.addEventListener('input', sync);
   wrap.addEventListener('change', sync);
 });
-window.initModalEditors = initModalEditors;
