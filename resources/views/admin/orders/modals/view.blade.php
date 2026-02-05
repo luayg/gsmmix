@@ -1,4 +1,9 @@
+{{-- resources/views/admin/orders/modals/view.blade.php --}}
+
 @php
+  $row = $row ?? ($order ?? null);
+  $kind = $kind ?? 'imei';
+
   $pickName = function ($v) {
     if (is_string($v)) {
       $s = trim($v);
@@ -34,6 +39,50 @@
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     return trim($v);
   };
+
+  // -------- params (fields/required) --------
+  $params = $row->params ?? null;
+  if (is_string($params)) {
+    $decoded = json_decode($params, true);
+    $params = is_array($decoded) ? $decoded : [];
+  }
+  if (!is_array($params)) $params = [];
+
+  $sentFields = $params['fields'] ?? $params['required'] ?? [];
+  if (!is_array($sentFields)) $sentFields = [];
+
+  // Service custom_fields labels
+  $serviceParams = $row?->service?->params ?? null;
+  if (is_string($serviceParams)) {
+    $decoded = json_decode($serviceParams, true);
+    $serviceParams = is_array($decoded) ? $decoded : [];
+  }
+  if (!is_array($serviceParams)) $serviceParams = [];
+
+  $customFields = $serviceParams['custom_fields'] ?? [];
+  if (!is_array($customFields)) $customFields = [];
+
+  $cfLabelByInput = [];
+  $cfOrder = [];
+  foreach ($customFields as $cf) {
+    if (!is_array($cf)) continue;
+    $input = trim((string)($cf['input'] ?? ''));
+    if ($input === '') continue;
+    $label = trim((string)($cf['name'] ?? $input));
+    $cfLabelByInput[$input] = $label;
+    $cfOrder[] = $input;
+  }
+
+  // ordered fields: custom_fields order then remaining
+  $orderedFields = [];
+  foreach ($cfOrder as $input) {
+    if (array_key_exists($input, $sentFields)) $orderedFields[$input] = $sentFields[$input];
+  }
+  foreach ($sentFields as $k => $v) {
+    if (!array_key_exists($k, $orderedFields)) $orderedFields[$k] = $v;
+  }
+
+  $hasServerFields = ($kind === 'server' && count($orderedFields) > 0);
 
   $renderValue = function ($label, $value) use ($clean) {
     $labelL = mb_strtolower($clean($label));
@@ -72,8 +121,7 @@
   // ✅ Pricing
   $currency = $row->currency ?? $row->curr ?? 'USD';
 
-  $orderPrice = $row->price ?? null;         // سعر البيع للزبون (عندك موجود في جدول الطلب)
-  
+  $orderPrice = $row->price ?? null;         // سعر البيع للزبون
   $profit = $row->profit ?? null;
 
   // ✅ API processing price = service.cost
@@ -88,6 +136,14 @@
   if ($profit === null && is_numeric($orderPrice) && is_numeric($apiProcessingPrice)) {
     $profit = (float)$orderPrice - (float)$apiProcessingPrice;
   }
+
+  // Dynamic label for device
+  $deviceLabel = match($kind) {
+    'imei'   => 'Device',
+    'file'   => 'File',
+    'server' => 'Device',
+    default  => 'Device',
+  };
 @endphp
 
 <div class="modal-header">
@@ -108,7 +164,33 @@
             </tr>
             <tr><th>Created at</th><td>{{ optional($row->created_at)->format('Y-m-d H:i') }}</td></tr>
             <tr><th>Service</th><td>{{ $row->service ? $pickName($row->service->name) : '—' }}</td></tr>
-            <tr><th>Device</th><td>{{ $row->device ?? '—' }}</td></tr>
+            <tr><th>{{ $deviceLabel }}</th><td>{{ $row->device ?? '—' }}</td></tr>
+
+            {{-- ✅ Server fields --}}
+            @if($hasServerFields)
+              <tr>
+                <th>Service Fields</th>
+                <td>
+                  <div class="table-responsive">
+                    <table class="table table-sm table-striped table-bordered mb-0">
+                      <tbody>
+                        @foreach($orderedFields as $input => $val)
+                          @php
+                            $label = $cfLabelByInput[$input] ?? $input;
+                            $v = $clean($val);
+                          @endphp
+                          <tr>
+                            <th style="width:240px">{{ $label }}</th>
+                            <td>{{ $v !== '' ? $v : '—' }}</td>
+                          </tr>
+                        @endforeach
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+            @endif
+
             <tr><th>User</th><td>{{ $row->email ?? '—' }}</td></tr>
             <tr><th>Provider</th><td>{{ $row->provider?->name ?? '—' }}</td></tr>
             <tr><th>Remote ID</th><td>{{ $row->remote_id ?? '—' }}</td></tr>
@@ -126,8 +208,6 @@
             @if($apiProcessingPrice !== null)
               <tr><th>API processing price</th><td>{{ $fmtMoney($apiProcessingPrice) }}</td></tr>
             @endif
-
-            
 
             @if($profit !== null)
               <tr><th>Profit</th><td>{{ $fmtMoney($profit) }}</td></tr>
@@ -190,6 +270,7 @@
 
   </div>
 </div>
+
 {{-- ✅ Provider Reply --}}
 @if(!empty($resp['provider_reply_html']))
   <div class="mt-4">

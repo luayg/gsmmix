@@ -2,6 +2,7 @@
 @php
   $row = $row ?? ($order ?? null);
   $routePrefix = $routePrefix ?? 'admin.orders.imei';
+  $kind = $kind ?? 'imei';
 
   $cleanText = function ($v) {
     $v = (string)$v;
@@ -20,6 +21,49 @@
     }
     return $cleanText($v);
   };
+
+  // -------- params (fields/required) --------
+  $params = $row?->params ?? null;
+  if (is_string($params)) {
+    $decoded = json_decode($params, true);
+    $params = is_array($decoded) ? $decoded : [];
+  }
+  if (!is_array($params)) $params = [];
+
+  // Server fields can be stored as params.fields or params.required (legacy)
+  $sentFields = $params['fields'] ?? $params['required'] ?? [];
+  if (!is_array($sentFields)) $sentFields = [];
+
+  // Map inputs -> nice labels from service.params.custom_fields
+  $serviceParams = $row?->service?->params ?? null;
+  if (is_string($serviceParams)) {
+    $decoded = json_decode($serviceParams, true);
+    $serviceParams = is_array($decoded) ? $decoded : [];
+  }
+  if (!is_array($serviceParams)) $serviceParams = [];
+
+  $customFields = $serviceParams['custom_fields'] ?? [];
+  if (!is_array($customFields)) $customFields = [];
+
+  $cfLabelByInput = [];
+  $cfOrder = [];
+  foreach ($customFields as $cf) {
+    if (!is_array($cf)) continue;
+    $input = trim((string)($cf['input'] ?? ''));
+    if ($input === '') continue;
+    $label = trim((string)($cf['name'] ?? $input));
+    $cfLabelByInput[$input] = $label;
+    $cfOrder[] = $input;
+  }
+
+  // Build ordered fields: follow custom_fields order, then remaining
+  $orderedFields = [];
+  foreach ($cfOrder as $input) {
+    if (array_key_exists($input, $sentFields)) $orderedFields[$input] = $sentFields[$input];
+  }
+  foreach ($sentFields as $k => $v) {
+    if (!array_key_exists($k, $orderedFields)) $orderedFields[$k] = $v;
+  }
 
   // response -> array
   $resp = $row?->response ?? null;
@@ -119,6 +163,16 @@
   };
 
   $curStatus = $row?->status ?? 'waiting';
+
+  // Dynamic label for device row
+  $deviceLabel = match($kind) {
+    'imei'   => 'IMEI/Serial number',
+    'file'   => 'File',
+    'server' => 'Device',
+    default  => 'Device',
+  };
+
+  $hasServerFields = ($kind === 'server' && count($orderedFields) > 0);
 @endphp
 
 <div class="modal-header" style="background:#f39c12; color:#fff;">
@@ -144,7 +198,38 @@
             <tbody>
               <tr><th style="width:180px;">Service</th><td>{{ $serviceName }}</td></tr>
               <tr><th>User</th><td>{{ $userEmail }}</td></tr>
-              <tr><th>IMEI/Serial number</th><td>{{ $device }}</td></tr>
+
+              {{-- ✅ Device row (dynamic) --}}
+              <tr>
+                <th>{{ $deviceLabel }}</th>
+                <td>{{ $device !== '' ? $device : '—' }}</td>
+              </tr>
+
+              {{-- ✅ Server: show sent service fields --}}
+              @if($hasServerFields)
+                <tr>
+                  <th>Service Fields</th>
+                  <td>
+                    <div class="table-responsive">
+                      <table class="table table-sm table-striped table-bordered mb-0">
+                        <tbody>
+                          @foreach($orderedFields as $input => $val)
+                            @php
+                              $label = $cfLabelByInput[$input] ?? $input;
+                              $valClean = $cleanText($val);
+                            @endphp
+                            <tr>
+                              <th style="width:220px;">{{ $label }}</th>
+                              <td>{{ $valClean !== '' ? $valClean : '—' }}</td>
+                            </tr>
+                          @endforeach
+                        </tbody>
+                      </table>
+                    </div>
+                  </td>
+                </tr>
+              @endif
+
               <tr><th>Order date</th><td>{{ $createdAt }}</td></tr>
               <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
               <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>

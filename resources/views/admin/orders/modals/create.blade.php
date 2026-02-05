@@ -1,179 +1,372 @@
 {{-- resources/views/admin/orders/modals/create.blade.php --}}
+
 @php
-  $kind        = $kind ?? 'imei';
-  $routePrefix = $routePrefix ?? 'admin.orders.imei';
-  $supportsQty = (bool)($supportsQty ?? false);
-  $deviceLabel = $deviceLabel ?? 'Device';
+  $cleanText = function ($v) {
+    $v = (string)$v;
+    $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $v = str_replace(["\r\n", "\r"], "\n", $v);
+    return trim($v);
+  };
+
+  $pickName = function ($v) use ($cleanText) {
+    if (is_string($v)) {
+      $s = trim($v);
+      if ($s !== '' && isset($s[0]) && $s[0] === '{') {
+        $j = json_decode($s, true);
+        if (is_array($j)) $v = $j['en'] ?? $j['fallback'] ?? reset($j) ?? $v;
+      }
+    }
+    return $cleanText($v);
+  };
+
+  $fmtMoney = function ($v) {
+    if (!is_numeric($v)) $v = 0;
+    return '$' . number_format((float)$v, 2);
+  };
+
+  // ✅ fallback base price from service columns if group map missing
+  $basePrice = function ($svc) {
+    foreach ([
+      $svc->price ?? null,
+      $svc->sell_price ?? null,
+      $svc->final_price ?? null,
+      $svc->customer_price ?? null,
+      $svc->retail_price ?? null,
+    ] as $p) {
+      if ($p !== null && $p !== '' && is_numeric($p) && (float)$p > 0) return (float)$p;
+    }
+
+    $cost = (float)($svc->cost ?? 0);
+    $profit = (float)($svc->profit ?? 0);
+    $profitType = (int)($svc->profit_type ?? 1); // 1 fixed, 2 percent
+    if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit/100)));
+    return max(0.0, $cost + $profit);
+  };
+
+  $kind = $kind ?? '';
+  $isFileKind   = $kind === 'file';
+  $isServerKind = $kind === 'server';
+
+  // ✅ Important: this must be passed from controller, otherwise fallback works (base price only)
+  $servicePriceMap = $servicePriceMap ?? [];
 @endphp
 
-<div class="modal-header" style="background:#198754;color:#fff;">
-  <div class="d-flex align-items-center gap-2">
-    <strong>{{ $title ?? 'Create Order' }}</strong>
-  </div>
-  <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+<div class="modal-header">
+  <h5 class="modal-title">{{ $title ?? 'Create order' }}</h5>
+  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
-<form class="js-ajax-form" method="POST" action="{{ route($routePrefix.'.store') }}" enctype="multipart/form-data">
+<form method="post" action="{{ route($routePrefix.'.store') }}" enctype="multipart/form-data" id="createOrderForm">
   @csrf
 
-  <div class="modal-body" style="max-height: calc(100vh - 210px); overflow:auto;">
+  <div class="modal-body">
+
+    @if ($errors->any())
+      <div class="alert alert-danger">
+        <ul class="mb-0">
+          @foreach ($errors->all() as $error)
+            <li>{{ $error }}</li>
+          @endforeach
+        </ul>
+      </div>
+    @endif
+
+    @if(session('err'))
+      <div class="alert alert-danger">{{ session('err') }}</div>
+    @endif
+
     <div class="row g-3">
 
       {{-- USER --}}
       <div class="col-12">
         <label class="form-label">User</label>
-        <select name="user_id" class="form-select" required>
-          <option value="">-- Select user --</option>
+        <select class="form-select js-step-user" name="user_id" required>
+          <option value="">Choose user...</option>
           @foreach($users as $u)
-            <option value="{{ $u->id }}">{{ $u->email }} (ID: {{ $u->id }})</option>
-          @endforeach
-        </select>
-      </div>
-
-      {{-- SERVICE --}}
-      <div class="col-12">
-        <label class="form-label">Service</label>
-        <select name="service_id" id="jsServiceSelect" class="form-select" required>
-          <option value="">-- Select service --</option>
-          @foreach($services as $s)
             @php
-              // params may be array (cast) or json string
-              $p = $s->params;
-              if (is_string($p)) $p = json_decode($p, true) ?: [];
-              if (!is_array($p)) $p = [];
-
-              $customFields = $p['custom_fields'] ?? [];
-              if (!is_array($customFields)) $customFields = [];
-
-              $deviceBased = (int)($s->device_based ?? 0);
+              $bal = is_numeric($u->balance ?? null) ? (float)$u->balance : 0.0;
+              $gid = (int)($u->group_id ?? 0);
+              $label = $cleanText($u->email) . ' — ' . $fmtMoney($bal);
             @endphp
-            <option
-              value="{{ $s->id }}"
-              data-device-based="{{ $deviceBased }}"
-              data-custom-fields='@json($customFields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)'
-            >
-              #{{ $s->id }} -
-              {{ is_array($s->name) ? ($s->name['en'] ?? $s->name['fallback'] ?? 'Service') : $s->name }}
+            <option value="{{ $u->id }}" data-balance="{{ $bal }}" data-group="{{ $gid }}">
+              {{ $label }}
             </option>
           @endforeach
         </select>
+      </div>
+
+      {{-- SERVICE (hidden until user chosen) --}}
+      <div class="col-12 js-step-service d-none">
+        <label class="form-label">Service</label>
+        <select class="form-select js-service" name="service_id" required>
+          <option value="">Choose service...</option>
+          @foreach($services as $s)
+            @php
+              $name = $pickName($s->name);
+              $allowBulk = (int)($s->allow_bulk ?? 0);
+
+              // group prices map: [group_id => final_price]
+              $gp = $servicePriceMap[$s->id] ?? [];
+              $gpJson = json_encode($gp, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+
+              $fallback = $basePrice($s);
+
+              // ✅ Server custom fields (from params.custom_fields)
+              $params = $s->params ?? [];
+              if (is_string($params)) $params = json_decode($params, true) ?: [];
+              if (!is_array($params)) $params = [];
+              $customFields = $params['custom_fields'] ?? [];
+              if (!is_array($customFields)) $customFields = [];
+              $customFieldsJson = json_encode($customFields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            @endphp
+            <option
+              value="{{ $s->id }}"
+              data-name="{{ e($name) }}"
+              data-allow-bulk="{{ $allowBulk }}"
+              data-group-prices='{{ $gpJson }}'
+              data-base-price="{{ $fallback }}"
+              {{-- ✅ only used in server kind --}}
+              data-custom-fields='{{ $customFieldsJson }}'
+            >{{ $name }}</option>
+          @endforeach
+        </select>
+      </div>
+
+      {{-- ✅ bulk hidden input (we set it automatically based on service allow_bulk) --}}
+      <input type="hidden" name="bulk" id="bulkHidden" value="0">
+
+      {{-- SINGLE device --}}
+      <div class="col-12 js-step-fields d-none" id="singleDeviceWrap">
+        @if($isFileKind)
+          <label class="form-label">Upload file</label>
+          <input type="file" class="form-control" name="file" required>
+        @else
+          <label class="form-label">{{ $deviceLabel ?? 'Device' }}</label>
+          <input type="text" class="form-control" name="device" placeholder="Enter IMEI / SN">
+          @if($isServerKind)
+            <div class="form-text">
+              Server services use custom fields below. Device may still be required depending on your service setup.
+            </div>
+          @endif
+        @endif
+      </div>
+
+      {{-- BULK devices --}}
+      <div class="col-12 js-step-fields d-none" id="bulkDevicesWrap">
+        <label class="form-label">Devices (one per line)</label>
+        <textarea class="form-control" name="devices" rows="6" placeholder="Enter one IMEI per line"></textarea>
+      </div>
+
+      {{-- ✅ SERVER CUSTOM FIELDS --}}
+      <div class="col-12 js-step-fields d-none @if(!$isServerKind) d-none @endif" id="serverFieldsWrap">
+        <label class="form-label fw-semibold">Service fields</label>
+        <div class="row g-2" id="serverFieldsContainer"></div>
         <div class="form-text">
-          Server services will show custom fields automatically.
+          These fields are loaded from <code>server_services.params.custom_fields</code> and will be sent as
+          <code>required[service_fields_n]</code>.
         </div>
       </div>
 
-      {{-- DEVICE (IMEI/SN) OR OPTIONAL FOR SERVER --}}
-      @if($kind !== 'file')
-        <div class="col-12" id="jsDeviceWrap">
-          <label class="form-label">{{ $deviceLabel }}</label>
-
-          <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" id="jsBulkSwitch" name="bulk" value="1">
-            <label class="form-check-label" for="jsBulkSwitch">Bulk</label>
-          </div>
-
-          <input type="text" name="device" id="jsDeviceInput" class="form-control" placeholder="Enter {{ $deviceLabel }}">
-
-          <textarea name="devices" id="jsDevicesTextarea" class="form-control d-none mt-2" rows="6"
-            placeholder="One item per line"></textarea>
-
-          <div class="form-text" id="jsDeviceHint">
-            For Server (fields-based) device may be optional unless the service is device-based.
-          </div>
-        </div>
-      @else
-        <div class="col-12">
-          <label class="form-label">File</label>
-          <input type="file" name="file" class="form-control" required>
-        </div>
+      @if(!empty($supportsQty))
+      <div class="col-12 js-step-fields d-none">
+        <label class="form-label">Quantity</label>
+        <input type="number" class="form-control" name="quantity" min="1" value="1">
+      </div>
       @endif
 
-      {{-- QUANTITY --}}
-      @if($supportsQty)
-        <div class="col-md-4">
-          <label class="form-label">Quantity</label>
-          <input type="number" name="quantity" class="form-control" min="1" max="999" value="1">
-        </div>
-      @endif
-
-      {{-- COMMENTS --}}
-      <div class="col-12">
+      <div class="col-12 js-step-fields d-none">
         <label class="form-label">Comments</label>
-        <textarea name="comments" class="form-control" rows="3" placeholder="Optional comments..."></textarea>
+        <textarea class="form-control" name="comments" rows="3"></textarea>
       </div>
 
-      {{-- SERVER CUSTOM FIELDS --}}
-      <div class="col-12 {{ $kind === 'server' ? '' : 'd-none' }}" id="jsServerFieldsWrap">
-        <label class="form-label fw-semibold">Service Fields</label>
-        <div class="row g-2" id="jsServerFieldsContainer"></div>
-        <div class="form-text">
-          These fields come from <code>server_services.params.custom_fields</code> and will be sent as REQUIRED JSON.
+      <div class="col-12 js-step-fields d-none">
+        <div class="d-flex flex-wrap gap-3 align-items-center">
+          <div><strong>Price:</strong> <span id="selectedPrice">$0.00</span></div>
+          <div><strong>Balance:</strong> <span id="selectedBalance">$0.00</span></div>
+          <div><strong>After:</strong> <span id="balanceAfter">$0.00</span></div>
         </div>
+        <div class="mt-2 text-danger d-none" id="balanceError">Insufficient balance.</div>
       </div>
 
     </div>
   </div>
 
   <div class="modal-footer">
-    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
-    <button type="submit" class="btn btn-success">Create</button>
+    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+    <button type="submit" class="btn btn-success" id="btnCreateOrder" disabled>Create</button>
   </div>
 </form>
 
 <script>
 (function () {
+  function money(v){
+    v = Number(v || 0);
+    return '$' + v.toFixed(2);
+  }
+
   const kind = @json($kind);
 
-  const serviceSelect = document.getElementById('jsServiceSelect');
-  const bulkSwitch    = document.getElementById('jsBulkSwitch');
-  const deviceInput   = document.getElementById('jsDeviceInput');
-  const devicesTa     = document.getElementById('jsDevicesTextarea');
+  const form = document.getElementById('createOrderForm');
+  if (!form) return;
 
-  const serverWrap = document.getElementById('jsServerFieldsWrap');
-  const serverBox  = document.getElementById('jsServerFieldsContainer');
+  const userSel     = form.querySelector('.js-step-user');
+  const serviceWrap = form.querySelector('.js-step-service');
+  const serviceSel  = form.querySelector('.js-service');
+  const fieldsWraps = form.querySelectorAll('.js-step-fields');
 
-  function safeJsonParse(s) {
-    try { return JSON.parse(s); } catch(e) { return null; }
+  const singleWrap = document.getElementById('singleDeviceWrap');
+  const bulkWrap   = document.getElementById('bulkDevicesWrap');
+  const bulkHidden = document.getElementById('bulkHidden');
+
+  // ✅ server fields
+  const serverFieldsWrap = document.getElementById('serverFieldsWrap');
+  const serverFieldsBox  = document.getElementById('serverFieldsContainer');
+
+  const selectedPriceEl   = document.getElementById('selectedPrice');
+  const selectedBalanceEl = document.getElementById('selectedBalance');
+  const balanceAfterEl    = document.getElementById('balanceAfter');
+  const balanceErrorEl    = document.getElementById('balanceError');
+  const btnCreate         = document.getElementById('btnCreateOrder');
+
+  function show(el){ el && el.classList.remove('d-none'); }
+  function hide(el){ el && el.classList.add('d-none'); }
+  function hideAllFields(){ fieldsWraps.forEach(w => hide(w)); }
+  function showAllFields(){ fieldsWraps.forEach(w => show(w)); }
+
+  function safeJsonParse(s){
+    try { return JSON.parse(s); } catch(e){ return null; }
   }
 
-  function splitOptions(raw) {
-    if (!raw) return [];
-    const s = String(raw).trim();
-    if (!s) return [];
-    // allow JSON array
-    const j = safeJsonParse(s);
-    if (Array.isArray(j)) return j.map(x => String(x));
-    // allow newline or | or comma
-    if (s.includes('\n')) return s.split('\n').map(x => x.trim()).filter(Boolean);
-    if (s.includes('|'))  return s.split('|').map(x => x.trim()).filter(Boolean);
-    if (s.includes(','))  return s.split(',').map(x => x.trim()).filter(Boolean);
-    return [s];
+  function userGroupId(){
+    const opt = userSel && userSel.selectedOptions ? userSel.selectedOptions[0] : null;
+    return opt ? Number(opt.getAttribute('data-group') || 0) : 0;
   }
 
-  function renderServerFields(customFields) {
-    serverBox.innerHTML = '';
+  function userBalance(){
+    const opt = userSel && userSel.selectedOptions ? userSel.selectedOptions[0] : null;
+    return opt ? Number(opt.getAttribute('data-balance') || 0) : 0;
+  }
 
-    if (!Array.isArray(customFields) || customFields.length === 0) {
-      serverBox.innerHTML = '<div class="col-12"><div class="alert alert-warning mb-0">No custom fields for this service.</div></div>';
+  function serviceAllowBulk(){
+    const opt = serviceSel && serviceSel.selectedOptions ? serviceSel.selectedOptions[0] : null;
+    return opt ? Number(opt.getAttribute('data-allow-bulk') || 0) : 0;
+  }
+
+  function servicePriceForUser(){
+    const opt = serviceSel && serviceSel.selectedOptions ? serviceSel.selectedOptions[0] : null;
+    if (!opt) return 0;
+
+    const gid = userGroupId();
+    let gp = {};
+    try { gp = JSON.parse(opt.getAttribute('data-group-prices') || '{}'); } catch(e){ gp = {}; }
+
+    let price = gp[String(gid)];
+    if (typeof price === 'string') price = Number(price);
+    if (typeof price === 'number' && !isNaN(price) && price > 0) return price;
+
+    // fallback base price
+    const base = Number(opt.getAttribute('data-base-price') || 0);
+    return (!isNaN(base) && base > 0) ? base : 0;
+  }
+
+  function updateServiceOptionLabels(){
+    const gid = userGroupId();
+    Array.from(serviceSel.options).forEach(opt => {
+      if (!opt.value) return;
+      const name = opt.getAttribute('data-name') || opt.textContent || '';
+
+      let gp = {};
+      try { gp = JSON.parse(opt.getAttribute('data-group-prices') || '{}'); } catch(e){ gp = {}; }
+
+      let price = gp[String(gid)];
+      if (typeof price === 'string') price = Number(price);
+
+      if (!(typeof price === 'number' && !isNaN(price) && price > 0)) {
+        const base = Number(opt.getAttribute('data-base-price') || 0);
+        price = (!isNaN(base) && base > 0) ? base : 0;
+      }
+
+      opt.textContent = name + ' — ' + money(price);
+    });
+  }
+
+  // ✅ no checkbox: if service allow_bulk=1 show bulk textarea directly, else show single input
+  function applyBulkModeByService(){
+    const allowBulk = serviceAllowBulk();
+
+    if (allowBulk) {
+      if (bulkHidden) bulkHidden.value = '1';
+      hide(singleWrap);
+      show(bulkWrap);
+
+      // clear single device
+      const deviceInput = singleWrap ? singleWrap.querySelector('input[name="device"]') : null;
+      if (deviceInput) deviceInput.value = '';
+    } else {
+      if (bulkHidden) bulkHidden.value = '0';
+      show(singleWrap);
+      hide(bulkWrap);
+
+      // clear bulk textarea
+      const bulkTa = bulkWrap ? bulkWrap.querySelector('textarea[name="devices"]') : null;
+      if (bulkTa) bulkTa.value = '';
+    }
+  }
+
+  // ✅ SERVER: render dynamic custom fields -> required[service_fields_n]
+  function renderServerFields(){
+    if (kind !== 'server') return;
+    if (!serverFieldsWrap || !serverFieldsBox) return;
+
+    serverFieldsBox.innerHTML = '';
+
+    const opt = serviceSel && serviceSel.selectedOptions ? serviceSel.selectedOptions[0] : null;
+    if (!opt || !opt.value) {
+      hide(serverFieldsWrap);
       return;
     }
 
-    customFields.forEach((f, idx) => {
-      if (!f || String(f.active ?? 1) !== '1') return;
+    let cf = safeJsonParse(opt.getAttribute('data-custom-fields') || '[]');
+    if (!Array.isArray(cf)) cf = [];
+
+    show(serverFieldsWrap);
+
+    if (cf.length === 0) {
+      serverFieldsBox.innerHTML = '<div class="col-12"><div class="alert alert-warning mb-0">No custom fields for this service.</div></div>';
+      return;
+    }
+
+    const splitOptions = (raw) => {
+      if (!raw) return [];
+      const s = String(raw).trim();
+      if (!s) return [];
+      const j = safeJsonParse(s);
+      if (Array.isArray(j)) return j.map(x => String(x));
+      if (s.includes('\n')) return s.split('\n').map(x => x.trim()).filter(Boolean);
+      if (s.includes('|'))  return s.split('|').map(x => x.trim()).filter(Boolean);
+      if (s.includes(','))  return s.split(',').map(x => x.trim()).filter(Boolean);
+      return [s];
+    };
+
+    cf.forEach((f) => {
+      if (!f) return;
+      if (String(f.active ?? 1) !== '1') return;
 
       const input = String(f.input || '').trim();
       if (!input) return;
 
-      const label = String(f.name || input);
-      const type  = String(f.type || 'text').toLowerCase();
-      const req   = String(f.required || 0) === '1';
+      const name = String(f.name || input).trim();
+      const type = String(f.type || 'text').toLowerCase();
+      const req  = String(f.required || 0) === '1';
+      const desc = String(f.description || '').trim();
 
       const col = document.createElement('div');
       col.className = 'col-md-6';
 
-      const lab = document.createElement('label');
-      lab.className = 'form-label';
-      lab.textContent = label + (req ? ' *' : '');
+      const label = document.createElement('label');
+      label.className = 'form-label';
+      label.textContent = name + (req ? ' *' : '');
+      col.appendChild(label);
 
       let control;
 
@@ -182,12 +375,12 @@
         control.rows = 3;
       } else if (type === 'select') {
         control = document.createElement('select');
-        const opts = splitOptions(f.options || '');
         const def = document.createElement('option');
         def.value = '';
-        def.textContent = '-- Select --';
+        def.textContent = 'Choose...';
         control.appendChild(def);
 
+        const opts = splitOptions(f.options || '');
         opts.forEach(o => {
           const op = document.createElement('option');
           op.value = o;
@@ -208,14 +401,13 @@
       // min/max (optional)
       const min = parseInt(f.minimum ?? 0, 10);
       const max = parseInt(f.maximum ?? 0, 10);
-      if (!isNaN(min) && min > 0 && control.type === 'number') control.min = String(min);
-      if (!isNaN(max) && max > 0 && control.type === 'number') control.max = String(max);
+      if (control.type === 'number') {
+        if (!isNaN(min) && min > 0) control.min = String(min);
+        if (!isNaN(max) && max > 0) control.max = String(max);
+      }
 
-      col.appendChild(lab);
       col.appendChild(control);
 
-      // description
-      const desc = String(f.description || '').trim();
       if (desc) {
         const small = document.createElement('div');
         small.className = 'form-text';
@@ -223,55 +415,75 @@
         col.appendChild(small);
       }
 
-      serverBox.appendChild(col);
+      serverFieldsBox.appendChild(col);
     });
   }
 
-  function applyServiceSelection() {
-    const opt = serviceSelect?.options[serviceSelect.selectedIndex];
-    if (!opt) return;
+  function updateSummary(){
+    const balance = userBalance();
+    const price   = servicePriceForUser();
 
-    const deviceBased = String(opt.getAttribute('data-device-based') || '0') === '1';
-    const cfRaw = opt.getAttribute('data-custom-fields') || '[]';
-    const customFields = safeJsonParse(cfRaw) || [];
+    selectedPriceEl.textContent   = money(price);
+    selectedBalanceEl.textContent = money(balance);
+    balanceAfterEl.textContent    = money(balance - price);
 
-    // Bulk UI toggling
-    if (bulkSwitch && deviceInput && devicesTa) {
-      // server + fields-based: hide bulk switch and keep device optional
-      if (kind === 'server' && !deviceBased) {
-        bulkSwitch.checked = false;
-        bulkSwitch.disabled = true;
-        devicesTa.classList.add('d-none');
-        deviceInput.classList.remove('d-none');
-      } else {
-        bulkSwitch.disabled = false;
-      }
-    }
+    // ✅ For server: also require custom required fields (native HTML will block submit anyway)
+    const ok = (userSel.value && serviceSel.value && price > 0 && balance >= price);
 
-    // Render server fields
-    if (kind === 'server' && serverWrap) {
-      serverWrap.classList.remove('d-none');
-      renderServerFields(customFields);
+    if (ok) {
+      hide(balanceErrorEl);
+      btnCreate.disabled = false;
+    } else {
+      if (userSel.value && serviceSel.value && price > 0 && balance < price) show(balanceErrorEl);
+      else hide(balanceErrorEl);
+      btnCreate.disabled = true;
     }
   }
 
-  if (bulkSwitch && deviceInput && devicesTa) {
-    bulkSwitch.addEventListener('change', function () {
-      const isBulk = bulkSwitch.checked;
-      if (isBulk) {
-        deviceInput.classList.add('d-none');
-        devicesTa.classList.remove('d-none');
-      } else {
-        devicesTa.classList.add('d-none');
-        deviceInput.classList.remove('d-none');
-      }
-    });
-  }
+  // Initial state
+  hide(serviceWrap);
+  hideAllFields();
+  if (bulkHidden) bulkHidden.value = '0';
+  updateSummary();
 
-  if (serviceSelect) {
-    serviceSelect.addEventListener('change', applyServiceSelection);
-    // init
-    applyServiceSelection();
-  }
+  userSel.addEventListener('change', function(){
+    if (userSel.value) {
+      show(serviceWrap);
+      updateServiceOptionLabels();
+    } else {
+      hide(serviceWrap);
+      serviceSel.value = '';
+      hideAllFields();
+      if (bulkHidden) bulkHidden.value = '0';
+      if (serverFieldsWrap) hide(serverFieldsWrap);
+      if (serverFieldsBox) serverFieldsBox.innerHTML = '';
+    }
+    updateSummary();
+  });
+
+  serviceSel.addEventListener('change', function(){
+    if (serviceSel.value) {
+      showAllFields();
+      applyBulkModeByService();
+      renderServerFields();
+    } else {
+      hideAllFields();
+      if (bulkHidden) bulkHidden.value = '0';
+      if (serverFieldsWrap) hide(serverFieldsWrap);
+      if (serverFieldsBox) serverFieldsBox.innerHTML = '';
+    }
+    updateSummary();
+  });
+
+  form.addEventListener('submit', function(e){
+    updateSummary();
+
+    // HTML required fields will validate automatically.
+    if (btnCreate.disabled) {
+      e.preventDefault();
+      show(balanceErrorEl);
+    }
+  });
+
 })();
 </script>

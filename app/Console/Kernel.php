@@ -4,6 +4,7 @@ namespace App\Console;
 
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Console\Kernel as ConsoleKernel;
+use App\Console\Commands\SyncServerOrders;
 
 class Kernel extends ConsoleKernel
 {
@@ -16,7 +17,7 @@ class Kernel extends ConsoleKernel
             ->onOneServer();
         // إعادة إرسال الطلبات التي فشل إرسالها (كل دقيقة)
     $schedule->command('orders:retry-imei --limit=20')->everyMinute();
-
+$schedule->command('orders:sync-server --limit=50')->everyMinute();
     // مزامنة نتائج الطلبات (مثلاً كل 5 دقائق)
     $schedule->command('orders:sync-imei --limit=50')->everyMinute();
 
@@ -30,5 +31,11 @@ class Kernel extends ConsoleKernel
     protected $commands = [
         \App\Console\Commands\ProvidersSyncCommand::class,
         // ❌ لا نُسجل SyncDhruServices نهائيًا (سيتم حذف الملف)
+
+         \App\Console\Commands\SyncServerOrders::class,
     ];
+
+
+
+
 }
