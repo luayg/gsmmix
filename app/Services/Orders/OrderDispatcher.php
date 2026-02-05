@@ -135,10 +135,11 @@ class OrderDispatcher
         $order->save();
 
         // ✅ Refund فقط عند Rejected / Cancelled
-        $st = strtolower((string)$order->status);
-        if ($st === 'rejected' || $st === 'cancelled') {
-            $this->refundIfNeeded($order, 'dispatch_'.$st);
-        }
+       $st = strtolower(trim((string)$order->status));
+        if (in_array($st, ['rejected','reject','cancelled','canceled'], true)) {
+        $this->refundIfNeeded($order, 'dispatch_'.$st);
+}
+
     }
 
     public function dispatchImei(ImeiOrder $order): void

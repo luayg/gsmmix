@@ -417,77 +417,95 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
-    // =========================
-    // UPDATE (manual status change)
-    // =========================
-    public function update(Request $request, int $id)
-    {
-        $row = ($this->orderModel)::findOrFail($id);
+   // =========================
+// UPDATE (manual status change)
+// =========================
+public function update(Request $request, int $id)
+{
+    $row = ($this->orderModel)::findOrFail($id);
 
-        $data = $request->validate([
-            'status'              => ['required','in:waiting,inprogress,success,rejected,cancelled'],
-            'comments'            => ['nullable','string'],
-            'response'            => ['nullable'],
-            'provider_reply_html' => ['nullable','string'],
-        ]);
+    $data = $request->validate([
+        'status'              => ['required','in:waiting,inprogress,success,rejected,cancelled'],
+        'comments'            => ['nullable','string'],
+        'response'            => ['nullable'],
+        'provider_reply_html' => ['nullable','string'],
+    ]);
 
-        $oldStatus = strtolower((string)($row->status ?? ''));
-        $newStatus = strtolower((string)($data['status'] ?? ''));
+    // ✅ مهم: خذ الحالة القديمة من DB (قبل أي تعديل)
+    $oldStatus = strtolower(trim((string)($row->getOriginal('status') ?? '')));
+    $newStatus = strtolower(trim((string)($data['status'] ?? '')));
 
-        $row->status   = $data['status'];
-        $row->comments = (string)($data['comments'] ?? '');
+    $row->status   = $data['status'];
+    $row->comments = (string)($data['comments'] ?? '');
 
-        $currentResp = $row->response;
-        if (is_string($currentResp)) {
-            $decoded = json_decode($currentResp, true);
-            $currentResp = is_array($decoded) ? $decoded : ['raw' => $row->response];
-        } elseif (!is_array($currentResp) && $currentResp !== null) {
-            $currentResp = ['raw' => $currentResp];
-        } elseif ($currentResp === null) {
-            $currentResp = [];
-        }
-
-        if (array_key_exists('response', $data)) {
-            if (is_string($data['response'])) {
-                $decoded = json_decode($data['response'], true);
-                if (is_array($decoded)) $currentResp = array_merge($currentResp, $decoded);
-                else $currentResp['raw'] = $data['response'];
-            } elseif (is_array($data['response'])) {
-                $currentResp = array_merge($currentResp, $data['response']);
-            }
-        }
-
-        if (!empty($data['provider_reply_html'])) {
-            $currentResp['provider_reply_html'] = $data['provider_reply_html'];
-            $currentResp['provider_reply_updated_at'] = now()->toDateTimeString();
-        }
-
-        $row->response = $currentResp;
-        $row->save();
-
-        // ✅ Refund ONLY when entering rejected/cancelled (once)
-        if (in_array($newStatus, ['rejected','cancelled'], true) && !in_array($oldStatus, ['rejected','cancelled'], true)) {
-            $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
-        }
-
-        // ✅ Recharge ONLY when moving from rejected/cancelled => success (once)
-        if ($newStatus === 'success' && in_array($oldStatus, ['rejected','cancelled'], true)) {
-            try {
-                $this->rechargeOrderIfNeeded($row, 'manual_success');
-            } catch (\RuntimeException $e) {
-                if ($e->getMessage() === 'INSUFFICIENT_BALANCE_RECHARGE') {
-                    // رجّع الحالة للقديم لو ما في رصيد كافي لإعادة الخصم
-                    $row->status = $oldStatus;
-                    $row->save();
-
-                    return redirect()->back()
-                        ->withErrors(['status' => 'User balance is not enough to set Success again (recharge required).'])
-                        ->withInput();
-                }
-                throw $e;
-            }
-        }
-
-        return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
+    $currentResp = $row->response;
+    if (is_string($currentResp)) {
+        $decoded = json_decode($currentResp, true);
+        $currentResp = is_array($decoded) ? $decoded : ['raw' => $row->response];
+    } elseif (!is_array($currentResp) && $currentResp !== null) {
+        $currentResp = ['raw' => $currentResp];
+    } elseif ($currentResp === null) {
+        $currentResp = [];
     }
+
+    if (array_key_exists('response', $data)) {
+        if (is_string($data['response'])) {
+            $decoded = json_decode($data['response'], true);
+            if (is_array($decoded)) $currentResp = array_merge($currentResp, $decoded);
+            else $currentResp['raw'] = $data['response'];
+        } elseif (is_array($data['response'])) {
+            $currentResp = array_merge($currentResp, $data['response']);
+        }
+    }
+
+    if (!empty($data['provider_reply_html'])) {
+        $currentResp['provider_reply_html'] = $data['provider_reply_html'];
+        $currentResp['provider_reply_updated_at'] = now()->toDateTimeString();
+    }
+
+    $row->response = $currentResp;
+    $row->save();
+
+    // =========================
+    // ✅ Financial transitions (repeatable)
+    // =========================
+
+    // 1) Refund عند الدخول إلى rejected/cancelled (كل مرة)
+    if (in_array($newStatus, ['rejected','cancelled'], true) && $oldStatus !== $newStatus) {
+        $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
+
+        // ✅ اسمح بإعادة Recharge لاحقاً لو رجع Success مرة ثانية
+        $req = (array)($row->request ?? []);
+        unset($req['recharged_at'], $req['recharged_amount'], $req['recharged_reason']);
+        $row->request = $req;
+        $row->save();
+    }
+
+    // 2) Recharge فقط عند الانتقال من rejected/cancelled => success (كل مرة)
+    if ($newStatus === 'success' && in_array($oldStatus, ['rejected','cancelled'], true)) {
+        try {
+            $this->rechargeOrderIfNeeded($row, 'manual_success');
+
+            // ✅ بعد إعادة الخصم: امسح علامة الـ refund حتى لو رجع Reject مرة ثانية يعمل Refund من جديد
+            $req = (array)($row->request ?? []);
+            unset($req['refunded_at'], $req['refunded_amount'], $req['refunded_reason']);
+            $row->request = $req;
+            $row->save();
+        } catch (\RuntimeException $e) {
+            if ($e->getMessage() === 'INSUFFICIENT_BALANCE_RECHARGE') {
+                $row->status = $oldStatus ?: $row->status;
+                $row->save();
+
+                return redirect()->back()
+                    ->withErrors(['status' => 'User balance is not enough to set Success again (recharge required).'])
+                    ->withInput();
+            }
+            throw $e;
+        }
+    }
+
+    return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
+}
+
+
 }
