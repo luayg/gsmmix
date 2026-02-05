@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Admin\Services;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;
 
 // Models
 use App\Models\ApiProvider;
@@ -38,12 +37,8 @@ class CloneController extends Controller
             ->where('remote_id', $remoteId)
             ->firstOrFail();
 
-        // حاول تجيب السعر من price أو credit حسب الموجود
-        $price = (float) (
-            $remote->price
-            ?? $remote->credit
-            ?? 0
-        );
+        // ✅ عندنا في الجداول: السعر محفوظ في price (مش credit)
+        $price = (float) ($remote->price ?? 0);
 
         $prefill = [
             'name'                  => $remote->name ?? '',
@@ -85,6 +80,7 @@ class CloneController extends Controller
     }
 
     /**
+     * API: إرجاع خدمات مزوّد محدد (لملء القائمة الثانية)
      * GET /admin/service-management/clone/provider-services?provider_id=1&type=imei&q=...
      */
     public function providerServices(Request $request)
@@ -99,10 +95,10 @@ class CloneController extends Controller
             default  => RemoteImeiService::class,
         };
 
-        // ✅ حل جذري:
-        // - لا نعتمد على عمود "credit" لأنه غير موجود في server
-        // - نرجّع "credit" كقيمة موحدة = COALESCE(price, credit, 0)
-        // - ونرجع additional_fields حتى الـ JS يبني Custom Fields
+        // ✅ مهم جداً:
+        // - لا تستخدم credit في SQL لأنه غير موجود في الجداول عندك
+        // - السعر دائماً price
+        // - أرسل additional_fields حتى يبنيها الـ JS
         $rows = $model::query()
             ->where('api_provider_id', $providerId)
             ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
@@ -110,12 +106,12 @@ class CloneController extends Controller
             ->limit(500)
             ->get([
                 'remote_id',
-                DB::raw('remote_id as id'),
+                'remote_id as id',
                 'name',
-                DB::raw('COALESCE(price, credit, 0) as credit'),
+                'price as credit',        // ✅ alias فقط (بدون عمود credit حقيقي)
                 'time',
                 'info',
-                'additional_fields',
+                'additional_fields',      // ✅ هذا اللي نحتاجه للـ custom fields
             ]);
 
         return response()->json($rows);
