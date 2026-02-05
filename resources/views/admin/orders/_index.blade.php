@@ -19,11 +19,9 @@
   $pickName = function ($v) use ($cleanText) {
     if ($v === null) return '—';
 
-    // فك entities أولاً (مهم إذا كان JSON مخزن كـ string وفيه &quot; إلخ)
     $raw = html_entity_decode((string)$v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $s = trim($raw);
 
-    // إذا يبدو JSON
     if ($s !== '' && isset($s[0]) && $s[0] === '{') {
       $j = json_decode($s, true);
       if (is_array($j)) {
@@ -108,7 +106,17 @@
         </thead>
         <tbody>
           @forelse(($rows ?? []) as $o)
-            @php($st = strtolower($o->status ?? 'waiting'))
+            @php
+              $st = strtolower($o->status ?? 'waiting');
+
+              // ✅ Provider label:
+              // - لو الطلب api_order=1 وفيه provider => اسم المزود
+              // - غير ذلك => Manual
+              $providerLabel = 'Manual';
+              if (!empty($o->api_order) && $o->provider?->name) {
+                $providerLabel = $o->provider->name;
+              }
+            @endphp
             <tr>
               <td>{{ $o->id }}</td>
               <td>{{ optional($o->created_at)->format('Y-m-d H:i') }}</td>
@@ -122,7 +130,7 @@
                 @endif
               </td>
 
-              <td>{{ $o->provider?->name ?? '—' }}</td>
+              <td>{{ $providerLabel }}</td>
 
               <td>
                 @if($st === 'success')
@@ -134,7 +142,6 @@
                 @elseif($st === 'cancelled')
                   <span class="badge bg-dark">CANCELLED</span>
                 @else
-                  {{-- waiting --}}
                   <span class="badge bg-warning text-dark">WAITING</span>
                 @endif
               </td>

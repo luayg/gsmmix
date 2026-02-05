@@ -32,8 +32,9 @@ abstract class BaseOrdersController extends Controller
         $prov   = trim((string)$request->get('provider', ''));
 
         $rows = ($this->orderModel)::query()
-            ->with(['service','provider'])
-            ->orderByDesc('id');
+    ->with(['service','provider'])
+    ->orderBy('id'); // ✅ ascending: 1,2,3...
+
 
         if ($q !== '') {
             $rows->where(function ($w) use ($q) {
