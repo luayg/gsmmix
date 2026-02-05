@@ -357,14 +357,16 @@
 
 <script>
 (function(){
-  // ✅ مهم: اشتغل داخل الـ scope الخاص بالمودال (بدون IDs عامة)
+  // ✅ اشتغل داخل scope الخاص بالمودال (بدون اعتماد على IDs عامة خارج المودال)
   const form = (document.currentScript && document.currentScript.closest('form')) || document.getElementById('serviceCreateForm');
   if (!form) return;
 
   const qs  = (sel) => form.querySelector(sel);
   const qsa = (sel) => Array.from(form.querySelectorAll(sel));
 
-  // ✅ Fix name_en required: always mirror name -> name_en
+  // =========================
+  // Fix name_en required
+  // =========================
   const nameInput = qs('#nameInput');
   const nameEn    = qs('#nameEnHidden');
 
@@ -430,9 +432,13 @@
     return '';
   }
 
-  function serializeFields(){
+  function serializeFieldsInScope(scope){
+    const localWrap = scope.querySelector('#fieldsWrap');
+    const localHidden = scope.querySelector('#customFieldsJson');
+    if (!localWrap || !localHidden) return;
+
     const rows = [];
-    qsa('[data-field]').forEach(card => {
+    Array.from(localWrap.querySelectorAll('[data-field]')).forEach(card => {
       const obj = {
         active: card.querySelector('.js-field-active')?.checked ? 1 : 0,
         name: (card.querySelector('.js-field-name')?.value || '').trim(),
@@ -447,10 +453,11 @@
       };
       if (obj.name || obj.input) rows.push(obj);
     });
-    hidden.value = JSON.stringify(rows);
+
+    localHidden.value = JSON.stringify(rows);
   }
 
-  function bindCard(card){
+  function bindCard(card, scope){
     const typeSel  = card.querySelector('.js-field-type');
     const optsWrap = card.querySelector('.js-options-wrap');
 
@@ -460,21 +467,27 @@
       optsWrap?.classList.toggle('d-none', !show);
     }
 
-    typeSel?.addEventListener('change', () => { refreshOptions(); serializeFields(); });
-    card.addEventListener('input', serializeFields);
+    typeSel?.addEventListener('change', () => { refreshOptions(); serializeFieldsInScope(scope); });
+    card.addEventListener('input', () => serializeFieldsInScope(scope));
+    card.addEventListener('change', () => serializeFieldsInScope(scope));
+
     card.querySelector('.js-remove-field')?.addEventListener('click', () => {
       card.remove();
-      serializeFields();
+      serializeFieldsInScope(scope);
     });
 
     refreshOptions();
   }
 
-  function addField(defaults = null){
-    const node = tpl.content.cloneNode(true);
-    wrap.appendChild(node);
+  function addFieldToScope(scope, defaults = null){
+    const localWrap = scope.querySelector('#fieldsWrap');
+    const localTpl  = scope.querySelector('#fieldTpl');
+    if (!localWrap || !localTpl) return;
 
-    const cards = qsa('[data-field]');
+    const node = localTpl.content.cloneNode(true);
+    localWrap.appendChild(node);
+
+    const cards = Array.from(localWrap.querySelectorAll('[data-field]'));
     const cardEl = cards[cards.length - 1];
     if (!cardEl) return;
 
@@ -487,20 +500,24 @@
       cardEl.querySelector('.js-field-min').value = defaults.minimum ?? 0;
       cardEl.querySelector('.js-field-max').value = defaults.maximum ?? 0;
       cardEl.querySelector('.js-field-validation').value = defaults.validation || '';
-      cardEl.querySelector('.js-field-required').value = String(defaults.required ?? 0);
+      cardEl.querySelector('.js-field-required').value = String(defaults.required ?? 1);
       if (defaults.options) cardEl.querySelector('.js-field-options').value = defaults.options;
     }
 
-    bindCard(cardEl);
-    serializeFields();
+    bindCard(cardEl, scope);
+    serializeFieldsInScope(scope);
   }
 
   btnAdd.addEventListener('click', (e) => {
     e.preventDefault();
-    addField();
+    addFieldToScope(form, null);
   });
 
-  // ✅ HOOK 1: apply remote additional_fields and enforce inputs service_fields_1..n
+  // =========================
+  // ✅ HOOKS for service-modal.js
+  // =========================
+
+  // HOOK: apply remote additional_fields and enforce inputs service_fields_1..n
   window.__serverServiceApplyRemoteFields__ = function(scope, additionalFields){
     try{
       if (!scope || !Array.isArray(additionalFields)) return;
@@ -508,54 +525,20 @@
       const localWrap = scope.querySelector('#fieldsWrap');
       const localTpl  = scope.querySelector('#fieldTpl');
       const localHidden = scope.querySelector('#customFieldsJson');
-
       if (!localWrap || !localTpl || !localHidden) return;
 
-      // امسح فقط الكروت
+      // امسح الكروت فقط
       Array.from(localWrap.querySelectorAll('[data-field]')).forEach(x => x.remove());
-
-      // helper: أضف كرت داخل scope
-      const addOne = (defaults) => {
-        const node = localTpl.content.cloneNode(true);
-        localWrap.appendChild(node);
-
-        const cards = Array.from(localWrap.querySelectorAll('[data-field]'));
-        const cardEl = cards[cards.length - 1];
-        if (!cardEl) return;
-
-        cardEl.querySelector('.js-field-active').checked = !!defaults.active;
-        cardEl.querySelector('.js-field-name').value = defaults.name || '';
-        cardEl.querySelector('.js-field-type').value = defaults.type || 'text';
-        cardEl.querySelector('.js-field-input').value = defaults.input || '';
-        cardEl.querySelector('.js-field-desc').value = defaults.description || '';
-        cardEl.querySelector('.js-field-min').value = defaults.minimum ?? 0;
-        cardEl.querySelector('.js-field-max').value = defaults.maximum ?? 0;
-        cardEl.querySelector('.js-field-validation').value = defaults.validation || '';
-        cardEl.querySelector('.js-field-required').value = String(defaults.required ?? 1);
-        if (defaults.options) cardEl.querySelector('.js-field-options').value = defaults.options;
-
-        // bind
-        const typeSel  = cardEl.querySelector('.js-field-type');
-        const optsWrap = cardEl.querySelector('.js-options-wrap');
-        const refreshOptions = () => {
-          const t = typeSel?.value || 'text';
-          const show = (t === 'dropdown');
-          optsWrap?.classList.toggle('d-none', !show);
-        };
-        typeSel?.addEventListener('change', refreshOptions);
-        cardEl.querySelector('.js-remove-field')?.addEventListener('click', () => {
-          cardEl.remove();
-          // re-serialize
-          window.__serverServiceSerializeCustomFields__?.(scope);
-        });
-        refreshOptions();
-      };
 
       additionalFields.forEach((f, idx) => {
         const label = String(f.fieldname || f.name || '').trim();
         const input = 'service_fields_' + (idx + 1);
 
-        addOne({
+        const reqRaw = (f.required ?? f.is_required ?? f.req ?? 0);
+        const required =
+          (reqRaw === true || reqRaw === 1 || String(reqRaw).toLowerCase() === 'on' || String(reqRaw).toLowerCase() === 'yes') ? 1 : 0;
+
+        addFieldToScope(scope, {
           active: 1,
           name: label || input,
           type: mapRemoteType(f.fieldtype || f.type || 'text'),
@@ -564,47 +547,23 @@
           minimum: 0,
           maximum: 0,
           validation: mapRemoteValidationByName(label),
-          required: (String(f.required || '').toLowerCase() === 'on') ? 1 : 1,
+          required,
           options: Array.isArray(f.fieldoptions) ? f.fieldoptions.join(',') : String(f.fieldoptions || '').trim(),
         });
       });
 
-      // serialize داخل scope
-      window.__serverServiceSerializeCustomFields__?.(scope);
+      serializeFieldsInScope(scope);
     }catch(e){
       console.warn('applyRemoteFields failed', e);
     }
   };
 
-  // ✅ helper serialize for hooks
+  // HOOK: serialize helper (لو احتجته من الخارج)
   window.__serverServiceSerializeCustomFields__ = function(scope){
-    try{
-      const localWrap = scope.querySelector('#fieldsWrap');
-      const localHidden = scope.querySelector('#customFieldsJson');
-      if (!localWrap || !localHidden) return;
-
-      const rows = [];
-      Array.from(localWrap.querySelectorAll('[data-field]')).forEach(card => {
-        const obj = {
-          active: card.querySelector('.js-field-active')?.checked ? 1 : 0,
-          name: (card.querySelector('.js-field-name')?.value || '').trim(),
-          input: (card.querySelector('.js-field-input')?.value || '').trim(),
-          description: (card.querySelector('.js-field-desc')?.value || '').trim(),
-          minimum: parseInt(card.querySelector('.js-field-min')?.value || '0', 10),
-          maximum: parseInt(card.querySelector('.js-field-max')?.value || '0', 10),
-          validation: card.querySelector('.js-field-validation')?.value || '',
-          required: parseInt(card.querySelector('.js-field-required')?.value || '0', 10),
-          type: card.querySelector('.js-field-type')?.value || 'text',
-          options: (card.querySelector('.js-field-options')?.value || '').trim(),
-        };
-        if (obj.name || obj.input) rows.push(obj);
-      });
-
-      localHidden.value = JSON.stringify(rows);
-    }catch(e){}
+    try{ serializeFieldsInScope(scope); }catch(e){}
   };
 
-  // ✅ HOOK 2: set main field type/label programmatically
+  // HOOK: set main field type/label programmatically
   window.__serverServiceSetMainField__ = function(scope, type, label){
     try{
       if (!scope) return;
@@ -626,6 +585,6 @@
   };
 
   // initial serialize
-  serializeFields();
+  serializeFieldsInScope(form);
 })();
 </script>

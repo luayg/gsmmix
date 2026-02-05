@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin\Services;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
 
 // Models
 use App\Models\ApiProvider;
@@ -83,68 +84,36 @@ class CloneController extends Controller
      * GET /admin/service-management/clone/provider-services?provider_id=1&type=imei&q=...
      */
     public function providerServices(Request $request)
-    {
-        $providerId = (int) $request->get('provider_id');
-        $type       = strtolower($request->get('type', 'imei'));
-        $q          = trim((string) $request->get('q', ''));
+{
+    $providerId = (int) $request->get('provider_id');
+    $type       = strtolower($request->get('type', 'imei'));
+    $q          = trim((string) $request->get('q', ''));
 
-        $model = match ($type) {
-            'server' => RemoteServerService::class,
-            'file'   => RemoteFileService::class,
-            default  => RemoteImeiService::class,
-        };
+    $model = match ($type) {
+        'server' => RemoteServerService::class,
+        'file'   => RemoteFileService::class,
+        default  => RemoteImeiService::class,
+    };
 
-        $rows = $model::query()
-            ->where('api_provider_id', $providerId)
-            ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
-            ->orderBy('name')
-            ->limit(500)
-            ->get([
-                'remote_id',
-                'remote_id as id',
-                'name',
-                // price naming differs between models sometimes
-                'price',
-                'credit',
-                'cost',
-                'time',
-                'delivery_time',
-                'info',
-                // ✅ THIS IS THE IMPORTANT ONE:
-                'additional_fields',
-            ])
-            ->map(function ($r) {
-                // ✅ Normalize price field
-                $price = $r->price ?? $r->credit ?? $r->cost ?? 0;
+    $query = $model::query()
+        ->where('api_provider_id', $providerId)
+        ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
+        ->orderBy('name')
+        ->limit(500);
 
-                // ✅ Normalize time field
-                $time = $r->time ?? $r->delivery_time ?? '';
+    // ✅ أهم سطرين: رجّع credit بشكل آمن + رجّع additional_fields
+    // بعض الجداول فيها credit وبعضها price، فنعمل COALESCE
+    $rows = $query->select([
+            'remote_id',
+            'remote_id as id',
+            'name',
+            'time',
+            'info',
+            'additional_fields',
+        ])
+        ->selectRaw('COALESCE(price, credit, cost, 0) as credit')
+        ->get();
 
-                // ✅ Decode additional_fields safely into array
-                $af = $r->additional_fields;
-
-                if (is_string($af)) {
-                    $afTrim = trim($af);
-                    if ($afTrim !== '') {
-                        $decoded = json_decode($afTrim, true);
-                        if (is_array($decoded)) $af = $decoded;
-                    }
-                }
-                if (!is_array($af)) $af = [];
-
-                return [
-                    'remote_id'         => (string)($r->remote_id ?? ''),
-                    'id'                => (string)($r->remote_id ?? $r->id ?? ''),
-                    'name'              => (string)($r->name ?? ''),
-                    'price'             => (float)$price,
-                    'credit'            => (float)$price,
-                    'time'              => (string)$time,
-                    'info'              => (string)($r->info ?? ''),
-                    'additional_fields' => $af, // ✅ array
-                ];
-            })
-            ->values();
-
-        return response()->json($rows);
-    }
+    return response()->json($rows);
+}
 }

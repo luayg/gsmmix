@@ -70,8 +70,6 @@
     if (s === 'undefined' || s === 'null') return '';
     return s;
   };
-
-  // مهم: هذا فقط لخصائص HTML العادية (name/time) وليس JSON
   const escAttr = (s) => clean(s).replaceAll('"','&quot;');
 
   function initTabs(scope){
@@ -328,12 +326,18 @@
       (Array.isArray(rows) ? rows.map(r=>`<option value="${r.id}">${clean(r.name)}</option>`).join('') : '');
   }
 
-  // ✅ parse additional_fields that we stored as encodeURIComponent(JSON.stringify(...))
-  function parseAdditionalFieldsEncoded(s){
+  // ✅ parse JSON even if it contains &quot;
+  function parseJsonAttr(s){
     try{
       if(!s) return null;
-      const json = decodeURIComponent(String(s));
-      const v = JSON.parse(json);
+      let str = String(s);
+
+      // decode &quot; and friends if exist
+      str = str.replaceAll('&quot;', '"')
+               .replaceAll('&#34;', '"')
+               .replaceAll('&amp;', '&');
+
+      const v = JSON.parse(str);
       return v;
     }catch(e){
       return null;
@@ -344,7 +348,6 @@
     if(!Array.isArray(fields) || fields.length === 0) return { type:'serial', label:'Serial' };
 
     const names = fields.map(f => String(f.fieldname || f.name || '').toLowerCase().trim());
-
     const hasImei   = names.some(n => n.includes('imei'));
     const hasSerial = names.some(n => n.includes('serial'));
     const hasEmail  = names.some(n => n.includes('email'));
@@ -385,12 +388,12 @@
       const name = clean(s.name);
       const time = clean(s.time ?? s.delivery_time);
 
-      const creditNum = Number(s.price ?? s.credit ?? s.cost ?? 0);
+      const creditNum = Number(s.credit ?? s.price ?? s.cost ?? 0);
       const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
 
-      // ✅ FIX: store additional_fields safely (URL-encoded JSON)
-      const af = s.additional_fields ?? s.additionalFields ?? s.fields ?? null;
-      const afEncoded = (af && Array.isArray(af)) ? encodeURIComponent(JSON.stringify(af)) : '';
+      // ✅ IMPORTANT: additional_fields from backend
+      const af = (s.additional_fields ?? s.fields ?? []);
+      const afJson = JSON.stringify(Array.isArray(af) ? af : []);
 
       const timeTxt = time ? ` — ${time}` : '';
       const ridTxt  = rid ? ` (#${rid})` : '';
@@ -399,7 +402,7 @@
         data-name="${escAttr(name)}"
         data-credit="${creditTxt}"
         data-time="${escAttr(time)}"
-        data-af="${afEncoded}"
+        data-additional-fields="${escAttr(afJson)}"
       >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
     }).join('');
   }
@@ -578,6 +581,7 @@
     const apiProviderSel = body.querySelector('#apiProviderSelect');
     const apiServiceSel  = body.querySelector('#apiServiceSelect');
 
+    // ✅ لو Clone: حمّل خدمات المزود مباشرة
     if (isClone && apiProviderSel) {
       const pid = String(cloneData.providerId || '').trim();
 
@@ -589,13 +593,6 @@
       }
 
       apiProviderSel.value = pid;
-
-      if (window.jQuery && window.jQuery.fn?.select2 && window.jQuery(apiProviderSel).data('select2')) {
-        window.jQuery(apiProviderSel).val(pid).trigger('change.select2');
-      } else {
-        apiProviderSel.dispatchEvent(new Event('change'));
-      }
-
       apiProviderSel.disabled = true;
 
       try { await loadProviderServices(body, pid, cloneData.serviceType); } catch(e) {}
@@ -620,7 +617,7 @@
       await loadProviderServices(body, pid, cloneData.serviceType);
     });
 
-    // ✅ FIX: when selecting API Service -> read encoded additional_fields and build fields UI
+    // ✅ عند اختيار API Service -> طبّق additional_fields
     apiServiceSel?.addEventListener('change', ()=>{
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
@@ -649,8 +646,8 @@
         syncGroupPricesFromService(body);
       }
 
-      // ✅ read encoded additional fields
-      const af = parseAdditionalFieldsEncoded(opt.dataset.af || '');
+      // ✅ read from data-additional-fields
+      const af = parseJsonAttr(opt.dataset.additionalFields || opt.getAttribute('data-additional-fields') || '');
       if (Array.isArray(af) && af.length) {
 
         // 1) fill custom fields UI
@@ -658,14 +655,15 @@
           window.__serverServiceApplyRemoteFields__(body, af);
         }
 
-        // 2) choose main field
+        // 2) set main field type/label
         const mf = guessMainFieldFromRemoteFields(af);
         if (typeof window.__serverServiceSetMainField__ === 'function') {
           window.__serverServiceSetMainField__(body, mf.type, mf.label);
         }
-      } else {
-        // debug (اختياري): لو حبيت تشوف هل وصلت بيانات ولا لا
-        // console.log('No additional fields for this service', opt.value);
+
+        // افتح تبويب Additional تلقائيًا (اختياري)
+        const btnAdditional = document.querySelector('#serviceModal .tab-btn[data-tab="additional"]');
+        btnAdditional?.click();
       }
     });
 
@@ -680,8 +678,8 @@
 
     ensureRequiredFields(form);
 
-    const infoEditor = window.jQuery(form).find('#infoEditor');
-    if (infoEditor.length && infoEditor.summernote) {
+    const infoEditor = window.jQuery ? window.jQuery(form).find('#infoEditor') : null;
+    if (infoEditor && infoEditor.length && infoEditor.summernote) {
       const html = infoEditor.summernote('code');
       const hidden = form.querySelector('#infoHidden');
       if (hidden) hidden.value = html;
@@ -717,26 +715,13 @@
         const kind = (form.querySelector('[name="type"]')?.value || '').toLowerCase();
 
         window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
-          detail: {
-            provider_id,
-            kind,
-            remote_id: rid
-          }
+          detail: { provider_id, kind, remote_id: rid }
         }));
 
         bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
 
         if (window.showToast) {
           window.showToast('success', '✅ Service created successfully', { title: 'Done' });
-        }
-
-        if (window.$ && $.fn?.DataTable) {
-          try {
-            $('.dataTable').each(function(){
-              const dt = $(this).DataTable();
-              if (dt?.ajax) dt.ajax.reload(null, false);
-            });
-          } catch (e) {}
         }
 
         return;
