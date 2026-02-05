@@ -5,8 +5,6 @@ namespace App\Http\Controllers\Admin\Services;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
 
 // Models
 use App\Models\ApiProvider;
@@ -39,10 +37,8 @@ class CloneController extends Controller
             ->where('remote_id', $remoteId)
             ->firstOrFail();
 
-        // بعض الجداول تستخدم price وبعضها credit
-        $price = 0;
-        if (isset($remote->price) && $remote->price !== null) $price = (float) $remote->price;
-        elseif (isset($remote->credit) && $remote->credit !== null) $price = (float) $remote->credit;
+        // بعض الجداول عندك فيها price وبعضها credit
+        $price = (float) ($remote->price ?? $remote->credit ?? 0);
 
         $prefill = [
             'name'                  => $remote->name ?? '',
@@ -93,54 +89,32 @@ class CloneController extends Controller
         $type       = strtolower($request->get('type', 'imei'));
         $q          = trim((string) $request->get('q', ''));
 
-        $modelClass = match ($type) {
+        $model = match ($type) {
             'server' => RemoteServerService::class,
             'file'   => RemoteFileService::class,
             default  => RemoteImeiService::class,
         };
 
-        /** @var \Illuminate\Database\Eloquent\Model $modelObj */
-        $modelObj = new $modelClass();
-        $table    = $modelObj->getTable();
+        // ✅ IMPORTANT:
+        // - remote_imei_services غالباً فيها credit
+        // - remote_server_services + remote_file_services فيها price
+        $costColumn = ($type === 'imei') ? 'credit' : 'price';
 
-        // ✅ حل نهائي: بعض الجداول فيها price وبعضها credit
-        $priceCol = null;
-        if (Schema::hasColumn($table, 'price')) $priceCol = 'price';
-        elseif (Schema::hasColumn($table, 'credit')) $priceCol = 'credit';
-        else $priceCol = null;
-
-        // ✅ additional_fields موجود في remote_server_services عندك (حسب صور phpMyAdmin)
-        $hasAdditionalFields = Schema::hasColumn($table, 'additional_fields');
-
-        $query = $modelClass::query()
+        $rows = $model::query()
             ->where('api_provider_id', $providerId)
             ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
             ->orderBy('name')
-            ->limit(500);
-
-        // select آمن بدون استدعاء عمود غير موجود
-        $select = [
-            'remote_id',
-            DB::raw('remote_id as id'),
-            'name',
-            'time',
-            'info',
-        ];
-
-        if ($priceCol) {
-            $select[] = DB::raw("{$priceCol} as credit");
-            $select[] = DB::raw("{$priceCol} as price");
-        } else {
-            // fallback
-            $select[] = DB::raw("0 as credit");
-            $select[] = DB::raw("0 as price");
-        }
-
-        if ($hasAdditionalFields) {
-            $select[] = 'additional_fields';
-        }
-
-        $rows = $query->get($select);
+            ->limit(500)
+            ->get([
+                'remote_id',
+                'remote_id as id', // مهم لبعض plugins
+                'name',
+                "{$costColumn} as credit",
+                'time',
+                'info',
+                // ✅ هذا اللي ناقصك عشان custom fields تظهر
+                'additional_fields',
+            ]);
 
         return response()->json($rows);
     }
