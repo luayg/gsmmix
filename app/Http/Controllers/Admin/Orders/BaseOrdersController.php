@@ -26,43 +26,52 @@ abstract class BaseOrdersController extends Controller
     protected function supportsQuantity(): bool { return false; }
 
     public function index(Request $request)
-    {
-        $q      = trim((string)$request->get('q', ''));
-        $status = trim((string)$request->get('status', ''));
-        $prov   = trim((string)$request->get('provider', ''));
+{
+    $q      = trim((string)$request->get('q', ''));
+    $status = trim((string)$request->get('status', ''));
+    $prov   = trim((string)$request->get('provider', ''));
 
-        $rows = ($this->orderModel)::query()
-    ->with(['service','provider'])
-    ->orderBy('id'); // ✅ ascending: 1,2,3...
+    // ✅ Per-page selector (10..1000)
+    $perPage = (int)$request->get('per_page', 20);
+    if ($perPage < 10) $perPage = 10;
+    if ($perPage > 1000) $perPage = 1000;
 
+    $rows = ($this->orderModel)::query()
+        ->with(['service','provider'])
+        // ✅ ID من الأصغر للأكبر
+        ->orderBy('id', 'asc');
 
-        if ($q !== '') {
-            $rows->where(function ($w) use ($q) {
-                $w->where('device', 'like', "%{$q}%")
-                  ->orWhere('email', 'like', "%{$q}%")
-                  ->orWhere('remote_id', 'like', "%{$q}%");
-            });
-        }
-
-        if ($status !== '' && in_array($status, ['waiting','inprogress','success','rejected','cancelled'], true)) {
-            $rows->where('status', $status);
-        }
-
-        if ($prov !== '') {
-            $rows->where('supplier_id', (int)$prov);
-        }
-
-        $rows = $rows->paginate(20)->withQueryString();
-        $providers = ApiProvider::query()->orderBy('name')->get();
-
-        return view("admin.orders.{$this->kind}.index", [
-            'title'       => $this->title,
-            'kind'        => $this->kind,
-            'routePrefix' => $this->routePrefix,
-            'rows'        => $rows,
-            'providers'   => $providers,
-        ]);
+    if ($q !== '') {
+        $rows->where(function ($w) use ($q) {
+            $w->where('device', 'like', "%{$q}%")
+              ->orWhere('email', 'like', "%{$q}%")
+              ->orWhere('remote_id', 'like', "%{$q}%");
+        });
     }
+
+    if ($status !== '' && in_array($status, ['waiting','inprogress','success','rejected','cancelled'], true)) {
+        $rows->where('status', $status);
+    }
+
+    if ($prov !== '') {
+        $rows->where('supplier_id', (int)$prov);
+    }
+
+    $rows = $rows->paginate($perPage)->withQueryString();
+    $providers = ApiProvider::query()->orderBy('name')->get();
+
+    return view("admin.orders.{$this->kind}.index", [
+        'title'       => $this->title,
+        'kind'        => $this->kind,
+        'routePrefix' => $this->routePrefix,
+        'rows'        => $rows,
+        'providers'   => $providers,
+
+        // ✅ نحتاجها في Blade لعرض Show entries المختار
+        'perPage'     => $perPage,
+    ]);
+}
+
 
     public function modalCreate()
     {
