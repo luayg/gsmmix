@@ -26,52 +26,48 @@ abstract class BaseOrdersController extends Controller
     protected function supportsQuantity(): bool { return false; }
 
     public function index(Request $request)
-{
-    $q      = trim((string)$request->get('q', ''));
-    $status = trim((string)$request->get('status', ''));
-    $prov   = trim((string)$request->get('provider', ''));
+    {
+        $q      = trim((string)$request->get('q', ''));
+        $status = trim((string)$request->get('status', ''));
+        $prov   = trim((string)$request->get('provider', ''));
 
-    // ✅ Per-page selector (10..1000)
-    $perPage = (int)$request->get('per_page', 20);
-    if ($perPage < 10) $perPage = 10;
-    if ($perPage > 1000) $perPage = 1000;
+        // ✅ Per-page selector (10..1000)
+        $perPage = (int)$request->get('per_page', 20);
+        if ($perPage < 10) $perPage = 10;
+        if ($perPage > 1000) $perPage = 1000;
 
-    $rows = ($this->orderModel)::query()
-        ->with(['service','provider'])
-        // ✅ ID من الأصغر للأكبر
-        ->orderBy('id', 'asc');
+        $rows = ($this->orderModel)::query()
+            ->with(['service','provider'])
+            ->orderBy('id', 'asc');
 
-    if ($q !== '') {
-        $rows->where(function ($w) use ($q) {
-            $w->where('device', 'like', "%{$q}%")
-              ->orWhere('email', 'like', "%{$q}%")
-              ->orWhere('remote_id', 'like', "%{$q}%");
-        });
+        if ($q !== '') {
+            $rows->where(function ($w) use ($q) {
+                $w->where('device', 'like', "%{$q}%")
+                  ->orWhere('email', 'like', "%{$q}%")
+                  ->orWhere('remote_id', 'like', "%{$q}%");
+            });
+        }
+
+        if ($status !== '' && in_array($status, ['waiting','inprogress','success','rejected','cancelled'], true)) {
+            $rows->where('status', $status);
+        }
+
+        if ($prov !== '') {
+            $rows->where('supplier_id', (int)$prov);
+        }
+
+        $rows = $rows->paginate($perPage)->withQueryString();
+        $providers = ApiProvider::query()->orderBy('name')->get();
+
+        return view("admin.orders.{$this->kind}.index", [
+            'title'       => $this->title,
+            'kind'        => $this->kind,
+            'routePrefix' => $this->routePrefix,
+            'rows'        => $rows,
+            'providers'   => $providers,
+            'perPage'     => $perPage,
+        ]);
     }
-
-    if ($status !== '' && in_array($status, ['waiting','inprogress','success','rejected','cancelled'], true)) {
-        $rows->where('status', $status);
-    }
-
-    if ($prov !== '') {
-        $rows->where('supplier_id', (int)$prov);
-    }
-
-    $rows = $rows->paginate($perPage)->withQueryString();
-    $providers = ApiProvider::query()->orderBy('name')->get();
-
-    return view("admin.orders.{$this->kind}.index", [
-        'title'       => $this->title,
-        'kind'        => $this->kind,
-        'routePrefix' => $this->routePrefix,
-        'rows'        => $rows,
-        'providers'   => $providers,
-
-        // ✅ نحتاجها في Blade لعرض Show entries المختار
-        'perPage'     => $perPage,
-    ]);
-}
-
 
     public function modalCreate()
     {
@@ -169,10 +165,7 @@ abstract class BaseOrdersController extends Controller
     {
         $req = (array)($order->request ?? []);
 
-        // لازم يكون صار Refund سابقاً (Cancelled/Rejected)
         if (empty($req['refunded_at'])) return;
-
-        // لا نخصم أكثر من مرة بعد Refund
         if (!empty($req['recharged_at'])) return;
 
         $uid = (int)($order->user_id ?? 0);
@@ -218,6 +211,7 @@ abstract class BaseOrdersController extends Controller
         if ($this->kind === 'file') {
             $rules['file'] = ['required','file','max:51200'];
         } else {
+            // ✅ device صار اختياري للسيرفر (لأن أغلبه fields-based)
             $rules['device'] = ['nullable','string','max:255'];
         }
 
@@ -225,8 +219,9 @@ abstract class BaseOrdersController extends Controller
             $rules['quantity'] = ['nullable','integer','min:1','max:999'];
         }
 
+        // ✅ Server dynamic fields
         if ($this->kind === 'server') {
-            $rules['required'] = ['nullable','array'];
+            $rules['required'] = ['nullable','array']; // required[service_fields_1]=...
         }
 
         $data = $request->validate($rules);
@@ -249,36 +244,54 @@ abstract class BaseOrdersController extends Controller
         $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
         $profitOne = $sellPrice - $costPrice;
 
+        // ✅ params unified
         $params = ['kind' => $this->kind];
-        if ($this->kind === 'server' && isset($data['required']) && is_array($data['required'])) {
-            $params['required'] = $data['required'];
+
+        // Quantity: store in params for server like ready site
+        if ($this->supportsQuantity()) {
+            $params['quantity'] = (int)($data['quantity'] ?? 1);
+        }
+
+        // Server fields: store in params.fields
+        if ($this->kind === 'server') {
+            $params['fields'] = (isset($data['required']) && is_array($data['required'])) ? $data['required'] : [];
         }
 
         $bulk = (bool)($data['bulk'] ?? false);
         $devices = [];
 
+        // ✅ IMEI/FIle: same logic
+        // ✅ Server: device optional unless service->device_based = 1
         if ($this->kind !== 'file') {
-            if ($bulk) {
-                $raw = (string)($data['devices'] ?? '');
-                $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
-                $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
-                if (count($lines) < 1) {
-                    return redirect()->back()->withErrors(['devices' => 'Bulk list is empty.'])->withInput();
+            $deviceBased = (bool)($service->device_based ?? false);
+
+            if ($deviceBased) {
+                if ($bulk) {
+                    $raw = (string)($data['devices'] ?? '');
+                    $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
+                    $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
+                    if (count($lines) < 1) {
+                        return redirect()->back()->withErrors(['devices' => 'Bulk list is empty.'])->withInput();
+                    }
+                    if (count($lines) > 200) {
+                        return redirect()->back()->withErrors(['devices' => 'Too many lines (max 200).'])->withInput();
+                    }
+                    $devices = $lines;
+                } else {
+                    $one = trim((string)($data['device'] ?? ''));
+                    if ($one === '') {
+                        return redirect()->back()->withErrors(['device' => 'Device is required.'])->withInput();
+                    }
+                    $devices = [$one];
                 }
-                if (count($lines) > 200) {
-                    return redirect()->back()->withErrors(['devices' => 'Too many lines (max 200).'])->withInput();
-                }
-                $devices = $lines;
             } else {
+                // ✅ fields-based service: create single order even if device empty
                 $one = trim((string)($data['device'] ?? ''));
-                if ($one === '') {
-                    return redirect()->back()->withErrors(['device' => 'Device is required.'])->withInput();
-                }
-                $devices = [$one];
+                $devices = [$one]; // can be empty string
             }
         }
 
-        $countOrders = ($this->kind === 'file') ? 1 : count($devices);
+        $countOrders = ($this->kind === 'file') ? 1 : max(1, count($devices));
         $totalCharge = $sellPrice * $countOrders;
 
         try {
@@ -427,95 +440,86 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
-   // =========================
-// UPDATE (manual status change)
-// =========================
-public function update(Request $request, int $id)
-{
-    $row = ($this->orderModel)::findOrFail($id);
+    // =========================
+    // UPDATE (manual status change)
+    // =========================
+    public function update(Request $request, int $id)
+    {
+        $row = ($this->orderModel)::findOrFail($id);
 
-    $data = $request->validate([
-        'status'              => ['required','in:waiting,inprogress,success,rejected,cancelled'],
-        'comments'            => ['nullable','string'],
-        'response'            => ['nullable'],
-        'provider_reply_html' => ['nullable','string'],
-    ]);
+        $data = $request->validate([
+            'status'              => ['required','in:waiting,inprogress,success,rejected,cancelled'],
+            'comments'            => ['nullable','string'],
+            'response'            => ['nullable'],
+            'provider_reply_html' => ['nullable','string'],
+        ]);
 
-    // ✅ مهم: خذ الحالة القديمة من DB (قبل أي تعديل)
-    $oldStatus = strtolower(trim((string)($row->getOriginal('status') ?? '')));
-    $newStatus = strtolower(trim((string)($data['status'] ?? '')));
+        $oldStatus = strtolower(trim((string)($row->getOriginal('status') ?? '')));
+        $newStatus = strtolower(trim((string)($data['status'] ?? '')));
 
-    $row->status   = $data['status'];
-    $row->comments = (string)($data['comments'] ?? '');
+        $row->status   = $data['status'];
+        $row->comments = (string)($data['comments'] ?? '');
 
-    $currentResp = $row->response;
-    if (is_string($currentResp)) {
-        $decoded = json_decode($currentResp, true);
-        $currentResp = is_array($decoded) ? $decoded : ['raw' => $row->response];
-    } elseif (!is_array($currentResp) && $currentResp !== null) {
-        $currentResp = ['raw' => $currentResp];
-    } elseif ($currentResp === null) {
-        $currentResp = [];
-    }
-
-    if (array_key_exists('response', $data)) {
-        if (is_string($data['response'])) {
-            $decoded = json_decode($data['response'], true);
-            if (is_array($decoded)) $currentResp = array_merge($currentResp, $decoded);
-            else $currentResp['raw'] = $data['response'];
-        } elseif (is_array($data['response'])) {
-            $currentResp = array_merge($currentResp, $data['response']);
+        $currentResp = $row->response;
+        if (is_string($currentResp)) {
+            $decoded = json_decode($currentResp, true);
+            $currentResp = is_array($decoded) ? $decoded : ['raw' => $row->response];
+        } elseif (!is_array($currentResp) && $currentResp !== null) {
+            $currentResp = ['raw' => $currentResp];
+        } elseif ($currentResp === null) {
+            $currentResp = [];
         }
-    }
 
-    if (!empty($data['provider_reply_html'])) {
-        $currentResp['provider_reply_html'] = $data['provider_reply_html'];
-        $currentResp['provider_reply_updated_at'] = now()->toDateTimeString();
-    }
+        if (array_key_exists('response', $data)) {
+            if (is_string($data['response'])) {
+                $decoded = json_decode($data['response'], true);
+                if (is_array($decoded)) $currentResp = array_merge($currentResp, $decoded);
+                else $currentResp['raw'] = $data['response'];
+            } elseif (is_array($data['response'])) {
+                $currentResp = array_merge($currentResp, $data['response']);
+            }
+        }
 
-    $row->response = $currentResp;
-    $row->save();
+        if (!empty($data['provider_reply_html'])) {
+            $currentResp['provider_reply_html'] = $data['provider_reply_html'];
+            $currentResp['provider_reply_updated_at'] = now()->toDateTimeString();
+        }
 
-    // =========================
-    // ✅ Financial transitions (repeatable)
-    // =========================
-
-    // 1) Refund عند الدخول إلى rejected/cancelled (كل مرة)
-    if (in_array($newStatus, ['rejected','cancelled'], true) && $oldStatus !== $newStatus) {
-        $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
-
-        // ✅ اسمح بإعادة Recharge لاحقاً لو رجع Success مرة ثانية
-        $req = (array)($row->request ?? []);
-        unset($req['recharged_at'], $req['recharged_amount'], $req['recharged_reason']);
-        $row->request = $req;
+        $row->response = $currentResp;
         $row->save();
-    }
 
-    // 2) Recharge فقط عند الانتقال من rejected/cancelled => success (كل مرة)
-    if ($newStatus === 'success' && in_array($oldStatus, ['rejected','cancelled'], true)) {
-        try {
-            $this->rechargeOrderIfNeeded($row, 'manual_success');
+        // Refund on transition to rejected/cancelled
+        if (in_array($newStatus, ['rejected','cancelled'], true) && $oldStatus !== $newStatus) {
+            $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
 
-            // ✅ بعد إعادة الخصم: امسح علامة الـ refund حتى لو رجع Reject مرة ثانية يعمل Refund من جديد
             $req = (array)($row->request ?? []);
-            unset($req['refunded_at'], $req['refunded_amount'], $req['refunded_reason']);
+            unset($req['recharged_at'], $req['recharged_amount'], $req['recharged_reason']);
             $row->request = $req;
             $row->save();
-        } catch (\RuntimeException $e) {
-            if ($e->getMessage() === 'INSUFFICIENT_BALANCE_RECHARGE') {
-                $row->status = $oldStatus ?: $row->status;
-                $row->save();
-
-                return redirect()->back()
-                    ->withErrors(['status' => 'User balance is not enough to set Success again (recharge required).'])
-                    ->withInput();
-            }
-            throw $e;
         }
+
+        // Recharge only if rejected/cancelled => success
+        if ($newStatus === 'success' && in_array($oldStatus, ['rejected','cancelled'], true)) {
+            try {
+                $this->rechargeOrderIfNeeded($row, 'manual_success');
+
+                $req = (array)($row->request ?? []);
+                unset($req['refunded_at'], $req['refunded_amount'], $req['refunded_reason']);
+                $row->request = $req;
+                $row->save();
+            } catch (\RuntimeException $e) {
+                if ($e->getMessage() === 'INSUFFICIENT_BALANCE_RECHARGE') {
+                    $row->status = $oldStatus ?: $row->status;
+                    $row->save();
+
+                    return redirect()->back()
+                        ->withErrors(['status' => 'User balance is not enough to set Success again (recharge required).'])
+                        ->withInput();
+                }
+                throw $e;
+            }
+        }
+
+        return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
     }
-
-    return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order updated.');
-}
-
-
 }

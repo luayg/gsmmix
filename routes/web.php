@@ -139,6 +139,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Ajax: groups filtered by type (imei/server/file)
         Route::get('groups/options', [ServiceGroupController::class, 'options'])->name('groups.options');
 
+        Route::post('/admin/services/server/{id}/sync-fields', [\App\Http\Controllers\Admin\Services\ServerServiceController::class, 'syncFields'])
+    ->name('admin.services.server.syncFields');
+
+
+
         // ===== IMEI services =====
         Route::resource('imei-services', ImeiServiceController::class)->except(['show'])->names('imei');
 

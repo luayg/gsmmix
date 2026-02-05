@@ -35,7 +35,6 @@ class DhruOrderGateway
 
     private function normalizeUi(array $json): array
     {
-        // SUCCESS
         if (isset($json['SUCCESS'][0])) {
             $s0 = $json['SUCCESS'][0];
             return [
@@ -45,7 +44,6 @@ class DhruOrderGateway
             ];
         }
 
-        // ERROR
         if (isset($json['ERROR'][0])) {
             $e0 = $json['ERROR'][0];
             return [
@@ -57,10 +55,6 @@ class DhruOrderGateway
         return ['type' => 'unknown', 'message' => 'Unknown response'];
     }
 
-    /**
-     * رسائل ERROR التي نعتبرها "مؤقتة/قابلة لإعادة المحاولة"
-     * (مثل IP not allowed أو maintenance أو timeouts... إلخ)
-     */
     private function isRetryableErrorMessage(?string $msg): bool
     {
         if ($msg === null) return false;
@@ -85,13 +79,6 @@ class DhruOrderGateway
         return false;
     }
 
-    /**
-     * send() موحّد:
-     * - إذا فشل اتصال/HTTP => retryable=true و status=waiting
-     * - إذا SUCCESS => ok=true status=inprogress
-     * - إذا ERROR => افتراضياً rejected
-     *   لكن لو رسالة ERROR تعتبر مؤقتة => retryable=true و status=waiting
-     */
     private function send(ApiProvider $p, string $action, string $parametersXml): array
     {
         $payload = $this->basePayload($p, $action);
@@ -128,7 +115,6 @@ class DhruOrderGateway
             ];
         }
 
-        // SUCCESS
         if (isset($json['SUCCESS'][0])) {
             $s0 = $json['SUCCESS'][0];
             $ref = $s0['REFERENCEID'] ?? null;
@@ -144,13 +130,11 @@ class DhruOrderGateway
             ];
         }
 
-        // ERROR
         $errMsg = null;
         if (isset($json['ERROR'][0]['MESSAGE'])) {
             $errMsg = (string)$json['ERROR'][0]['MESSAGE'];
         }
 
-        // ✅ لو الخطأ مؤقت/قابل لإعادة المحاولة => لا نرفض، نخليه waiting
         if ($this->isRetryableErrorMessage($errMsg)) {
             return [
                 'ok' => false,
@@ -166,7 +150,6 @@ class DhruOrderGateway
             ];
         }
 
-        // ❌ غير قابل لإعادة المحاولة => rejected
         return [
             'ok' => false,
             'retryable' => false,
@@ -200,16 +183,22 @@ class DhruOrderGateway
         $serviceId = (string)($order->service?->remote_id ?? '');
         $qty = (int)($order->quantity ?? 1);
 
-        $required = [];
-        if (is_array($order->params) && isset($order->params['required']) && is_array($order->params['required'])) {
-            $required = $order->params['required'];
+        // ✅ fields (preferred) ثم required (legacy)
+        $fields = [];
+        if (is_array($order->params)) {
+            $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
         }
-        $requiredJson = json_encode($required, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        if (!is_array($fields)) $fields = [];
+
+        $requiredJson = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+
+        $comments = trim((string)($order->comments ?? ''));
 
         $xml = '<PARAMETERS>'
             . '<ID>'.$this->xmlEscape($serviceId).'</ID>'
             . '<QUANTITY>'.$this->xmlEscape((string)$qty).'</QUANTITY>'
             . '<REQUIRED>'.$this->xmlEscape((string)$requiredJson).'</REQUIRED>'
+            . '<COMMENTS>'.$this->xmlEscape($comments).'</COMMENTS>'
             . '</PARAMETERS>';
 
         return $this->send($p, 'placeserverorder', $xml);
@@ -243,13 +232,9 @@ class DhruOrderGateway
     }
 
     // =========================
-    // SYNC RESULT / STATUS (IMEI)
+    // SYNC RESULT / STATUS
     // =========================
 
-    /**
-     * action = getimeiorder
-     * parameters: ID = (REFERENCEID)
-     */
     public function getImeiOrder(ApiProvider $p, string $referenceId): array
     {
         $xml = '<PARAMETERS>'
@@ -257,5 +242,23 @@ class DhruOrderGateway
             . '</PARAMETERS>';
 
         return $this->send($p, 'getimeiorder', $xml);
+    }
+
+    public function getServerOrder(ApiProvider $p, string $referenceId): array
+    {
+        $xml = '<PARAMETERS>'
+            . '<ID>'.$this->xmlEscape($referenceId).'</ID>'
+            . '</PARAMETERS>';
+
+        return $this->send($p, 'getserverorder', $xml);
+    }
+
+    public function getFileOrder(ApiProvider $p, string $referenceId): array
+    {
+        $xml = '<PARAMETERS>'
+            . '<ID>'.$this->xmlEscape($referenceId).'</ID>'
+            . '</PARAMETERS>';
+
+        return $this->send($p, 'getfileorder', $xml);
     }
 }

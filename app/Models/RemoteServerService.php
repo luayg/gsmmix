@@ -11,41 +11,10 @@ class RemoteServerService extends Model
     protected $guarded = [];
 
     protected $casts = [
-        'price' => 'decimal:4',
-        'credit_groups' => 'array',
         'additional_fields' => 'array',
-        'additional_data' => 'array',
-        'params' => 'array',
+        'additional_data'   => 'array',
+        'params'            => 'array',
+        'price'             => 'float',
+        'api_provider_id'   => 'int',
     ];
-
-    public function provider()
-    {
-        return $this->belongsTo(ApiProvider::class, 'api_provider_id');
-    }
-
-    /* Legacy aliases */
-    public function getGroupAttribute($value = null)
-    {
-        return $this->group_name;
-    }
-
-    public function getServiceIdAttribute($value = null)
-    {
-        return $this->remote_id;
-    }
-
-    public function getServiceNameAttribute($value = null)
-    {
-        return $this->name;
-    }
-
-    public function getCreditAttribute($value = null)
-    {
-        return $this->price;
-    }
-
-    public function getCreditsAttribute($value = null)
-    {
-        return $this->price;
-    }
 }
