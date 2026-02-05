@@ -94,7 +94,6 @@ class CloneController extends Controller
             default  => RemoteImeiService::class,
         };
 
-        // ✅ الصحيح: فلترة حسب api_provider_id (مزود الـ API) وليس remote_id (لأننا نريد "كل الخدمات")
         $rows = $model::query()
             ->where('api_provider_id', $providerId)
             ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
@@ -102,12 +101,49 @@ class CloneController extends Controller
             ->limit(500)
             ->get([
                 'remote_id',
-                'remote_id as id',     // مهم لبعض الـ plugins
+                'remote_id as id',
                 'name',
-                'price as credit',
+                // price naming differs between models sometimes
+                'price',
+                'credit',
+                'cost',
                 'time',
+                'delivery_time',
                 'info',
-            ]);
+                // ✅ THIS IS THE IMPORTANT ONE:
+                'additional_fields',
+            ])
+            ->map(function ($r) {
+                // ✅ Normalize price field
+                $price = $r->price ?? $r->credit ?? $r->cost ?? 0;
+
+                // ✅ Normalize time field
+                $time = $r->time ?? $r->delivery_time ?? '';
+
+                // ✅ Decode additional_fields safely into array
+                $af = $r->additional_fields;
+
+                if (is_string($af)) {
+                    $afTrim = trim($af);
+                    if ($afTrim !== '') {
+                        $decoded = json_decode($afTrim, true);
+                        if (is_array($decoded)) $af = $decoded;
+                    }
+                }
+                if (!is_array($af)) $af = [];
+
+                return [
+                    'remote_id'         => (string)($r->remote_id ?? ''),
+                    'id'                => (string)($r->remote_id ?? $r->id ?? ''),
+                    'name'              => (string)($r->name ?? ''),
+                    'price'             => (float)$price,
+                    'credit'            => (float)$price,
+                    'time'              => (string)$time,
+                    'info'              => (string)($r->info ?? ''),
+                    'additional_fields' => $af, // ✅ array
+                ];
+            })
+            ->values();
 
         return response()->json($rows);
     }

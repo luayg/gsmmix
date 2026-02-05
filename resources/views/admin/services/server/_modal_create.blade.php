@@ -11,12 +11,10 @@
   <input type="hidden" name="name_en" value="">
   <input type="hidden" name="main_type" value="">
 
-
-
   {{-- ✅ Required by backend validation (fix name_en required) --}}
   <input type="hidden" name="name_en" id="nameEnHidden" value="">
 
-  {{-- ✅ Custom fields JSON (server usually needs it) --}}
+  {{-- ✅ Custom fields JSON --}}
   <input type="hidden" name="custom_fields_json" id="customFieldsJson" value="[]">
 
   {{-- Injected by service-modal.js --}}
@@ -59,7 +57,7 @@
               </select>
             </div>
 
-            {{-- ✅ MAIN FIELD PRESETS (Unified IDs like IMEI modal) --}}
+            {{-- ✅ MAIN FIELD --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Main field type</label>
               <select name="main_field_type" class="form-select" id="mainFieldType">
@@ -155,7 +153,6 @@
               </select>
             </div>
 
-            {{-- Source (API box يتم حقنه من service-modal.blade.php) --}}
             <div class="col-12">
               <label class="form-label mb-1">Source</label>
               <select name="source" class="form-select">
@@ -166,7 +163,6 @@
               </select>
             </div>
 
-            {{-- Switches (same look as IMEI) --}}
             @php
               $toggles = [
                 'use_remote_cost'    => 'Sync the cost of this service with price of remote API service',
@@ -236,11 +232,10 @@
       </div>
     </div>
 
-    {{-- ===================== ✅ ADDITIONAL TAB (Unified) ===================== --}}
+    {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
     <div class="tab-pane" data-tab="additional">
       <div class="row g-3">
 
-        {{-- LEFT: Custom fields --}}
         <div class="col-lg-7">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div class="fw-bold">Custom fields</div>
@@ -254,20 +249,14 @@
           </div>
         </div>
 
-        {{-- RIGHT: Groups pricing --}}
         <div class="col-lg-5">
           <div class="fw-bold mb-2">Groups</div>
-          <div id="groupsPricingWrap" class="border rounded p-2 bg-white">
-            {{-- built by JS --}}
-          </div>
-          <div class="text-muted small mt-2">
-            هنا يتم عرض User Groups ويتم حفظ الجدول تلقائيًا.
-          </div>
+          <div id="groupsPricingWrap" class="border rounded p-2 bg-white"></div>
+          <div class="text-muted small mt-2">هنا يتم عرض User Groups ويتم حفظ الجدول تلقائيًا.</div>
         </div>
 
       </div>
 
-      {{-- Template for one field --}}
       <template id="fieldTpl">
         <div class="border rounded mb-2 p-2 bg-light field-card" data-field>
           <div class="d-flex justify-content-between align-items-start">
@@ -289,19 +278,14 @@
               <select class="form-select form-select-sm js-field-type">
                 <option value="text" selected>Text</option>
                 <option value="password">Password</option>
-                <option value="dropdown">Dropdown</option>
-                <option value="radio">Radio</option>
                 <option value="textarea">Textarea</option>
-                <option value="checkbox">Checkbox</option>
-                <option value="file">File</option>
-                <option value="image">Image</option>
-                <option value="country">Country</option>
+                <option value="dropdown">Dropdown</option>
               </select>
             </div>
 
             <div class="col-md-6">
               <label class="form-label mb-1">Input name</label>
-              <input type="text" class="form-control form-control-sm js-field-input" placeholder="service_fields_name">
+              <input type="text" class="form-control form-control-sm js-field-input" placeholder="service_fields_1">
             </div>
 
             <div class="col-md-6">
@@ -324,12 +308,9 @@
               <select class="form-select form-select-sm js-field-validation">
                 <option value="" selected>None</option>
                 <option value="numeric">Numeric</option>
-                <option value="alphanumeric">Alphanumeric</option>
                 <option value="email">Email</option>
-                <option value="url">URL</option>
-                <option value="json">JSON</option>
-                <option value="ip">IP</option>
-                <option value="accepted">Accepted</option>
+                <option value="serial">Serial</option>
+                <option value="imei">IMEI</option>
               </select>
             </div>
 
@@ -343,14 +324,14 @@
 
             <div class="col-12 js-options-wrap d-none">
               <label class="form-label mb-1">Options (comma separated)</label>
-              <input type="text" class="form-control form-control-sm js-field-options" placeholder="New,Existing">
+              <input type="text" class="form-control form-control-sm js-field-options" placeholder="A,B,C">
             </div>
           </div>
         </div>
       </template>
     </div>
 
-    {{-- ===================== ✅ META TAB (Unified) ===================== --}}
+    {{-- ===================== ✅ META TAB ===================== --}}
     <div class="tab-pane" data-tab="meta">
       <div class="row g-3">
         <div class="col-md-6">
@@ -358,29 +339,9 @@
           <input type="text" class="form-control" name="meta_keywords">
         </div>
 
-        <div class="col-md-6">
-          <label class="form-label">After "head" tag opening</label>
-          <textarea class="form-control" rows="3" name="meta_after_head"></textarea>
-        </div>
-
         <div class="col-12">
           <label class="form-label">Meta description</label>
           <textarea class="form-control" rows="3" name="meta_description"></textarea>
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label">Before "head" tag closing</label>
-          <textarea class="form-control" rows="3" name="meta_before_head"></textarea>
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label">After "body" tag opening</label>
-          <textarea class="form-control" rows="3" name="meta_after_body"></textarea>
-        </div>
-
-        <div class="col-md-6">
-          <label class="form-label">Before "body" tag closing</label>
-          <textarea class="form-control" rows="3" name="meta_before_body"></textarea>
         </div>
       </div>
     </div>
@@ -396,10 +357,17 @@
 
 <script>
 (function(){
+  // ✅ مهم: اشتغل داخل الـ scope الخاص بالمودال (بدون IDs عامة)
+  const form = (document.currentScript && document.currentScript.closest('form')) || document.getElementById('serviceCreateForm');
+  if (!form) return;
+
+  const qs  = (sel) => form.querySelector(sel);
+  const qsa = (sel) => Array.from(form.querySelectorAll(sel));
 
   // ✅ Fix name_en required: always mirror name -> name_en
-  const nameInput = document.getElementById('nameInput');
-  const nameEn    = document.getElementById('nameEnHidden');
+  const nameInput = qs('#nameInput');
+  const nameEn    = qs('#nameEnHidden');
+
   function syncNameEn(){
     if(!nameEn) return;
     nameEn.value = (nameInput?.value || '').trim();
@@ -408,22 +376,22 @@
   syncNameEn();
 
   // =========================
-  // Unified presets (same IDs)
+  // Presets
   // =========================
   const presets = {
-    serial:      { label: 'Serial', allowed: 'any',    min: 1,  max: 50 },
-    imei:        { label: 'IMEI',   allowed: 'numbers',min: 15, max: 15 },
-    number:      { label: 'Number', allowed: 'numbers',min: 1,  max: 255 },
-    email:       { label: 'Email',  allowed: 'any',    min: 3,  max: 255 },
-    text:        { label: 'Text',   allowed: 'any',    min: 1,  max: 255 },
-    custom:      { label: 'Device', allowed: 'alnum',  min: 1,  max: 255 },
+    serial: { label: 'Serial', allowed: 'any',     min: 1,  max: 50 },
+    imei:   { label: 'IMEI',   allowed: 'numbers', min: 15, max: 15 },
+    number: { label: 'Number', allowed: 'numbers', min: 1,  max: 255 },
+    email:  { label: 'Email',  allowed: 'any',     min: 3,  max: 255 },
+    text:   { label: 'Text',   allowed: 'any',     min: 1,  max: 255 },
+    custom: { label: 'Device', allowed: 'alnum',   min: 1,  max: 255 },
   };
 
-  const mainType  = document.getElementById('mainFieldType');
-  const labelEl   = document.getElementById('mainFieldLabel');
-  const allowedEl = document.getElementById('allowedChars');
-  const minEl     = document.getElementById('minLen');
-  const maxEl     = document.getElementById('maxLen');
+  const mainType  = qs('#mainFieldType');
+  const labelEl   = qs('#mainFieldLabel');
+  const allowedEl = qs('#allowedChars');
+  const minEl     = qs('#minLen');
+  const maxEl     = qs('#maxLen');
 
   function applyPreset(v){
     const p = presets[v] || null;
@@ -437,26 +405,34 @@
   if(mainType) applyPreset(mainType.value);
 
   // =========================
-  // Custom fields UI + serialization (same as IMEI)
+  // Custom fields UI
   // =========================
-  const wrap   = document.getElementById('fieldsWrap');
-  const tpl    = document.getElementById('fieldTpl');
-  const btnAdd = document.getElementById('btnAddField');
-  const hidden = document.getElementById('customFieldsJson');
+  const wrap   = qs('#fieldsWrap');
+  const tpl    = qs('#fieldTpl');
+  const btnAdd = qs('#btnAddField');
+  const hidden = qs('#customFieldsJson');
 
   if (!wrap || !tpl || !btnAdd || !hidden) return;
 
-  function toSlugInputName(name){
-    const base = (name || '').trim().toLowerCase()
-      .replace(/[^a-z0-9]+/g,'_')
-      .replace(/^_+|_+$/g,'');
-    return base ? `service_fields_${base}` : `service_fields_${Date.now()}`;
+  function mapRemoteType(t){
+    t = String(t || '').toLowerCase().trim();
+    if (t === 'password') return 'password';
+    if (t === 'textarea') return 'textarea';
+    if (t === 'select' || t === 'dropdown') return 'dropdown';
+    return 'text';
+  }
+
+  function mapRemoteValidationByName(name){
+    const n = String(name||'').toLowerCase();
+    if (n.includes('email')) return 'email';
+    if (n.includes('imei')) return 'imei';
+    if (n.includes('serial')) return 'serial';
+    return '';
   }
 
   function serializeFields(){
     const rows = [];
-    wrap.querySelectorAll('[data-field]').forEach(card => {
-      const type = card.querySelector('.js-field-type')?.value || 'text';
+    qsa('[data-field]').forEach(card => {
       const obj = {
         active: card.querySelector('.js-field-active')?.checked ? 1 : 0,
         name: (card.querySelector('.js-field-name')?.value || '').trim(),
@@ -466,7 +442,7 @@
         maximum: parseInt(card.querySelector('.js-field-max')?.value || '0', 10),
         validation: card.querySelector('.js-field-validation')?.value || '',
         required: parseInt(card.querySelector('.js-field-required')?.value || '0', 10),
-        type: type,
+        type: card.querySelector('.js-field-type')?.value || 'text',
         options: (card.querySelector('.js-field-options')?.value || '').trim(),
       };
       if (obj.name || obj.input) rows.push(obj);
@@ -477,22 +453,14 @@
   function bindCard(card){
     const typeSel  = card.querySelector('.js-field-type');
     const optsWrap = card.querySelector('.js-options-wrap');
-    const nameEl   = card.querySelector('.js-field-name');
-    const inputEl  = card.querySelector('.js-field-input');
 
     function refreshOptions(){
       const t = typeSel?.value || 'text';
-      const show = (t === 'dropdown' || t === 'radio');
+      const show = (t === 'dropdown');
       optsWrap?.classList.toggle('d-none', !show);
     }
 
     typeSel?.addEventListener('change', () => { refreshOptions(); serializeFields(); });
-
-    nameEl?.addEventListener('input', () => {
-      if (inputEl && !inputEl.value.trim()) inputEl.value = toSlugInputName(nameEl.value);
-      serializeFields();
-    });
-
     card.addEventListener('input', serializeFields);
     card.querySelector('.js-remove-field')?.addEventListener('click', () => {
       card.remove();
@@ -506,8 +474,8 @@
     const node = tpl.content.cloneNode(true);
     wrap.appendChild(node);
 
-    const last = wrap.querySelectorAll('[data-field]');
-    const cardEl = last[last.length - 1];
+    const cards = qsa('[data-field]');
+    const cardEl = cards[cards.length - 1];
     if (!cardEl) return;
 
     if (defaults){
@@ -532,7 +500,132 @@
     addField();
   });
 
-  serializeFields();
+  // ✅ HOOK 1: apply remote additional_fields and enforce inputs service_fields_1..n
+  window.__serverServiceApplyRemoteFields__ = function(scope, additionalFields){
+    try{
+      if (!scope || !Array.isArray(additionalFields)) return;
 
+      const localWrap = scope.querySelector('#fieldsWrap');
+      const localTpl  = scope.querySelector('#fieldTpl');
+      const localHidden = scope.querySelector('#customFieldsJson');
+
+      if (!localWrap || !localTpl || !localHidden) return;
+
+      // امسح فقط الكروت
+      Array.from(localWrap.querySelectorAll('[data-field]')).forEach(x => x.remove());
+
+      // helper: أضف كرت داخل scope
+      const addOne = (defaults) => {
+        const node = localTpl.content.cloneNode(true);
+        localWrap.appendChild(node);
+
+        const cards = Array.from(localWrap.querySelectorAll('[data-field]'));
+        const cardEl = cards[cards.length - 1];
+        if (!cardEl) return;
+
+        cardEl.querySelector('.js-field-active').checked = !!defaults.active;
+        cardEl.querySelector('.js-field-name').value = defaults.name || '';
+        cardEl.querySelector('.js-field-type').value = defaults.type || 'text';
+        cardEl.querySelector('.js-field-input').value = defaults.input || '';
+        cardEl.querySelector('.js-field-desc').value = defaults.description || '';
+        cardEl.querySelector('.js-field-min').value = defaults.minimum ?? 0;
+        cardEl.querySelector('.js-field-max').value = defaults.maximum ?? 0;
+        cardEl.querySelector('.js-field-validation').value = defaults.validation || '';
+        cardEl.querySelector('.js-field-required').value = String(defaults.required ?? 1);
+        if (defaults.options) cardEl.querySelector('.js-field-options').value = defaults.options;
+
+        // bind
+        const typeSel  = cardEl.querySelector('.js-field-type');
+        const optsWrap = cardEl.querySelector('.js-options-wrap');
+        const refreshOptions = () => {
+          const t = typeSel?.value || 'text';
+          const show = (t === 'dropdown');
+          optsWrap?.classList.toggle('d-none', !show);
+        };
+        typeSel?.addEventListener('change', refreshOptions);
+        cardEl.querySelector('.js-remove-field')?.addEventListener('click', () => {
+          cardEl.remove();
+          // re-serialize
+          window.__serverServiceSerializeCustomFields__?.(scope);
+        });
+        refreshOptions();
+      };
+
+      additionalFields.forEach((f, idx) => {
+        const label = String(f.fieldname || f.name || '').trim();
+        const input = 'service_fields_' + (idx + 1);
+
+        addOne({
+          active: 1,
+          name: label || input,
+          type: mapRemoteType(f.fieldtype || f.type || 'text'),
+          input,
+          description: String(f.description || '').trim(),
+          minimum: 0,
+          maximum: 0,
+          validation: mapRemoteValidationByName(label),
+          required: (String(f.required || '').toLowerCase() === 'on') ? 1 : 1,
+          options: Array.isArray(f.fieldoptions) ? f.fieldoptions.join(',') : String(f.fieldoptions || '').trim(),
+        });
+      });
+
+      // serialize داخل scope
+      window.__serverServiceSerializeCustomFields__?.(scope);
+    }catch(e){
+      console.warn('applyRemoteFields failed', e);
+    }
+  };
+
+  // ✅ helper serialize for hooks
+  window.__serverServiceSerializeCustomFields__ = function(scope){
+    try{
+      const localWrap = scope.querySelector('#fieldsWrap');
+      const localHidden = scope.querySelector('#customFieldsJson');
+      if (!localWrap || !localHidden) return;
+
+      const rows = [];
+      Array.from(localWrap.querySelectorAll('[data-field]')).forEach(card => {
+        const obj = {
+          active: card.querySelector('.js-field-active')?.checked ? 1 : 0,
+          name: (card.querySelector('.js-field-name')?.value || '').trim(),
+          input: (card.querySelector('.js-field-input')?.value || '').trim(),
+          description: (card.querySelector('.js-field-desc')?.value || '').trim(),
+          minimum: parseInt(card.querySelector('.js-field-min')?.value || '0', 10),
+          maximum: parseInt(card.querySelector('.js-field-max')?.value || '0', 10),
+          validation: card.querySelector('.js-field-validation')?.value || '',
+          required: parseInt(card.querySelector('.js-field-required')?.value || '0', 10),
+          type: card.querySelector('.js-field-type')?.value || 'text',
+          options: (card.querySelector('.js-field-options')?.value || '').trim(),
+        };
+        if (obj.name || obj.input) rows.push(obj);
+      });
+
+      localHidden.value = JSON.stringify(rows);
+    }catch(e){}
+  };
+
+  // ✅ HOOK 2: set main field type/label programmatically
+  window.__serverServiceSetMainField__ = function(scope, type, label){
+    try{
+      if (!scope) return;
+
+      const t = String(type || '').toLowerCase().trim();
+      const l = String(label || '').trim();
+
+      const typeSel = scope.querySelector('#mainFieldType');
+      const labInp  = scope.querySelector('#mainFieldLabel');
+
+      if (typeSel && Array.from(typeSel.options).some(o => o.value === t)) {
+        typeSel.value = t;
+        typeSel.dispatchEvent(new Event('change'));
+      }
+      if (labInp && l) labInp.value = l;
+    }catch(e){
+      console.warn('setMainField failed', e);
+    }
+  };
+
+  // initial serialize
+  serializeFields();
 })();
 </script>

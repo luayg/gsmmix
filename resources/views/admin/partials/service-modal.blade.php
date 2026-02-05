@@ -70,6 +70,8 @@
     if (s === 'undefined' || s === 'null') return '';
     return s;
   };
+
+  // مهم: هذا فقط لخصائص HTML العادية (name/time) وليس JSON
   const escAttr = (s) => clean(s).replaceAll('"','&quot;');
 
   function initTabs(scope){
@@ -86,8 +88,6 @@
     });
   }
 
-  // ✅ مهم جداً: ممنوع تحميل jQuery/Summernote/Select2 من CDN هنا
-  // لأن ذلك يسبب أكثر من نسخة jQuery ويكسر Toolbar داخل Edit Orders.
   async function ensureSummernote(){
     if (!window.jQuery) {
       console.error('jQuery not found (Vite should provide it).');
@@ -102,7 +102,6 @@
 
   async function ensureSelect2(){
     if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
-      // لا نوقف المودال، فقط نحذر
       console.warn('Select2 not available (Vite should provide it).');
       return false;
     }
@@ -116,16 +115,14 @@
       .replace(/^-+|-+$/g,'');
   }
 
-  // ===== السعر النهائي للخدمة = Cost + Profit (حسب نوع الربح) =====
   function calcServiceFinalPrice(scope){
     const cost   = Number(scope.querySelector('[name="cost"]')?.value || 0);
     const profit = Number(scope.querySelector('[name="profit"]')?.value || 0);
-    const pType  = String(scope.querySelector('[name="profit_type"]')?.value || '1'); // 1 credits, 2 percent
+    const pType  = String(scope.querySelector('[name="profit_type"]')?.value || '1');
     const price = (pType === '2') ? (cost + (cost * profit / 100)) : (cost + profit);
     return Number.isFinite(price) ? price : 0;
   }
 
-  // ===== تحديث Final داخل صف الجروب (Price - Discount) =====
   function updateFinalForRow(row){
     const priceEl = row.querySelector('[data-price]');
     const discEl  = row.querySelector('[data-discount]');
@@ -134,7 +131,7 @@
 
     const price = Number(priceEl?.value || 0);
     const disc  = Number(discEl?.value  || 0);
-    const dtype = Number(typeEl?.value  || 1); // 1 credits, 2 percent
+    const dtype = Number(typeEl?.value  || 1);
 
     let final = price;
     if (dtype === 2) final = price - (price * (disc/100));
@@ -146,7 +143,6 @@
     if (outEl) outEl.textContent = final.toFixed(4);
   }
 
-  // ✅ تزامن أسعار الجروبات تلقائياً مع سعر الخدمة النهائي
   function syncGroupPricesFromService(scope){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if (!wrap) return;
@@ -156,7 +152,6 @@
     wrap.querySelectorAll('.pricing-row').forEach(row=>{
       const priceInput = row.querySelector('[data-price]');
       if (!priceInput) return;
-
       if (priceInput.dataset.autoPrice !== '1') return;
 
       priceInput.value = servicePrice.toFixed(4);
@@ -195,7 +190,6 @@
     };
   }
 
-  // ✅ بناء جدول أسعار الجروبات
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if(!wrap) return;
@@ -334,6 +328,36 @@
       (Array.isArray(rows) ? rows.map(r=>`<option value="${r.id}">${clean(r.name)}</option>`).join('') : '');
   }
 
+  // ✅ parse additional_fields that we stored as encodeURIComponent(JSON.stringify(...))
+  function parseAdditionalFieldsEncoded(s){
+    try{
+      if(!s) return null;
+      const json = decodeURIComponent(String(s));
+      const v = JSON.parse(json);
+      return v;
+    }catch(e){
+      return null;
+    }
+  }
+
+  function guessMainFieldFromRemoteFields(fields){
+    if(!Array.isArray(fields) || fields.length === 0) return { type:'serial', label:'Serial' };
+
+    const names = fields.map(f => String(f.fieldname || f.name || '').toLowerCase().trim());
+
+    const hasImei   = names.some(n => n.includes('imei'));
+    const hasSerial = names.some(n => n.includes('serial'));
+    const hasEmail  = names.some(n => n.includes('email'));
+
+    if (hasImei)   return { type:'imei',   label:'IMEI' };
+    if (hasSerial) return { type:'serial', label:'Serial' };
+    if (hasEmail && fields.length === 1) return { type:'email', label:'Email' };
+
+    const first = fields[0];
+    const lab = String(first.fieldname || first.name || 'Text').trim();
+    return { type:'text', label: lab || 'Text' };
+  }
+
   async function loadProviderServices(scope, providerId, type){
     const sel = scope.querySelector('#apiServiceSelect');
     if(!sel) return;
@@ -364,6 +388,10 @@
       const creditNum = Number(s.price ?? s.credit ?? s.cost ?? 0);
       const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
 
+      // ✅ FIX: store additional_fields safely (URL-encoded JSON)
+      const af = s.additional_fields ?? s.additionalFields ?? s.fields ?? null;
+      const afEncoded = (af && Array.isArray(af)) ? encodeURIComponent(JSON.stringify(af)) : '';
+
       const timeTxt = time ? ` — ${time}` : '';
       const ridTxt  = rid ? ` (#${rid})` : '';
 
@@ -371,11 +399,11 @@
         data-name="${escAttr(name)}"
         data-credit="${creditTxt}"
         data-time="${escAttr(time)}"
+        data-af="${afEncoded}"
       >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
     }).join('');
   }
 
-  // ✅ بعد إنشاء الخدمة: اجعل زر الصف (Clone/Add) يصبح Add فاتح اللون ومقفول
   function markCloneAsAdded(remoteId){
     const rid = String(remoteId || '').trim();
     if(!rid) return;
@@ -418,7 +446,6 @@
     }
   }
 
-  // ✅ FIX VALIDATION: تأكد من وجود main_type + name_en قبل الإرسال
   function ensureRequiredFields(form){
     const ensureHidden = (name, value) => {
       let el = form.querySelector(`[name="${name}"]`);
@@ -473,11 +500,9 @@
 
     initTabs(body);
 
-    // ✅ Summernote/Select2 من Vite فقط
     const okSn = await ensureSummernote();
     await ensureSelect2();
 
-    // ✅ فعل محرر infoEditor عبر نفس initModalEditors (بدون CDN)
     if (okSn) {
       const infoEl = body.querySelector('#infoEditor');
       if (infoEl) {
@@ -595,6 +620,7 @@
       await loadProviderServices(body, pid, cloneData.serviceType);
     });
 
+    // ✅ FIX: when selecting API Service -> read encoded additional_fields and build fields UI
     apiServiceSel?.addEventListener('change', ()=>{
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
@@ -622,6 +648,25 @@
         });
         syncGroupPricesFromService(body);
       }
+
+      // ✅ read encoded additional fields
+      const af = parseAdditionalFieldsEncoded(opt.dataset.af || '');
+      if (Array.isArray(af) && af.length) {
+
+        // 1) fill custom fields UI
+        if (typeof window.__serverServiceApplyRemoteFields__ === 'function') {
+          window.__serverServiceApplyRemoteFields__(body, af);
+        }
+
+        // 2) choose main field
+        const mf = guessMainFieldFromRemoteFields(af);
+        if (typeof window.__serverServiceSetMainField__ === 'function') {
+          window.__serverServiceSetMainField__(body, mf.type, mf.label);
+        }
+      } else {
+        // debug (اختياري): لو حبيت تشوف هل وصلت بيانات ولا لا
+        // console.log('No additional fields for this service', opt.value);
+      }
     });
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
@@ -635,7 +680,6 @@
 
     ensureRequiredFields(form);
 
-    // ✅ خذ HTML من المحرر (Summernote)
     const infoEditor = window.jQuery(form).find('#infoEditor');
     if (infoEditor.length && infoEditor.summernote) {
       const html = infoEditor.summernote('code');
