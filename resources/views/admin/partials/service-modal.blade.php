@@ -443,7 +443,7 @@
       );
 
       btn.classList.add('btn-outline-primary');
-      btn.textContent = 'Add';
+      btn.textContent = 'Added ✅';
 
       btn.removeAttribute('data-create-service');
     }

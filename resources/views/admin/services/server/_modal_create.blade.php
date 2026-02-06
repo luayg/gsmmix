@@ -11,10 +11,10 @@
   <input type="hidden" name="name_en" id="nameEnHidden" value="">
   <input type="hidden" name="main_type" id="mainTypeHidden" value="">
 
-  {{-- ✅ Custom fields JSON --}}
+  {{-- ✅ Custom fields JSON (هذا هو الذي سيحمل standfield/custom fields) --}}
   <input type="hidden" name="custom_fields_json" id="customFieldsJson" value="[]">
 
-  {{-- Injected by service-modal.js --}}
+  {{-- Injected by service-modal --}}
   <input type="hidden" name="supplier_id" value="">
   <input type="hidden" name="remote_id" value="">
   <input type="hidden" name="group_name" value="">
@@ -25,7 +25,6 @@
     <div class="tab-pane active" data-tab="general">
       <div class="row g-3">
 
-        {{-- LEFT SIDE --}}
         <div class="col-xl-7">
           <div class="row g-3">
 
@@ -36,7 +35,7 @@
             </div>
 
             <div class="col-12">
-              <label class="form-label mb-1">Alias (Unique name containing only latin lowercase characters and dashes)</label>
+              <label class="form-label mb-1">Alias</label>
               <input name="alias" type="text" class="form-control" placeholder="unique-alias-like-this">
             </div>
 
@@ -52,7 +51,6 @@
               </select>
             </div>
 
-            {{-- ✅ MAIN FIELD --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Main field type</label>
               <select name="main_field_type" class="form-select" id="mainFieldType">
@@ -81,18 +79,17 @@
 
             <div class="col-md-6">
               <label class="form-label mb-1">Allowed characters</label>
-              <select name="allowed_characters" id="allowedChars" class="form-select">
-                <option value="any" selected>Any</option>
-                <option value="numbers">Numbers</option>
-                <option value="alnum">Letters and numbers</option>
-                <option value="hex">HEX</option>
+              <select name="allowed_chars" class="form-select">
+                <option value="1" selected>Any</option>
+                <option value="2">Numbers only</option>
+                <option value="3">Letters only</option>
               </select>
             </div>
 
             <div class="col-md-6">
               <label class="form-label mb-1">Minimum</label>
               <div class="input-group">
-                <input name="min" id="minLen" type="number" class="form-control" value="1">
+                <input name="minimum" type="number" class="form-control" value="1">
                 <span class="input-group-text">Characters</span>
               </div>
             </div>
@@ -100,30 +97,19 @@
             <div class="col-md-6">
               <label class="form-label mb-1">Maximum</label>
               <div class="input-group">
-                <input name="max" id="maxLen" type="number" class="form-control" value="50">
+                <input name="maximum" type="number" class="form-control" value="50">
                 <span class="input-group-text">Characters</span>
               </div>
             </div>
 
-            {{-- Price --}}
-            <div class="col-md-6">
+            <div class="col-12">
               <label class="form-label mb-1">Price</label>
               <div class="input-group">
-                <input id="pricePreview" type="text" class="form-control" value="0.0000" disabled>
+                <input id="pricePreview" type="text" class="form-control" readonly value="0.0000">
                 <span class="input-group-text">Credits</span>
               </div>
-              <small class="text-muted d-block mt-1">Price = Cost + Profit</small>
             </div>
 
-            <div class="col-md-6">
-              <label class="form-label mb-1">Converted price</label>
-              <div class="input-group">
-                <input id="convertedPricePreview" type="text" class="form-control" value="0.0000" disabled>
-                <span class="input-group-text">USD</span>
-              </div>
-            </div>
-
-            {{-- Cost/Profit --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Cost</label>
               <div class="input-group">
@@ -158,62 +144,9 @@
               </select>
             </div>
 
-            @php
-              $toggles = [
-                'use_remote_cost'    => 'Sync the cost of this service with price of remote API service',
-                'use_remote_price'   => 'Sync the main and special prices of this service with price of remote API service',
-                'stop_on_api_change' => 'Stop API if the remote service price went up',
-                'needs_approval'     => 'Needs approval',
-                'active'             => 'Active',
-                'allow_bulk'         => 'Allow bulk orders',
-                'allow_duplicates'   => 'Allow duplicates',
-                'reply_with_latest'  => 'Reply with latest success result if possible',
-                'allow_report'       => 'Allow submit to verify (success orders)',
-                'allow_cancel'       => 'Allow cancel (waiting action orders)',
-              ];
-            @endphp
-
-            <div class="col-12">
-              @foreach($toggles as $name => $label)
-                <input type="hidden" name="{{ $name }}" value="0">
-                <div class="form-check form-switch mb-1">
-                  <input class="form-check-input" type="checkbox" name="{{ $name }}" value="1" id="sw_{{ $name }}"
-                         @checked(in_array($name,['active','allow_bulk']) ? true : false)>
-                  <label class="form-check-label" for="sw_{{ $name }}">{{ $label }}</label>
-                </div>
-              @endforeach
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Reporting deny timeout</label>
-              <div class="input-group">
-                <input name="allow_report_time" type="number" class="form-control" value="0">
-                <span class="input-group-text">Minutes</span>
-              </div>
-              <small class="text-muted">Leave blank or set to 0 for unlimited</small>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Cancellation deny timeout</label>
-              <div class="input-group">
-                <input name="allow_cancel_time" type="number" class="form-control" value="0">
-                <span class="input-group-text">Minutes</span>
-              </div>
-              <small class="text-muted">Leave blank or set to 0 for unlimited</small>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Reply expiration</label>
-              <div class="input-group">
-                <input name="reply_expiration" type="number" class="form-control" value="0">
-                <span class="input-group-text">Minutes</span>
-              </div>
-            </div>
-
           </div>
         </div>
 
-        {{-- RIGHT SIDE --}}
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
           <textarea id="infoEditor" class="form-control d-none"></textarea>
@@ -286,12 +219,12 @@
             </div>
 
             <div class="col-md-3">
-              <label class="form-label mb-1">Minimum</label>
+              <label class="form-label mb-1">Min</label>
               <input type="number" class="form-control form-control-sm js-field-min" value="0">
             </div>
 
             <div class="col-md-3">
-              <label class="form-label mb-1">Maximum</label>
+              <label class="form-label mb-1">Max</label>
               <input type="number" class="form-control form-control-sm js-field-max" value="0">
             </div>
 
@@ -299,10 +232,10 @@
               <label class="form-label mb-1">Validation</label>
               <select class="form-select form-select-sm js-field-validation">
                 <option value="" selected>None</option>
-                <option value="numeric">Numeric</option>
-                <option value="email">Email</option>
-                <option value="serial">Serial</option>
                 <option value="imei">IMEI</option>
+                <option value="serial">Serial</option>
+                <option value="email">Email</option>
+                <option value="numeric">Numeric</option>
               </select>
             </div>
 
@@ -315,112 +248,43 @@
             </div>
 
             <div class="col-12 js-options-wrap d-none">
-              <label class="form-label mb-1">Options (comma separated)</label>
-              <input type="text" class="form-control form-control-sm js-field-options" placeholder="A,B,C">
+              <label class="form-label mb-1">Options</label>
+              <textarea class="form-control form-control-sm js-field-options" rows="2" placeholder="a,b,c"></textarea>
+              <div class="form-text">Used only when Field type = Dropdown</div>
             </div>
           </div>
         </div>
       </template>
+
     </div>
 
-    {{-- ===================== ✅ META TAB ===================== --}}
+    {{-- ===================== ✅ META TAB (اختياري) ===================== --}}
     <div class="tab-pane" data-tab="meta">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <label class="form-label">Meta keywords</label>
-          <input type="text" class="form-control" name="meta_keywords">
-        </div>
-
-        <div class="col-12">
-          <label class="form-label">Meta description</label>
-          <textarea class="form-control" rows="3" name="meta_description"></textarea>
-        </div>
-      </div>
+      <div class="alert alert-light mb-0">Meta tab…</div>
     </div>
 
   </div>
 
-  <div class="service-actions d-flex justify-content-end gap-2 mt-3">
-    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
-    <button type="submit" class="btn btn-success">Create</button>
+  <div class="mt-3 d-flex justify-content-end gap-2">
+    <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+    <button type="submit" class="btn btn-success">Save</button>
   </div>
-
 </form>
 
 <script>
 (function(){
-  // ✅ اعمل داخل نفس الفورم (scope-safe)
-  const form = (document.currentScript && document.currentScript.closest('form')) || document.getElementById('serviceCreateForm');
-  if (!form) return;
+  const form = document.getElementById('serviceCreateForm');
+  if(!form) return;
 
-  const qs  = (sel) => form.querySelector(sel);
-  const qsa = (sel) => Array.from(form.querySelectorAll(sel));
-
-  // =============== name_en mirror ===============
-  const nameInput = qs('#nameInput');
-  const nameEn    = qs('#nameEnHidden');
-  function syncNameEn(){ if(nameEn) nameEn.value = (nameInput?.value || '').trim(); }
-  nameInput?.addEventListener('input', syncNameEn);
-  syncNameEn();
-
-  // =============== Presets ===============
-  const presets = {
-    serial: { label: 'Serial', allowed: 'any',     min: 1,  max: 50 },
-    imei:   { label: 'IMEI',   allowed: 'numbers', min: 15, max: 15 },
-    number: { label: 'Number', allowed: 'numbers', min: 1,  max: 255 },
-    email:  { label: 'Email',  allowed: 'any',     min: 3,  max: 255 },
-    text:   { label: 'Text',   allowed: 'any',     min: 1,  max: 255 },
-    custom: { label: 'Device', allowed: 'alnum',   min: 1,  max: 255 },
-  };
-
-  const mainType  = qs('#mainFieldType');
-  const labelEl   = qs('#mainFieldLabel');
-  const allowedEl = qs('#allowedChars');
-  const minEl     = qs('#minLen');
-  const maxEl     = qs('#maxLen');
-
-  function applyPreset(v){
-    const p = presets[v] || null;
-    if(!p) return;
-    if(labelEl) labelEl.value = p.label;
-    if(allowedEl) allowedEl.value = p.allowed;
-    if(minEl) minEl.value = p.min;
-    if(maxEl) maxEl.value = p.max;
-  }
-  mainType?.addEventListener('change', () => applyPreset(mainType.value));
-  if(mainType) applyPreset(mainType.value);
-
-  // =============== Custom fields UI ===============
-  const wrap   = qs('#fieldsWrap');
-  const tpl    = qs('#fieldTpl');
-  const btnAdd = qs('#btnAddField');
-  const hidden = qs('#customFieldsJson');
-
-  if (!wrap || !tpl || !btnAdd || !hidden) return;
-
-  function mapRemoteType(t){
-    t = String(t || '').toLowerCase().trim();
-    if (t === 'password') return 'password';
-    if (t === 'textarea') return 'textarea';
-    if (t === 'select' || t === 'dropdown') return 'dropdown';
-    return 'text';
-  }
-
-  function mapRemoteValidationByName(name){
-    const n = String(name||'').toLowerCase();
-    if (n.includes('email')) return 'email';
-    if (n.includes('imei')) return 'imei';
-    if (n.includes('serial')) return 'serial';
-    return '';
-  }
+  const btnAdd = form.querySelector('#btnAddField');
+  const localHidden = form.querySelector('#customFieldsJson');
 
   function serializeFieldsInScope(scope){
     const localWrap = scope.querySelector('#fieldsWrap');
-    const localHidden = scope.querySelector('#customFieldsJson');
     if (!localWrap || !localHidden) return;
 
     const rows = [];
-    Array.from(localWrap.querySelectorAll('[data-field]')).forEach(card => {
+    localWrap.querySelectorAll('[data-field]').forEach(card => {
       const obj = {
         active: card.querySelector('.js-field-active')?.checked ? 1 : 0,
         name: (card.querySelector('.js-field-name')?.value || '').trim(),
@@ -459,6 +323,22 @@
     refreshOptions();
   }
 
+  function mapRemoteType(t){
+    const s = String(t || '').toLowerCase();
+    if (s.includes('pass')) return 'password';
+    if (s.includes('area')) return 'textarea';
+    if (s.includes('select') || s.includes('drop')) return 'dropdown';
+    return 'text';
+  }
+
+  function mapRemoteValidationByName(label){
+    const s = String(label||'').toLowerCase();
+    if (s.includes('imei')) return 'imei';
+    if (s.includes('serial')) return 'serial';
+    if (s.includes('email')) return 'email';
+    return '';
+  }
+
   function addField(scope, defaults = null){
     const localWrap = scope.querySelector('#fieldsWrap');
     const localTpl  = scope.querySelector('#fieldTpl');
@@ -488,7 +368,7 @@
     serializeFieldsInScope(scope);
   }
 
-  btnAdd.addEventListener('click', (e) => {
+  btnAdd?.addEventListener('click', (e) => {
     e.preventDefault();
     addField(form);
   });
@@ -501,7 +381,6 @@
       const localWrap = scope.querySelector('#fieldsWrap');
       if (!localWrap) return;
 
-      // امسح الكروت فقط
       Array.from(localWrap.querySelectorAll('[data-field]')).forEach(x => x.remove());
 
       additionalFields.forEach((f, idx) => {
@@ -544,6 +423,11 @@
         typeSel.dispatchEvent(new Event('change'));
       }
       if (labInp && l) labInp.value = l;
+
+      // main_type hidden (backend)
+      const mainTypeHidden = scope.querySelector('#mainTypeHidden');
+      if (mainTypeHidden) mainTypeHidden.value = t;
+
     }catch(e){
       console.warn('setMainField failed', e);
     }
