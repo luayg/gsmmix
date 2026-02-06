@@ -60,6 +60,13 @@
             $isAdded = isset($existing[$rid]);
           @endphp
 
+          @php
+  $af = $s['ADDITIONAL_FIELDS'] ?? $s['additional_fields'] ?? null;
+  // لو جايك كـ array
+  $afJson = is_array($af) ? json_encode($af, JSON_UNESCAPED_UNICODE) : (string)$af;
+@endphp
+
+          
           <tr data-row
               data-group="{{ strtolower($group) }}"
               data-name="{{ strtolower($name) }}"
@@ -84,7 +91,9 @@
                         data-group-name="{{ e($group) }}"
                         data-name="{{ e($name) }}"
                         data-credit="{{ number_format($credit, 4, '.', '') }}"
-                        data-time="{{ e($time) }}">
+                        data-time="{{ e($time) }}"
+                        data-additional-fields="{{ e($afJson) }}"
+>
                   Clone
                 </button>
               @endif

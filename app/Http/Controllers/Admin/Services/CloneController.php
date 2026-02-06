@@ -84,38 +84,78 @@ class CloneController extends Controller
      * GET /admin/service-management/clone/provider-services?provider_id=1&type=imei&q=...
      */
     public function providerServices(Request $request)
-    {
-        $providerId = (int) $request->get('provider_id');
-        $type       = strtolower($request->get('type', 'imei'));
-        $q          = trim((string) $request->get('q', ''));
+{
+    $providerId = (int) $request->get('provider_id');
+    $type       = strtolower($request->get('type', 'imei'));
+    $q          = trim((string) $request->get('q', ''));
 
-        $model = match ($type) {
-            'server' => RemoteServerService::class,
-            'file'   => RemoteFileService::class,
-            default  => RemoteImeiService::class,
-        };
+    $model = match ($type) {
+        'server' => RemoteServerService::class,
+        'file'   => RemoteFileService::class,
+        default  => RemoteImeiService::class,
+    };
 
-        // ✅ IMPORTANT:
-        // - remote_imei_services غالباً فيها credit
-        // - remote_server_services + remote_file_services فيها price
-        $costColumn = ($type === 'imei') ? 'credit' : 'price';
+    $query = $model::query()
+        ->where('api_provider_id', $providerId)
+        ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
+        ->orderBy('name')
+        ->limit(500);
 
-        $rows = $model::query()
-            ->where('api_provider_id', $providerId)
-            ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
-            ->orderBy('name')
-            ->limit(500)
-            ->get([
-                'remote_id',
-                'remote_id as id', // مهم لبعض plugins
-                'name',
-                "{$costColumn} as credit",
-                'time',
-                'info',
-                // ✅ هذا اللي ناقصك عشان custom fields تظهر
-                'additional_fields',
-            ]);
-
-        return response()->json($rows);
+    // ✅ اختَر أعمدة موجودة فعلاً بكل جدول (بدون credit إطلاقاً)
+    // ملاحظة: بعض الجداول فيها price، وبعضها credit.
+    if ($type === 'imei') {
+        $rows = $query->get([
+            'remote_id',
+            'name',
+            'credit',
+            'price',
+            'time',
+            'info',
+            'additional_fields',
+        ]);
+    } else {
+        // server / file
+        $rows = $query->get([
+            'remote_id',
+            'name',
+            'price',
+            'time',
+            'info',
+            'additional_fields',
+        ]);
     }
+
+    // ✅ طبّع الإخراج لشكل واحد ثابت للـ JS
+    $out = $rows->map(function ($r) use ($type) {
+        $credit = 0.0;
+
+        if ($type === 'imei') {
+            // بعض مزودي imei يستخدمون credit أو price
+            $credit = (float) ($r->credit ?? $r->price ?? 0);
+        } else {
+            // server/file السعر في price
+            $credit = (float) ($r->price ?? 0);
+        }
+
+        // additional_fields أحياناً تكون JSON string في DB
+        $af = $r->additional_fields ?? null;
+        if (is_string($af) && $af !== '') {
+            $decoded = json_decode($af, true);
+            $af = (json_last_error() === JSON_ERROR_NONE) ? $decoded : null;
+        }
+
+        return [
+            'remote_id' => (string) $r->remote_id,
+            'id'        => (string) $r->remote_id, // لبعض plugins
+            'name'      => (string) ($r->name ?? ''),
+            'credit'    => $credit,
+            'time'      => (string) ($r->time ?? ''),
+            'info'      => (string) ($r->info ?? ''),
+            'additional_fields' => is_array($af) ? $af : [],
+        ];
+    })->values();
+
+    return response()->json($out);
+}
+
 }
