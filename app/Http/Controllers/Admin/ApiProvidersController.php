@@ -18,10 +18,6 @@ use Illuminate\Support\Str;
 
 class ApiProvidersController extends Controller
 {
-    /**
-     * صفحة القائمة الرئيسية (واجهة API Management التي عندك)
-     * IMPORTANT: هذه الدالة يجب أن ترسل $rows للـ view لأن blade يعتمد عليه.
-     */
     public function index(Request $request)
     {
         $q       = trim((string) $request->get('q', ''));
@@ -41,7 +37,6 @@ class ApiProvidersController extends Controller
             });
         }
 
-        // ✅ دعم فلتر النوع كما في واجهتك (DHRU / Simple link)
         if ($type !== '') {
             $normalized = $this->normalizeType($type);
             if ($normalized) {
@@ -49,7 +44,6 @@ class ApiProvidersController extends Controller
             }
         }
 
-        // ✅ دعم فلتر الحالة كما في واجهتك (Active/Inactive)
         if ($status !== '') {
             if (strcasecmp($status, 'Active') === 0) {
                 $query->where('active', 1);
@@ -63,10 +57,6 @@ class ApiProvidersController extends Controller
         return view('admin.api.providers.index', compact('rows'));
     }
 
-    /**
-     * ✅ API options endpoint (يُستخدم في service-modal لاختيار المزودين)
-     * يرجّع JSON بسيط: [{id,name,type,active}, ...]
-     */
     public function options(Request $request)
     {
         $onlyActive = $request->boolean('active', false);
@@ -82,9 +72,6 @@ class ApiProvidersController extends Controller
         return response()->json($q->get()->toArray());
     }
 
-    /**
-     * Create/Edit/View تُستخدم داخل المودال في صفحتك عبر js-api-modal
-     */
     public function create()
     {
         return view('admin.api.providers.create');
@@ -92,15 +79,12 @@ class ApiProvidersController extends Controller
 
     public function view(Request $request, ApiProvider $provider)
     {
-        // نفس المتغير الذي يستخدمه مودال view.blade.php
         $info = [];
 
-        // إذا جاء الطلب من المودال (fetch) رجّع ملف المودال فقط
         if ($request->ajax() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
             return view('admin.api.providers.modals.view', compact('provider', 'info'));
         }
 
-        // لو أحد فتح الرابط مباشرة من المتصفح (اختياري)
         return view('admin.api.providers.view', compact('provider'));
     }
 
@@ -109,9 +93,6 @@ class ApiProvidersController extends Controller
         return view('admin.api.providers.edit', compact('provider'));
     }
 
-    /**
-     * Store/Update
-     */
     public function store(Request $request)
     {
         $data = $this->validateProvider($request);
@@ -138,9 +119,6 @@ class ApiProvidersController extends Controller
         return redirect()->route('admin.apis.index')->with('ok', 'API Provider deleted.');
     }
 
-    /**
-     * ✅ زر Sync now
-     */
     public function sync(Request $request, ApiProvider $provider, ProviderManager $manager)
     {
         $result = $manager->sync($provider);
@@ -175,9 +153,6 @@ class ApiProvidersController extends Controller
         ]);
     }
 
-    /**
-     * ✅ Services modals (View)
-     */
     public function servicesImei(Request $request, ApiProvider $provider)
     {
         $rows = RemoteImeiService::where('api_provider_id', $provider->id)
@@ -250,14 +225,8 @@ class ApiProvidersController extends Controller
         ]);
     }
 
-    /**
-     * ✅ IMPORT endpoint (يخدم:
-     * - صفحات Import Services with Group (imei/server/file)
-     * - وكذلك import wizard في مودال المزودين
-     */
     public function importServices(Request $request, ApiProvider $provider)
     {
-        // يدعم JSON
         $kind = strtolower((string)$request->input('kind', ''));
         if (!in_array($kind, ['imei', 'server', 'file'], true)) {
             return response()->json(['ok' => false, 'msg' => 'Invalid kind'], 422);
@@ -265,7 +234,6 @@ class ApiProvidersController extends Controller
 
         $applyAll = (bool)$request->boolean('apply_all', false);
 
-        // ✅ أهم إصلاح: نقبل service_ids (والقديم imported لو موجود)
         $ids = $request->input('service_ids', null);
         if ($ids === null) $ids = $request->input('imported', null);
 
@@ -301,9 +269,6 @@ class ApiProvidersController extends Controller
         }
     }
 
-    /**
-     * لو عندك Route باسم import-wizard يضرب نفس الوظيفة
-     */
     public function importServicesWizard(Request $request, ApiProvider $provider)
     {
         return $this->importServices($request, $provider);
@@ -314,125 +279,6 @@ class ApiProvidersController extends Controller
      * Internal helpers
      * =========================
      */
-
-    /**
-     * ✅ Decode JSON fields that might be stored as text/longtext
-     */
-    private function decodeJsonMaybe($value): array
-    {
-        if (is_array($value)) return $value;
-        if (!is_string($value)) return [];
-        $value = trim($value);
-        if ($value === '' || $value === 'null') return [];
-        $decoded = json_decode($value, true);
-        return is_array($decoded) ? $decoded : [];
-    }
-
-    /**
-     * ✅ تحويل additional_fields (remote) إلى custom_fields (local params)
-     */
-    private function mapAdditionalFieldsToCustomFields(array $additionalFields): array
-    {
-        $out = [];
-
-        foreach (array_values($additionalFields) as $idx => $f) {
-            if (!is_array($f)) continue;
-
-            $label = trim((string)($f['fieldname'] ?? $f['name'] ?? ''));
-            if ($label === '') $label = 'Field ' . ($idx + 1);
-
-            $ft = strtolower(trim((string)($f['fieldtype'] ?? $f['type'] ?? 'text')));
-
-            // type mapping
-            $type = 'text';
-            if (in_array($ft, ['dropdown', 'select'], true)) $type = 'select';
-            elseif (in_array($ft, ['textarea', 'text_area'], true)) $type = 'textarea';
-            elseif ($ft === 'password') $type = 'password';
-            elseif ($ft === 'email') $type = 'email';
-            elseif (in_array($ft, ['number', 'numeric', 'int', 'integer'], true)) $type = 'number';
-
-            // required
-            $reqRaw = strtolower(trim((string)($f['required'] ?? '')));
-            $required = ($reqRaw === 'on' || $reqRaw === '1' || $reqRaw === 'true') ? 1 : 0;
-
-            // options
-            $opts = $f['fieldoptions'] ?? $f['options'] ?? '';
-            if (is_array($opts)) {
-                $opts = implode("\n", array_map('strval', $opts));
-            } else {
-                $opts = (string)$opts;
-            }
-
-            // validation guess from label
-            $validation = '';
-            $ln = strtolower($label);
-            if (str_contains($ln, 'imei')) $validation = 'imei';
-            elseif (str_contains($ln, 'serial')) $validation = 'serial';
-            elseif (str_contains($ln, 'email')) $validation = 'email';
-
-            $out[] = [
-                'active'      => 1,
-                'name'        => $label,
-                'type'        => $type,
-                'input'       => 'service_fields_' . ($idx + 1),
-                'description' => trim((string)($f['description'] ?? '')),
-                'minimum'     => 0,
-                'maximum'     => null,
-                'validation'  => $validation,
-                'required'    => $required,
-                'options'     => $type === 'select' ? $opts : [],
-            ];
-        }
-
-        return $out;
-    }
-
-    /**
-     * ✅ استنتاج الحقل الرئيسي (standfield عملياً) من additional_fields
-     */
-    private function buildMainFieldFromAdditionalFields(array $additionalFields): array
-    {
-        // defaults
-        $type = 'serial';
-        $label = 'Serial';
-
-        if (!empty($additionalFields)) {
-            $names = [];
-            foreach ($additionalFields as $f) {
-                if (!is_array($f)) continue;
-                $names[] = strtolower(trim((string)($f['fieldname'] ?? $f['name'] ?? '')));
-            }
-
-            $hasImei = collect($names)->first(fn($n) => str_contains($n, 'imei')) !== null;
-            $hasSerial = collect($names)->first(fn($n) => str_contains($n, 'serial')) !== null;
-            $hasEmail = collect($names)->first(fn($n) => str_contains($n, 'email')) !== null;
-
-            if ($hasImei) { $type = 'imei'; $label = 'IMEI'; }
-            elseif ($hasSerial) { $type = 'serial'; $label = 'Serial'; }
-            elseif ($hasEmail && count($names) === 1) { $type = 'email'; $label = 'Email'; }
-            else {
-                // لو أول fieldname واضح خليه Label للحقل الرئيسي
-                $first = $additionalFields[0] ?? null;
-                if (is_array($first)) {
-                    $lab = trim((string)($first['fieldname'] ?? $first['name'] ?? ''));
-                    if ($lab !== '') {
-                        $type = 'custom';
-                        $label = $lab;
-                    }
-                }
-            }
-        }
-
-        // نفس الحقول التي في Create service form
-        return [
-            'type' => $type,
-            'label' => $label,
-            'allowed_characters' => 'any',
-            'minimum' => 1,
-            'maximum' => 50,
-        ];
-    }
-
     private function doBulkImport(ApiProvider $provider, string $kind, bool $applyAll, array $remoteIds, string $profitMode, float $profitValue): array
     {
         [$remoteModel, $localModel] = match ($kind) {
@@ -457,20 +303,16 @@ class ApiProvidersController extends Controller
                 $remoteId = (string)($r->remote_id ?? '');
                 if ($remoteId === '') continue;
 
-                // ✅ منع التكرار الحقيقي (حتى لو الواجهة سمحت بالغلط)
                 $exists = $localModel::query()
                     ->where('supplier_id', $provider->id)
                     ->where('remote_id', $remoteId)
                     ->exists();
 
-                if ($exists) {
-                    continue;
-                }
+                if ($exists) continue;
 
                 $groupName = trim((string)($r->group_name ?? ''));
                 $groupId = null;
 
-                // ✅ أنشئ group تلقائيًا لو موجود اسم مجموعة
                 if ($groupName !== '') {
                     $groupType = $this->serviceGroupType($kind);
                     $group = ServiceGroup::firstOrCreate(
@@ -500,28 +342,35 @@ class ApiProvidersController extends Controller
                 $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
 
                 // ==========================================================
-                // ✅ NEW: اسحب additional_fields/params (خصوصاً للـ server)
+                // ✅ NEW: اسحب additional_fields + standfield وخزنهم في params
                 // ==========================================================
-                $paramsArr = $this->decodeJsonMaybe($r->params ?? null);
+                $additional = $this->readAdditionalFieldsFromRemoteRow($r);
+                $standfield = $this->readStandFieldFromRemoteRow($r);
 
-                $additionalFieldsArr = $this->decodeJsonMaybe($r->additional_fields ?? null);
+                // main field type/label
+                [$mainType, $mainLabel] = $this->guessMainFromStandOrFields($standfield, $additional);
 
-                // لو بعض المزودين يخزنون الحقول داخل additional_data
-                if (empty($additionalFieldsArr)) {
-                    $maybe = $this->decodeJsonMaybe($r->additional_data ?? null);
-                    if (!empty($maybe)) $additionalFieldsArr = $maybe;
+                // params merge (لو الموديل المحلي عنده params قديمة)
+                $params = [];
+                try {
+                    $raw = $r->params ?? null;
+                    if (is_array($raw)) $params = $raw;
+                    elseif (is_string($raw)) {
+                        $j = json_decode($raw, true);
+                        if (is_array($j)) $params = $j;
+                    }
+                } catch (\Throwable $e) {
+                    $params = [];
                 }
 
-                // custom_fields + main_field (standfield عملياً)
-                $customFields = [];
-                $mainField = null;
+                $params['standfield'] = $standfield;
+                $params['additional_fields'] = $additional;
+                $params['main_field'] = [
+                    'type'  => $mainType,
+                    'label' => $mainLabel,
+                ];
 
-                if ($kind === 'server' && !empty($additionalFieldsArr)) {
-                    $customFields = $this->mapAdditionalFieldsToCustomFields($additionalFieldsArr);
-                    $paramsArr['custom_fields'] = $customFields;
-
-                    $mainField = $this->buildMainFieldFromAdditionalFields($additionalFieldsArr);
-                }
+                // ==========================================================
 
                 $data = [
                     'alias' => $alias,
@@ -537,20 +386,14 @@ class ApiProvidersController extends Controller
                     'profit_type' => $profitType,
 
                     // API linking
-                    'source' => 2,                 // API
+                    'source' => 2,
                     'supplier_id' => $provider->id,
                     'remote_id' => $remoteId,
 
-                    // ✅ NEW: خزّن params/main_field عند الاستيراد
-                    'params' => !empty($paramsArr) ? json_encode($paramsArr, JSON_UNESCAPED_UNICODE) : null,
-                ];
+                    // ✅ NEW: خزّن params (لو جدولك يدعمها)
+                    'params' => $params,
 
-                if ($mainField !== null) {
-                    $data['main_field'] = json_encode($mainField, JSON_UNESCAPED_UNICODE);
-                }
-
-                // flags
-                $data += [
+                    // flags
                     'active' => 1,
                     'allow_bulk' => 0,
                     'allow_duplicates' => 0,
@@ -568,6 +411,91 @@ class ApiProvidersController extends Controller
         });
 
         return ['count' => $count, 'added_remote_ids' => $added];
+    }
+
+    /**
+     * ✅ يقرأ additional_fields من أي شكل (array/json string/null)
+     */
+    private function readAdditionalFieldsFromRemoteRow($r): array
+    {
+        $af = $r->additional_fields ?? $r->fields ?? null;
+
+        if (is_array($af)) return $af;
+
+        if (is_string($af) && trim($af) !== '') {
+            $j = json_decode($af, true);
+            if (is_array($j)) return $j;
+        }
+
+        return [];
+    }
+
+    /**
+     * ✅ يقرأ standfield من أي مكان محتمل
+     */
+    private function readStandFieldFromRemoteRow($r): string
+    {
+        $candidates = [
+            $r->standfield ?? null,
+            $r->stand_field ?? null,
+            $r->STANDFIELD ?? null,
+        ];
+
+        foreach ($candidates as $v) {
+            if (is_string($v) && trim($v) !== '') return trim($v);
+            if (is_numeric($v)) return (string)$v;
+        }
+
+        // أحياناً تكون داخل params/json
+        $raw = $r->params ?? null;
+        if (is_string($raw)) {
+            $j = json_decode($raw, true);
+            if (is_array($j)) {
+                foreach (['standfield', 'stand_field', 'STANDFIELD'] as $k) {
+                    $v = $j[$k] ?? null;
+                    if (is_string($v) && trim($v) !== '') return trim($v);
+                    if (is_numeric($v)) return (string)$v;
+                }
+            }
+        } elseif (is_array($raw)) {
+            foreach (['standfield', 'stand_field', 'STANDFIELD'] as $k) {
+                $v = $raw[$k] ?? null;
+                if (is_string($v) && trim($v) !== '') return trim($v);
+                if (is_numeric($v)) return (string)$v;
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * ✅ تحديد main field type/label بناءً على standfield أو أسماء additional_fields
+     */
+    private function guessMainFromStandOrFields(string $standfield, array $additional): array
+    {
+        $sf = strtolower(trim($standfield));
+
+        // لو standfield نص واضح
+        if ($sf !== '') {
+            if (str_contains($sf, 'imei'))   return ['imei', 'IMEI'];
+            if (str_contains($sf, 'serial')) return ['serial', 'Serial'];
+            if (str_contains($sf, 'email'))  return ['email', 'Email'];
+            if (str_contains($sf, 'user'))   return ['text', 'Username'];
+            if (str_contains($sf, 'code'))   return ['text', 'Code'];
+        }
+
+        // fallback: من additional_fields
+        $names = [];
+        foreach ($additional as $f) {
+            $names[] = strtolower(trim((string)($f['fieldname'] ?? $f['name'] ?? '')));
+        }
+
+        if (collect($names)->contains(fn($n) => str_contains($n, 'imei')))   return ['imei', 'IMEI'];
+        if (collect($names)->contains(fn($n) => str_contains($n, 'serial'))) return ['serial', 'Serial'];
+        if (collect($names)->contains(fn($n) => str_contains($n, 'email')))  return ['email', 'Email'];
+
+        // default
+        return ['serial', 'Serial'];
     }
 
     private function serviceGroupType(string $kind): string
