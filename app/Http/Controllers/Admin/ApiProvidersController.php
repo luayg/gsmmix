@@ -19,8 +19,7 @@ use Illuminate\Support\Str;
 class ApiProvidersController extends Controller
 {
     /**
-     * صفحة القائمة الرئيسية (واجهة API Management التي عندك)
-     * IMPORTANT: هذه الدالة يجب أن ترسل $rows للـ view لأن blade يعتمد عليه.
+     * صفحة القائمة الرئيسية
      */
     public function index(Request $request)
     {
@@ -41,31 +40,22 @@ class ApiProvidersController extends Controller
             });
         }
 
-        // ✅ دعم فلتر النوع كما في واجهتك (DHRU / Simple link)
         if ($type !== '') {
             $normalized = $this->normalizeType($type);
-            if ($normalized) {
-                $query->where('type', $normalized);
-            }
+            if ($normalized) $query->where('type', $normalized);
         }
 
-        // ✅ دعم فلتر الحالة كما في واجهتك (Active/Inactive)
         if ($status !== '') {
-            if (strcasecmp($status, 'Active') === 0) {
-                $query->where('active', 1);
-            } elseif (strcasecmp($status, 'Inactive') === 0) {
-                $query->where('active', 0);
-            }
+            if (strcasecmp($status, 'Active') === 0) $query->where('active', 1);
+            elseif (strcasecmp($status, 'Inactive') === 0) $query->where('active', 0);
         }
 
         $rows = $query->paginate($perPage)->withQueryString();
-
         return view('admin.api.providers.index', compact('rows'));
     }
 
     /**
-     * ✅ API options endpoint (يُستخدم في service-modal لاختيار المزودين)
-     * يرجّع JSON بسيط: [{id,name,type,active}, ...]
+     * API options endpoint
      */
     public function options(Request $request)
     {
@@ -75,16 +65,11 @@ class ApiProvidersController extends Controller
             ->select(['id', 'name', 'type', 'active'])
             ->orderBy('name');
 
-        if ($onlyActive) {
-            $q->where('active', 1);
-        }
+        if ($onlyActive) $q->where('active', 1);
 
         return response()->json($q->get()->toArray());
     }
 
-    /**
-     * Create/Edit/View تُستخدم داخل المودال في صفحتك عبر js-api-modal
-     */
     public function create()
     {
         return view('admin.api.providers.create');
@@ -92,15 +77,12 @@ class ApiProvidersController extends Controller
 
     public function view(Request $request, ApiProvider $provider)
     {
-        // نفس المتغير الذي يستخدمه مودال view.blade.php
         $info = [];
 
-        // إذا جاء الطلب من المودال (fetch) رجّع ملف المودال فقط
         if ($request->ajax() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
             return view('admin.api.providers.modals.view', compact('provider', 'info'));
         }
 
-        // لو أحد فتح الرابط مباشرة من المتصفح (اختياري)
         return view('admin.api.providers.view', compact('provider'));
     }
 
@@ -109,14 +91,10 @@ class ApiProvidersController extends Controller
         return view('admin.api.providers.edit', compact('provider'));
     }
 
-    /**
-     * Store/Update
-     */
     public function store(Request $request)
     {
         $data = $this->validateProvider($request);
         $data['url'] = rtrim((string)$data['url'], '/') . '/';
-
         ApiProvider::create($data);
 
         return redirect()->route('admin.apis.index')->with('ok', 'API Provider created.');
@@ -126,7 +104,6 @@ class ApiProvidersController extends Controller
     {
         $data = $this->validateProvider($request, $provider->id);
         $data['url'] = rtrim((string)$data['url'], '/') . '/';
-
         $provider->update($data);
 
         return redirect()->route('admin.apis.index')->with('ok', 'API Provider updated.');
@@ -138,27 +115,15 @@ class ApiProvidersController extends Controller
         return redirect()->route('admin.apis.index')->with('ok', 'API Provider deleted.');
     }
 
-    /**
-     * ✅ زر Sync now
-     */
     public function sync(Request $request, ApiProvider $provider, ProviderManager $manager)
     {
         $result = $manager->sync($provider);
-
         $provider->refresh();
 
         $msg = [];
-
-        if (!empty($result['errors'])) {
-            $msg[] = 'Sync finished with errors: ' . implode(' | ', $result['errors']);
-        } else {
-            $msg[] = 'Sync done.';
-        }
-
-        if (!empty($result['warnings'])) {
-            $msg[] = implode(' | ', $result['warnings']);
-        }
-
+        if (!empty($result['errors'])) $msg[] = 'Sync finished with errors: ' . implode(' | ', $result['errors']);
+        else $msg[] = 'Sync done.';
+        if (!empty($result['warnings'])) $msg[] = implode(' | ', $result['warnings']);
         $msg[] = 'Balance: $' . number_format((float)$provider->balance, 2);
 
         return redirect()->route('admin.apis.index')->with('ok', implode(' ', $msg));
@@ -176,24 +141,20 @@ class ApiProvidersController extends Controller
     }
 
     /**
-     * ✅ Services modals (View)
+     * Services modals
      */
     public function servicesImei(Request $request, ApiProvider $provider)
     {
         $rows = RemoteImeiService::where('api_provider_id', $provider->id)
-            ->orderBy('group_name')
-            ->orderBy('name')
-            ->get();
+            ->orderBy('group_name')->orderBy('name')->get();
 
-        $services = $rows->map(function ($s) {
-            return [
-                'GROUPNAME' => (string)($s->group_name ?? ''),
-                'REMOTEID'  => (string)($s->remote_id ?? ''),
-                'NAME'      => (string)($s->name ?? ''),
-                'CREDIT'    => (float)($s->price ?? 0),
-                'TIME'      => (string)($s->time ?? ''),
-            ];
-        })->values()->all();
+        $services = $rows->map(fn($s) => [
+            'GROUPNAME' => (string)($s->group_name ?? ''),
+            'REMOTEID'  => (string)($s->remote_id ?? ''),
+            'NAME'      => (string)($s->name ?? ''),
+            'CREDIT'    => (float)($s->price ?? 0),
+            'TIME'      => (string)($s->time ?? ''),
+        ])->values()->all();
 
         return view('admin.api.providers.modals.services', [
             'provider' => $provider,
@@ -205,19 +166,15 @@ class ApiProvidersController extends Controller
     public function servicesServer(Request $request, ApiProvider $provider)
     {
         $rows = RemoteServerService::where('api_provider_id', $provider->id)
-            ->orderBy('group_name')
-            ->orderBy('name')
-            ->get();
+            ->orderBy('group_name')->orderBy('name')->get();
 
-        $services = $rows->map(function ($s) {
-            return [
-                'GROUPNAME' => (string)($s->group_name ?? ''),
-                'REMOTEID'  => (string)($s->remote_id ?? ''),
-                'NAME'      => (string)($s->name ?? ''),
-                'CREDIT'    => (float)($s->price ?? 0),
-                'TIME'      => (string)($s->time ?? ''),
-            ];
-        })->values()->all();
+        $services = $rows->map(fn($s) => [
+            'GROUPNAME' => (string)($s->group_name ?? ''),
+            'REMOTEID'  => (string)($s->remote_id ?? ''),
+            'NAME'      => (string)($s->name ?? ''),
+            'CREDIT'    => (float)($s->price ?? 0),
+            'TIME'      => (string)($s->time ?? ''),
+        ])->values()->all();
 
         return view('admin.api.providers.modals.services', [
             'provider' => $provider,
@@ -229,19 +186,15 @@ class ApiProvidersController extends Controller
     public function servicesFile(Request $request, ApiProvider $provider)
     {
         $rows = RemoteFileService::where('api_provider_id', $provider->id)
-            ->orderBy('group_name')
-            ->orderBy('name')
-            ->get();
+            ->orderBy('group_name')->orderBy('name')->get();
 
-        $services = $rows->map(function ($s) {
-            return [
-                'GROUPNAME' => (string)($s->group_name ?? ''),
-                'REMOTEID'  => (string)($s->remote_id ?? ''),
-                'NAME'      => (string)($s->name ?? ''),
-                'CREDIT'    => (float)($s->price ?? 0),
-                'TIME'      => (string)($s->time ?? ''),
-            ];
-        })->values()->all();
+        $services = $rows->map(fn($s) => [
+            'GROUPNAME' => (string)($s->group_name ?? ''),
+            'REMOTEID'  => (string)($s->remote_id ?? ''),
+            'NAME'      => (string)($s->name ?? ''),
+            'CREDIT'    => (float)($s->price ?? 0),
+            'TIME'      => (string)($s->time ?? ''),
+        ])->values()->all();
 
         return view('admin.api.providers.modals.services', [
             'provider' => $provider,
@@ -251,11 +204,10 @@ class ApiProvidersController extends Controller
     }
 
     /**
-     * ✅ IMPORT endpoint
+     * IMPORT endpoint
      */
     public function importServices(Request $request, ApiProvider $provider)
     {
-        // يدعم JSON
         $kind = strtolower((string)$request->input('kind', ''));
         if (!in_array($kind, ['imei', 'server', 'file'], true)) {
             return response()->json(['ok' => false, 'msg' => 'Invalid kind'], 422);
@@ -263,13 +215,10 @@ class ApiProvidersController extends Controller
 
         $applyAll = (bool)$request->boolean('apply_all', false);
 
-        // ✅ أهم إصلاح: نقبل service_ids (والقديم imported لو موجود)
         $ids = $request->input('service_ids', null);
         if ($ids === null) $ids = $request->input('imported', null);
 
-        if (is_string($ids)) {
-            $ids = array_filter(array_map('trim', explode(',', $ids)));
-        }
+        if (is_string($ids)) $ids = array_filter(array_map('trim', explode(',', $ids)));
 
         if (!$applyAll) {
             if (!is_array($ids) || count($ids) === 0) {
@@ -292,10 +241,7 @@ class ApiProvidersController extends Controller
                 'added_remote_ids' => $result['added_remote_ids'],
             ]);
         } catch (\Throwable $e) {
-            return response()->json([
-                'ok' => false,
-                'msg' => $e->getMessage(),
-            ], 500);
+            return response()->json(['ok' => false, 'msg' => $e->getMessage()], 500);
         }
     }
 
@@ -309,6 +255,143 @@ class ApiProvidersController extends Controller
      * Internal helpers
      * =========================
      */
+
+    private function buildMainFieldJson(string $type = 'serial', string $label = 'Serial', string $allowed = 'any', int $min = 1, int $max = 50): string
+    {
+        $cfg = [
+            'type'  => $type,
+            'rules' => [
+                'allowed' => $allowed,
+                'minimum' => (string)$min,
+                'maximum' => (string)$max,
+                'label'   => ['en' => $label, 'fallback' => $label],
+            ],
+        ];
+        return json_encode($cfg, JSON_UNESCAPED_UNICODE);
+    }
+
+    private function mapRemoteFieldType($t): string
+    {
+        $x = strtolower(trim((string)$t));
+        if (in_array($x, ['dropdown', 'select'], true)) return 'select';
+        if (in_array($x, ['textarea', 'text_area'], true)) return 'textarea';
+        if ($x === 'password') return 'password';
+        if ($x === 'email') return 'email';
+        if (in_array($x, ['number', 'numeric', 'int', 'integer'], true)) return 'number';
+        return 'text';
+    }
+
+    private function saveCustomFieldsToTable(string $serviceType, int $serviceId, array $fields): void
+    {
+        // IMPORTANT: مطابق لجدول custom_fields عندك (حسب صورك)
+        // الأعمدة المتوقعة:
+        // service_type, service_id, active, required, maximum, minimum, validation, description,
+        // field_options, field_type, input, name, ordering, created_at, updated_at
+
+        $now = now();
+        $rows = [];
+
+        $ordering = 1;
+        foreach ($fields as $f) {
+            $name = trim((string)($f['name'] ?? ''));
+            $input = trim((string)($f['input'] ?? ''));
+            if ($name === '' || $input === '') continue;
+
+            $fieldType = (string)($f['type'] ?? 'text');
+            $min = (int)($f['minimum'] ?? 0);
+            $max = $f['maximum'];
+            $max = ($max === null || $max === '' ? 0 : (int)$max);
+
+            $validation = (string)($f['validation'] ?? '');
+            $desc = (string)($f['description'] ?? '');
+
+            $options = $f['options'] ?? [];
+            // خزّن الخيارات كنص/JSON حسب الموجود عندك
+            $fieldOptions = is_array($options)
+                ? json_encode($options, JSON_UNESCAPED_UNICODE)
+                : (string)$options;
+
+            $rows[] = [
+                'service_type'  => $serviceType,
+                'service_id'    => $serviceId,
+                'active'        => (int)($f['active'] ?? 1),
+                'required'      => (int)($f['required'] ?? 0),
+                'maximum'       => $max,
+                'minimum'       => $min,
+                'validation'    => $validation ?: null,
+                'description'   => $desc ?: null,
+                'field_options' => $fieldOptions ?: null,
+                'field_type'    => $fieldType,
+                'input'         => $input,
+                'name'          => json_encode(['en' => $name, 'fallback' => $name], JSON_UNESCAPED_UNICODE),
+                'ordering'      => $ordering++,
+                'created_at'    => $now,
+                'updated_at'    => $now,
+            ];
+        }
+
+        if (!empty($rows)) {
+            // امسح القديم ثم اكتب الجديد (لمنع التكرار)
+            DB::table('custom_fields')
+                ->where('service_type', $serviceType)
+                ->where('service_id', $serviceId)
+                ->delete();
+
+            DB::table('custom_fields')->insert($rows);
+        }
+    }
+
+    private function extractRemoteAdditionalFields($r): array
+    {
+        // عندك في الصور remote_server_services فيه additional_fields أو additional_data
+        $raw = $r->additional_fields ?? $r->additional_data ?? null;
+        if ($raw === null) return [];
+
+        if (is_array($raw)) return $raw;
+
+        $rawStr = trim((string)$raw);
+        if ($rawStr === '') return [];
+
+        $decoded = json_decode($rawStr, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    private function normalizeRemoteFieldsToLocal(array $remoteFields): array
+    {
+        $out = [];
+        foreach ($remoteFields as $idx => $rf) {
+            $label = trim((string)($rf['fieldname'] ?? $rf['name'] ?? $rf['label'] ?? ''));
+            if ($label === '') $label = 'Field ' . ($idx + 1);
+
+            $required = strtolower(trim((string)($rf['required'] ?? ''))) === 'on' ? 1 : 0;
+
+            $type = $this->mapRemoteFieldType($rf['fieldtype'] ?? $rf['type'] ?? 'text');
+
+            $optionsRaw = $rf['fieldoptions'] ?? $rf['options'] ?? [];
+            $optionsArr = [];
+            if (is_string($optionsRaw)) {
+                // بعض المزودين يرجع options نص
+                $optionsArr = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n|,/', $optionsRaw))));
+            } elseif (is_array($optionsRaw)) {
+                $optionsArr = $optionsRaw;
+            }
+
+            $out[] = [
+                'active'      => 1,
+                'name'        => $label,
+                'type'        => $type,
+                'input'       => 'service_fields_' . ($idx + 1),
+                'description' => (string)($rf['description'] ?? ''),
+                'minimum'     => 0,
+                'maximum'     => 0,
+                'validation'  => null,
+                'required'    => $required,
+                'options'     => $type === 'select' ? $optionsArr : [],
+            ];
+        }
+        return $out;
+    }
+
     private function doBulkImport(ApiProvider $provider, string $kind, bool $applyAll, array $remoteIds, string $profitMode, float $profitValue): array
     {
         [$remoteModel, $localModel] = match ($kind) {
@@ -337,7 +420,6 @@ class ApiProvidersController extends Controller
                     ->where('supplier_id', $provider->id)
                     ->where('remote_id', $remoteId)
                     ->exists();
-
                 if ($exists) continue;
 
                 $groupName = trim((string)($r->group_name ?? ''));
@@ -369,34 +451,8 @@ class ApiProvidersController extends Controller
                 if ($aliasBase === '') $aliasBase = 'service';
                 $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
 
-                // ✅ اجمع أي additional fields إن كانت موجودة في الريموت
-                $remoteFields = null;
-                foreach (['additional_fields', 'fields', 'required', 'params'] as $k) {
-                    if (isset($r->{$k}) && $r->{$k} !== null && $r->{$k} !== '') {
-                        $remoteFields = $r->{$k};
-                        break;
-                    }
-                }
-                // طبعًا لو جاي JSON string
-                if (is_string($remoteFields)) {
-                    $decoded = json_decode($remoteFields, true);
-                    $remoteFields = is_array($decoded) ? $decoded : null;
-                }
-
-                // ✅ params نخزن فيه custom_fields (حتى تبويب Additional في النظام العام يقرأها من params) :contentReference[oaicite:2]{index=2}
-                $params = [];
-                if (is_array($remoteFields)) {
-                    $params['custom_fields'] = $remoteFields;
-                }
-
-                // ✅ main_field الافتراضي: Serial (أنت مصرّ عليه)
-                $mainField = json_encode([
-                    'type' => 'serial',
-                    'label' => 'Serial',
-                    'allowed_characters' => 'any',
-                    'minimum' => 1,
-                    'maximum' => 50,
-                ], JSON_UNESCAPED_UNICODE);
+                // ✅ هنا أهم فرق: نكتب main_field دائماً (Serial) + نقرأ additional_fields ونحولها لـ custom_fields table
+                $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
 
                 $data = [
                     'alias' => $alias,
@@ -406,21 +462,17 @@ class ApiProvidersController extends Controller
                     'time' => $timeJson,
                     'info' => $infoJson,
 
-                    // ✅ المهم: اكتب main_field + params
-                    'main_field' => $mainField,
-                    'params' => !empty($params) ? json_encode($params, JSON_UNESCAPED_UNICODE) : null,
-
-                    // تسعير
                     'cost' => $cost,
                     'profit' => $profitValue,
                     'profit_type' => $profitType,
 
-                    // API linking
                     'source' => 2,
                     'supplier_id' => $provider->id,
                     'remote_id' => $remoteId,
 
-                    // flags
+                    // ✅ الحقل المهم
+                    'main_field' => $mainField,
+
                     'active' => 1,
                     'allow_bulk' => 0,
                     'allow_duplicates' => 0,
@@ -430,7 +482,15 @@ class ApiProvidersController extends Controller
                     'reply_expiration' => 0,
                 ];
 
-                $localModel::query()->create($data);
+                $created = $localModel::query()->create($data);
+
+                // ✅ أنشئ custom_fields rows إذا كانت موجودة بالريموت
+                $remoteFields = $this->extractRemoteAdditionalFields($r);
+                if (!empty($remoteFields) && $created?->id) {
+                    $localFields = $this->normalizeRemoteFieldsToLocal($remoteFields);
+                    $serviceType = $this->serviceGroupType($kind); // مثلاً server_service
+                    $this->saveCustomFieldsToTable($serviceType, (int)$created->id, $localFields);
+                }
 
                 $added[] = $remoteId;
                 $count++;
