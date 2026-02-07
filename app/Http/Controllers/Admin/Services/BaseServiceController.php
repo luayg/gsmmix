@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin\Services;
 
 use App\Http\Controllers\Controller;
-use App\Models\CustomField;
 use App\Models\ServiceGroupPrice;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -27,7 +26,7 @@ abstract class BaseServiceController extends Controller
             $term = trim((string)$r->q);
             $q->where(function ($qq) use ($term) {
                 $qq->where('alias', 'like', "%$term%")
-                    ->orWhere('name', 'like', "%$term%");
+                   ->orWhere('name', 'like', "%$term%");
             });
         }
 
@@ -80,7 +79,6 @@ abstract class BaseServiceController extends Controller
 
     /**
      * ✅ Normalize custom fields from JSON coming from Additional tab
-     * يرجّع Array جاهز للحفظ في params + (والمهم) للحفظ في جدول custom_fields
      */
     protected function normalizeCustomFields($customFieldsRaw, ?string $customFieldsJson): array
     {
@@ -106,19 +104,14 @@ abstract class BaseServiceController extends Controller
         foreach ($customFields as $f) {
             if (!is_array($f)) continue;
 
-            // مخرجاتك من _modal_create.blade.php تستخدم keys: input/type/minimum/maximum/options...
             $inputName = (string)($f['input_name'] ?? $f['input'] ?? '');
             $fieldType = (string)($f['field_type'] ?? $f['type'] ?? 'text');
 
             $min = $f['min'] ?? $f['minimum'] ?? 0;
             $max = $f['max'] ?? $f['maximum'] ?? 0;
 
-            // options أحيانًا array (select)
             $options = $f['field_options'] ?? $f['options'] ?? '';
-            if (is_array($options)) {
-                // نخزنها في DB كسطور (مثل الداتا السليمة غالبًا)
-                $options = implode("\n", array_values(array_filter(array_map('strval', $options))));
-            }
+            if (is_array($options)) $options = implode(',', $options);
             $options = (string)$options;
 
             $out[] = [
@@ -129,7 +122,7 @@ abstract class BaseServiceController extends Controller
                 'description' => (string)($f['description'] ?? ''),
                 'min'         => (int)$min,
                 'max'         => (int)$max,
-                'validation'  => (string)($f['validation'] ?? ''),
+                'validation'  => (string)($f['validation'] ?? 'none'),
                 'required'    => !empty($f['required']) ? 1 : 0,
                 'options'     => $options,
             ];
@@ -139,59 +132,59 @@ abstract class BaseServiceController extends Controller
     }
 
     /**
-     * ✅ يحفظ custom fields داخل جدول custom_fields (نفس أسلوب الداتا “الصح” عندك)
+     * ✅ THIS IS THE IMPORTANT PART:
+     * Save custom fields into DB table: custom_fields
      */
-    protected function persistCustomFieldsToTable(int $serviceId, array $fields): void
+    protected function saveCustomFieldsToTable(int $serviceId, string $serviceType, array $fields): void
     {
-        if (!class_exists(CustomField::class)) return;
+        // لو ما فيه جدول custom_fields لا تكسر النظام
+        try {
+            DB::table('custom_fields')->limit(1)->get();
+        } catch (\Throwable $e) {
+            return;
+        }
 
-        // امسح القديم (احتياطًا لو عملت create مرتين / أو لاحقًا تستخدمها في update)
-        CustomField::query()
+        // امسح القديم ثم أضف الجديد
+        DB::table('custom_fields')
+            ->where('service_type', $serviceType . '_service')
             ->where('service_id', $serviceId)
-            ->where('service_type', $this->viewPrefix . '_service')
             ->delete();
 
-        $ordering = 1;
+        $now = now();
 
-        foreach ($fields as $f) {
+        foreach ($fields as $i => $f) {
             $name = trim((string)($f['name'] ?? ''));
-            $input = trim((string)($f['input_name'] ?? ''));
-
-            if ($name === '' && $input === '') continue;
-
-            // name في الداتا “الصح” غالبًا JSON {en,fallback}
-            $nameJson = json_encode([
-                'en' => ($name !== '' ? $name : $input),
-                'fallback' => ($name !== '' ? $name : $input),
-            ], JSON_UNESCAPED_UNICODE);
+            if ($name === '') continue;
 
             $desc = trim((string)($f['description'] ?? ''));
-            $descJson = json_encode([
-                'en' => $desc,
-                'fallback' => $desc,
-            ], JSON_UNESCAPED_UNICODE);
+            $opts = trim((string)($f['options'] ?? ''));
 
-            CustomField::query()->create([
-                'service_id' => $serviceId,
-                'service_type' => $this->viewPrefix . '_service',
-                'ordering' => $ordering++,
-                'active' => (int)($f['active'] ?? 1),
-                'required' => (int)($f['required'] ?? 0),
-                'maximum' => (int)($f['max'] ?? 0),
-                'minimum' => (int)($f['min'] ?? 0),
-                'validation' => (string)($f['validation'] ?? ''),
-                'description' => $descJson,
-                'field_options' => (string)($f['options'] ?? ''),
-                'field_type' => (string)($f['field_type'] ?? 'text'),
-                'input' => $input !== '' ? $input : ('service_fields_' . ($ordering - 1)),
-                'name' => $nameJson,
+            DB::table('custom_fields')->insert([
+                'service_type'   => $serviceType . '_service', // مثال: server_service
+                'service_id'     => $serviceId,
+
+                // أغلب قواعد GSM تستخدم JSON للترجمة
+                'name'           => json_encode(['en' => $name, 'fallback' => $name], JSON_UNESCAPED_UNICODE),
+                'input'          => (string)($f['input_name'] ?? ''),
+                'field_type'     => (string)($f['field_type'] ?? 'text'),
+                'field_options'  => json_encode(['en' => $opts, 'fallback' => $opts], JSON_UNESCAPED_UNICODE),
+                'description'    => json_encode(['en' => $desc, 'fallback' => $desc], JSON_UNESCAPED_UNICODE),
+
+                'validation'     => (string)($f['validation'] ?? ''),
+                'minimum'        => (int)($f['min'] ?? 0),
+                'maximum'        => (int)($f['max'] ?? 0),
+                'required'       => (int)($f['required'] ?? 0),
+                'active'         => (int)($f['active'] ?? 1),
+                'ordering'       => (int)($i + 1),
+
+                'created_at'     => $now,
+                'updated_at'     => $now,
             ]);
         }
     }
 
     public function store(Request $request)
     {
-        // تنظيف undefined
         foreach (['remote_id', 'supplier_id', 'api_provider_id', 'api_service_remote_id'] as $k) {
             $v = $request->input($k);
             if ($v === 'undefined' || $v === '') $request->merge([$k => null]);
@@ -261,15 +254,20 @@ abstract class BaseServiceController extends Controller
         }
         $v['alias'] = $alias;
 
-        // ✅ main_field (شكل صحيح)
+        // ✅ main_field
         $mainType = strtolower(trim((string)($v['main_field_type'] ?? 'serial')));
-        $minVal = $v['min'] ?? $v['minimum'] ?? null;
-        $maxVal = $v['max'] ?? $v['maximum'] ?? null;
 
-        $labelTxt = (string)($v['main_field_label'] ?? '');
-        if ($labelTxt === '') {
-            // لو ما انرسل label، خليه نفس النوع (Serial…)
-            $labelTxt = ucfirst($mainType);
+        // خليها أرقام صريحة (مش null أو string غريب)
+        $minVal = $v['min'] ?? $v['minimum'] ?? 0;
+        $maxVal = $v['max'] ?? $v['maximum'] ?? 0;
+
+        $minVal = is_null($minVal) ? 0 : (int)$minVal;
+        $maxVal = is_null($maxVal) ? 0 : (int)$maxVal;
+
+        $labelVal = trim((string)($v['main_field_label'] ?? ''));
+        if ($labelVal === '') {
+            // لو ما انرسل Label خليه نفس نوع المين فيلد
+            $labelVal = strtoupper($mainType);
         }
 
         $name = ['en' => $v['name'], 'fallback' => $v['name']];
@@ -284,18 +282,18 @@ abstract class BaseServiceController extends Controller
                 'maximum' => $maxVal,
             ],
             'label' => [
-                'en' => $labelTxt,
-                'fallback' => $labelTxt,
+                'en' => $labelVal,
+                'fallback' => $labelVal,
             ],
         ];
 
-        // ✅ custom fields
+        // ✅ custom fields: من json القادم من الـ Additional tab
         $customFields = $this->normalizeCustomFields(
             $request->input('custom_fields'),
             $request->input('custom_fields_json')
         );
 
-        // ✅ params كـ JSON + (الأهم) سيُكتب أيضًا في جدول custom_fields
+        // ✅ params: احتفظنا بها (لكن الحفظ الحقيقي صار في جدول custom_fields)
         $params = [
             'custom_fields' => $customFields,
         ];
@@ -321,11 +319,7 @@ abstract class BaseServiceController extends Controller
                 'name'       => json_encode($name, JSON_UNESCAPED_UNICODE),
                 'time'       => json_encode($time, JSON_UNESCAPED_UNICODE),
                 'info'       => json_encode($info, JSON_UNESCAPED_UNICODE),
-
-                // ✅ هذا هو الـ main field الحقيقي في السيرفر_services
                 'main_field' => json_encode($main, JSON_UNESCAPED_UNICODE),
-
-                // ✅ params فيها custom_fields (لكن أيضًا سنكتبهم في جدول custom_fields)
                 'params'     => json_encode($params, JSON_UNESCAPED_UNICODE),
 
                 'cost'        => $v['cost'] ?? 0,
@@ -354,8 +348,8 @@ abstract class BaseServiceController extends Controller
             // ✅ group pricing
             $this->saveGroupPrices((int)$service->id, $v['group_prices'] ?? []);
 
-            // ✅ أهم سطر: احفظ custom fields داخل جدول custom_fields
-            $this->persistCustomFieldsToTable((int)$service->id, $customFields);
+            // ✅ ✅ ✅ الحفظ الصحيح لجدول custom_fields
+            $this->saveCustomFieldsToTable((int)$service->id, $this->viewPrefix, $customFields);
 
             if ($request->expectsJson() || $request->ajax()) {
                 return response()->json([
