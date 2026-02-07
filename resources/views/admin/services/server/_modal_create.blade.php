@@ -424,10 +424,7 @@
   // ========= add field button =========
   btnAdd?.addEventListener('click', () => addField(form));
 
-  // create 1 empty field by default (optional)
-  if (fieldsWrap && fieldsWrap.querySelectorAll('[data-field]').length === 0) {
-    addField(form);
-  }
+  
 
   // ============== ✅ HOOKS used by service-modal.blade.php ===============
   window.__serverServiceApplyRemoteFields__ = function(scope, additionalFields){
