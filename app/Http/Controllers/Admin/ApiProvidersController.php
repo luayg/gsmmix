@@ -253,8 +253,7 @@ class ApiProvidersController extends Controller
     /**
      * ✅ IMPORT endpoint (يخدم:
      * - صفحات Import Services with Group (imei/server/file)
-     *   يرسل: kind, service_ids, profit_mode, profit_value :contentReference[oaicite:1]{index=1}
-     * - وكذلك import wizard في مودال المزودين (يدعم pricing_mode/pricing_value أيضاً)
+     * - وكذلك import wizard في مودال المزودين
      */
     public function importServices(Request $request, ApiProvider $provider)
     {
@@ -276,7 +275,6 @@ class ApiProvidersController extends Controller
 
         if (!$applyAll) {
             if (!is_array($ids) || count($ids) === 0) {
-                // بدل "Imported field is required" نرجّع رسالة واضحة
                 return response()->json(['ok' => false, 'msg' => 'service_ids is required'], 422);
             }
         }
@@ -316,6 +314,125 @@ class ApiProvidersController extends Controller
      * Internal helpers
      * =========================
      */
+
+    /**
+     * ✅ Decode JSON fields that might be stored as text/longtext
+     */
+    private function decodeJsonMaybe($value): array
+    {
+        if (is_array($value)) return $value;
+        if (!is_string($value)) return [];
+        $value = trim($value);
+        if ($value === '' || $value === 'null') return [];
+        $decoded = json_decode($value, true);
+        return is_array($decoded) ? $decoded : [];
+    }
+
+    /**
+     * ✅ تحويل additional_fields (remote) إلى custom_fields (local params)
+     */
+    private function mapAdditionalFieldsToCustomFields(array $additionalFields): array
+    {
+        $out = [];
+
+        foreach (array_values($additionalFields) as $idx => $f) {
+            if (!is_array($f)) continue;
+
+            $label = trim((string)($f['fieldname'] ?? $f['name'] ?? ''));
+            if ($label === '') $label = 'Field ' . ($idx + 1);
+
+            $ft = strtolower(trim((string)($f['fieldtype'] ?? $f['type'] ?? 'text')));
+
+            // type mapping
+            $type = 'text';
+            if (in_array($ft, ['dropdown', 'select'], true)) $type = 'select';
+            elseif (in_array($ft, ['textarea', 'text_area'], true)) $type = 'textarea';
+            elseif ($ft === 'password') $type = 'password';
+            elseif ($ft === 'email') $type = 'email';
+            elseif (in_array($ft, ['number', 'numeric', 'int', 'integer'], true)) $type = 'number';
+
+            // required
+            $reqRaw = strtolower(trim((string)($f['required'] ?? '')));
+            $required = ($reqRaw === 'on' || $reqRaw === '1' || $reqRaw === 'true') ? 1 : 0;
+
+            // options
+            $opts = $f['fieldoptions'] ?? $f['options'] ?? '';
+            if (is_array($opts)) {
+                $opts = implode("\n", array_map('strval', $opts));
+            } else {
+                $opts = (string)$opts;
+            }
+
+            // validation guess from label
+            $validation = '';
+            $ln = strtolower($label);
+            if (str_contains($ln, 'imei')) $validation = 'imei';
+            elseif (str_contains($ln, 'serial')) $validation = 'serial';
+            elseif (str_contains($ln, 'email')) $validation = 'email';
+
+            $out[] = [
+                'active'      => 1,
+                'name'        => $label,
+                'type'        => $type,
+                'input'       => 'service_fields_' . ($idx + 1),
+                'description' => trim((string)($f['description'] ?? '')),
+                'minimum'     => 0,
+                'maximum'     => null,
+                'validation'  => $validation,
+                'required'    => $required,
+                'options'     => $type === 'select' ? $opts : [],
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * ✅ استنتاج الحقل الرئيسي (standfield عملياً) من additional_fields
+     */
+    private function buildMainFieldFromAdditionalFields(array $additionalFields): array
+    {
+        // defaults
+        $type = 'serial';
+        $label = 'Serial';
+
+        if (!empty($additionalFields)) {
+            $names = [];
+            foreach ($additionalFields as $f) {
+                if (!is_array($f)) continue;
+                $names[] = strtolower(trim((string)($f['fieldname'] ?? $f['name'] ?? '')));
+            }
+
+            $hasImei = collect($names)->first(fn($n) => str_contains($n, 'imei')) !== null;
+            $hasSerial = collect($names)->first(fn($n) => str_contains($n, 'serial')) !== null;
+            $hasEmail = collect($names)->first(fn($n) => str_contains($n, 'email')) !== null;
+
+            if ($hasImei) { $type = 'imei'; $label = 'IMEI'; }
+            elseif ($hasSerial) { $type = 'serial'; $label = 'Serial'; }
+            elseif ($hasEmail && count($names) === 1) { $type = 'email'; $label = 'Email'; }
+            else {
+                // لو أول fieldname واضح خليه Label للحقل الرئيسي
+                $first = $additionalFields[0] ?? null;
+                if (is_array($first)) {
+                    $lab = trim((string)($first['fieldname'] ?? $first['name'] ?? ''));
+                    if ($lab !== '') {
+                        $type = 'custom';
+                        $label = $lab;
+                    }
+                }
+            }
+        }
+
+        // نفس الحقول التي في Create service form
+        return [
+            'type' => $type,
+            'label' => $label,
+            'allowed_characters' => 'any',
+            'minimum' => 1,
+            'maximum' => 50,
+        ];
+    }
+
     private function doBulkImport(ApiProvider $provider, string $kind, bool $applyAll, array $remoteIds, string $profitMode, float $profitValue): array
     {
         [$remoteModel, $localModel] = match ($kind) {
@@ -376,12 +493,35 @@ class ApiProvidersController extends Controller
                 $infoJson = json_encode(['en' => $infoText, 'fallback' => $infoText], JSON_UNESCAPED_UNICODE);
 
                 $cost = (float)($r->price ?? 0);
-
                 $profitType = ($profitMode === 'percent') ? 2 : 1;
 
                 $aliasBase = Str::slug(Str::limit($nameText, 160, ''), '-');
                 if ($aliasBase === '') $aliasBase = 'service';
                 $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
+
+                // ==========================================================
+                // ✅ NEW: اسحب additional_fields/params (خصوصاً للـ server)
+                // ==========================================================
+                $paramsArr = $this->decodeJsonMaybe($r->params ?? null);
+
+                $additionalFieldsArr = $this->decodeJsonMaybe($r->additional_fields ?? null);
+
+                // لو بعض المزودين يخزنون الحقول داخل additional_data
+                if (empty($additionalFieldsArr)) {
+                    $maybe = $this->decodeJsonMaybe($r->additional_data ?? null);
+                    if (!empty($maybe)) $additionalFieldsArr = $maybe;
+                }
+
+                // custom_fields + main_field (standfield عملياً)
+                $customFields = [];
+                $mainField = null;
+
+                if ($kind === 'server' && !empty($additionalFieldsArr)) {
+                    $customFields = $this->mapAdditionalFieldsToCustomFields($additionalFieldsArr);
+                    $paramsArr['custom_fields'] = $customFields;
+
+                    $mainField = $this->buildMainFieldFromAdditionalFields($additionalFieldsArr);
+                }
 
                 $data = [
                     'alias' => $alias,
@@ -401,7 +541,16 @@ class ApiProvidersController extends Controller
                     'supplier_id' => $provider->id,
                     'remote_id' => $remoteId,
 
-                    // flags
+                    // ✅ NEW: خزّن params/main_field عند الاستيراد
+                    'params' => !empty($paramsArr) ? json_encode($paramsArr, JSON_UNESCAPED_UNICODE) : null,
+                ];
+
+                if ($mainField !== null) {
+                    $data['main_field'] = json_encode($mainField, JSON_UNESCAPED_UNICODE);
+                }
+
+                // flags
+                $data += [
                     'active' => 1,
                     'allow_bulk' => 0,
                     'allow_duplicates' => 0,
