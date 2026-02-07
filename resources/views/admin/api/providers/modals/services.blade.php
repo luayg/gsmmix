@@ -81,21 +81,26 @@
               @if($isAdded)
                 <button type="button" class="btn btn-secondary btn-sm" disabled>Added ✅</button>
               @else
-                <button type="button"
-                        class="btn btn-success btn-sm clone-btn"
-                        data-create-service
-                        data-service-type="{{ $kind }}"
-                        data-provider-id="{{ $provider->id }}"
-                        data-provider-name="{{ $provider->name }}"
-                        data-remote-id="{{ $rid }}"
-                        data-group-name="{{ e($group) }}"
-                        data-name="{{ e($name) }}"
-                        data-credit="{{ number_format($credit, 4, '.', '') }}"
-                        data-time="{{ e($time) }}"
-                        data-additional-fields="{{ e($afJson) }}"
->
-                  Clone
-                </button>
+                @php
+  $af = $s['ADDITIONAL_FIELDS'] ?? $s['additional_fields'] ?? null;
+  $afJson = is_array($af) ? json_encode($af, JSON_UNESCAPED_UNICODE) : (string)$af;
+@endphp
+
+<button type="button"
+        class="btn btn-success btn-sm clone-btn"
+        data-create-service
+        data-service-type="{{ $kind }}"
+        data-provider-id="{{ $provider->id }}"
+        data-provider-name="{{ $provider->name }}"
+        data-remote-id="{{ $rid }}"
+        data-group-name="{{ e($group) }}"
+        data-name="{{ e($name) }}"
+        data-credit="{{ number_format($credit, 4, '.', '') }}"
+        data-time="{{ e($time) }}"
+        data-additional-fields="{{ e($afJson) }}">
+  Clone
+</button>
+
               @endif
             </td>
           </tr>

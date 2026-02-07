@@ -3,34 +3,22 @@
 namespace App\Http\Controllers\Admin\Services;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-
-// Models
+use App\Models\RemoteFileService;
 use App\Models\RemoteImeiService;
 use App\Models\RemoteServerService;
-use App\Models\RemoteFileService;
+use Illuminate\Http\Request;
 
 class CloneController extends Controller
 {
-    public function modal()
-    {
-        return view('admin.api.clone.modal');
-    }
-
     /**
-     * Return provider services (for service-modal API dropdown)
-     * IMPORTANT:
-     * - server/file tables عادة السعر يكون في price وليس credit
-     * - لازم نرجّع additional_fields كـ Array (decoded) لكي الواجهة تبني Custom fields
+     * API: إرجاع خدمات مزوّد محدد (لملء القائمة الثانية)
+     * GET /admin/service-management/clone/provider-services?provider_id=1&type=imei&q=...
      */
     public function providerServices(Request $request)
     {
         $providerId = (int) $request->get('provider_id');
-        $type       = strtolower((string) $request->get('type', 'imei'));
-
-        if (!$providerId) {
-            return response()->json([]);
-        }
+        $type       = strtolower($request->get('type', 'imei'));
+        $q          = trim((string) $request->get('q', ''));
 
         $model = match ($type) {
             'server' => RemoteServerService::class,
@@ -38,38 +26,63 @@ class CloneController extends Controller
             default  => RemoteImeiService::class,
         };
 
-        // ملاحظة: بعض الجداول تحتوي credit (imei)، وبعضها price (server/file)
-        $rows = $model::query()
-            ->where('supplier_id', $providerId)
+        $query = $model::query()
+            ->where('api_provider_id', $providerId)
+            ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
             ->orderBy('name')
-            ->get()
-            ->map(function ($s) {
-                // حاول تقرأ السعر من credit أو price
-                $credit = null;
-                if (isset($s->credit)) $credit = $s->credit;
-                if ($credit === null && isset($s->price)) $credit = $s->price;
+            ->limit(500);
 
-                // additional_fields لازم يكون Array
-                $af = [];
-                try {
-                    if (isset($s->additional_fields)) {
-                        if (is_array($s->additional_fields)) $af = $s->additional_fields;
-                        else $af = json_decode((string)$s->additional_fields, true) ?: [];
-                    }
-                } catch (\Throwable $e) {
-                    $af = [];
-                }
+        // ✅ اختَر أعمدة موجودة فعلاً بكل جدول
+        if ($type === 'imei') {
+            $rows = $query->get([
+                'remote_id',
+                'name',
+                'credit',
+                'price',
+                'time',
+                'info',
+                'additional_fields',
+            ]);
+        } else {
+            // server / file (لا يوجد credit)
+            $rows = $query->get([
+                'remote_id',
+                'name',
+                'price',
+                'time',
+                'info',
+                'additional_fields',
+            ]);
+        }
 
-                return [
-                    'remote_id'        => (string) ($s->remote_id ?? ''),
-                    'name'             => (string) ($s->name ?? ''),
-                    'time'             => (string) ($s->time ?? ''),
-                    'credit'           => (float) ($credit ?? 0),
-                    'additional_fields'=> $af,
-                ];
-            })
-            ->values();
+        // ✅ طبّع الإخراج لشكل واحد ثابت للـ JS
+        $out = $rows->map(function ($r) use ($type) {
+            $credit = 0.0;
 
-        return response()->json($rows);
+            if ($type === 'imei') {
+                $credit = (float) ($r->credit ?? $r->price ?? 0);
+            } else {
+                $credit = (float) ($r->price ?? 0);
+            }
+
+            // additional_fields أحياناً تكون JSON string
+            $af = $r->additional_fields ?? null;
+            if (is_string($af) && $af !== '') {
+                $decoded = json_decode($af, true);
+                $af = (json_last_error() === JSON_ERROR_NONE) ? $decoded : null;
+            }
+
+            return [
+                'remote_id' => (string) $r->remote_id,
+                'id'        => (string) $r->remote_id,
+                'name'      => (string) ($r->name ?? ''),
+                'credit'    => $credit,
+                'time'      => (string) ($r->time ?? ''),
+                'info'      => (string) ($r->info ?? ''),
+                'additional_fields' => is_array($af) ? $af : [],
+            ];
+        })->values();
+
+        return response()->json($out);
     }
 }

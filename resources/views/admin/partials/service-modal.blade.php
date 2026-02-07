@@ -519,6 +519,32 @@
     const providerId = btn.dataset.providerId;
     const remoteId   = btn.dataset.remoteId;
 
+        // ==========================================================
+    // ✅ NEW: لو زر Clone يحمل additional_fields طبّقها فوراً
+    // ==========================================================
+    const afFromBtn = parseJsonAttr(
+      btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || ''
+    );
+
+    if (Array.isArray(afFromBtn) && afFromBtn.length) {
+      // 1) fill custom fields UI
+      if (typeof window.__serverServiceApplyRemoteFields__ === 'function') {
+        window.__serverServiceApplyRemoteFields__(body, afFromBtn);
+      }
+
+      // 2) set main field type/label
+      const mf = guessMainFieldFromRemoteFields(afFromBtn);
+      if (typeof window.__serverServiceSetMainField__ === 'function') {
+        window.__serverServiceSetMainField__(body, mf.type, mf.label);
+      }
+
+      // افتح Additional تلقائيًا
+      const btnAdditional = document.querySelector('#serviceModal .tab-btn[data-tab="additional"]');
+      btnAdditional?.click();
+    }
+
+
+
     const isClone = (providerId !== undefined && providerId !== '' && providerId !== 'undefined'
                   && remoteId   !== undefined && remoteId   !== '' && remoteId   !== 'undefined');
 
