@@ -6,6 +6,15 @@
       method="POST"
       data-ajax="1">
   @csrf
+    {{-- ✅ MAIN FIELD JSON (will be stored in server_services.main_field) --}}
+  <input type="hidden" name="main_field" id="mainFieldHidden" value="">
+
+  {{-- ✅ PARAMS JSON (store custom_fields here too) --}}
+  <input type="hidden" name="params" id="paramsHidden" value="{}">
+
+
+
+
 
   {{-- ✅ Required by backend validation --}}
   <input type="hidden" name="name_en" id="nameEnHidden" value="">
@@ -475,6 +484,85 @@
       console.warn('setMainField failed', e);
     }
   };
+
+    function buildMainFieldJson(){
+    const type  = form.querySelector('#mainFieldType')?.value || 'serial';
+    const label = form.querySelector('#mainFieldLabel')?.value || 'Serial';
+    const allowed = form.querySelector('#allowedChars')?.value || 'any';
+    const min = Number(form.querySelector('#minChars')?.value || 0);
+    const max = Number(form.querySelector('#maxChars')?.value || 0);
+
+    // الصيغة المقترحة (ثابتة وواضحة)
+    return {
+      type,
+      label,
+      allowed_characters: allowed,
+      minimum: Number.isFinite(min) ? min : 0,
+      maximum: Number.isFinite(max) ? max : 0,
+    };
+  }
+
+  function syncMainFieldHidden(){
+    const hidden = form.querySelector('#mainFieldHidden');
+    if (!hidden) return;
+    hidden.value = JSON.stringify(buildMainFieldJson());
+  }
+
+  function syncParamsHidden(){
+    const paramsHidden = form.querySelector('#paramsHidden');
+    if (!paramsHidden) return;
+
+    let params = {};
+    try { params = JSON.parse(paramsHidden.value || '{}') || {}; } catch(e){ params = {}; }
+
+    // خذ custom_fields_json من الهيدن الموجودة
+    let custom = [];
+    try { custom = JSON.parse(outJson?.value || '[]') || []; } catch(e){ custom = []; }
+
+    // خزّنها داخل params.custom_fields (هذا ما يستخدمه تبويب Additional في النظام العام) :contentReference[oaicite:1]{index=1}
+    params.custom_fields = Array.isArray(custom) ? custom : [];
+
+    paramsHidden.value = JSON.stringify(params);
+  }
+
+  // اربط أي تغيير على main field inputs
+  ['#mainFieldType','#mainFieldLabel','#allowedChars','#minChars','#maxChars'].forEach(sel=>{
+    form.querySelector(sel)?.addEventListener('input', ()=>{ syncMainFieldHidden(); });
+    form.querySelector(sel)?.addEventListener('change', ()=>{ syncMainFieldHidden(); });
+  });
+
+  // عند أي تعديل على الكستوم فيلدز: حدّث params أيضًا
+  function serializeFieldsInScope(scope){
+    const wrap = scope.querySelector('#fieldsWrap');
+    const out  = scope.querySelector('#customFieldsJson');
+    if (!wrap || !out) return;
+
+    const data = [];
+    wrap.querySelectorAll('[data-field]').forEach(card => {
+      const type = card.querySelector('[data-type]')?.value || 'text';
+      const options = (card.querySelector('[data-options]')?.value || '').trim();
+
+      data.push({
+        active: card.querySelector('[data-active]')?.checked ? 1 : 0,
+        name: card.querySelector('[data-name]')?.value || '',
+        type,
+        input: card.querySelector('[data-input]')?.value || '',
+        description: card.querySelector('[data-desc]')?.value || '',
+        minimum: Number(card.querySelector('[data-min]')?.value || 0),
+        maximum: Number(card.querySelector('[data-max]')?.value || 0),
+        validation: card.querySelector('[data-validation]')?.value || '',
+        required: Number(card.querySelector('[data-required]')?.value || 0),
+        options,
+      });
+    });
+
+    out.value = JSON.stringify(data);
+
+    // ✅ مهم جدًا: خزّن داخل params أيضًا
+    syncParamsHidden();
+  }
+
+
 
   // initial serialize
   serializeFieldsInScope(form);

@@ -309,120 +309,6 @@ class ApiProvidersController extends Controller
      * Internal helpers
      * =========================
      */
-
-    /**
-     * ✅ decode helper (string JSON أو array)
-     */
-    private function decodeJsonMaybe($val): array
-    {
-        if (is_array($val)) return $val;
-        if (is_string($val) && trim($val) !== '') {
-            $decoded = json_decode($val, true);
-            return is_array($decoded) ? $decoded : [];
-        }
-        return [];
-    }
-
-    /**
-     * ✅ تحويل remote additional_fields إلى صيغة params.custom_fields
-     * (نفس منطق ServerServiceController::mapAdditionalFieldsToCustomFields) :contentReference[oaicite:4]{index=4}
-     */
-    private function mapAdditionalFieldsToCustomFields(array $additionalFields): array
-    {
-        $out = [];
-        $i = 1;
-
-        foreach ($additionalFields as $f) {
-            if (!is_array($f)) continue;
-
-            $name = trim((string)($f['fieldname'] ?? $f['name'] ?? ''));
-            if ($name === '') $name = 'Field ' . $i;
-
-            $type = strtolower(trim((string)($f['fieldtype'] ?? $f['type'] ?? 'text')));
-            if (in_array($type, ['textbox','string'], true)) $type = 'text';
-            if (in_array($type, ['textarea','text_area'], true)) $type = 'textarea';
-            if (in_array($type, ['dropdown','select'], true)) $type = 'select';
-            if (in_array($type, ['email'], true)) $type = 'email';
-            if (in_array($type, ['number','numeric','int','integer'], true)) $type = 'number';
-
-            $required = strtolower((string)($f['required'] ?? '')) === 'on' ? 1 : 0;
-
-            $out[] = [
-                'active'      => 1,
-                'name'        => $name,
-                'input'       => 'service_fields_' . $i,
-                'description' => (string)($f['description'] ?? ''),
-                'minimum'     => (int)($f['minimum'] ?? 0),
-                'maximum'     => (int)($f['maximum'] ?? 0),
-                'validation'  => (string)($f['regexpr'] ?? $f['validation'] ?? ''),
-                'required'    => $required,
-                'type'        => $type,
-                'options'     => (string)($f['fieldoptions'] ?? $f['options'] ?? ''),
-            ];
-
-            $i++;
-        }
-
-        return $out;
-    }
-
-    /**
-     * ✅ تخمين main_field.type + label من additional_fields
-     * (نفس فكرة guess في الواجهة)
-     */
-    private function guessMainFieldFromAdditionalFields(array $additionalFields, string $kind): array
-    {
-        // defaults حسب نوع الخدمة
-        $default = match ($kind) {
-            'imei'   => ['type' => 'imei',   'label' => 'IMEI'],
-            'server' => ['type' => 'serial', 'label' => 'Serial'],
-            'file'   => ['type' => 'text',   'label' => 'Text'],
-            default  => ['type' => 'serial', 'label' => 'Serial'],
-        };
-
-        if (count($additionalFields) < 1) return $default;
-
-        $names = [];
-        foreach ($additionalFields as $f) {
-            if (!is_array($f)) continue;
-            $n = strtolower(trim((string)($f['fieldname'] ?? $f['name'] ?? '')));
-            if ($n !== '') $names[] = $n;
-        }
-        if (empty($names)) return $default;
-
-        $hasImei   = (bool)collect($names)->first(fn($n) => str_contains($n, 'imei'));
-        $hasSerial = (bool)collect($names)->first(fn($n) => str_contains($n, 'serial'));
-        $hasEmail  = (bool)collect($names)->first(fn($n) => str_contains($n, 'email'));
-
-        if ($hasImei)   return ['type' => 'imei',   'label' => 'IMEI'];
-        if ($hasSerial) return ['type' => 'serial', 'label' => 'Serial'];
-        if ($hasEmail && count($names) === 1) return ['type' => 'email', 'label' => 'Email'];
-
-        // fallback: أول حقل
-        $first = $additionalFields[0] ?? [];
-        $lab = trim((string)($first['fieldname'] ?? $first['name'] ?? 'Text'));
-        return ['type' => 'text', 'label' => ($lab !== '' ? $lab : $default['label'])];
-    }
-
-    /**
-     * ✅ بناء main_field بنفس شكل مشروعك (مثل ImeiServiceController) :contentReference[oaicite:5]{index=5}
-     */
-    private function buildMainField(string $type, string $label): array
-    {
-        return [
-            'type'  => $type,
-            'rules' => [
-                'allowed' => 'any',
-                'minimum' => 1,
-                'maximum' => 50,
-            ],
-            'label' => [
-                'en' => $label,
-                'fallback' => $label,
-            ],
-        ];
-    }
-
     private function doBulkImport(ApiProvider $provider, string $kind, bool $applyAll, array $remoteIds, string $profitMode, float $profitValue): array
     {
         [$remoteModel, $localModel] = match ($kind) {
@@ -447,20 +333,16 @@ class ApiProvidersController extends Controller
                 $remoteId = (string)($r->remote_id ?? '');
                 if ($remoteId === '') continue;
 
-                // ✅ منع التكرار الحقيقي
                 $exists = $localModel::query()
                     ->where('supplier_id', $provider->id)
                     ->where('remote_id', $remoteId)
                     ->exists();
 
-                if ($exists) {
-                    continue;
-                }
+                if ($exists) continue;
 
                 $groupName = trim((string)($r->group_name ?? ''));
                 $groupId = null;
 
-                // ✅ أنشئ group تلقائيًا لو موجود اسم مجموعة
                 if ($groupName !== '') {
                     $groupType = $this->serviceGroupType($kind);
                     $group = ServiceGroup::firstOrCreate(
@@ -471,9 +353,7 @@ class ApiProvidersController extends Controller
                 }
 
                 $nameText = trim(strip_tags((string)($r->name ?? '')));
-                if ($nameText === '') {
-                    $nameText = "{$kind}-{$provider->id}-{$remoteId}";
-                }
+                if ($nameText === '') $nameText = "{$kind}-{$provider->id}-{$remoteId}";
 
                 $timeText = trim(strip_tags((string)($r->time ?? '')));
                 $infoText = trim(strip_tags((string)($r->info ?? '')));
@@ -489,38 +369,34 @@ class ApiProvidersController extends Controller
                 if ($aliasBase === '') $aliasBase = 'service';
                 $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
 
-                /**
-                 * ✅ NEW: Sync additional_fields -> params.custom_fields
-                 * المشروع يعرضها من params decoded meta :contentReference[oaicite:6]{index=6}
-                 */
-                $additionalRaw = $r->additional_fields ?? ($r->fields ?? null);
-                $additional = $this->decodeJsonMaybe($additionalRaw);
-
-                $customFields = [];
-                if (!empty($additional)) {
-                    $customFields = $this->mapAdditionalFieldsToCustomFields($additional);
+                // ✅ اجمع أي additional fields إن كانت موجودة في الريموت
+                $remoteFields = null;
+                foreach (['additional_fields', 'fields', 'required', 'params'] as $k) {
+                    if (isset($r->{$k}) && $r->{$k} !== null && $r->{$k} !== '') {
+                        $remoteFields = $r->{$k};
+                        break;
+                    }
+                }
+                // طبعًا لو جاي JSON string
+                if (is_string($remoteFields)) {
+                    $decoded = json_decode($remoteFields, true);
+                    $remoteFields = is_array($decoded) ? $decoded : null;
                 }
 
-                /**
-                 * ✅ NEW: main_field config (type + label)
-                 * نفس شكل مشروعك في إنشاء الخدمات :contentReference[oaicite:7]{index=7}
-                 */
-                $mf = $this->guessMainFieldFromAdditionalFields($additional, $kind);
-                $mainField = $this->buildMainField($mf['type'], $mf['label']);
+                // ✅ params نخزن فيه custom_fields (حتى تبويب Additional في النظام العام يقرأها من params) :contentReference[oaicite:2]{index=2}
+                $params = [];
+                if (is_array($remoteFields)) {
+                    $params['custom_fields'] = $remoteFields;
+                }
 
-                /**
-                 * ✅ NEW: params JSON (احتفظ بمفاتيح meta فاضية + custom_fields)
-                 * نفس نمط ImeiServiceController :contentReference[oaicite:8]{index=8}
-                 */
-                $params = [
-                    'meta_keywords'           => '',
-                    'meta_description'        => '',
-                    'after_head_tag_opening'  => '',
-                    'before_head_tag_closing' => '',
-                    'after_body_tag_opening'  => '',
-                    'before_body_tag_closing' => '',
-                    'custom_fields'           => $customFields,
-                ];
+                // ✅ main_field الافتراضي: Serial (أنت مصرّ عليه)
+                $mainField = json_encode([
+                    'type' => 'serial',
+                    'label' => 'Serial',
+                    'allowed_characters' => 'any',
+                    'minimum' => 1,
+                    'maximum' => 50,
+                ], JSON_UNESCAPED_UNICODE);
 
                 $data = [
                     'alias' => $alias,
@@ -530,9 +406,9 @@ class ApiProvidersController extends Controller
                     'time' => $timeJson,
                     'info' => $infoJson,
 
-                    // ✅ NEW: main_field + params
-                    'main_field' => json_encode($mainField, JSON_UNESCAPED_UNICODE),
-                    'params'     => json_encode($params, JSON_UNESCAPED_UNICODE),
+                    // ✅ المهم: اكتب main_field + params
+                    'main_field' => $mainField,
+                    'params' => !empty($params) ? json_encode($params, JSON_UNESCAPED_UNICODE) : null,
 
                     // تسعير
                     'cost' => $cost,
@@ -540,7 +416,7 @@ class ApiProvidersController extends Controller
                     'profit_type' => $profitType,
 
                     // API linking
-                    'source' => 2,                 // API
+                    'source' => 2,
                     'supplier_id' => $provider->id,
                     'remote_id' => $remoteId,
 
