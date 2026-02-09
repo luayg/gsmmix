@@ -532,6 +532,10 @@
         window.__serverServiceApplyRemoteFields__(body, afFromBtn);
       }
 
+console.log('AF_FROM_BTN:', afFromBtn, btn);
+
+
+
       // 2) set main field type/label
       const mf = guessMainFieldFromRemoteFields(afFromBtn);
       if (typeof window.__serverServiceSetMainField__ === 'function') {
