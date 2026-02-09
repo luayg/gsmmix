@@ -11,6 +11,8 @@ use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\Admin\UserFinanceController;
 use App\Http\Controllers\Admin\ApiProvidersController;
 use App\Http\Controllers\Admin\UploadController;
+use App\Http\Controllers\Admin\Api\RemoteServerServicesController;
+
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -169,6 +171,22 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('clone/modal',             [CloneController::class, 'modal'])->name('clone.modal');
         Route::get('clone/provider-services', [CloneController::class, 'providerServices'])->name('clone.provider_services');
     });
+
+        Route::prefix('admin/apis')->name('admin.apis.')->group(function () {
+    Route::get('{provider}/remote/server', [RemoteServerServicesController::class, 'index'])
+        ->name('remote.server.index');
+
+    Route::get('{provider}/remote/server/import', [RemoteServerServicesController::class, 'importPage'])
+        ->name('remote.server.import_page');
+
+    Route::post('{provider}/remote/server/import', [RemoteServerServicesController::class, 'import'])
+        ->name('remote.server.import');
+
+    // optional: endpoint يرجّع remote list JSON (لو بدك لاحقًا)
+    Route::get('{provider}/remote/server/services-json', [RemoteServerServicesController::class, 'servicesJson'])
+        ->name('remote.server.services_json');
+});
+
 
     /* ======== روابط مختصرة ======== */
     Route::get('/services/imei',   fn () => redirect()->route('admin.services.imei.index'));
