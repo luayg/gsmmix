@@ -25,6 +25,9 @@ abstract class BaseOrdersController extends Controller
     protected function deviceLabel(): string { return 'Device'; }
     protected function supportsQuantity(): bool { return false; }
 
+    // =========================
+    // LIST
+    // =========================
     public function index(Request $request)
     {
         $q      = trim((string)$request->get('q', ''));
@@ -69,20 +72,231 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
+    // =========================
+    // CREATE MODAL
+    // =========================
     public function modalCreate()
     {
         $users = User::query()->orderByDesc('id')->limit(500)->get();
+
+        // ✅ load services
         $services = ($this->serviceModel)::query()->orderByDesc('id')->limit(1000)->get();
 
+        // ✅ attach custom fields from DB (custom_fields table) into service->params['custom_fields']
+        // so that resources/views/admin/orders/modals/create.blade.php keeps working without edits.
+        if (in_array($this->kind, ['imei','server','file'], true) && $services->count() > 0) {
+            $this->injectCustomFieldsIntoServices($services, $this->kind);
+        }
+
+        // ✅ Build group pricing map for UI:
+        // [service_id => [group_id => final_price]]
+        $servicePriceMap = $this->buildServicePriceMap($services);
+
         return view('admin.orders.modals.create', [
-            'title'       => "Create {$this->title}",
-            'kind'        => $this->kind,
-            'routePrefix' => $this->routePrefix,
-            'deviceLabel' => $this->deviceLabel(),
-            'supportsQty' => $this->supportsQuantity(),
-            'users'       => $users,
-            'services'    => $services,
+            'title'          => "Create {$this->title}",
+            'kind'           => $this->kind,
+            'routePrefix'    => $this->routePrefix,
+            'deviceLabel'    => $this->deviceLabel(),
+            'supportsQty'    => $this->supportsQuantity(),
+            'users'          => $users,
+            'services'       => $services,
+            'servicePriceMap'=> $servicePriceMap,
         ]);
+    }
+
+    /**
+     * Inject DB custom_fields into $service->params['custom_fields']
+     * Output format matches what your Blade expects:
+     * [
+     *   ['active'=>1,'name'=>'','input'=>'service_fields_1','type'=>'text','description'=>'','minimum'=>0,'maximum'=>0,'validation'=>null,'required'=>0,'options'=>'...'],
+     *   ...
+     * ]
+     */
+    private function injectCustomFieldsIntoServices($services, string $kind): void
+    {
+        $serviceIds = $services->pluck('id')->map(fn($x)=>(int)$x)->filter()->values()->all();
+        if (empty($serviceIds)) return;
+
+        $serviceType = $kind . '_service';
+
+        $rows = DB::table('custom_fields')
+            ->where('service_type', $serviceType)
+            ->whereIn('service_id', $serviceIds)
+            ->orderBy('service_id', 'asc')
+            ->orderBy('ordering', 'asc')
+            ->get([
+                'service_id',
+                'active',
+                'required',
+                'minimum',
+                'maximum',
+                'validation',
+                'description',
+                'field_options',
+                'field_type',
+                'input',
+                'name',
+                'ordering',
+            ]);
+
+        // Group rows by service_id
+        $byService = [];
+        foreach ($rows as $r) {
+            $sid = (int)($r->service_id ?? 0);
+            if ($sid <= 0) continue;
+
+            $byService[$sid] ??= [];
+            $byService[$sid][] = $r;
+        }
+
+        foreach ($services as $svc) {
+            $sid = (int)($svc->id ?? 0);
+            if ($sid <= 0) continue;
+
+            // decode current params
+            $params = $svc->params ?? [];
+            if (is_string($params)) {
+                $decoded = json_decode($params, true);
+                $params = is_array($decoded) ? $decoded : [];
+            }
+            if (!is_array($params)) $params = [];
+
+            $fields = [];
+            foreach (($byService[$sid] ?? []) as $r) {
+                $name = $this->pickTranslatableText($r->name ?? '');
+                $desc = $this->pickTranslatableText($r->description ?? '');
+
+                $input = trim((string)($r->input ?? ''));
+                if ($input === '') continue;
+
+                $type = strtolower(trim((string)($r->field_type ?? 'text')));
+                if ($type === '') $type = 'text';
+
+                // options: keep as string (Blade will split/parse it)
+                $opts = $r->field_options ?? '';
+                $opts = $this->normalizeOptionsForBlade($opts);
+
+                $fields[] = [
+                    'active'      => (int)($r->active ?? 1),
+                    'name'        => $name,
+                    'input'       => $input,
+                    'type'        => $type,
+                    'description' => $desc,
+                    'minimum'     => (int)($r->minimum ?? 0),
+                    'maximum'     => (int)($r->maximum ?? 0),
+                    'validation'  => ($r->validation ?? null) !== '' ? (string)$r->validation : null,
+                    'required'    => (int)($r->required ?? 0),
+                    'options'     => $opts, // string or json string
+                ];
+            }
+
+            $params['custom_fields'] = $fields;
+            $svc->params = $params; // Eloquent will cast to JSON in Blade (you already handle string/array there)
+        }
+    }
+
+    /**
+     * Build servicePriceMap for the create order modal.
+     * Map: [service_id => [group_id => finalPrice]]
+     */
+    private function buildServicePriceMap($services): array
+    {
+        if (!class_exists(\App\Models\ServiceGroupPrice::class)) return [];
+
+        $ids = $services->pluck('id')->map(fn($x)=>(int)$x)->filter()->values()->all();
+        if (empty($ids)) return [];
+
+        // service_type in service_group_prices table appears as:
+        // - your Blade uses it as "imei" pricing map; the model uses $this->kind in other places.
+        // We'll keep it aligned with existing usage:
+        $serviceType = $this->kind;
+
+        $rows = \App\Models\ServiceGroupPrice::query()
+            ->where('service_type', $serviceType)
+            ->whereIn('service_id', $ids)
+            ->get(['service_id','group_id','price','discount','discount_type']);
+
+        $out = [];
+        foreach ($rows as $gp) {
+            $sid = (int)($gp->service_id ?? 0);
+            $gid = (int)($gp->group_id ?? 0);
+            if ($sid <= 0 || $gid <= 0) continue;
+
+            $price = (float)($gp->price ?? 0);
+            if ($price <= 0) continue;
+
+            $discount = (float)($gp->discount ?? 0);
+            $dtype = (int)($gp->discount_type ?? 1); // 1 fixed, 2 percent
+
+            if ($discount > 0) {
+                if ($dtype === 2) $price = $price - ($price * ($discount / 100));
+                else $price = $price - $discount;
+            }
+
+            if ($price < 0) $price = 0.0;
+
+            $out[$sid] ??= [];
+            $out[$sid][$gid] = (float)$price;
+        }
+
+        return $out;
+    }
+
+    /**
+     * If a DB column contains JSON like {"en":"..","fallback":".."} return en/fallback.
+     * Otherwise return as plain string.
+     */
+    private function pickTranslatableText($value): string
+    {
+        if (is_array($value)) {
+            return (string)($value['en'] ?? $value['fallback'] ?? reset($value) ?? '');
+        }
+
+        $s = trim((string)$value);
+        if ($s === '') return '';
+
+        if (isset($s[0]) && $s[0] === '{') {
+            $j = json_decode($s, true);
+            if (is_array($j)) {
+                return (string)($j['en'] ?? $j['fallback'] ?? reset($j) ?? $s);
+            }
+        }
+
+        return $s;
+    }
+
+    /**
+     * Normalize field_options for Blade splitOptions():
+     * - if it's JSON translatable => pick en/fallback
+     * - if it's JSON array => keep JSON string (Blade parses JSON arrays)
+     * - else => return string as is
+     */
+    private function normalizeOptionsForBlade($opts): string
+    {
+        if (is_array($opts)) {
+            return json_encode($opts, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        }
+
+        $s = trim((string)$opts);
+        if ($s === '') return '';
+
+        // JSON?
+        if (isset($s[0]) && ($s[0] === '{' || $s[0] === '[')) {
+            $j = json_decode($s, true);
+
+            // JSON array => keep json string
+            if (is_array($j) && array_is_list($j)) {
+                return json_encode($j, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            }
+
+            // JSON object (maybe translations) => pick text
+            if (is_array($j)) {
+                $picked = (string)($j['en'] ?? $j['fallback'] ?? '');
+                return $picked !== '' ? $picked : $s;
+            }
+        }
+
+        return $s;
     }
 
     // =========================
@@ -211,7 +425,7 @@ abstract class BaseOrdersController extends Controller
         if ($this->kind === 'file') {
             $rules['file'] = ['required','file','max:51200'];
         } else {
-            // ✅ device صار اختياري للسيرفر (لأن أغلبه fields-based)
+            // ✅ device optional for server (fields-based)
             $rules['device'] = ['nullable','string','max:255'];
         }
 
@@ -220,9 +434,9 @@ abstract class BaseOrdersController extends Controller
         }
 
         /**
-         * ✅ IMPORTANT FIX:
-         * UI صار يرسل required[...] لكل الأنواع (imei/server/file) حسب custom fields
-         * فلابد نقبلها ونخزنها في params.fields للجميع
+         * ✅ IMPORTANT:
+         * UI sends required[...] for all kinds (imei/server/file) based on custom fields
+         * so accept it and store in params.fields
          */
         if ($this->kind !== 'product') {
             $rules['required'] = ['nullable','array']; // required[field_input]=...
@@ -256,13 +470,13 @@ abstract class BaseOrdersController extends Controller
             $params['quantity'] = (int)($data['quantity'] ?? 1);
         }
 
-        // ✅ IMPORTANT FIX: store fields for ALL kinds (imei/server/file)
+        // ✅ store fields for ALL kinds (imei/server/file)
         $params['fields'] = (isset($data['required']) && is_array($data['required'])) ? $data['required'] : [];
 
         $bulk = (bool)($data['bulk'] ?? false);
         $devices = [];
 
-        // ✅ IMEI/FIle: same logic
+        // ✅ IMEI/File: same logic
         // ✅ Server: device optional unless service->device_based = 1
         if ($this->kind !== 'file') {
             $deviceBased = (bool)($service->device_based ?? false);
