@@ -12,8 +12,8 @@ use Illuminate\Support\Facades\Log;
 
 class SyncFileOrders extends Command
 {
-    protected $signature = 'orders:sync-File {--limit=50} {--only-id=}';
-    protected $description = 'Sync File Orders status/result from provider (DHRU)';
+    protected $signature = 'orders:sync-file {--limit=50} {--only-id=}';
+    protected $description = 'Sync File Orders status/result from provider (DHRU getfileorder)';
 
     public function handle(): int
     {
@@ -36,7 +36,7 @@ class SyncFileOrders extends Command
         $orders = $q->orderBy('id', 'asc')->limit($limit)->get();
 
         if ($orders->isEmpty()) {
-            $this->info('No File orders to sync.');
+            $this->info('No file orders to sync.');
             return 0;
         }
 
@@ -59,15 +59,17 @@ class SyncFileOrders extends Command
                     continue;
                 }
 
+                // ✅ Requires DhruOrderGateway::getFileOrder($provider, $ref)
                 $res = $gw->getFileOrder($provider, $ref);
 
-                // ✅ store last check + raw always
+                // ✅ always store last check + raw
                 $req = $this->normalizeResponseArray($order->request);
                 $req['last_status_check'] = now()->toDateTimeString();
                 $req['status_check_raw']  = $res['response_raw'] ?? null;
                 $order->request = $req;
 
                 if (!is_array($res)) {
+                    // queued / invalid response => keep waiting
                     $order->status = 'waiting';
                     $order->processing = 0;
                     $order->save();
@@ -90,6 +92,7 @@ class SyncFileOrders extends Command
                 $respArr['dhru_comments'] = $comments;
                 $respArr['result_text']   = $code;
 
+                // لو CODE يحتوي HTML نخزنه كـ provider_reply_html
                 $providerHtml = $this->asProviderReplyHtml($code, $comments);
                 if ($providerHtml !== '') {
                     $respArr['provider_reply_html'] = $providerHtml;
@@ -143,6 +146,7 @@ class SyncFileOrders extends Command
 
     private function mapDhruStatusToLocal(int $statusInt): string
     {
+        // DHRU: 0 pending, 1 inprogress, 3 rejected, 4 success
         if ($statusInt === 4) return 'success';
         if ($statusInt === 3) return 'rejected';
         if (in_array($statusInt, [0,1,2], true)) return 'inprogress';
@@ -151,6 +155,8 @@ class SyncFileOrders extends Command
 
     private function extractDhruStatusCodeComments($raw): array
     {
+        // raw expected:
+        // ['SUCCESS' => [ ['STATUS'=>4,'CODE'=>'...','COMMENTS'=>'...'] ] ]
         if (is_string($raw)) {
             $j = json_decode($raw, true);
             if (is_array($j)) $raw = $j;
@@ -173,6 +179,7 @@ class SyncFileOrders extends Command
         if (isset($raw['ERROR'][0]) && is_array($raw['ERROR'][0])) {
             $e0 = $raw['ERROR'][0];
             $comments = (string)($e0['MESSAGE'] ?? 'Provider error');
+            // اعتبره inprogress حتى لا نخرب الطلب بسبب error response
             return [1, '', $comments];
         }
 
@@ -200,10 +207,18 @@ class SyncFileOrders extends Command
         $code = trim((string)$code);
         $comments = trim((string)$comments);
 
-        if ($code !== '' && (stripos($code, '<table') !== false || stripos($code, '<br') !== false || stripos($code, '<p') !== false)) {
+        // HTML واضح
+        if ($code !== '' && (
+            stripos($code, '<table') !== false ||
+            stripos($code, '<br') !== false ||
+            stripos($code, '<p') !== false ||
+            stripos($code, '<a ') !== false ||
+            stripos($code, '<img') !== false
+        )) {
             return $code;
         }
 
+        // نص فقط => نعرضه داخل div
         $text = $code !== '' ? $code : $comments;
         $text = trim($text);
         if ($text === '') return '';

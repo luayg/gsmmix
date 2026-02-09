@@ -79,6 +79,32 @@ class DhruOrderGateway
         return false;
     }
 
+    /**
+     * Normalize REQUIRED fields:
+     * - ensure array
+     * - values => strings only (array/object => json)
+     * - drop empty keys
+     */
+    private function normalizeRequiredFields($fields): array
+    {
+        if (!is_array($fields)) return [];
+
+        $out = [];
+        foreach ($fields as $k => $v) {
+            $key = trim((string)$k);
+            if ($key === '') continue;
+
+            if (is_array($v) || is_object($v)) {
+                $out[$key] = json_encode($v, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            } elseif ($v === null) {
+                $out[$key] = '';
+            } else {
+                $out[$key] = (string)$v;
+            }
+        }
+        return $out;
+    }
+
     private function send(ApiProvider $p, string $action, string $parametersXml): array
     {
         $payload = $this->basePayload($p, $action);
@@ -94,9 +120,14 @@ class DhruOrderGateway
                 'retryable' => true,
                 'status' => 'waiting',
                 'remote_id' => null,
-                'request' => ['url'=>$url,'payload'=>$payload,'exception'=>$e->getMessage()],
-                'response_raw' => ['error'=>'connection_failed','message'=>$e->getMessage()],
-                'response_ui' => ['type'=>'queued','message'=>'Provider unreachable, queued.'],
+                'request' => [
+                    'url' => $url,
+                    'action' => $action,
+                    'payload' => $payload,
+                    'exception' => $e->getMessage()
+                ],
+                'response_raw' => ['error' => 'connection_failed', 'message' => $e->getMessage()],
+                'response_ui' => ['type' => 'queued', 'message' => 'Provider unreachable, queued.'],
             ];
         }
 
@@ -109,9 +140,14 @@ class DhruOrderGateway
                 'retryable' => true,
                 'status' => 'waiting',
                 'remote_id' => null,
-                'request' => ['url'=>$url,'payload'=>$payload,'http_status'=>$resp->status()],
-                'response_raw' => is_array($json) ? $json : ['raw'=>$raw,'http_status'=>$resp->status()],
-                'response_ui' => ['type'=>'queued','message'=>'Temporary provider error, queued.'],
+                'request' => [
+                    'url' => $url,
+                    'action' => $action,
+                    'payload' => $payload,
+                    'http_status' => $resp->status()
+                ],
+                'response_raw' => is_array($json) ? $json : ['raw' => $raw, 'http_status' => $resp->status()],
+                'response_ui' => ['type' => 'queued', 'message' => 'Temporary provider error, queued.'],
             ];
         }
 
@@ -124,7 +160,12 @@ class DhruOrderGateway
                 'retryable' => false,
                 'status' => 'inprogress',
                 'remote_id' => $ref,
-                'request' => ['url'=>$url,'payload'=>$payload,'http_status'=>$resp->status()],
+                'request' => [
+                    'url' => $url,
+                    'action' => $action,
+                    'payload' => $payload,
+                    'http_status' => $resp->status()
+                ],
                 'response_raw' => $json,
                 'response_ui' => $this->normalizeUi($json),
             ];
@@ -141,11 +182,16 @@ class DhruOrderGateway
                 'retryable' => true,
                 'status' => 'waiting',
                 'remote_id' => null,
-                'request' => ['url'=>$url,'payload'=>$payload,'http_status'=>$resp->status()],
+                'request' => [
+                    'url' => $url,
+                    'action' => $action,
+                    'payload' => $payload,
+                    'http_status' => $resp->status()
+                ],
                 'response_raw' => $json,
                 'response_ui' => [
                     'type' => 'queued',
-                    'message' => $errMsg ? ('Temporary provider issue: '.$errMsg) : 'Temporary provider issue, queued.',
+                    'message' => $errMsg ? ('Temporary provider issue: ' . $errMsg) : 'Temporary provider issue, queued.',
                 ],
             ];
         }
@@ -155,7 +201,12 @@ class DhruOrderGateway
             'retryable' => false,
             'status' => 'rejected',
             'remote_id' => null,
-            'request' => ['url'=>$url,'payload'=>$payload,'http_status'=>$resp->status()],
+            'request' => [
+                'url' => $url,
+                'action' => $action,
+                'payload' => $payload,
+                'http_status' => $resp->status()
+            ],
             'response_raw' => $json,
             'response_ui' => $this->normalizeUi($json),
         ];
@@ -166,8 +217,7 @@ class DhruOrderGateway
     // =========================
 
     /**
-     * ✅ UPDATED:
-     * placeImeiOrder now supports REQUIRED fields (same as server)
+     * placeImeiOrder supports REQUIRED fields:
      * fields source: order->params['fields'] OR legacy order->params['required']
      */
     public function placeImeiOrder(ApiProvider $p, ImeiOrder $order): array
@@ -179,16 +229,15 @@ class DhruOrderGateway
         if (is_array($order->params)) {
             $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
         }
-        if (!is_array($fields)) $fields = [];
+        $fields = $this->normalizeRequiredFields($fields);
 
         $xml = '<PARAMETERS>'
-            . '<IMEI>'.$this->xmlEscape($imei).'</IMEI>'
-            . '<ID>'.$this->xmlEscape($serviceId).'</ID>';
+            . '<IMEI>' . $this->xmlEscape($imei) . '</IMEI>'
+            . '<ID>' . $this->xmlEscape($serviceId) . '</ID>';
 
-        // ✅ include REQUIRED only if not empty
         if (!empty($fields)) {
             $requiredJson = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-            $xml .= '<REQUIRED>'.$this->xmlEscape((string)$requiredJson).'</REQUIRED>';
+            $xml .= '<REQUIRED>' . $this->xmlEscape((string)$requiredJson) . '</REQUIRED>';
         }
 
         $xml .= '</PARAMETERS>';
@@ -196,35 +245,42 @@ class DhruOrderGateway
         return $this->send($p, 'placeimeiorder', $xml);
     }
 
+    /**
+     * ✅ Updated: REQUIRED is now optional (only if not empty), like IMEI/File
+     */
     public function placeServerOrder(ApiProvider $p, ServerOrder $order): array
     {
         $serviceId = (string)($order->service?->remote_id ?? '');
         $qty = (int)($order->quantity ?? 1);
 
-        // ✅ fields (preferred) ثم required (legacy)
         $fields = [];
         if (is_array($order->params)) {
             $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
         }
-        if (!is_array($fields)) $fields = [];
-
-        $requiredJson = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        $fields = $this->normalizeRequiredFields($fields);
 
         $comments = trim((string)($order->comments ?? ''));
 
         $xml = '<PARAMETERS>'
-            . '<ID>'.$this->xmlEscape($serviceId).'</ID>'
-            . '<QUANTITY>'.$this->xmlEscape((string)$qty).'</QUANTITY>'
-            . '<REQUIRED>'.$this->xmlEscape((string)$requiredJson).'</REQUIRED>'
-            . '<COMMENTS>'.$this->xmlEscape($comments).'</COMMENTS>'
-            . '</PARAMETERS>';
+            . '<ID>' . $this->xmlEscape($serviceId) . '</ID>'
+            . '<QUANTITY>' . $this->xmlEscape((string)$qty) . '</QUANTITY>';
+
+        if (!empty($fields)) {
+            $requiredJson = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            $xml .= '<REQUIRED>' . $this->xmlEscape((string)$requiredJson) . '</REQUIRED>';
+        }
+
+        if ($comments !== '') {
+            $xml .= '<COMMENTS>' . $this->xmlEscape($comments) . '</COMMENTS>';
+        }
+
+        $xml .= '</PARAMETERS>';
 
         return $this->send($p, 'placeserverorder', $xml);
     }
 
     /**
-     * ✅ UPDATED:
-     * placeFileOrder supports REQUIRED if exists (safe addition)
+     * placeFileOrder supports REQUIRED if exists
      */
     public function placeFileOrder(ApiProvider $p, FileOrder $order): array
     {
@@ -233,10 +289,13 @@ class DhruOrderGateway
 
         if ($path === '' || !Storage::exists($path)) {
             return [
-                'ok'=>false,'retryable'=>false,'status'=>'rejected','remote_id'=>null,
-                'request'=>null,
-                'response_raw'=>['ERROR'=>[['MESSAGE'=>'storage_path missing or file not found']]],
-                'response_ui'=>['type'=>'error','message'=>'File not found on server'],
+                'ok' => false,
+                'retryable' => false,
+                'status' => 'rejected',
+                'remote_id' => null,
+                'request' => null,
+                'response_raw' => ['ERROR' => [['MESSAGE' => 'storage_path missing or file not found']]],
+                'response_ui' => ['type' => 'error', 'message' => 'File not found on server'],
             ];
         }
 
@@ -248,16 +307,16 @@ class DhruOrderGateway
         if (is_array($order->params)) {
             $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
         }
-        if (!is_array($fields)) $fields = [];
+        $fields = $this->normalizeRequiredFields($fields);
 
         $xml = '<PARAMETERS>'
-            . '<ID>'.$this->xmlEscape($serviceId).'</ID>'
-            . '<FILENAME>'.$this->xmlEscape($filename).'</FILENAME>'
-            . '<FILEDATA>'.$this->xmlEscape($b64).'</FILEDATA>';
+            . '<ID>' . $this->xmlEscape($serviceId) . '</ID>'
+            . '<FILENAME>' . $this->xmlEscape($filename) . '</FILENAME>'
+            . '<FILEDATA>' . $this->xmlEscape($b64) . '</FILEDATA>';
 
         if (!empty($fields)) {
             $requiredJson = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-            $xml .= '<REQUIRED>'.$this->xmlEscape((string)$requiredJson).'</REQUIRED>';
+            $xml .= '<REQUIRED>' . $this->xmlEscape((string)$requiredJson) . '</REQUIRED>';
         }
 
         $xml .= '</PARAMETERS>';
@@ -272,7 +331,7 @@ class DhruOrderGateway
     public function getImeiOrder(ApiProvider $p, string $referenceId): array
     {
         $xml = '<PARAMETERS>'
-            . '<ID>'.$this->xmlEscape($referenceId).'</ID>'
+            . '<ID>' . $this->xmlEscape($referenceId) . '</ID>'
             . '</PARAMETERS>';
 
         return $this->send($p, 'getimeiorder', $xml);
@@ -281,7 +340,7 @@ class DhruOrderGateway
     public function getServerOrder(ApiProvider $p, string $referenceId): array
     {
         $xml = '<PARAMETERS>'
-            . '<ID>'.$this->xmlEscape($referenceId).'</ID>'
+            . '<ID>' . $this->xmlEscape($referenceId) . '</ID>'
             . '</PARAMETERS>';
 
         return $this->send($p, 'getserverorder', $xml);
@@ -290,7 +349,7 @@ class DhruOrderGateway
     public function getFileOrder(ApiProvider $p, string $referenceId): array
     {
         $xml = '<PARAMETERS>'
-            . '<ID>'.$this->xmlEscape($referenceId).'</ID>'
+            . '<ID>' . $this->xmlEscape($referenceId) . '</ID>'
             . '</PARAMETERS>';
 
         return $this->send($p, 'getfileorder', $xml);
