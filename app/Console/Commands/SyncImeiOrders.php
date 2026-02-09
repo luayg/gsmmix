@@ -7,10 +7,12 @@ use App\Models\ImeiOrder;
 use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class SyncImeiOrders extends Command
 {
-    protected $signature = 'orders:sync-imei {--limit=50}';
+    protected $signature = 'orders:sync-imei {--limit=50} {--only-id=}';
     protected $description = 'Sync IMEI orders status/result using DHRU getimeiorder';
 
     private function providerBaseUrl(ApiProvider $p): string
@@ -74,7 +76,7 @@ class SyncImeiOrders extends Command
         return $items;
     }
 
-    private function normalizeJsonField($value): array
+    private function normalizeArr($value): array
     {
         if (is_array($value)) return $value;
 
@@ -83,15 +85,15 @@ class SyncImeiOrders extends Command
             if ($s !== '') {
                 $decoded = json_decode($s, true);
                 if (is_array($decoded)) return $decoded;
+                return ['raw' => $value];
             }
         }
-
         return [];
     }
 
     private function refundIfNeeded(ImeiOrder $order, string $reason): void
     {
-        $req = $this->normalizeJsonField($order->request ?? []);
+        $req = $this->normalizeArr($order->request ?? []);
 
         if (!empty($req['refunded_at'])) return;
 
@@ -101,7 +103,7 @@ class SyncImeiOrders extends Command
         $amount = (float)($req['charged_amount'] ?? 0);
         if ($amount <= 0) return;
 
-        \DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
             $u = User::query()->lockForUpdate()->find($uid);
             if (!$u) return;
 
@@ -117,132 +119,186 @@ class SyncImeiOrders extends Command
         });
     }
 
+    private function mapDhruStatusToLocal(int $statusInt): string
+    {
+        // DHRU: 0 pending, 1 inprogress, 3 rejected, 4 success
+        if ($statusInt === 4) return 'success';
+        if ($statusInt === 3) return 'rejected';
+        if (in_array($statusInt, [0, 1, 2], true)) return 'inprogress';
+        return 'inprogress';
+    }
+
     public function handle(DhruOrderGateway $dhru): int
     {
         $limit = (int)$this->option('limit');
+        if ($limit < 1) $limit = 50;
+        if ($limit > 500) $limit = 500;
 
-        $orders = ImeiOrder::query()
+        $onlyId = $this->option('only-id');
+
+        $q = ImeiOrder::query()
             ->where('api_order', 1)
-            ->whereIn('status', ['waiting','inprogress'])
+            ->whereIn('status', ['waiting', 'inprogress'])
             ->whereNotNull('remote_id')
-            ->orderBy('id')
-            ->limit($limit)
-            ->get();
+            ->orderBy('id', 'asc');
+
+        if (!empty($onlyId)) {
+            $q->where('id', (int)$onlyId);
+        }
+
+        $orders = $q->limit($limit)->get();
+
+        if ($orders->isEmpty()) {
+            $this->info('No IMEI orders to sync.');
+            return 0;
+        }
 
         $this->info("Syncing {$orders->count()} IMEI orders...");
 
+        $synced = 0;
+
         foreach ($orders as $order) {
-            $order->load(['service','provider']);
+            try {
+                $order->load(['service', 'provider']);
 
-            $providerId = (int)($order->supplier_id ?? $order->service?->supplier_id ?? 0);
-            $provider = $providerId ? ApiProvider::find($providerId) : null;
+                $providerId = (int)($order->supplier_id ?? $order->service?->supplier_id ?? 0);
+                $provider = $providerId ? ApiProvider::find($providerId) : null;
 
-            if (!$provider || (int)$provider->active !== 1) continue;
+                if (!$provider || (int)$provider->active !== 1) continue;
 
-            $ref = (string)$order->remote_id;
-            if ($ref === '') continue;
+                $ref = trim((string)$order->remote_id);
+                if ($ref === '') continue;
 
-            $res = $dhru->getImeiOrder($provider, $ref);
+                $res = $dhru->getImeiOrder($provider, $ref);
 
-            $order->request = array_merge($this->normalizeJsonField($order->request ?? []), [
-                'last_status_check' => now()->toDateTimeString(),
-                'status_check_raw'  => $res['response_raw'] ?? null,
-            ]);
+                // ✅ always store last check + raw
+                $req = $this->normalizeArr($order->request ?? []);
+                $req['last_status_check'] = now()->toDateTimeString();
+                $req['status_check_raw']  = $res['response_raw'] ?? null;
+                $order->request = $req;
 
-            $raw = $res['response_raw'] ?? null;
+                $raw = $res['response_raw'] ?? null;
 
-            if (!is_array($raw)) {
-                $order->save();
-                continue;
-            }
-
-            if (isset($raw['ERROR'][0]['MESSAGE'])) {
-                $m = strtolower((string)$raw['ERROR'][0]['MESSAGE']);
-                if (
-                    str_contains($m, 'command not found') ||
-                    str_contains($m, 'invalid action') ||
-                    (str_contains($m, 'parameter') && str_contains($m, 'required'))
-                ) {
-                    $order->response = [
-                        'type' => 'info',
-                        'message' => $raw['ERROR'][0]['MESSAGE'],
-                        'reference_id' => $order->remote_id,
-                    ];
+                // لو queued/connection failure => نخليها waiting وما نحكم عليها
+                if (!is_array($raw)) {
+                    $order->status = 'waiting';
+                    $order->processing = 0;
                     $order->save();
                     continue;
                 }
 
-                $order->status = 'rejected';
-                $order->replied_at = now();
-                $order->response = [
-                    'type' => 'error',
-                    'message' => $raw['ERROR'][0]['MESSAGE'],
-                    'reference_id' => $order->remote_id,
-                ];
-                $order->save();
+                // ERROR
+                if (isset($raw['ERROR'][0]['MESSAGE'])) {
+                    $msg = (string)$raw['ERROR'][0]['MESSAGE'];
+                    $m = strtolower($msg);
 
-                // ✅ refund on rejected
-                $this->refundIfNeeded($order, 'sync_rejected_error');
-                continue;
-            }
-
-            if (isset($raw['SUCCESS'][0])) {
-                $s0 = $raw['SUCCESS'][0];
-
-                $statusNum = (int)($s0['STATUS'] ?? -1);
-                $code = $s0['CODE'] ?? null;
-
-                if ($statusNum === 0 || $statusNum === 1) {
-                    $order->status = 'inprogress';
-                } elseif ($statusNum === 3) {
-                    $order->status = 'rejected';
-                    $order->replied_at = now();
-                } elseif ($statusNum === 4) {
-                    $order->status = 'success';
-                    $order->replied_at = now();
-                }
-
-                $ui = [
-                    'type' => ($order->status === 'rejected') ? 'error' : (($order->status === 'success') ? 'success' : 'info'),
-                    'message' => $order->status === 'success'
-                        ? 'Result available'
-                        : ($order->status === 'rejected' ? 'Rejected' : 'In progress'),
-                    'reference_id' => $order->remote_id,
-                ];
-
-                if (!empty($code)) {
-                    $rawResult = is_string($code)
-                        ? $code
-                        : json_encode($code, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-
-                    $imgSrc = $this->extractFirstImgSrc($rawResult);
-                    if ($imgSrc) {
-                        $imgUrl = $this->resolveImageUrl($provider, $imgSrc);
-                        if ($imgUrl) $ui['result_image'] = $imgUrl;
+                    // errors that should NOT reject the order (invalid action, parameter required)
+                    if (
+                        str_contains($m, 'command not found') ||
+                        str_contains($m, 'invalid action') ||
+                        (str_contains($m, 'parameter') && str_contains($m, 'required'))
+                    ) {
+                        $order->response = [
+                            'type' => 'info',
+                            'message' => $msg,
+                            'reference_id' => $order->remote_id,
+                        ];
+                        $order->status = 'inprogress';
+                        $order->processing = 1;
+                        $order->save();
+                        continue;
                     }
 
-                    $lines = $this->cleanHtmlResultToLines($rawResult);
-                    $items = $this->linesToKeyValue($lines);
+                    // real error => reject + refund
+                    $order->status = 'rejected';
+                    $order->processing = 0;
+                    $order->replied_at = now();
+                    $order->response = [
+                        'type' => 'error',
+                        'message' => $msg,
+                        'reference_id' => $order->remote_id,
+                    ];
+                    $order->save();
 
-                    $ui['result_text']  = implode("\n", $lines);
-                    $ui['result_items'] = $items;
+                    $this->refundIfNeeded($order, 'sync_rejected_error');
+                    $synced++;
+                    continue;
                 }
 
-                $order->response = $ui;
+                // SUCCESS
+                if (isset($raw['SUCCESS'][0]) && is_array($raw['SUCCESS'][0])) {
+                    $s0 = $raw['SUCCESS'][0];
+
+                    $statusInt = (int)($s0['STATUS'] ?? -1);
+                    $code = $s0['CODE'] ?? null;
+
+                    $newStatus = $this->mapDhruStatusToLocal($statusInt);
+
+                    $order->status = $newStatus;
+                    $order->processing = in_array($newStatus, ['success','rejected','cancelled'], true) ? 0 : 1;
+
+                    if (in_array($newStatus, ['success','rejected'], true)) {
+                        $order->replied_at = $order->replied_at ?: now();
+                    }
+
+                    $ui = [
+                        'type' => ($newStatus === 'rejected') ? 'error' : (($newStatus === 'success') ? 'success' : 'info'),
+                        'message' => ($newStatus === 'success')
+                            ? 'Result available'
+                            : (($newStatus === 'rejected') ? 'Rejected' : 'In progress'),
+                        'reference_id' => $order->remote_id,
+                        'dhru_status' => $statusInt,
+                    ];
+
+                    if (!empty($code)) {
+                        $rawResult = is_string($code)
+                            ? $code
+                            : json_encode($code, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+
+                        $imgSrc = $this->extractFirstImgSrc($rawResult);
+                        if ($imgSrc) {
+                            $imgUrl = $this->resolveImageUrl($provider, $imgSrc);
+                            if ($imgUrl) $ui['result_image'] = $imgUrl;
+                        }
+
+                        $lines = $this->cleanHtmlResultToLines($rawResult);
+                        $items = $this->linesToKeyValue($lines);
+
+                        $ui['result_text']  = implode("\n", $lines);
+                        $ui['result_items'] = $items;
+                    }
+
+                    $order->response = $ui;
+                    $order->save();
+
+                    if ($newStatus === 'rejected') {
+                        $this->refundIfNeeded($order, 'sync_rejected_status3');
+                    }
+
+                    $synced++;
+                    continue;
+                }
+
+                // fallback unknown
+                $order->status = 'inprogress';
+                $order->processing = 1;
                 $order->save();
 
-                // ✅ refund only if rejected
-                if ($order->status === 'rejected') {
-                    $this->refundIfNeeded($order, 'sync_rejected_status3');
-                }
+            } catch (\Throwable $e) {
+                Log::error('SyncImeiOrders error', [
+                    'order_id' => $order->id ?? null,
+                    'err' => $e->getMessage(),
+                ]);
 
-                continue;
+                // do not reject on sync crash
+                $order->status = 'waiting';
+                $order->processing = 0;
+                $order->response = ['type'=>'queued','message'=>'Sync error, will retry: '.$e->getMessage()];
+                $order->save();
             }
-
-            $order->save();
         }
 
-        $this->info("Done.");
+        $this->info("Done. Synced: {$synced} orders.");
         return 0;
     }
 }

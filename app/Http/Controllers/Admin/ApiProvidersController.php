@@ -256,6 +256,50 @@ class ApiProvidersController extends Controller
      * =========================
      */
 
+    /**
+     * normalize truthy values (0/1, "0"/"1", true/false, null)
+     */
+    private function boolish($v): bool
+    {
+        if (is_bool($v)) return $v;
+        if ($v === null) return false;
+        $s = strtolower(trim((string)$v));
+        return in_array($s, ['1','true','yes','on'], true);
+    }
+
+    /**
+     * ✅ NEW: guess main_field based on remote flags per kind
+     * - IMEI: if remote says udid => UDID, else if serial => Serial, else => IMEI.
+     */
+    private function guessMainFieldJson(string $kind, $remoteRow): string
+    {
+        $kind = strtolower(trim($kind));
+
+        if ($kind === 'imei') {
+            $udid   = $this->boolish($remoteRow->udid ?? false);
+            $serial = $this->boolish($remoteRow->serial ?? false);
+
+            if ($udid) {
+                return $this->buildMainFieldJson('udid', 'UDID', 'alphanumeric', 5, 64);
+            }
+            if ($serial) {
+                return $this->buildMainFieldJson('serial', 'Serial', 'alphanumeric', 3, 64);
+            }
+
+            return $this->buildMainFieldJson('imei', 'IMEI', 'numbers', 14, 18);
+        }
+
+        if ($kind === 'server') {
+            return $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
+        }
+
+        if ($kind === 'file') {
+            return $this->buildMainFieldJson('text', 'Reference', 'any', 1, 100);
+        }
+
+        return $this->buildMainFieldJson('text', 'Device', 'any', 1, 100);
+    }
+
     private function buildMainFieldJson(string $type = 'serial', string $label = 'Serial', string $allowed = 'any', int $min = 1, int $max = 50): string
     {
         $cfg = [
@@ -283,11 +327,6 @@ class ApiProvidersController extends Controller
 
     private function saveCustomFieldsToTable(string $serviceType, int $serviceId, array $fields): void
     {
-        // IMPORTANT: مطابق لجدول custom_fields عندك (حسب صورك)
-        // الأعمدة المتوقعة:
-        // service_type, service_id, active, required, maximum, minimum, validation, description,
-        // field_options, field_type, input, name, ordering, created_at, updated_at
-
         $now = now();
         $rows = [];
 
@@ -306,7 +345,6 @@ class ApiProvidersController extends Controller
             $desc = (string)($f['description'] ?? '');
 
             $options = $f['options'] ?? [];
-            // خزّن الخيارات كنص/JSON حسب الموجود عندك
             $fieldOptions = is_array($options)
                 ? json_encode($options, JSON_UNESCAPED_UNICODE)
                 : (string)$options;
@@ -331,7 +369,6 @@ class ApiProvidersController extends Controller
         }
 
         if (!empty($rows)) {
-            // امسح القديم ثم اكتب الجديد (لمنع التكرار)
             DB::table('custom_fields')
                 ->where('service_type', $serviceType)
                 ->where('service_id', $serviceId)
@@ -343,7 +380,6 @@ class ApiProvidersController extends Controller
 
     private function extractRemoteAdditionalFields($r): array
     {
-        // عندك في الصور remote_server_services فيه additional_fields أو additional_data
         $raw = $r->additional_fields ?? $r->additional_data ?? null;
         if ($raw === null) return [];
 
@@ -370,7 +406,6 @@ class ApiProvidersController extends Controller
             $optionsRaw = $rf['fieldoptions'] ?? $rf['options'] ?? [];
             $optionsArr = [];
             if (is_string($optionsRaw)) {
-                // بعض المزودين يرجع options نص
                 $optionsArr = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n|,/', $optionsRaw))));
             } elseif (is_array($optionsRaw)) {
                 $optionsArr = $optionsRaw;
@@ -451,8 +486,8 @@ class ApiProvidersController extends Controller
                 if ($aliasBase === '') $aliasBase = 'service';
                 $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
 
-                // ✅ هنا أهم فرق: نكتب main_field دائماً (Serial) + نقرأ additional_fields ونحولها لـ custom_fields table
-                $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
+                // ✅ FIX: main_field حسب kind (IMEI/UDID/SERIAL)
+                $mainField = $this->guessMainFieldJson($kind, $r);
 
                 $data = [
                     'alias' => $alias,
@@ -470,7 +505,6 @@ class ApiProvidersController extends Controller
                     'supplier_id' => $provider->id,
                     'remote_id' => $remoteId,
 
-                    // ✅ الحقل المهم
                     'main_field' => $mainField,
 
                     'active' => 1,
@@ -488,7 +522,7 @@ class ApiProvidersController extends Controller
                 $remoteFields = $this->extractRemoteAdditionalFields($r);
                 if (!empty($remoteFields) && $created?->id) {
                     $localFields = $this->normalizeRemoteFieldsToLocal($remoteFields);
-                    $serviceType = $this->serviceGroupType($kind); // مثلاً server_service
+                    $serviceType = $this->serviceGroupType($kind); // imei_service/server_service/file_service
                     $this->saveCustomFieldsToTable($serviceType, (int)$created->id, $localFields);
                 }
 

@@ -3,17 +3,17 @@
 namespace App\Console\Commands;
 
 use App\Models\ApiProvider;
-use App\Models\ServerOrder;
+use App\Models\FileOrder;
 use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-class SyncServerOrders extends Command
+class SyncFileOrders extends Command
 {
-    protected $signature = 'orders:sync-server {--limit=50} {--only-id=}';
-    protected $description = 'Sync Server Orders status/result from provider (DHRU)';
+    protected $signature = 'orders:sync-File {--limit=50} {--only-id=}';
+    protected $description = 'Sync File Orders status/result from provider (DHRU)';
 
     public function handle(): int
     {
@@ -23,7 +23,7 @@ class SyncServerOrders extends Command
 
         $onlyId = $this->option('only-id');
 
-        $q = ServerOrder::query()
+        $q = FileOrder::query()
             ->with(['service', 'provider'])
             ->where('api_order', 1)
             ->whereNotNull('remote_id')
@@ -36,7 +36,7 @@ class SyncServerOrders extends Command
         $orders = $q->orderBy('id', 'asc')->limit($limit)->get();
 
         if ($orders->isEmpty()) {
-            $this->info('No server orders to sync.');
+            $this->info('No File orders to sync.');
             return 0;
         }
 
@@ -59,7 +59,7 @@ class SyncServerOrders extends Command
                     continue;
                 }
 
-                $res = $gw->getServerOrder($provider, $ref);
+                $res = $gw->getFileOrder($provider, $ref);
 
                 // ✅ store last check + raw always
                 $req = $this->normalizeResponseArray($order->request);
@@ -123,7 +123,7 @@ class SyncServerOrders extends Command
                 $this->info("Order #{$order->id} synced => {$newStatus} (DHRU {$statusInt})");
 
             } catch (\Throwable $e) {
-                Log::error('SyncServerOrders error', [
+                Log::error('SyncFileOrders error', [
                     'order_id' => $order->id ?? null,
                     'err' => $e->getMessage(),
                 ]);
@@ -212,7 +212,7 @@ class SyncServerOrders extends Command
         return '<div style="white-space:pre-wrap;">' . $safe . '</div>';
     }
 
-    private function refundIfNeeded(ServerOrder $order, string $reason): void
+    private function refundIfNeeded(FileOrder $order, string $reason): void
     {
         $req = $this->normalizeResponseArray($order->request);
 

@@ -165,15 +165,33 @@ class DhruOrderGateway
     // PLACE ORDERS
     // =========================
 
+    /**
+     * ✅ UPDATED:
+     * placeImeiOrder now supports REQUIRED fields (same as server)
+     * fields source: order->params['fields'] OR legacy order->params['required']
+     */
     public function placeImeiOrder(ApiProvider $p, ImeiOrder $order): array
     {
         $serviceId = (string)($order->service?->remote_id ?? '');
         $imei = (string)($order->device ?? '');
 
+        $fields = [];
+        if (is_array($order->params)) {
+            $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
+        }
+        if (!is_array($fields)) $fields = [];
+
         $xml = '<PARAMETERS>'
             . '<IMEI>'.$this->xmlEscape($imei).'</IMEI>'
-            . '<ID>'.$this->xmlEscape($serviceId).'</ID>'
-            . '</PARAMETERS>';
+            . '<ID>'.$this->xmlEscape($serviceId).'</ID>';
+
+        // ✅ include REQUIRED only if not empty
+        if (!empty($fields)) {
+            $requiredJson = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            $xml .= '<REQUIRED>'.$this->xmlEscape((string)$requiredJson).'</REQUIRED>';
+        }
+
+        $xml .= '</PARAMETERS>';
 
         return $this->send($p, 'placeimeiorder', $xml);
     }
@@ -204,6 +222,10 @@ class DhruOrderGateway
         return $this->send($p, 'placeserverorder', $xml);
     }
 
+    /**
+     * ✅ UPDATED:
+     * placeFileOrder supports REQUIRED if exists (safe addition)
+     */
     public function placeFileOrder(ApiProvider $p, FileOrder $order): array
     {
         $serviceId = (string)($order->service?->remote_id ?? '');
@@ -222,11 +244,23 @@ class DhruOrderGateway
         $filename = (string)($order->device ?? basename($path));
         $b64 = base64_encode($raw);
 
+        $fields = [];
+        if (is_array($order->params)) {
+            $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
+        }
+        if (!is_array($fields)) $fields = [];
+
         $xml = '<PARAMETERS>'
             . '<ID>'.$this->xmlEscape($serviceId).'</ID>'
             . '<FILENAME>'.$this->xmlEscape($filename).'</FILENAME>'
-            . '<FILEDATA>'.$this->xmlEscape($b64).'</FILEDATA>'
-            . '</PARAMETERS>';
+            . '<FILEDATA>'.$this->xmlEscape($b64).'</FILEDATA>';
+
+        if (!empty($fields)) {
+            $requiredJson = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            $xml .= '<REQUIRED>'.$this->xmlEscape((string)$requiredJson).'</REQUIRED>';
+        }
+
+        $xml .= '</PARAMETERS>';
 
         return $this->send($p, 'placefileorder', $xml);
     }

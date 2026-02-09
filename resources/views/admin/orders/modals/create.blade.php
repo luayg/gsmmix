@@ -111,7 +111,7 @@
 
               $fallback = $basePrice($s);
 
-              // ✅ Server custom fields (from params.custom_fields)
+              // ✅ custom fields from params.custom_fields (for ANY kind)
               $params = $s->params ?? [];
               if (is_string($params)) $params = json_decode($params, true) ?: [];
               if (!is_array($params)) $params = [];
@@ -125,7 +125,6 @@
               data-allow-bulk="{{ $allowBulk }}"
               data-group-prices='{{ $gpJson }}'
               data-base-price="{{ $fallback }}"
-              {{-- ✅ only used in server kind --}}
               data-custom-fields='{{ $customFieldsJson }}'
             >{{ $name }}</option>
           @endforeach
@@ -157,13 +156,13 @@
         <textarea class="form-control" name="devices" rows="6" placeholder="Enter one IMEI per line"></textarea>
       </div>
 
-      {{-- ✅ SERVER CUSTOM FIELDS --}}
-      <div class="col-12 js-step-fields d-none @if(!$isServerKind) d-none @endif" id="serverFieldsWrap">
+      {{-- ✅ CUSTOM FIELDS (ANY KIND) --}}
+      <div class="col-12 js-step-fields d-none" id="customFieldsWrap">
         <label class="form-label fw-semibold">Service fields</label>
-        <div class="row g-2" id="serverFieldsContainer"></div>
+        <div class="row g-2" id="customFieldsContainer"></div>
         <div class="form-text">
-          These fields are loaded from <code>server_services.params.custom_fields</code> and will be sent as
-          <code>required[service_fields_n]</code>.
+          These fields are loaded from <code>services.params.custom_fields</code> and will be sent as
+          <code>required[field_input]</code>.
         </div>
       </div>
 
@@ -218,9 +217,9 @@
   const bulkWrap   = document.getElementById('bulkDevicesWrap');
   const bulkHidden = document.getElementById('bulkHidden');
 
-  // ✅ server fields
-  const serverFieldsWrap = document.getElementById('serverFieldsWrap');
-  const serverFieldsBox  = document.getElementById('serverFieldsContainer');
+  // ✅ custom fields for ANY kind
+  const customFieldsWrap = document.getElementById('customFieldsWrap');
+  const customFieldsBox  = document.getElementById('customFieldsContainer');
 
   const selectedPriceEl   = document.getElementById('selectedPrice');
   const selectedBalanceEl = document.getElementById('selectedBalance');
@@ -264,7 +263,6 @@
     if (typeof price === 'string') price = Number(price);
     if (typeof price === 'number' && !isNaN(price) && price > 0) return price;
 
-    // fallback base price
     const base = Number(opt.getAttribute('data-base-price') || 0);
     return (!isNaN(base) && base > 0) ? base : 0;
   }
@@ -290,7 +288,6 @@
     });
   }
 
-  // ✅ no checkbox: if service allow_bulk=1 show bulk textarea directly, else show single input
   function applyBulkModeByService(){
     const allowBulk = serviceAllowBulk();
 
@@ -299,7 +296,6 @@
       hide(singleWrap);
       show(bulkWrap);
 
-      // clear single device
       const deviceInput = singleWrap ? singleWrap.querySelector('input[name="device"]') : null;
       if (deviceInput) deviceInput.value = '';
     } else {
@@ -307,34 +303,31 @@
       show(singleWrap);
       hide(bulkWrap);
 
-      // clear bulk textarea
       const bulkTa = bulkWrap ? bulkWrap.querySelector('textarea[name="devices"]') : null;
       if (bulkTa) bulkTa.value = '';
     }
   }
 
-  // ✅ SERVER: render dynamic custom fields -> required[service_fields_n]
-  function renderServerFields(){
-    if (kind !== 'server') return;
-    if (!serverFieldsWrap || !serverFieldsBox) return;
+  function renderCustomFields(){
+    if (!customFieldsWrap || !customFieldsBox) return;
 
-    serverFieldsBox.innerHTML = '';
+    customFieldsBox.innerHTML = '';
 
     const opt = serviceSel && serviceSel.selectedOptions ? serviceSel.selectedOptions[0] : null;
     if (!opt || !opt.value) {
-      hide(serverFieldsWrap);
+      hide(customFieldsWrap);
       return;
     }
 
     let cf = safeJsonParse(opt.getAttribute('data-custom-fields') || '[]');
     if (!Array.isArray(cf)) cf = [];
 
-    show(serverFieldsWrap);
-
     if (cf.length === 0) {
-      serverFieldsBox.innerHTML = '<div class="col-12"><div class="alert alert-warning mb-0">No custom fields for this service.</div></div>';
+      hide(customFieldsWrap);
       return;
     }
+
+    show(customFieldsWrap);
 
     const splitOptions = (raw) => {
       if (!raw) return [];
@@ -395,10 +388,10 @@
       }
 
       control.className = 'form-control';
+      // ✅ unified required payload for any kind:
       control.name = 'required[' + input + ']';
       if (req) control.required = true;
 
-      // min/max (optional)
       const min = parseInt(f.minimum ?? 0, 10);
       const max = parseInt(f.maximum ?? 0, 10);
       if (control.type === 'number') {
@@ -415,7 +408,7 @@
         col.appendChild(small);
       }
 
-      serverFieldsBox.appendChild(col);
+      customFieldsBox.appendChild(col);
     });
   }
 
@@ -427,7 +420,6 @@
     selectedBalanceEl.textContent = money(balance);
     balanceAfterEl.textContent    = money(balance - price);
 
-    // ✅ For server: also require custom required fields (native HTML will block submit anyway)
     const ok = (userSel.value && serviceSel.value && price > 0 && balance >= price);
 
     if (ok) {
@@ -440,10 +432,11 @@
     }
   }
 
-  // Initial state
   hide(serviceWrap);
   hideAllFields();
   if (bulkHidden) bulkHidden.value = '0';
+  if (customFieldsWrap) hide(customFieldsWrap);
+  if (customFieldsBox) customFieldsBox.innerHTML = '';
   updateSummary();
 
   userSel.addEventListener('change', function(){
@@ -455,8 +448,8 @@
       serviceSel.value = '';
       hideAllFields();
       if (bulkHidden) bulkHidden.value = '0';
-      if (serverFieldsWrap) hide(serverFieldsWrap);
-      if (serverFieldsBox) serverFieldsBox.innerHTML = '';
+      if (customFieldsWrap) hide(customFieldsWrap);
+      if (customFieldsBox) customFieldsBox.innerHTML = '';
     }
     updateSummary();
   });
@@ -465,20 +458,18 @@
     if (serviceSel.value) {
       showAllFields();
       applyBulkModeByService();
-      renderServerFields();
+      renderCustomFields();
     } else {
       hideAllFields();
       if (bulkHidden) bulkHidden.value = '0';
-      if (serverFieldsWrap) hide(serverFieldsWrap);
-      if (serverFieldsBox) serverFieldsBox.innerHTML = '';
+      if (customFieldsWrap) hide(customFieldsWrap);
+      if (customFieldsBox) customFieldsBox.innerHTML = '';
     }
     updateSummary();
   });
 
   form.addEventListener('submit', function(e){
     updateSummary();
-
-    // HTML required fields will validate automatically.
     if (btnCreate.disabled) {
       e.preventDefault();
       show(balanceErrorEl);

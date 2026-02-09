@@ -219,9 +219,13 @@ abstract class BaseOrdersController extends Controller
             $rules['quantity'] = ['nullable','integer','min:1','max:999'];
         }
 
-        // ✅ Server dynamic fields
-        if ($this->kind === 'server') {
-            $rules['required'] = ['nullable','array']; // required[service_fields_1]=...
+        /**
+         * ✅ IMPORTANT FIX:
+         * UI صار يرسل required[...] لكل الأنواع (imei/server/file) حسب custom fields
+         * فلابد نقبلها ونخزنها في params.fields للجميع
+         */
+        if ($this->kind !== 'product') {
+            $rules['required'] = ['nullable','array']; // required[field_input]=...
         }
 
         $data = $request->validate($rules);
@@ -252,10 +256,8 @@ abstract class BaseOrdersController extends Controller
             $params['quantity'] = (int)($data['quantity'] ?? 1);
         }
 
-        // Server fields: store in params.fields
-        if ($this->kind === 'server') {
-            $params['fields'] = (isset($data['required']) && is_array($data['required'])) ? $data['required'] : [];
-        }
+        // ✅ IMPORTANT FIX: store fields for ALL kinds (imei/server/file)
+        $params['fields'] = (isset($data['required']) && is_array($data['required'])) ? $data['required'] : [];
 
         $bulk = (bool)($data['bulk'] ?? false);
         $devices = [];
