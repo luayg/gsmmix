@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\ApiProvidersController;
+use App\Http\Controllers\Admin\Api\RemoteServerServicesController;
 
 /*
 |--------------------------------------------------------------------------
@@ -9,7 +10,7 @@ use App\Http\Controllers\Admin\ApiProvidersController;
 |--------------------------------------------------------------------------
 | IMPORTANT:
 | - Keep ALL /admin/apis routes here
-| - Remove the duplicate block from routes/web.php (explained below)
+| - Do NOT duplicate them in routes/web.php
 */
 
 Route::prefix('admin')->name('admin.')->group(function () {
@@ -31,14 +32,28 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // ✅ هذا هو المسار الذي تستهلكه الواجهة لاختيار مزوّدي الـ API
         Route::get('/options', [ApiProvidersController::class, 'options'])->name('options');
 
-        // ✅ زر Sync now (FIX: كان syncNow - الآن sync)
+        // ✅ زر Sync now
         Route::post('/{provider}/sync', [ApiProvidersController::class, 'sync'])->name('sync');
 
-        // ✅ خدمات Remote + عمليات الاستيراد
+        // ==========================================================
+        // ✅ SERVER Remote Services (صفحتين مستقلتين)
+        // ==========================================================
+        Route::prefix('{provider}/remote/server')->name('remote.server.')->group(function () {
+            Route::get('/',        [RemoteServerServicesController::class, 'index'])->name('index');          // Clone page
+            Route::get('/import',  [RemoteServerServicesController::class, 'importPage'])->name('import_page'); // Import page
+            Route::post('/import', [RemoteServerServicesController::class, 'import'])->name('import');
+            Route::get('/services-json', [RemoteServerServicesController::class, 'servicesJson'])->name('services_json');
+        });
+
+        // ✅ خدمات Remote + عمليات الاستيراد (IMEI/FILE ما زالت مودال)
         Route::prefix('{provider}/services')->name('services.')->group(function () {
 
             Route::get('/imei',   [ApiProvidersController::class,'servicesImei'])->name('imei');
-            Route::get('/server', [ApiProvidersController::class,'servicesServer'])->name('server');
+
+            // ✅ IMPORTANT: بدل ما تفتح القديم للسيرفر، خليها Redirect للجديد
+            Route::get('/server', fn ($provider) => redirect()->route('admin.apis.remote.server.index', $provider))
+                ->name('server');
+
             Route::get('/file',   [ApiProvidersController::class,'servicesFile'])->name('file');
 
             // Bulk import

@@ -11,8 +11,6 @@ use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\Admin\UserFinanceController;
 use App\Http\Controllers\Admin\ApiProvidersController;
 use App\Http\Controllers\Admin\UploadController;
-use App\Http\Controllers\Admin\Api\RemoteServerServicesController;
-
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -21,12 +19,10 @@ use App\Http\Controllers\Admin\Services\ServerServiceController;
 use App\Http\Controllers\Admin\Services\FileServiceController;
 use App\Http\Controllers\Admin\Services\CloneController;
 
-
 use App\Http\Controllers\Admin\Orders\ImeiOrdersController;
 use App\Http\Controllers\Admin\Orders\ServerOrdersController;
 use App\Http\Controllers\Admin\Orders\FileOrdersController;
 use App\Http\Controllers\Admin\Orders\ProductOrdersController;
-
 
 /*
 |--------------------------------------------------------------------------
@@ -141,19 +137,15 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Ajax: groups filtered by type (imei/server/file)
         Route::get('groups/options', [ServiceGroupController::class, 'options'])->name('groups.options');
 
+        // ✅ (ملاحظة) هذا المسار عندك اسمه غلط (admin داخل admin)
+        // لو شغال عندك اتركه، لكن الأفضل تصحيحه لاحقاً
         Route::post('/admin/services/server/{id}/sync-fields', [\App\Http\Controllers\Admin\Services\ServerServiceController::class, 'syncFields'])
-    ->name('admin.services.server.syncFields');
-
-
+            ->name('admin.services.server.syncFields');
 
         // ===== IMEI services =====
         Route::resource('imei-services', ImeiServiceController::class)->except(['show'])->names('imei');
-
-        // JSON + extra actions needed by Vue/modals
         Route::get('imei-services/{service}/json',    [ImeiServiceController::class, 'showJson'])->name('imei.show.json');
         Route::post('imei-services/{service}/toggle', [ImeiServiceController::class, 'toggle'])->name('imei.toggle');
-
-        // Modals
         Route::get('imei-services/modal/create',         [ImeiServiceController::class, 'modalCreate'])->name('imei.modal.create');
         Route::get('imei-services/{service}/modal/edit', [ImeiServiceController::class, 'modalEdit'])->name('imei.modal.edit');
 
@@ -167,26 +159,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('file-services/{service}/json',    [FileServiceController::class, 'showJson'])->name('file.show.json');
         Route::post('file-services/{service}/toggle', [FileServiceController::class, 'toggle'])->name('file.toggle');
 
-        // ===== Clone from API =====
+        // ===== Clone from API (يستخدمه service-modal.blade.php لتحميل provider services) =====
         Route::get('clone/modal',             [CloneController::class, 'modal'])->name('clone.modal');
         Route::get('clone/provider-services', [CloneController::class, 'providerServices'])->name('clone.provider_services');
     });
-
-        Route::prefix('admin/apis')->name('admin.apis.')->group(function () {
-    Route::get('{provider}/remote/server', [RemoteServerServicesController::class, 'index'])
-        ->name('remote.server.index');
-
-    Route::get('{provider}/remote/server/import', [RemoteServerServicesController::class, 'importPage'])
-        ->name('remote.server.import_page');
-
-    Route::post('{provider}/remote/server/import', [RemoteServerServicesController::class, 'import'])
-        ->name('remote.server.import');
-
-    // optional: endpoint يرجّع remote list JSON (لو بدك لاحقًا)
-    Route::get('{provider}/remote/server/services-json', [RemoteServerServicesController::class, 'servicesJson'])
-        ->name('remote.server.services_json');
-});
-
 
     /* ======== روابط مختصرة ======== */
     Route::get('/services/imei',   fn () => redirect()->route('admin.services.imei.index'));
@@ -194,44 +170,39 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::get('/services/file',   fn () => redirect()->route('admin.services.file.index'));
     Route::get('/services/groups', fn () => redirect()->route('admin.services.groups.index'));
 
-Route::prefix('orders')->name('orders.')->group(function () {
+    /* ================== Orders ==================== */
+    Route::prefix('orders')->name('orders.')->group(function () {
 
-    // IMEI
-    Route::get('/imei', [ImeiOrdersController::class, 'index'])->name('imei.index');
-    Route::post('/imei', [ImeiOrdersController::class, 'store'])->name('imei.store');
-    Route::post('/imei/{id}', [ImeiOrdersController::class, 'update'])->name('imei.update');
-    Route::get('/imei/modal/create', [ImeiOrdersController::class, 'modalCreate'])->name('imei.modal.create');
-    Route::get('/imei/{id}/modal/view', [ImeiOrdersController::class, 'modalView'])->name('imei.modal.view');
-    Route::get('/imei/{id}/modal/edit', [ImeiOrdersController::class, 'modalEdit'])->name('imei.modal.edit');
+        // IMEI
+        Route::get('/imei', [ImeiOrdersController::class, 'index'])->name('imei.index');
+        Route::post('/imei', [ImeiOrdersController::class, 'store'])->name('imei.store');
+        Route::post('/imei/{id}', [ImeiOrdersController::class, 'update'])->name('imei.update');
+        Route::get('/imei/modal/create', [ImeiOrdersController::class, 'modalCreate'])->name('imei.modal.create');
+        Route::get('/imei/{id}/modal/view', [ImeiOrdersController::class, 'modalView'])->name('imei.modal.view');
+        Route::get('/imei/{id}/modal/edit', [ImeiOrdersController::class, 'modalEdit'])->name('imei.modal.edit');
 
-    // Server
-    Route::get('/server', [ServerOrdersController::class, 'index'])->name('server.index');
-    Route::post('/server', [ServerOrdersController::class, 'store'])->name('server.store');
-    Route::post('/server/{id}', [ServerOrdersController::class, 'update'])->name('server.update');
-    Route::get('/server/modal/create', [ServerOrdersController::class, 'modalCreate'])->name('server.modal.create');
-    Route::get('/server/{id}/modal/view', [ServerOrdersController::class, 'modalView'])->name('server.modal.view');
-    Route::get('/server/{id}/modal/edit', [ServerOrdersController::class, 'modalEdit'])->name('server.modal.edit');
+        // Server
+        Route::get('/server', [ServerOrdersController::class, 'index'])->name('server.index');
+        Route::post('/server', [ServerOrdersController::class, 'store'])->name('server.store');
+        Route::post('/server/{id}', [ServerOrdersController::class, 'update'])->name('server.update');
+        Route::get('/server/modal/create', [ServerOrdersController::class, 'modalCreate'])->name('server.modal.create');
+        Route::get('/server/{id}/modal/view', [ServerOrdersController::class, 'modalView'])->name('server.modal.view');
+        Route::get('/server/{id}/modal/edit', [ServerOrdersController::class, 'modalEdit'])->name('server.modal.edit');
 
-    // File
-    Route::get('/file', [FileOrdersController::class, 'index'])->name('file.index');
-    Route::post('/file', [FileOrdersController::class, 'store'])->name('file.store');
-    Route::post('/file/{id}', [FileOrdersController::class, 'update'])->name('file.update');
-    Route::get('/file/modal/create', [FileOrdersController::class, 'modalCreate'])->name('file.modal.create');
-    Route::get('/file/{id}/modal/view', [FileOrdersController::class, 'modalView'])->name('file.modal.view');
-    Route::get('/file/{id}/modal/edit', [FileOrdersController::class, 'modalEdit'])->name('file.modal.edit');
+        // File
+        Route::get('/file', [FileOrdersController::class, 'index'])->name('file.index');
+        Route::post('/file', [FileOrdersController::class, 'store'])->name('file.store');
+        Route::post('/file/{id}', [FileOrdersController::class, 'update'])->name('file.update');
+        Route::get('/file/modal/create', [FileOrdersController::class, 'modalCreate'])->name('file.modal.create');
+        Route::get('/file/{id}/modal/view', [FileOrdersController::class, 'modalView'])->name('file.modal.view');
+        Route::get('/file/{id}/modal/edit', [FileOrdersController::class, 'modalEdit'])->name('file.modal.edit');
 
-    // Product (placeholder)
-    Route::get('/product', [ProductOrdersController::class, 'index'])->name('product.index');
-    Route::get('/product/modal/create', [ProductOrdersController::class, 'modalCreate'])->name('product.modal.create');
-});
-/* ================== End Orders ==================== */
+        // Product (placeholder)
+        Route::get('/product', [ProductOrdersController::class, 'index'])->name('product.index');
+        Route::get('/product/modal/create', [ProductOrdersController::class, 'modalCreate'])->name('product.modal.create');
+    });
 
-
-
-
-
-
-    /* ================== Finances (placeholders) ==================== */
+    /* ================== placeholders ==================== */
     Route::prefix('finances')->name('finances.')->group(function () {
         Route::get('/', fn () => 'Finances home')->name('index');
         Route::get('/invoices',     fn () => 'Invoices')->name('invoices.index');
@@ -239,17 +210,11 @@ Route::prefix('orders')->name('orders.')->group(function () {
         Route::get('/transactions', fn () => 'Transactions')->name('transactions.index');
     });
 
-    /* ================== Store (placeholders) ==================== */
     Route::prefix('store')->name('store.')->group(function () {
         Route::get('/categories', fn () => 'Product categories')->name('categories.index');
         Route::get('/products',   fn () => 'Products')->name('products.index');
     });
-/* ================== API Management (Providers) ====================
-| Moved to routes/admin_apis.php
-|================================================================== */
 
-
-    /* ================== CMS-like sections (placeholders) ==================== */
     Route::prefix('pages')->name('pages.')->group(function () {
         Route::get('/', fn () => 'Pages')->name('index');
     });
@@ -259,9 +224,8 @@ Route::prefix('orders')->name('orders.')->group(function () {
     });
 
     Route::prefix('replies')->name('replies.')->group(function () {
-    Route::get('/', fn () => 'Replies')->name('index');
-});
-
+        Route::get('/', fn () => 'Replies')->name('index');
+    });
 
     /* ================== Downloads (placeholders) ==================== */
     Route::prefix('downloads')->name('downloads.')->group(function () {
@@ -269,7 +233,6 @@ Route::prefix('orders')->name('orders.')->group(function () {
         Route::get('/categories', fn () => 'Download categories')->name('categories.index');
     });
 
-    /* ================== Settings/System/Reports/Logs ==================== */
     Route::prefix('settings')->name('settings.')->group(function () {
         Route::get('/general',    fn () => 'General settings')->name('general');
         Route::get('/mail',       fn () => 'Mail settings')->name('mail');
@@ -298,5 +261,6 @@ Route::prefix('orders')->name('orders.')->group(function () {
     });
 
 });
+
 require __DIR__ . '/admin_apis.php';
 require __DIR__ . '/auth.php';
