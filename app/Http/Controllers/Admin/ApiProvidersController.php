@@ -109,10 +109,25 @@ class ApiProvidersController extends Controller
         return redirect()->route('admin.apis.index')->with('ok', 'API Provider updated.');
     }
 
+    /**
+     * ✅ FIX:
+     * عند حذف Provider لازم نحذف كل خدماته من جداول remote_* حتى لا يحصل تضخم/ازدواجية
+     */
     public function destroy(Request $request, ApiProvider $provider)
     {
-        $provider->delete();
-        return redirect()->route('admin.apis.index')->with('ok', 'API Provider deleted.');
+        DB::transaction(function () use ($provider) {
+            $pid = (int)$provider->id;
+
+            // ✅ احذف خدمات الريموت أولاً
+            RemoteImeiService::query()->where('api_provider_id', $pid)->delete();
+            RemoteServerService::query()->where('api_provider_id', $pid)->delete();
+            RemoteFileService::query()->where('api_provider_id', $pid)->delete();
+
+            // ✅ ثم احذف المزود نفسه
+            $provider->delete();
+        });
+
+        return redirect()->route('admin.apis.index')->with('ok', 'API Provider deleted + remote services purged.');
     }
 
     public function sync(Request $request, ApiProvider $provider, ProviderManager $manager)
@@ -255,50 +270,6 @@ class ApiProvidersController extends Controller
      * Internal helpers
      * =========================
      */
-
-    /**
-     * normalize truthy values (0/1, "0"/"1", true/false, null)
-     */
-    private function boolish($v): bool
-    {
-        if (is_bool($v)) return $v;
-        if ($v === null) return false;
-        $s = strtolower(trim((string)$v));
-        return in_array($s, ['1','true','yes','on'], true);
-    }
-
-    /**
-     * ✅ NEW: guess main_field based on remote flags per kind
-     * - IMEI: if remote says udid => UDID, else if serial => Serial, else => IMEI.
-     */
-    private function guessMainFieldJson(string $kind, $remoteRow): string
-    {
-        $kind = strtolower(trim($kind));
-
-        if ($kind === 'imei') {
-            $udid   = $this->boolish($remoteRow->udid ?? false);
-            $serial = $this->boolish($remoteRow->serial ?? false);
-
-            if ($udid) {
-                return $this->buildMainFieldJson('udid', 'UDID', 'alphanumeric', 5, 64);
-            }
-            if ($serial) {
-                return $this->buildMainFieldJson('serial', 'Serial', 'alphanumeric', 3, 64);
-            }
-
-            return $this->buildMainFieldJson('imei', 'IMEI', 'numbers', 14, 18);
-        }
-
-        if ($kind === 'server') {
-            return $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
-        }
-
-        if ($kind === 'file') {
-            return $this->buildMainFieldJson('text', 'Reference', 'any', 1, 100);
-        }
-
-        return $this->buildMainFieldJson('text', 'Device', 'any', 1, 100);
-    }
 
     private function buildMainFieldJson(string $type = 'serial', string $label = 'Serial', string $allowed = 'any', int $min = 1, int $max = 50): string
     {
@@ -486,8 +457,7 @@ class ApiProvidersController extends Controller
                 if ($aliasBase === '') $aliasBase = 'service';
                 $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
 
-                // ✅ FIX: main_field حسب kind (IMEI/UDID/SERIAL)
-                $mainField = $this->guessMainFieldJson($kind, $r);
+                $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
 
                 $data = [
                     'alias' => $alias,
@@ -518,11 +488,10 @@ class ApiProvidersController extends Controller
 
                 $created = $localModel::query()->create($data);
 
-                // ✅ أنشئ custom_fields rows إذا كانت موجودة بالريموت
                 $remoteFields = $this->extractRemoteAdditionalFields($r);
                 if (!empty($remoteFields) && $created?->id) {
                     $localFields = $this->normalizeRemoteFieldsToLocal($remoteFields);
-                    $serviceType = $this->serviceGroupType($kind); // imei_service/server_service/file_service
+                    $serviceType = $this->serviceGroupType($kind);
                     $this->saveCustomFieldsToTable($serviceType, (int)$created->id, $localFields);
                 }
 

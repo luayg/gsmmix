@@ -11,7 +11,6 @@ class Kernel extends ConsoleKernel
     {
         /**
          * ✅ Provider Sync (Remote Tables)
-         * - يسحب خدمات المزودين ويحدّث remote_*_services
          */
         $schedule->command('providers:sync')
             ->everyMinute()
@@ -19,12 +18,20 @@ class Kernel extends ConsoleKernel
             ->onOneServer();
 
         /**
-         * ✅ Retry sending (orders stuck because provider unreachable)
-         * (هذه الأوامر موجودة عندك حسب ما وضعت)
+         * ✅ Retry IMEI API orders that are waiting and not sent yet (no remote_id)
          */
         $schedule->command('orders:retry-imei --limit=20')
             ->everyMinute()
             ->withoutOverlapping();
+
+        /**
+         * ✅ Dispatch pending IMEI orders (also waiting + no remote_id)
+         * ملاحظة: هذا قريب جدًا من retry-imei (ممكن تكتفي بواحد لاحقًا)
+         */
+        $schedule->command('orders:dispatch-pending-imei --limit=50')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
 
         /**
          * ✅ Sync results/status from providers
@@ -37,36 +44,25 @@ class Kernel extends ConsoleKernel
             ->everyMinute()
             ->withoutOverlapping();
 
-        // ✅ NEW: Sync File Orders
         $schedule->command('orders:sync-file --limit=50')
             ->everyMinute()
             ->withoutOverlapping();
-
-        /**
-         * ✅ Dispatch pending (if you have this command)
-         * أنت مفعّل dispatch-pending-imei عندك
-         */
-        $schedule->command('orders:dispatch-pending-imei --limit=50')
-            ->everyMinute()
-            ->withoutOverlapping()
-            ->runInBackground();
     }
 
     /**
-     * ✅ Register commands explicitly (safe even with auto-discovery)
+     * ✅ Register commands explicitly (matches your Commands folder)
      */
     protected $commands = [
         \App\Console\Commands\ProvidersSyncCommand::class,
+
+        \App\Console\Commands\RetryImeiApiOrders::class,
+        \App\Console\Commands\DispatchPendingImeiOrders::class,
 
         \App\Console\Commands\SyncImeiOrders::class,
         \App\Console\Commands\SyncServerOrders::class,
         \App\Console\Commands\SyncFileOrders::class,
 
-        // لو عندك هذا الأمر فعليًا
-        \App\Console\Commands\RetryImeiOrders::class,
-
-        // لو عندك هذا الأمر فعليًا
-        \App\Console\Commands\DispatchPendingImeiOrders::class,
+        \App\Console\Commands\UserResetPasswordCommand::class,
     ];
 
     protected function commands(): void
