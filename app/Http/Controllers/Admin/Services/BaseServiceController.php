@@ -4,6 +4,9 @@ namespace App\Http\Controllers\Admin\Services;
 
 use App\Http\Controllers\Controller;
 use App\Models\ServiceGroupPrice;
+use App\Models\RemoteImeiService;
+use App\Models\RemoteServerService;
+use App\Models\RemoteFileService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -39,17 +42,68 @@ abstract class BaseServiceController extends Controller
         ]);
     }
 
+    /**
+     * ✅ MODAL CREATE (CLONE)
+     * هنا نجهّز البيانات القادمة من remote service (خصوصًا additional_fields)
+     * حتى تظهر تلقائيًا داخل Additional tab.
+     */
     public function modalCreate(Request $r)
     {
+        $providerId = $r->input('provider_id');
+        $remoteId   = $r->input('remote_id');
+
         $data = [
-            'supplier_id' => $r->input('provider_id'),
-            'remote_id'   => $r->input('remote_id'),
+            'supplier_id' => $providerId,
+            'remote_id'   => $remoteId,
             'name'        => $r->input('name'),
             'cost'        => $r->input('credit'),
             'time'        => $r->input('time'),
             'group_name'  => $r->input('group'),
             'type'        => $this->viewPrefix,
+
+            // ✅ نضيفها هنا ليستخدمها الـ blade
+            'remote_additional_fields' => [],
+            'remote_additional_fields_json' => '[]',
         ];
+
+        // ✅ إذا كان هذا مودال Clone (عنده provider_id + remote_id)
+        // اجلب additional_fields من جدول remote_*_services
+        if (!empty($providerId) && $remoteId !== null && $remoteId !== '') {
+            $row = null;
+
+            if ($this->viewPrefix === 'server') {
+                $row = RemoteServerService::query()
+                    ->where('api_provider_id', (int)$providerId)
+                    ->where('remote_id', (string)$remoteId)
+                    ->first();
+            } elseif ($this->viewPrefix === 'imei') {
+                $row = RemoteImeiService::query()
+                    ->where('api_provider_id', (int)$providerId)
+                    ->where('remote_id', (string)$remoteId)
+                    ->first();
+            } elseif ($this->viewPrefix === 'file') {
+                $row = RemoteFileService::query()
+                    ->where('api_provider_id', (int)$providerId)
+                    ->where('remote_id', (string)$remoteId)
+                    ->first();
+            }
+
+            if ($row) {
+                $raw = $row->additional_fields ?? $row->additional_data ?? null;
+
+                $fields = [];
+                if (is_array($raw)) {
+                    $fields = $raw;
+                } elseif (is_string($raw) && trim($raw) !== '') {
+                    $decoded = json_decode($raw, true);
+                    if (is_array($decoded)) $fields = $decoded;
+                }
+
+                if (!is_array($fields)) $fields = [];
+                $data['remote_additional_fields'] = $fields;
+                $data['remote_additional_fields_json'] = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            }
+        }
 
         return view("admin.services.{$this->viewPrefix}._modal_create", compact('data'));
     }
@@ -132,19 +186,16 @@ abstract class BaseServiceController extends Controller
     }
 
     /**
-     * ✅ THIS IS THE IMPORTANT PART:
-     * Save custom fields into DB table: custom_fields
+     * ✅ Save custom fields into DB table: custom_fields
      */
     protected function saveCustomFieldsToTable(int $serviceId, string $serviceType, array $fields): void
     {
-        // لو ما فيه جدول custom_fields لا تكسر النظام
         try {
             DB::table('custom_fields')->limit(1)->get();
         } catch (\Throwable $e) {
             return;
         }
 
-        // امسح القديم ثم أضف الجديد
         DB::table('custom_fields')
             ->where('service_type', $serviceType . '_service')
             ->where('service_id', $serviceId)
@@ -160,10 +211,9 @@ abstract class BaseServiceController extends Controller
             $opts = trim((string)($f['options'] ?? ''));
 
             DB::table('custom_fields')->insert([
-                'service_type'   => $serviceType . '_service', // مثال: server_service
+                'service_type'   => $serviceType . '_service',
                 'service_id'     => $serviceId,
 
-                // أغلب قواعد GSM تستخدم JSON للترجمة
                 'name'           => json_encode(['en' => $name, 'fallback' => $name], JSON_UNESCAPED_UNICODE),
                 'input'          => (string)($f['input_name'] ?? ''),
                 'field_type'     => (string)($f['field_type'] ?? 'text'),
@@ -242,7 +292,6 @@ abstract class BaseServiceController extends Controller
             'custom_fields_json' => 'nullable|string',
         ]);
 
-        // ✅ alias unique
         $alias = $v['alias'] ?? null;
         if (!$alias) $alias = Str::slug($v['name'] ?? '');
         if (!$alias) $alias = 'service-' . Str::random(8);
@@ -254,10 +303,8 @@ abstract class BaseServiceController extends Controller
         }
         $v['alias'] = $alias;
 
-        // ✅ main_field
         $mainType = strtolower(trim((string)($v['main_field_type'] ?? 'serial')));
 
-        // خليها أرقام صريحة (مش null أو string غريب)
         $minVal = $v['min'] ?? $v['minimum'] ?? 0;
         $maxVal = $v['max'] ?? $v['maximum'] ?? 0;
 
@@ -266,7 +313,6 @@ abstract class BaseServiceController extends Controller
 
         $labelVal = trim((string)($v['main_field_label'] ?? ''));
         if ($labelVal === '') {
-            // لو ما انرسل Label خليه نفس نوع المين فيلد
             $labelVal = strtoupper($mainType);
         }
 
@@ -287,18 +333,15 @@ abstract class BaseServiceController extends Controller
             ],
         ];
 
-        // ✅ custom fields: من json القادم من الـ Additional tab
         $customFields = $this->normalizeCustomFields(
             $request->input('custom_fields'),
             $request->input('custom_fields_json')
         );
 
-        // ✅ params: احتفظنا بها (لكن الحفظ الحقيقي صار في جدول custom_fields)
         $params = [
             'custom_fields' => $customFields,
         ];
 
-        // ✅ لو مصدر API واختار من القائمة
         if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
             $v['supplier_id'] = (int)$v['api_provider_id'];
             $v['remote_id']   = (int)$v['api_service_remote_id'];
@@ -345,10 +388,9 @@ abstract class BaseServiceController extends Controller
                 'ordering'                => (int)($v['ordering'] ?? 0),
             ]);
 
-            // ✅ group pricing
             $this->saveGroupPrices((int)$service->id, $v['group_prices'] ?? []);
 
-            // ✅ ✅ ✅ الحفظ الصحيح لجدول custom_fields
+            // ✅ ✅ ✅ يحفظ تلقائيًا بجدول custom_fields (الذي نحتاجه في Create Order)
             $this->saveCustomFieldsToTable((int)$service->id, $this->viewPrefix, $customFields);
 
             if ($request->expectsJson() || $request->ajax()) {

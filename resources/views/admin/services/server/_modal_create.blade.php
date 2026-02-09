@@ -1,20 +1,23 @@
 {{-- resources/views/admin/services/server/_modal_create.blade.php --}}
 
+@php
+  // ✅ JSON القادم من BaseServiceController::modalCreate()
+  $remoteAdditionalJson = $data['remote_additional_fields_json'] ?? '[]';
+  if (!is_string($remoteAdditionalJson) || trim($remoteAdditionalJson) === '') $remoteAdditionalJson = '[]';
+@endphp
+
 <form id="serviceCreateForm"
       class="service-create-form js-ajax-form"
       action="{{ route('admin.services.server.store') }}"
       method="POST"
       data-ajax="1">
   @csrf
-    {{-- ✅ MAIN FIELD JSON (will be stored in server_services.main_field) --}}
+
+  {{-- ✅ MAIN FIELD JSON (will be stored in server_services.main_field) --}}
   <input type="hidden" name="main_field" id="mainFieldHidden" value="">
 
   {{-- ✅ PARAMS JSON (store custom_fields here too) --}}
   <input type="hidden" name="params" id="paramsHidden" value="{}">
-
-
-
-
 
   {{-- ✅ Required by backend validation --}}
   <input type="hidden" name="name_en" id="nameEnHidden" value="">
@@ -22,6 +25,9 @@
 
   {{-- ✅ Custom fields JSON --}}
   <input type="hidden" name="custom_fields_json" id="customFieldsJson" value="[]">
+
+  {{-- ✅ IMPORTANT: remote additional fields JSON (from remote_*_services.additional_fields) --}}
+  <input type="hidden" id="remoteAdditionalFieldsJson" value='{{ e($remoteAdditionalJson) }}'>
 
   {{-- Injected by service-modal.js --}}
   <input type="hidden" name="supplier_id" value="">
@@ -159,7 +165,6 @@
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
 
-          {{-- Summernote target --}}
           <textarea id="infoEditor" class="form-control d-none" rows="10"></textarea>
           <input type="hidden" name="info" id="infoHidden" value="">
 
@@ -308,11 +313,29 @@
 
   const slugify = (s) => String(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 
+  function safeJsonParse(s){
+    try { return JSON.parse(s); } catch(e){ return null; }
+  }
+
   function toggleOptions(card){
     const type = card.querySelector('[data-type]')?.value || 'text';
     const box  = card.querySelector('[data-options-wrap]');
     if (!box) return;
     box.style.display = (type === 'select') ? '' : 'none';
+  }
+
+  function syncParamsHidden(){
+    const paramsHidden = form.querySelector('#paramsHidden');
+    if (!paramsHidden) return;
+
+    let params = {};
+    try { params = JSON.parse(paramsHidden.value || '{}') || {}; } catch(e){ params = {}; }
+
+    let custom = [];
+    try { custom = JSON.parse(outJson?.value || '[]') || []; } catch(e){ custom = []; }
+
+    params.custom_fields = Array.isArray(custom) ? custom : [];
+    paramsHidden.value = JSON.stringify(params);
   }
 
   function serializeFieldsInScope(scope){
@@ -340,6 +363,7 @@
     });
 
     out.value = JSON.stringify(data);
+    syncParamsHidden();
   }
 
   function bindCard(card){
@@ -410,7 +434,7 @@
     return '';
   }
 
-  // ========= basic sync for hidden required fields =========
+  // ========= hidden required fields =========
   nameInput?.addEventListener('input', () => { if (nameEn) nameEn.value = nameInput.value; });
   if (nameInput && nameEn) nameEn.value = nameInput.value || '';
 
@@ -421,12 +445,10 @@
   mainFieldType?.addEventListener('change', syncMainTypeHidden);
   syncMainTypeHidden();
 
-  // ========= add field button =========
+  // ========= Add field button =========
   btnAdd?.addEventListener('click', () => addField(form));
 
-  
-
-  // ============== ✅ HOOKS used by service-modal.blade.php ===============
+  // ============== ✅ HOOK (used externally too) ===============
   window.__serverServiceApplyRemoteFields__ = function(scope, additionalFields){
     try{
       if (!scope || !Array.isArray(additionalFields)) return;
@@ -434,7 +456,7 @@
       const localWrap = scope.querySelector('#fieldsWrap');
       if (!localWrap) return;
 
-      // امسح الكروت فقط
+      // امسح الموجود
       Array.from(localWrap.querySelectorAll('[data-field]')).forEach(x => x.remove());
 
       additionalFields.forEach((f, idx) => {
@@ -462,104 +484,18 @@
     }
   };
 
-  window.__serverServiceSetMainField__ = function(scope, type, label){
-    try{
-      if (!scope) return;
+  // ✅ Auto apply عند فتح المودال (Clone)
+  (function autoApplyRemote(){
+    const raw = form.querySelector('#remoteAdditionalFieldsJson')?.value || '[]';
+    const arr = safeJsonParse(raw);
+    if (!Array.isArray(arr) || arr.length === 0) return;
 
-      const t = String(type || '').toLowerCase().trim();
-      const l = String(label || '').trim();
-
-      const typeSel = scope.querySelector('#mainFieldType');
-      const labInp  = scope.querySelector('#mainFieldLabel');
-
-      if (typeSel && Array.from(typeSel.options).some(o => o.value === t)) {
-        typeSel.value = t;
-        typeSel.dispatchEvent(new Event('change'));
-      }
-      if (labInp && l) labInp.value = l;
-    }catch(e){
-      console.warn('setMainField failed', e);
+    // فقط إذا الفورم فاضي حتى لا نكتب فوق تعديل يدوي
+    const hasAny = form.querySelectorAll('#fieldsWrap [data-field]').length > 0;
+    if (!hasAny && typeof window.__serverServiceApplyRemoteFields__ === 'function') {
+      window.__serverServiceApplyRemoteFields__(form, arr);
     }
-  };
-
-    function buildMainFieldJson(){
-    const type  = form.querySelector('#mainFieldType')?.value || 'serial';
-    const label = form.querySelector('#mainFieldLabel')?.value || 'Serial';
-    const allowed = form.querySelector('#allowedChars')?.value || 'any';
-    const min = Number(form.querySelector('#minChars')?.value || 0);
-    const max = Number(form.querySelector('#maxChars')?.value || 0);
-
-    // الصيغة المقترحة (ثابتة وواضحة)
-    return {
-      type,
-      label,
-      allowed_characters: allowed,
-      minimum: Number.isFinite(min) ? min : 0,
-      maximum: Number.isFinite(max) ? max : 0,
-    };
-  }
-
-  function syncMainFieldHidden(){
-    const hidden = form.querySelector('#mainFieldHidden');
-    if (!hidden) return;
-    hidden.value = JSON.stringify(buildMainFieldJson());
-  }
-
-  function syncParamsHidden(){
-    const paramsHidden = form.querySelector('#paramsHidden');
-    if (!paramsHidden) return;
-
-    let params = {};
-    try { params = JSON.parse(paramsHidden.value || '{}') || {}; } catch(e){ params = {}; }
-
-    // خذ custom_fields_json من الهيدن الموجودة
-    let custom = [];
-    try { custom = JSON.parse(outJson?.value || '[]') || []; } catch(e){ custom = []; }
-
-    // خزّنها داخل params.custom_fields (هذا ما يستخدمه تبويب Additional في النظام العام) :contentReference[oaicite:1]{index=1}
-    params.custom_fields = Array.isArray(custom) ? custom : [];
-
-    paramsHidden.value = JSON.stringify(params);
-  }
-
-  // اربط أي تغيير على main field inputs
-  ['#mainFieldType','#mainFieldLabel','#allowedChars','#minChars','#maxChars'].forEach(sel=>{
-    form.querySelector(sel)?.addEventListener('input', ()=>{ syncMainFieldHidden(); });
-    form.querySelector(sel)?.addEventListener('change', ()=>{ syncMainFieldHidden(); });
-  });
-
-  // عند أي تعديل على الكستوم فيلدز: حدّث params أيضًا
-  function serializeFieldsInScope(scope){
-    const wrap = scope.querySelector('#fieldsWrap');
-    const out  = scope.querySelector('#customFieldsJson');
-    if (!wrap || !out) return;
-
-    const data = [];
-    wrap.querySelectorAll('[data-field]').forEach(card => {
-      const type = card.querySelector('[data-type]')?.value || 'text';
-      const options = (card.querySelector('[data-options]')?.value || '').trim();
-
-      data.push({
-        active: card.querySelector('[data-active]')?.checked ? 1 : 0,
-        name: card.querySelector('[data-name]')?.value || '',
-        type,
-        input: card.querySelector('[data-input]')?.value || '',
-        description: card.querySelector('[data-desc]')?.value || '',
-        minimum: Number(card.querySelector('[data-min]')?.value || 0),
-        maximum: Number(card.querySelector('[data-max]')?.value || 0),
-        validation: card.querySelector('[data-validation]')?.value || '',
-        required: Number(card.querySelector('[data-required]')?.value || 0),
-        options,
-      });
-    });
-
-    out.value = JSON.stringify(data);
-
-    // ✅ مهم جدًا: خزّن داخل params أيضًا
-    syncParamsHidden();
-  }
-
-
+  })();
 
   // initial serialize
   serializeFieldsInScope(form);
