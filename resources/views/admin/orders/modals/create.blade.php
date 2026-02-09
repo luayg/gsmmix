@@ -45,7 +45,6 @@
 
   $kind = $kind ?? '';
   $isFileKind   = $kind === 'file';
-  $isServerKind = $kind === 'server';
 
   // ✅ Important: this must be passed from controller, otherwise fallback works (base price only)
   $servicePriceMap = $servicePriceMap ?? [];
@@ -111,7 +110,7 @@
 
               $fallback = $basePrice($s);
 
-              // ✅ custom fields from params.custom_fields (for ANY kind)
+              // ✅ Custom fields (now should come from DB injected into params.custom_fields)
               $params = $s->params ?? [];
               if (is_string($params)) $params = json_decode($params, true) ?: [];
               if (!is_array($params)) $params = [];
@@ -134,35 +133,33 @@
       {{-- ✅ bulk hidden input (we set it automatically based on service allow_bulk) --}}
       <input type="hidden" name="bulk" id="bulkHidden" value="0">
 
-      {{-- SINGLE device --}}
+      {{-- SINGLE device / upload --}}
       <div class="col-12 js-step-fields d-none" id="singleDeviceWrap">
         @if($isFileKind)
           <label class="form-label">Upload file</label>
           <input type="file" class="form-control" name="file" required>
         @else
           <label class="form-label">{{ $deviceLabel ?? 'Device' }}</label>
-          <input type="text" class="form-control" name="device" placeholder="Enter IMEI / SN">
-          @if($isServerKind)
-            <div class="form-text">
-              Server services use custom fields below. Device may still be required depending on your service setup.
-            </div>
-          @endif
+          <input type="text" class="form-control" name="device" placeholder="Enter value">
+          <div class="form-text">
+            Depending on service type, this may be required (IMEI/SN) or optional (field-based service).
+          </div>
         @endif
       </div>
 
       {{-- BULK devices --}}
       <div class="col-12 js-step-fields d-none" id="bulkDevicesWrap">
         <label class="form-label">Devices (one per line)</label>
-        <textarea class="form-control" name="devices" rows="6" placeholder="Enter one IMEI per line"></textarea>
+        <textarea class="form-control" name="devices" rows="6" placeholder="Enter one per line"></textarea>
       </div>
 
-      {{-- ✅ CUSTOM FIELDS (ANY KIND) --}}
-      <div class="col-12 js-step-fields d-none" id="customFieldsWrap">
+      {{-- ✅ CUSTOM FIELDS (for ALL kinds: imei/server/file) --}}
+      <div class="col-12 js-step-fields d-none" id="serviceFieldsWrap">
         <label class="form-label fw-semibold">Service fields</label>
-        <div class="row g-2" id="customFieldsContainer"></div>
+        <div class="row g-2" id="serviceFieldsContainer"></div>
         <div class="form-text">
-          These fields are loaded from <code>services.params.custom_fields</code> and will be sent as
-          <code>required[field_input]</code>.
+          These fields are loaded from <code>custom_fields</code> table and will be sent as
+          <code>required[input]</code> to the provider (DHRU: <code>&lt;REQUIRED&gt;...&lt;/REQUIRED&gt;</code>).
         </div>
       </div>
 
@@ -217,9 +214,9 @@
   const bulkWrap   = document.getElementById('bulkDevicesWrap');
   const bulkHidden = document.getElementById('bulkHidden');
 
-  // ✅ custom fields for ANY kind
-  const customFieldsWrap = document.getElementById('customFieldsWrap');
-  const customFieldsBox  = document.getElementById('customFieldsContainer');
+  // ✅ custom fields (all kinds)
+  const fieldsWrap = document.getElementById('serviceFieldsWrap');
+  const fieldsBox  = document.getElementById('serviceFieldsContainer');
 
   const selectedPriceEl   = document.getElementById('selectedPrice');
   const selectedBalanceEl = document.getElementById('selectedBalance');
@@ -288,6 +285,7 @@
     });
   }
 
+  // ✅ no checkbox: if service allow_bulk=1 show bulk textarea directly, else show single input
   function applyBulkModeByService(){
     const allowBulk = serviceAllowBulk();
 
@@ -296,6 +294,7 @@
       hide(singleWrap);
       show(bulkWrap);
 
+      // clear single device
       const deviceInput = singleWrap ? singleWrap.querySelector('input[name="device"]') : null;
       if (deviceInput) deviceInput.value = '';
     } else {
@@ -303,31 +302,34 @@
       show(singleWrap);
       hide(bulkWrap);
 
+      // clear bulk textarea
       const bulkTa = bulkWrap ? bulkWrap.querySelector('textarea[name="devices"]') : null;
       if (bulkTa) bulkTa.value = '';
     }
   }
 
+  // ✅ CUSTOM FIELDS: render dynamic custom fields -> required[input]
   function renderCustomFields(){
-    if (!customFieldsWrap || !customFieldsBox) return;
+    if (!fieldsWrap || !fieldsBox) return;
 
-    customFieldsBox.innerHTML = '';
+    fieldsBox.innerHTML = '';
 
     const opt = serviceSel && serviceSel.selectedOptions ? serviceSel.selectedOptions[0] : null;
     if (!opt || !opt.value) {
-      hide(customFieldsWrap);
+      hide(fieldsWrap);
       return;
     }
 
     let cf = safeJsonParse(opt.getAttribute('data-custom-fields') || '[]');
     if (!Array.isArray(cf)) cf = [];
 
+    // show wrap always when service selected (even if empty -> show warning)
+    show(fieldsWrap);
+
     if (cf.length === 0) {
-      hide(customFieldsWrap);
+      fieldsBox.innerHTML = '<div class="col-12"><div class="alert alert-warning mb-0">No custom fields for this service.</div></div>';
       return;
     }
-
-    show(customFieldsWrap);
 
     const splitOptions = (raw) => {
       if (!raw) return [];
@@ -384,14 +386,15 @@
         control = document.createElement('input');
         control.type = (type === 'email') ? 'email'
                      : (type === 'number') ? 'number'
+                     : (type === 'password') ? 'password'
                      : 'text';
       }
 
       control.className = 'form-control';
-      // ✅ unified required payload for any kind:
       control.name = 'required[' + input + ']';
       if (req) control.required = true;
 
+      // min/max (optional)
       const min = parseInt(f.minimum ?? 0, 10);
       const max = parseInt(f.maximum ?? 0, 10);
       if (control.type === 'number') {
@@ -408,7 +411,7 @@
         col.appendChild(small);
       }
 
-      customFieldsBox.appendChild(col);
+      fieldsBox.appendChild(col);
     });
   }
 
@@ -432,11 +435,10 @@
     }
   }
 
+  // Initial state
   hide(serviceWrap);
   hideAllFields();
   if (bulkHidden) bulkHidden.value = '0';
-  if (customFieldsWrap) hide(customFieldsWrap);
-  if (customFieldsBox) customFieldsBox.innerHTML = '';
   updateSummary();
 
   userSel.addEventListener('change', function(){
@@ -448,8 +450,8 @@
       serviceSel.value = '';
       hideAllFields();
       if (bulkHidden) bulkHidden.value = '0';
-      if (customFieldsWrap) hide(customFieldsWrap);
-      if (customFieldsBox) customFieldsBox.innerHTML = '';
+      if (fieldsWrap) hide(fieldsWrap);
+      if (fieldsBox) fieldsBox.innerHTML = '';
     }
     updateSummary();
   });
@@ -462,14 +464,15 @@
     } else {
       hideAllFields();
       if (bulkHidden) bulkHidden.value = '0';
-      if (customFieldsWrap) hide(customFieldsWrap);
-      if (customFieldsBox) customFieldsBox.innerHTML = '';
+      if (fieldsWrap) hide(fieldsWrap);
+      if (fieldsBox) fieldsBox.innerHTML = '';
     }
     updateSummary();
   });
 
   form.addEventListener('submit', function(e){
     updateSummary();
+    // HTML required fields will validate automatically.
     if (btnCreate.disabled) {
       e.preventDefault();
       show(balanceErrorEl);
