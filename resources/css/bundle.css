@@ -1,5 +1,6 @@
 /* Bootstrap */
 @import "bootstrap/dist/css/bootstrap.min.css";
+@import "summernote/dist/summernote-lite.css";
 
 /* DataTables + Select2 + FontAwesome (إن كنت تستخدمها) */
 @import "datatables.net-bs5/css/dataTables.bootstrap5.min.css";
