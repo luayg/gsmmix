@@ -11,12 +11,12 @@
            placeholder="Search (name / group / remote id)..."
            style="width:min(420px, 46vw);">
 
-    <a class="btn btn-dark btn-sm"
-       href="#"
-       class="js-api-modal"
-       data-url="{{ route('admin.apis.remote.server.import_page', $provider) }}">
-      Import Services with Category
-    </a>
+    <a href="#"
+   class="btn btn-light btn-sm js-api-modal"
+   data-url="{{ route('admin.apis.remote.server.import_page', $provider) }}">
+  Import Services with Group
+</a>
+
 
     <button type="button" class="btn-close btn-close-white ms-1" data-bs-dismiss="modal" aria-label="Close"></button>
   </div>

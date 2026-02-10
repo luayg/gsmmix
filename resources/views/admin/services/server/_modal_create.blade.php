@@ -14,7 +14,9 @@
   @csrf
 
   {{-- ✅ MAIN FIELD JSON (will be stored in server_services.main_field) --}}
-  <input type="hidden" name="main_field" id="mainFieldHidden" value="">
+ {{-- ✅ Main field type (hidden for SERVER only) --}}
+<input type="hidden" name="main_field_type" id="mainFieldType" value="serial">
+
 
   {{-- ✅ PARAMS JSON (store custom_fields here too) --}}
   <input type="hidden" name="params" id="paramsHidden" value="{}">
@@ -162,17 +164,19 @@
         </div>
 
         {{-- RIGHT SIDE --}}
-        <div class="col-xl-5">
-          <label class="form-label mb-1">Info</label>
+<div class="col-xl-5">
+  <label class="form-label mb-1">Info</label>
+  <textarea id="infoEditor"
+            class="form-control d-none"
+            data-summernote="1"
+            data-summernote-height="320"
+            data-upload-url="{{ route('admin.uploads.summernote') }}"
+            rows="10"></textarea>
 
-          <textarea id="infoEditor" class="form-control d-none" rows="10"></textarea>
-          <input type="hidden" name="info" id="infoHidden" value="">
+  <input type="hidden" name="info" id="infoHidden" value="">
+  <small class="text-muted">Description, notes, terms…</small>
+</div>
 
-          <small class="text-muted">Description, notes, terms…</small>
-        </div>
-
-      </div>
-    </div>
 
     {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
     <div class="tab-pane" data-tab="additional">

@@ -220,14 +220,19 @@
         </div>
 
         {{-- RIGHT SIDE --}}
-        <div class="col-xl-5">
-          <label class="form-label mb-1">Info</label>
-          <textarea id="infoEditor" class="form-control d-none"></textarea>
-          <input type="hidden" name="info" id="infoHidden">
-          <small class="text-muted">Description, notes, terms…</small>
-        </div>
-      </div>
-    </div>
+<div class="col-xl-5">
+  <label class="form-label mb-1">Info</label>
+
+  <textarea id="infoEditor"
+            class="form-control d-none"
+            data-summernote="1"
+            data-summernote-height="320"
+            data-upload-url="{{ route('admin.uploads.summernote') }}"></textarea>
+
+  <input type="hidden" name="info" id="infoHidden" value="">
+  <small class="text-muted">Description, notes, terms…</small>
+</div>
+
 
     {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
     <div class="tab-pane" data-tab="additional">
