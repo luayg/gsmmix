@@ -213,9 +213,7 @@ export async function initModalEditors(scopeEl = document) {
   const scope = scopeEl instanceof Element ? scopeEl : document;
 
   // ✅ 1) Summernote: textarea[data-summernote="1"] OR textarea[data-editor="summernote"]
-  const snTextareas = scope.querySelectorAll(
-    'textarea[data-summernote="1"], textarea[data-editor="summernote"]'
-  );
+  const snTextareas = scope.querySelectorAll('textarea[data-summernote="1"], textarea[data-editor="summernote"]');
   if (snTextareas.length) {
     for (const ta of snTextareas) {
       try {

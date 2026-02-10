@@ -4,20 +4,23 @@
 
 @section('content')
 @php
+  // قيَم واجهة الاستخدام
   $q       = request('q', '');
   $type    = request('type', '');
   $status  = request('status', '');
   $perPage = (int) request('per_page', method_exists($rows, 'perPage') ? $rows->perPage() : 20);
 @endphp
 
-<div class="page-apis-index">
+<div class="page-apis-index"><!-- نطاق الصفحة -->
 
   <div class="card">
+    {{-- ===== شريط الأدوات (الأزرق) ===== --}}
     <div class="card-header">
       <div class="apis-toolbar p-2 px-3 rounded" style="background:linear-gradient(180deg,#2d6cdf,#2563eb);color:#fff;">
         <div class="row g-2 align-items-center">
           <div class="col-auto d-flex align-items-center gap-2">
 
+            {{-- Show N items --}}
             <div class="btn-group">
               <button class="btn btn-light btn-sm dropdown-toggle" data-bs-toggle="dropdown">
                 Show {{ $perPage }} items
@@ -29,14 +32,17 @@
               </ul>
             </div>
 
+            {{-- Add --}}
             <a href="#" class="btn btn-success btn-sm js-api-modal"
                data-url="{{ route('admin.apis.create') }}">Add API</a>
 
+            {{-- Export --}}
             <button id="btn-export" type="button" class="btn btn-outline-light btn-sm">
               Export CSV (current view)
             </button>
           </div>
 
+          {{-- Filters --}}
           <div class="col-auto">
             <form class="d-flex align-items-center gap-2" method="GET" action="{{ route('admin.apis.index') }}">
               <select name="type" class="form-select form-select-sm" style="min-width:150px" onchange="this.form.submit()">
@@ -53,6 +59,7 @@
             </form>
           </div>
 
+          {{-- Search --}}
           <div class="col ms-auto">
             <form method="GET" action="{{ route('admin.apis.index') }}" class="d-flex justify-content-end">
               <div class="input-group input-group-sm" style="max-width:300px;">
@@ -69,6 +76,7 @@
       </div>
     </div>
 
+    {{-- ===== Flash ===== --}}
     <div class="card-body p-0">
       @if(session('ok'))
         <div class="alert alert-success alert-dismissible fade show m-3" role="alert">
@@ -77,6 +85,7 @@
         </div>
       @endif
 
+      {{-- ===== الجدول ===== --}}
       <div class="table-responsive apis-scroll" style="overflow-x:auto; overflow-y:visible;">
         <table class="table table-striped mb-0 align-middle apis-table" id="apis-table">
           <thead class="bg-light">
@@ -115,9 +124,11 @@
                 <td class="text-end">
                   <div class="btn-group btn-group-sm" role="group" aria-label="API actions">
 
+                    {{-- View --}}
                     <a href="#" class="btn btn-primary js-api-modal"
                        data-url="{{ route('admin.apis.view', $p) }}">View</a>
 
+                    {{-- Services --}}
                     <div class="btn-group position-static" role="group">
                       <button type="button"
                               class="btn btn-secondary dropdown-toggle"
@@ -126,32 +137,28 @@
                         Services
                       </button>
                       <ul class="dropdown-menu dropdown-menu-end shadow">
+                        <li><a class="dropdown-item js-api-modal js-close-dropdown" href="#" data-url="{{ route('admin.apis.services.imei', $p) }}">IMEI</a></li>
                         <li>
-                          <a class="dropdown-item js-api-modal js-close-dropdown" href="#"
-                             data-url="{{ route('admin.apis.services.imei', $p) }}">IMEI</a>
+                          <a class="dropdown-item js-close-dropdown"
+                             href="{{ route('admin.apis.remote.server.index', $p) }}">
+                             Server
+                          </a>
                         </li>
-
-                        {{-- ✅ Server: MODAL (ليس صفحة) --}}
-                        <li>
-                          <a class="dropdown-item js-api-modal js-close-dropdown" href="#"
-                             data-url="{{ route('admin.apis.remote.server.index', $p) }}">Server</a>
-                        </li>
-
-                        <li>
-                          <a class="dropdown-item js-api-modal js-close-dropdown" href="#"
-                             data-url="{{ route('admin.apis.services.file', $p) }}">File</a>
-                        </li>
+                        <li><a class="dropdown-item js-api-modal js-close-dropdown" href="#" data-url="{{ route('admin.apis.services.file', $p) }}">File</a></li>
                       </ul>
                     </div>
 
+                    {{-- Sync now --}}
                     <form action="{{ route('admin.apis.sync', $p) }}" method="POST" class="d-inline-block">
                       @csrf
                       <button type="submit" class="btn btn-info">Sync now</button>
                     </form>
 
+                    {{-- Edit --}}
                     <a href="#" class="btn btn-warning js-api-modal"
                        data-url="{{ route('admin.apis.edit', $p) }}">Edit</a>
 
+                    {{-- Delete --}}
                     <form action="{{ route('admin.apis.destroy', $p) }}" method="POST" class="d-inline-block js-delete-form">
                       @csrf @method('DELETE')
                       <button type="button"
@@ -171,6 +178,7 @@
         </table>
       </div>
 
+      {{-- ===== التذييل ===== --}}
       <div class="d-flex align-items-center justify-content-between flex-wrap p-3 gap-2">
         <div class="text-muted small">
           Showing {{ $rows->firstItem() ?? 0 }} to {{ $rows->lastItem() ?? 0 }} of {{ $rows->total() }} items
@@ -182,8 +190,9 @@
     </div>
   </div>
 
-</div>
+</div><!-- /.page-apis-index -->
 
+{{-- ✅ مودال واحد فقط لهذه الصفحة --}}
 <div class="modal fade" id="apiModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered" style="max-width:95vw;">
     <div class="modal-content" id="apiModalContent">
@@ -192,6 +201,7 @@
   </div>
 </div>
 
+{{-- ✅ Delete Confirmation Modal --}}
 <div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
@@ -223,6 +233,7 @@
 </div>
 
 @endsection
+
 
 @push('styles')
 <style>
@@ -261,14 +272,17 @@
 </style>
 @endpush
 
+
 @push('scripts')
 <script>
 (function(){
 
+  // ✅ افتح مودال واحد فقط (apiModal)
   async function openApiModal(url){
     const modalEl   = document.getElementById('apiModal');
     const contentEl = document.getElementById('apiModalContent');
 
+    // ✅ أغلق أي مودال مفتوح
     document.querySelectorAll('.modal.show').forEach(el => {
       const inst = bootstrap.Modal.getInstance(el);
       if(inst) inst.hide();
@@ -282,8 +296,12 @@
     try{
       const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       const html = await res.text();
+
       contentEl.innerHTML = html;
+
+      // ✅ شغل scripts الموجودة داخل HTML المحمل
       executeScripts(contentEl);
+
     }catch(e){
       contentEl.innerHTML = `
         <div class="modal-header">
@@ -300,30 +318,39 @@
     }
   }
 
+  // ✅ تشغيل scripts داخل HTML المحمل ديناميكيًا
   function executeScripts(container){
     const scripts = container.querySelectorAll("script");
     scripts.forEach(oldScript => {
       const newScript = document.createElement("script");
+
       for(let i=0; i<oldScript.attributes.length; i++){
         const attr = oldScript.attributes[i];
         newScript.setAttribute(attr.name, attr.value);
       }
+
       newScript.appendChild(document.createTextNode(oldScript.innerHTML));
       oldScript.parentNode.replaceChild(newScript, oldScript);
     });
   }
 
+  // ✅ إغلاق dropdown فور الضغط على IMEI/Server/File
   document.addEventListener('click', function(e){
     const item = e.target.closest('.js-close-dropdown');
     if(!item) return;
+
     const dropdownWrap = item.closest('.btn-group');
     if(!dropdownWrap) return;
+
     const toggle = dropdownWrap.querySelector('[data-bs-toggle="dropdown"]');
     if(!toggle) return;
+
     const inst = bootstrap.Dropdown.getOrCreateInstance(toggle);
     inst.hide();
+
   }, true);
 
+  // ✅ فتح مودال من js-api-modal
   document.addEventListener('click', function(e){
     const btn = e.target.closest('.js-api-modal');
     if(!btn) return;
@@ -336,6 +363,7 @@
     if(!url) return;
 
     openApiModal(url);
+
   }, true);
 
 })();
@@ -343,6 +371,7 @@
 
 <script>
 (function(){
+
   let deleteForm = null;
 
   document.addEventListener('click', function(e){
@@ -359,8 +388,11 @@
   });
 
   document.getElementById('deleteConfirmBtn')?.addEventListener('click', function(){
-    if(deleteForm) deleteForm.submit();
+    if(deleteForm){
+      deleteForm.submit();
+    }
   });
+
 })();
 </script>
 @endpush
