@@ -1,29 +1,30 @@
 /* =================================================================
- * Imports (نسخة واحدة فقط)
+ * resources/js/admin.js
  * ================================================================= */
 
 import $ from 'jquery';
 window.$ = window.jQuery = $;
-import 'summernote/dist/summernote-lite.min.js';
-import 'summernote/dist/summernote-lite.min.css';
+
 import * as bootstrap from 'bootstrap';
 window.bootstrap = bootstrap;
 
+// DataTables
 import 'datatables.net-bs5';
 import 'datatables.net-responsive-bs5';
 import 'datatables.net-buttons-bs5';
-
-// Buttons + ColVis + HTML5 export + Bootstrap 5 styling
 import 'datatables.net-buttons/js/dataTables.buttons';
 import 'datatables.net-buttons/js/buttons.colVis';
 import 'datatables.net-buttons/js/buttons.html5';
 
-import 'select2/dist/js/select2.full.min.js';   // full لتعمل AJAX/tags
+// Select2
+import 'select2/dist/js/select2.full.min.js';
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 
+// Editors (Summernote/Quill init)
 import { initModalEditors } from './modal-editors';
 window.initModalEditors = initModalEditors;
+
 /* =================================================================
  * Helpers
  * ================================================================= */
@@ -52,7 +53,7 @@ function initSelect2Safe($root, $dropdownParent = null) {
   });
 }
 
-/** Toast helper (يظهر أعلى يمين الشاشة) */
+/** Toast helper */
 window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
   const bg = {
     success: 'bg-success text-white',
@@ -75,27 +76,24 @@ window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
     </div>`;
   const stack = document.getElementById('toastStack') || document.body;
   stack.insertAdjacentHTML('beforeend', html);
+
   const el = document.getElementById(id);
   const t = new bootstrap.Toast(el);
   t.show();
   el.addEventListener('hidden.bs.toast', () => el.remove());
 };
 
-
-
 /* =================================================================
- * Ajax Modal Loader (مرة واحدة للموقع) - FIX double-binding
+ * Ajax Modal Loader (مرة واحدة للموقع) - منع double-binding
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
-  // امنع إعادة الربط لو سبق الربط
   if (window.__bindOpenModalOnce__) return;
   window.__bindOpenModalOnce__ = true;
 
   const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
-  let MODAL_REQ_ID = 0; // يزيد مع كل نقره
+  let MODAL_REQ_ID = 0;
 
   $(document).on('click', '.js-open-modal', async function (e) {
-    // امنع أي مستمعين/تصرّفات أخرى
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -103,13 +101,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = $(this).data('url') || $(this).attr('href');
     if (!url || url === '#') return;
 
-    // عرّف رقم الطلب الحالي
     const myReq = ++MODAL_REQ_ID;
 
-    const $modal   = $('#ajaxModal');
+    const $modal = $('#ajaxModal');
     const $content = $modal.find('.modal-content');
 
-    // شاشة انتظار
     $content.html(`
       <div class="modal-body py-5 text-center text-muted">
         <div class="spinner-border" role="status" aria-hidden="true"></div>
@@ -117,30 +113,34 @@ document.addEventListener('DOMContentLoaded', () => {
       </div>
     `);
 
-    const inst = new window.bootstrap.Modal($modal[0]);
+    const inst = bootstrap.Modal.getOrCreateInstance($modal[0]);
     inst.show();
 
     try {
-      const res  = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      const res = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
       if (!res.ok) throw new Error('Failed to load modal');
       const html = await res.text();
 
-      // لو جاء ردّ قديم، تجاهله
       if (myReq !== MODAL_REQ_ID) return;
 
       $content.html(html);
 
-      // init select2 داخل المودال لو موجود
-      if (typeof initSelect2Safe === 'function') initSelect2Safe($content, $modal);
+      // select2 داخل المودال
+      initSelect2Safe($content, $modal);
 
-      // إرسال Ajax للنماذج داخل المودال
+      // editors داخل المودال (لو موجودة)
+      try {
+        await window.initModalEditors?.($content[0]);
+      } catch (_) {}
+
+      // Ajax submit
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
         ev.stopImmediatePropagation();
 
-        const form   = ev.currentTarget;
-        const fd     = new FormData(form);
+        const form = ev.currentTarget;
+        const fd = new FormData(form);
         const method = (form.method || 'POST').toUpperCase();
 
         try {
@@ -158,138 +158,63 @@ document.addEventListener('DOMContentLoaded', () => {
           if (res2.status === 422) {
             const j = await res2.json().catch(() => ({}));
             const msgs = Object.values(j.errors || {}).flat().join('<br>');
-            showToast?.('danger', msgs || 'Validation error', { title: 'Error', delay: 5000 });
+            window.showToast?.('danger', msgs || 'Validation error', { title: 'Error', delay: 5000 });
             return;
           }
           if (!res2.ok) {
             const txt = await res2.text();
-            showToast?.('danger', txt || 'Failed to submit the form.', { title: 'Error', delay: 5000 });
+            window.showToast?.('danger', txt || 'Failed to submit the form.', { title: 'Error', delay: 5000 });
             return;
           }
 
           const j = await res2.json().catch(async () => ({ ok: true, msg: await res2.text() }));
 
-          window.bootstrap.Modal.getInstance($modal[0])?.hide();
+          bootstrap.Modal.getInstance($modal[0])?.hide();
+
           $('.dataTable').each(function () {
             try { $(this).DataTable()?.ajax?.reload(null, false); } catch (_) {}
           });
 
-          showToast?.('success', j.msg || 'Saved successfully');
+          window.showToast?.('success', j.msg || 'Saved successfully');
         } catch (err) {
           console.error(err);
-          showToast?.('danger', 'Network error', { title: 'Error' });
+          window.showToast?.('danger', 'Network error', { title: 'Error' });
         }
       });
 
     } catch (err) {
       console.error(err);
-      // لو ردّ قديم تجاهله
       if (myReq !== MODAL_REQ_ID) return;
       $content.html(`<div class="modal-body text-danger">Failed to load modal content.</div>`);
-      showToast?.('danger', 'Failed to load modal content', { title: 'Error' });
+      window.showToast?.('danger', 'Failed to load modal content', { title: 'Error' });
     }
   });
-});
 
+  // تنظيف الباك دروب
+  document.addEventListener('hidden.bs.modal', function () {
+    document.body.classList.remove('modal-open');
+    document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+  });
+});
 
 /* =================================================================
  * Lazy-load لسكربتات الصفحات
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', async () => {
-  // Users
   if (document.getElementById('usersPage')) {
-    await import('./pages/users-index.js');
-    return;
+    await import('./pages/users-index.js'); return;
   }
   if (document.getElementById('groupsPage')) {
-    await import('./pages/groups-index.js');
-    return;
+    await import('./pages/groups-index.js'); return;
   }
   if (document.getElementById('rolesPage')) {
-    await import('./pages/roles.js');
-    return;
+    await import('./pages/roles.js'); return;
   }
-  if (document.getElementById('permsPage')) { // permissions
-    await import('./pages/permissions.js');
-    return;
+  if (document.getElementById('permsPage')) {
+    await import('./pages/permissions.js'); return;
   }
-  // Service create / edit
-if (document.querySelector('.service-create-form')) {
-  import('./pages/service-custom-fields.js');
-}
 
+  if (document.querySelector('.service-create-form')) {
+    import('./pages/service-custom-fields.js');
+  }
 });
-
-
-/* =================================================================
- * سلوك السايدبار على الموبايل (زر الفتح/الإغلاق + الخلفية)
- * ================================================================= */
-document.addEventListener('DOMContentLoaded', () => {
-  const sidebar  = document.querySelector('.admin-sidebar');
-  const backdrop = document.getElementById('sidebarBackdrop');
-  const btn      = document.getElementById('btnToggleSidebar');
-
-  const openSidebar  = () => {
-    if (!sidebar) return;
-    sidebar.classList.add('is-open');
-    document.body.classList.add('sidebar-open');
-    backdrop?.classList.add('show');
-  };
-  const closeSidebar = () => {
-    if (!sidebar) return;
-    sidebar.classList.remove('is-open');
-    document.body.classList.remove('sidebar-open');
-    backdrop?.classList.remove('show');
-  };
-
-  btn?.addEventListener('click', () => {
-    sidebar?.classList.contains('is-open') ? closeSidebar() : openSidebar();
-  });
-  backdrop?.addEventListener('click', closeSidebar);
-  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeSidebar(); });
-});
-
-
-/* =================================================================
- * زر إظهار/إخفاء كلمة المرور داخل input-group
- * ================================================================= */
-document.addEventListener('click', (e) => {
-  const btn = e.target.closest('.js-toggle-pass');
-  if (!btn) return;
-  const input = btn.closest('.input-group')?.querySelector('input[type="password"], input[type="text"]');
-  if (!input) return;
-  input.type = input.type === 'password' ? 'text' : 'password';
-});
-
-
-/* =================================================================
- * موضع التوست داخل content-wrapper
- * ================================================================= */
-function positionToastStack() {
-  const stack = document.getElementById('toastStack');
-  const wrap  = document.querySelector('.content-wrapper');
-  if (!stack || !wrap) return;
-
-  const gap = 16; // px
-  const rect  = wrap.getBoundingClientRect();
-  const extra = Math.max(window.innerWidth - rect.right + gap, gap);
-
-  stack.style.right = extra + 'px';
-  stack.style.top   = '16px';
-}
-
-document.addEventListener('DOMContentLoaded', positionToastStack);
-window.addEventListener('resize', positionToastStack);
-
-// لو عندك زر إظهار/إخفاء السايدبار، أعد التموضع بعد الأنيميشن
-const btnRepos = document.getElementById('btnToggleSidebar');
-if (btnRepos) {
-  btnRepos.addEventListener('click', () => {
-    setTimeout(positionToastStack, 250); // زمن انتقال الـsidebar في CSS
-  });
-}
-
-// في حال تشغيل التوستر من الدالة العامة، أعد التموضع قبل إظهاره
-window.addEventListener('show-toast-reposition', positionToastStack);
-
-
