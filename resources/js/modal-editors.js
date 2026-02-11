@@ -14,12 +14,40 @@ import 'summernote/dist/summernote-bs5.css';
 // expose jQuery globally (some plugins expect it)
 window.$ = window.jQuery = $;
 
-// ✅ Load summernote plugin AFTER window.jQuery is set
+// ======================================================
+// ✅ IMPORTANT FIX:
+// Summernote-bs5 يحتاج Bootstrap JS (bundle) يكون جاهز
+// كـ window.bootstrap قبل تحميله، وإلا يفشل ويختفي toolbar
+// ======================================================
+
+let __bootstrapBundleLoaded = false;
+async function ensureBootstrapBundleLoaded() {
+  if (__bootstrapBundleLoaded && window.bootstrap) return;
+
+  // لو bootstrap موجود أصلاً لا تعيد تحميله
+  if (!window.bootstrap) {
+    // Bootstrap bundle includes Popper (required for tooltips/popovers)
+    // هذا أهم سطر لإصلاح مشكلة toolbar
+    const mod = await import('bootstrap/dist/js/bootstrap.bundle');
+
+    // بعض الباندلات ترجع default وبعضها namespace
+    window.bootstrap = mod?.default || mod;
+  }
+
+  __bootstrapBundleLoaded = true;
+}
+
+// ✅ Load summernote plugin AFTER window.jQuery + window.bootstrap are set
 let __summernoteLoaded = false;
 async function ensureSummernoteLoaded() {
   if (__summernoteLoaded) return;
-  // IMPORTANT: plugin reads window.jQuery on load in many builds
+
+  // ✅ 1) Bootstrap first (critical)
+  await ensureBootstrapBundleLoaded();
+
+  // ✅ 2) Then summernote plugin (reads window.jQuery + bootstrap)
   await import('summernote/dist/summernote-bs5');
+
   __summernoteLoaded = true;
 }
 
@@ -153,7 +181,7 @@ async function buildOneSummernoteTextarea(ta) {
   const height = Number(ta.getAttribute('data-summernote-height') || 320);
   const uploadUrl = ta.getAttribute('data-upload-url') || '';
 
-  // ✅ Ensure plugin is loaded after window.jQuery exists
+  // ✅ Ensure bootstrap bundle + plugin is loaded
   await ensureSummernoteLoaded();
 
   await waitFrames(1);
@@ -161,6 +189,12 @@ async function buildOneSummernoteTextarea(ta) {
   // show textarea
   ta.classList.remove('d-none');
   ta.style.display = '';
+
+  // ✅ حماية إضافية: لو لأي سبب summernote لم يثبت على jQuery
+  if (typeof $(ta).summernote !== 'function') {
+    console.error('❌ Summernote plugin not attached to jQuery. Check loading order (bootstrap/jQuery).', ta);
+    return;
+  }
 
   $(ta).summernote({
     height,
@@ -229,6 +263,7 @@ export async function initModalEditors(scopeEl = document) {
   const snTextareas = scope.querySelectorAll(
     'textarea[data-summernote="1"], textarea[data-editor="summernote"]'
   );
+
   if (snTextareas.length) {
     for (const ta of snTextareas) {
       try {
