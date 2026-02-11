@@ -7,7 +7,8 @@ import 'quill/dist/quill.snow.css';
 
 // ✅ jQuery (must be global BEFORE loading summernote plugin)
 import $ from 'jquery';
-
+import 'summernote/dist/summernote-lite.min.js';
+import 'summernote/dist/summernote-lite.min.css';
 // ✅ Summernote CSS
 import 'summernote/dist/summernote-bs5.css';
 

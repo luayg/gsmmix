@@ -683,7 +683,7 @@
       }
     });
 
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
+    window.bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
   });
 
   document.addEventListener('submit', async (ev)=>{
@@ -734,7 +734,7 @@
           detail: { provider_id, kind, remote_id: rid }
         }));
 
-        bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
+        window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
 
         if (window.showToast) {
           window.showToast('success', '✅ Service created successfully', { title: 'Done' });

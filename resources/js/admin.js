@@ -4,7 +4,8 @@
 
 import $ from 'jquery';
 window.$ = window.jQuery = $;
-
+import 'summernote/dist/summernote-lite.min.js';
+import 'summernote/dist/summernote-lite.min.css';
 import * as bootstrap from 'bootstrap';
 window.bootstrap = bootstrap;
 
