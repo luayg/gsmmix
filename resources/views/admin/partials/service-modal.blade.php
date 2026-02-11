@@ -478,12 +478,53 @@
     if (typeVal) ensureHidden('type', typeVal);
   }
 
+  // ✅ مساعد: تهيئة المحرر بعد ظهور المودال + منع التهيئة المكررة
+  async function initEditorsAfterModalShown(modalEl, body){
+    const okSn = await ensureSummernote();
+    await ensureSelect2();
+    if (!okSn) return;
+
+    // ضع بيانات الـ editor (حتى لو كانت موجودة مسبقًا)
+    const infoEl = body.querySelector('#infoEditor');
+    if (!infoEl) return;
+
+    infoEl.classList.remove('d-none');
+    infoEl.setAttribute('data-summernote', '1');
+    infoEl.setAttribute('data-summernote-height', '320');
+
+    // منع double-init
+    if (infoEl.dataset.editorInitialized === '1') return;
+
+    // نفّذ init بعد ما يكون المودال ظاهر فعليًا
+    await window.initModalEditors(body);
+
+    infoEl.dataset.editorInitialized = '1';
+  }
+
+  // ✅ مساعد: تدمير Summernote عند الإغلاق لتفادي مشاكل التهيئة
+  function destroyEditorsOnHide(body){
+    if (!window.jQuery) return;
+    const $ = window.jQuery;
+    const info = $(body).find('#infoEditor');
+    if (info && info.length && info.summernote) {
+      try {
+        // إذا كان متفعلًا، دمّره
+        if (info.next('.note-editor').length) {
+          info.summernote('destroy');
+        }
+      } catch(e){}
+    }
+    const infoEl = body.querySelector('#infoEditor');
+    if (infoEl) infoEl.dataset.editorInitialized = '0';
+  }
+
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-create-service]');
     if(!btn) return;
 
     e.preventDefault();
 
+    const modalEl = document.getElementById('serviceModal');
     const body = document.getElementById('serviceModalBody');
     const tpl  = document.getElementById('serviceCreateTpl');
     if(!tpl) return alert('Template not found');
@@ -505,19 +546,6 @@
 
     // ✅ دائماً افتح General أولاً
     openGeneralTab();
-
-    const okSn = await ensureSummernote();
-    await ensureSelect2();
-
-    if (okSn) {
-      const infoEl = body.querySelector('#infoEditor');
-      if (infoEl) {
-        infoEl.classList.remove('d-none');
-        infoEl.setAttribute('data-summernote', '1');
-        infoEl.setAttribute('data-summernote-height', '320');
-        await window.initModalEditors(body);
-      }
-    }
 
     const providerId = btn.dataset.providerId;
     const remoteId   = btn.dataset.remoteId;
@@ -683,7 +711,26 @@
       }
     });
 
-    window.bootstrap.Modal.getOrCreateInstance(document.getElementById('serviceModal')).show();
+    // ✅ 1) اعرض المودال أولاً
+    const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+
+    // ✅ 2) جهّز Listener مرة واحدة لكل فتح (حتى لا تتكرر)
+    const onShown = async () => {
+      modalEl.removeEventListener('shown.bs.modal', onShown);
+      await initEditorsAfterModalShown(modalEl, body);
+    };
+    modalEl.addEventListener('shown.bs.modal', onShown);
+
+    // ✅ 3) عند الإغلاق دمّر المحرر لتفادي أي تكرار
+    const onHidden = () => {
+      modalEl.removeEventListener('hidden.bs.modal', onHidden);
+      destroyEditorsOnHide(body);
+      // نظافة خفيفة
+      // body.innerHTML = '';
+    };
+    modalEl.addEventListener('hidden.bs.modal', onHidden);
+
+    modal.show();
   });
 
   document.addEventListener('submit', async (ev)=>{
@@ -696,9 +743,11 @@
 
     const infoEditor = window.jQuery ? window.jQuery(form).find('#infoEditor') : null;
     if (infoEditor && infoEditor.length && infoEditor.summernote) {
-      const html = infoEditor.summernote('code');
-      const hidden = form.querySelector('#infoHidden');
-      if (hidden) hidden.value = html;
+      try{
+        const html = infoEditor.summernote('code');
+        const hidden = form.querySelector('#infoHidden');
+        if (hidden) hidden.value = html;
+      }catch(e){}
     }
 
     const btn = form.querySelector('[type="submit"]');
