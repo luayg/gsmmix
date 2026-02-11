@@ -1,5 +1,5 @@
 // resources/js/modal-editors.js
-// Supports: Quill (legacy) + Summernote (requested)
+// Supports: Quill (legacy) + Summernote (Bootstrap 5)
 // الهدف: محرر غني داخل Ajax Modal بدون تعارضات + حفظ مضمون مع Ajax (FormData)
 
 import Quill from 'quill';
@@ -8,44 +8,98 @@ import 'quill/dist/quill.snow.css';
 // ✅ jQuery (must be global BEFORE loading summernote plugin)
 import $ from 'jquery';
 
-// ✅ Summernote CSS (safe to import statically)
+// ✅ Summernote CSS
 import 'summernote/dist/summernote-bs5.css';
 
 // expose jQuery globally (some plugins expect it)
 window.$ = window.jQuery = $;
 
-// ======================================================
-// ✅ IMPORTANT FIX:
-// Summernote-bs5 يحتاج Bootstrap JS (bundle) يكون جاهز
-// كـ window.bootstrap قبل تحميله، وإلا يفشل ويختفي toolbar
-// ======================================================
-
-let __bootstrapBundleLoaded = false;
-async function ensureBootstrapBundleLoaded() {
-  if (__bootstrapBundleLoaded && window.bootstrap) return;
-
-  // لو bootstrap موجود أصلاً لا تعيد تحميله
+/**
+ * ✅ Bootstrap 5 → jQuery bridge
+ * Summernote (حتى bs5 build) قد يستدعي $.fn.tooltip / $.fn.modal
+ * وفي Bootstrap 5 هذه غير موجودة، فيسبب:
+ *  Cannot read properties of undefined (reading 'apply')
+ */
+async function ensureBootstrapAndBridges() {
+  // 1) تأكد bootstrap موجود عالميًا
   if (!window.bootstrap) {
-    // Bootstrap bundle includes Popper (required for tooltips/popovers)
-    // هذا أهم سطر لإصلاح مشكلة toolbar
-    const mod = await import('bootstrap/dist/js/bootstrap.bundle');
-
-    // بعض الباندلات ترجع default وبعضها namespace
-    window.bootstrap = mod?.default || mod;
+    try {
+      const bs = await import('bootstrap');
+      window.bootstrap = bs;
+    } catch (e) {
+      console.warn('Bootstrap dynamic import failed', e);
+    }
   }
 
-  __bootstrapBundleLoaded = true;
+  const bs = window.bootstrap;
+  if (!bs) return;
+
+  // 2) Tooltip bridge
+  if (!$.fn.tooltip && bs.Tooltip) {
+    $.fn.tooltip = function (configOrMethod, ...args) {
+      return this.each(function () {
+        const el = this;
+        let inst = bs.Tooltip.getInstance(el);
+
+        if (!inst) {
+          // create instance
+          inst = new bs.Tooltip(el, typeof configOrMethod === 'object' ? configOrMethod : {});
+        }
+
+        // call method if string
+        if (typeof configOrMethod === 'string' && typeof inst[configOrMethod] === 'function') {
+          inst[configOrMethod](...args);
+        }
+      });
+    };
+  }
+
+  // 3) Modal bridge (sometimes summernote uses it)
+  if (!$.fn.modal && bs.Modal) {
+    $.fn.modal = function (configOrMethod, ...args) {
+      return this.each(function () {
+        const el = this;
+        let inst = bs.Modal.getInstance(el);
+
+        if (!inst) {
+          inst = new bs.Modal(el, typeof configOrMethod === 'object' ? configOrMethod : {});
+        }
+
+        if (typeof configOrMethod === 'string' && typeof inst[configOrMethod] === 'function') {
+          inst[configOrMethod](...args);
+        }
+      });
+    };
+  }
+
+  // 4) Dropdown bridge (احتياط لبعض popovers)
+  if (!$.fn.dropdown && bs.Dropdown) {
+    $.fn.dropdown = function (configOrMethod, ...args) {
+      return this.each(function () {
+        const el = this;
+        let inst = bs.Dropdown.getInstance(el);
+
+        if (!inst) {
+          inst = new bs.Dropdown(el, typeof configOrMethod === 'object' ? configOrMethod : {});
+        }
+
+        if (typeof configOrMethod === 'string' && typeof inst[configOrMethod] === 'function') {
+          inst[configOrMethod](...args);
+        }
+      });
+    };
+  }
 }
 
-// ✅ Load summernote plugin AFTER window.jQuery + window.bootstrap are set
+// ✅ Load summernote plugin AFTER window.jQuery is set + bridges ready
 let __summernoteLoaded = false;
 async function ensureSummernoteLoaded() {
   if (__summernoteLoaded) return;
 
-  // ✅ 1) Bootstrap first (critical)
-  await ensureBootstrapBundleLoaded();
+  // مهم: جهّز bootstrap bridges قبل تحميل summernote
+  await ensureBootstrapAndBridges();
 
-  // ✅ 2) Then summernote plugin (reads window.jQuery + bootstrap)
+  // IMPORTANT: plugin reads window.jQuery on load in many builds
   await import('summernote/dist/summernote-bs5');
 
   __summernoteLoaded = true;
@@ -167,7 +221,7 @@ async function buildOneQuillTextarea(ta) {
 }
 
 /* =========================
-   ✅ Summernote (requested)
+   ✅ Summernote (Bootstrap 5)
 ========================= */
 async function buildOneSummernoteTextarea(ta) {
   if (!ta || !ta.isConnected) return;
@@ -181,7 +235,7 @@ async function buildOneSummernoteTextarea(ta) {
   const height = Number(ta.getAttribute('data-summernote-height') || 320);
   const uploadUrl = ta.getAttribute('data-upload-url') || '';
 
-  // ✅ Ensure bootstrap bundle + plugin is loaded
+  // ✅ Ensure plugin + bridges are loaded
   await ensureSummernoteLoaded();
 
   await waitFrames(1);
@@ -189,12 +243,6 @@ async function buildOneSummernoteTextarea(ta) {
   // show textarea
   ta.classList.remove('d-none');
   ta.style.display = '';
-
-  // ✅ حماية إضافية: لو لأي سبب summernote لم يثبت على jQuery
-  if (typeof $(ta).summernote !== 'function') {
-    console.error('❌ Summernote plugin not attached to jQuery. Check loading order (bootstrap/jQuery).', ta);
-    return;
-  }
 
   $(ta).summernote({
     height,
@@ -210,6 +258,11 @@ async function buildOneSummernoteTextarea(ta) {
       ['view', ['fullscreen', 'codeview', 'help']],
     ],
     callbacks: {
+      onInit: function () {
+        // ✅ أول sync
+        const hidden = form?.querySelector('#infoHidden');
+        if (hidden) hidden.value = $(ta).summernote('code') || '';
+      },
       onChange: function (contents) {
         const hidden = form?.querySelector('#infoHidden');
         if (hidden) hidden.value = contents || '';
@@ -234,7 +287,6 @@ async function buildOneSummernoteTextarea(ta) {
         })
           .then((r) => r.json())
           .then((data) => {
-            // expected: { url: "..." } (عدّل لو response مختلف عندك)
             const url = data?.url || data?.path || '';
             if (url) $(ta).summernote('insertImage', url);
           })
@@ -242,10 +294,6 @@ async function buildOneSummernoteTextarea(ta) {
       },
     },
   });
-
-  // initial sync
-  const hidden = form?.querySelector('#infoHidden');
-  if (hidden && !hidden.value) hidden.value = $(ta).summernote('code') || '';
 
   ta.dataset.summernoteReady = '1';
   ta.setAttribute('data-summernote-ready', '1');
@@ -259,11 +307,10 @@ export async function initModalEditors(scopeEl = document) {
 
   const scope = scopeEl instanceof Element ? scopeEl : document;
 
-  // ✅ 1) Summernote: textarea[data-summernote="1"] OR textarea[data-editor="summernote"]
+  // ✅ 1) Summernote
   const snTextareas = scope.querySelectorAll(
     'textarea[data-summernote="1"], textarea[data-editor="summernote"]'
   );
-
   if (snTextareas.length) {
     for (const ta of snTextareas) {
       try {
@@ -274,7 +321,7 @@ export async function initModalEditors(scopeEl = document) {
     }
   }
 
-  // ✅ 2) Quill: keep legacy support
+  // ✅ 2) Quill legacy support
   const quillTextareas = scope.querySelectorAll('textarea[data-editor="quill"]');
   if (!quillTextareas.length) return;
 
