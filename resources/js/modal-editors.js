@@ -1,34 +1,38 @@
 // resources/js/modal-editors.js
 // Supports: Quill (legacy) + Summernote (Bootstrap 5)
 // الهدف: محرر غني داخل Ajax Modal بدون تعارضات + حفظ مضمون مع Ajax (FormData)
+//
+// ✅ FIX آمن:
+// - لا نحمل summernote-bs5 إطلاقاً (حتى لا يحدث تعارض مع summernote-lite المحمّل من admin.js)
+// - نعتمد على window.jQuery القادم من admin.js (نفس instance التي عليها select2 + summernote)
+// - إذا لم يكن summernote موجوداً على $.fn نعمل fallback تحميل lite فقط (مرة واحدة)
 
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
 
-// ✅ Summernote BS5 CSS فقط (بدون lite)
+// CSS خاص بـ summernote (اختياري) — اتركه، ما يسبب تعارض
 import 'summernote/dist/summernote-bs5.css';
 
-/**
- * ✅ نستخدم jQuery العالمي من admin.js
- * ولو لم يكن موجود (احتياط)، نستورده ونعرّفه عالميًا مرة واحدة.
- */
 let $ = window.jQuery;
+
 async function ensureGlobalJquery() {
   if (window.jQuery) {
     $ = window.jQuery;
-    return;
+    return $;
   }
   const mod = await import('jquery');
-  $ = mod.default;
+  $ = mod.default || mod;
   window.$ = window.jQuery = $;
+  return $;
 }
 
 /**
  * ✅ Bootstrap 5 → jQuery bridge
- * Summernote (bs5) قد يستدعي $.fn.tooltip / $.fn.modal
+ * بعض إضافات summernote تستدعي $.fn.tooltip / $.fn.modal
  */
 async function ensureBootstrapAndBridges() {
-  // Bootstrap عادة محمّل من admin.js، هذا fallback فقط.
+  await ensureGlobalJquery();
+
   if (!window.bootstrap) {
     try {
       const bs = await import('bootstrap');
@@ -41,7 +45,6 @@ async function ensureBootstrapAndBridges() {
   const bs = window.bootstrap;
   if (!bs || !$) return;
 
-  // Tooltip bridge
   if (!$.fn.tooltip && bs.Tooltip) {
     $.fn.tooltip = function (configOrMethod, ...args) {
       return this.each(function () {
@@ -55,7 +58,6 @@ async function ensureBootstrapAndBridges() {
     };
   }
 
-  // Modal bridge
   if (!$.fn.modal && bs.Modal) {
     $.fn.modal = function (configOrMethod, ...args) {
       return this.each(function () {
@@ -69,7 +71,6 @@ async function ensureBootstrapAndBridges() {
     };
   }
 
-  // Dropdown bridge
   if (!$.fn.dropdown && bs.Dropdown) {
     $.fn.dropdown = function (configOrMethod, ...args) {
       return this.each(function () {
@@ -84,18 +85,27 @@ async function ensureBootstrapAndBridges() {
   }
 }
 
-// ✅ Load Summernote BS5 plugin مرة واحدة فقط
-let __summernoteLoaded = false;
-async function ensureSummernoteLoaded() {
-  if (__summernoteLoaded) return;
+// ✅ تأكد أن summernote موجود على نفس jQuery (بدون تحميل bs5)
+let __summernoteReady = false;
+async function ensureSummernoteReady() {
+  if (__summernoteReady) return;
 
   await ensureGlobalJquery();
   await ensureBootstrapAndBridges();
 
-  // IMPORTANT: plugin reads window.jQuery on load
-  await import('summernote/dist/summernote-bs5');
+  // إذا admin.js حمّل summernote-lite، سيكون موجود هنا:
+  if (typeof window.jQuery?.fn?.summernote === 'function') {
+    __summernoteReady = true;
+    return;
+  }
 
-  __summernoteLoaded = true;
+  // Fallback: حمّل summernote-lite مرة واحدة فقط (بدون bs5)
+  try {
+    await import('summernote/dist/summernote-lite.min.js');
+    __summernoteReady = true;
+  } catch (e) {
+    console.error('Failed to load summernote-lite fallback', e);
+  }
 }
 
 function injectFixCssOnce() {
@@ -168,7 +178,6 @@ async function buildOneQuillTextarea(ta) {
   wrap.appendChild(editorDiv);
 
   ta.insertAdjacentElement('afterend', wrap);
-
   ta.style.display = 'none';
 
   await waitFrames(2);
@@ -192,9 +201,7 @@ async function buildOneQuillTextarea(ta) {
   const initialHtml = ta.value || '';
   quill.clipboard.dangerouslyPasteHTML(initialHtml);
 
-  const height = Number(
-    ta.getAttribute('data-editor-height') || ta.getAttribute('data-summernote-height') || 320
-  );
+  const height = Number(ta.getAttribute('data-editor-height') || ta.getAttribute('data-summernote-height') || 320);
   quill.root.style.minHeight = Math.max(200, height - 60) + 'px';
 
   const sync = () => {
@@ -212,14 +219,20 @@ async function buildOneQuillTextarea(ta) {
 }
 
 /* =========================
-   ✅ Summernote (Bootstrap 5)
+   ✅ Summernote (using lite already loaded in admin.js)
 ========================= */
 async function buildOneSummernoteTextarea(ta) {
   if (!ta || !ta.isConnected) return;
   if (ta.dataset.summernoteReady === '1') return;
 
-  await ensureSummernoteLoaded();
-  await ensureGlobalJquery(); // يضمن $ مرتبط على نفس window.jQuery
+  await ensureSummernoteReady();
+  await ensureGlobalJquery();
+
+  // إذا بعد كل شيء مازال غير موجود، اخرج بوضوح
+  if (typeof window.jQuery?.fn?.summernote !== 'function') {
+    console.error('Summernote is not available on current window.jQuery.');
+    return;
+  }
 
   const form = ta.closest('form');
   hookFormOnce(form);
@@ -293,10 +306,7 @@ export async function initModalEditors(scopeEl = document) {
 
   const scope = scopeEl instanceof Element ? scopeEl : document;
 
-  // Summernote
-  const snTextareas = scope.querySelectorAll(
-    'textarea[data-summernote="1"], textarea[data-editor="summernote"]'
-  );
+  const snTextareas = scope.querySelectorAll('textarea[data-summernote="1"], textarea[data-editor="summernote"]');
   if (snTextareas.length) {
     for (const ta of snTextareas) {
       try {
@@ -307,7 +317,6 @@ export async function initModalEditors(scopeEl = document) {
     }
   }
 
-  // Quill legacy
   const quillTextareas = scope.querySelectorAll('textarea[data-editor="quill"]');
   if (!quillTextareas.length) return;
 
