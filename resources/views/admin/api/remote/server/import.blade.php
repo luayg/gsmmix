@@ -1,142 +1,123 @@
 {{-- resources/views/admin/api/remote/server/import.blade.php --}}
-@extends('layouts.admin')
-
-@section('title', 'Import Server Services')
+@extends('admin.layouts.app')
 
 @section('content')
-<div class="card">
-  <div class="card-header d-flex align-items-center justify-content-between">
-    <div>
-      <h5 class="mb-0">Import Server Services — {{ $provider->name }}</h5>
-      <div class="small text-muted">Standalone page (with layout) — نفس الـ Wizard لكن بدون Modal.</div>
+  <div class="container-fluid py-3">
+
+    <div class="d-flex align-items-center justify-content-between mb-3">
+      <div>
+        <h4 class="mb-0">Import — {{ $provider->name }} (SERVER)</h4>
+        <div class="text-muted small">Standalone import page (with full admin layout & assets)</div>
+      </div>
+
+      <div class="d-flex gap-2">
+        <a href="{{ route('admin.apis.services.server.page', $provider) }}" class="btn btn-outline-secondary btn-sm">
+          Back to list
+        </a>
+      </div>
     </div>
 
-    <div class="d-flex gap-2">
-      <a href="{{ route('admin.apis.remote.server.index', $provider) }}" class="btn btn-outline-secondary btn-sm">
-        ← Back to Clone
-      </a>
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <input id="importSearch"
+               type="text"
+               class="form-control form-control-sm"
+               placeholder="Search..."
+               style="width:min(520px, 60vw);">
+
+        <div class="ms-auto d-flex gap-2">
+          <select class="form-select form-select-sm" id="pricing_mode" style="width:180px">
+            <option value="percent">+ % Profit</option>
+            <option value="fixed">+ Fixed Credits</option>
+          </select>
+
+          <input type="number" step="0.01" class="form-control form-control-sm" id="pricing_value" value="0" style="width:140px">
+
+          <button type="button" class="btn btn-dark btn-sm" id="btnImportAll">Import ALL</button>
+          <button type="button" class="btn btn-success btn-sm" id="btnImportSelected">Import Selected</button>
+        </div>
+      </div>
+
+      <div class="card-body p-0">
+        <div class="table-responsive border-top">
+          <table class="table table-sm table-striped mb-0 align-middle" id="importTable">
+            <thead>
+              <tr>
+                <th style="width:44px"></th>
+                <th style="width:220px">Group</th>
+                <th style="width:110px">Remote ID</th>
+                <th>Name</th>
+                <th style="width:90px">Credits</th>
+                <th style="width:140px">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              @foreach(($services ?? []) as $svc)
+                @php
+                  $rid   = (string)($svc->remote_id ?? '');
+                  $group = (string)($svc->group_name ?? '');
+                  $name  = (string)($svc->name ?? '');
+                  $time  = (string)($svc->time ?? '');
+                  $credit= (float)($svc->price ?? $svc->credit ?? 0);
+                  $isAdded = isset($existing[$rid]);
+                @endphp
+
+                <tr data-row
+                    data-group="{{ strtolower($group) }}"
+                    data-name="{{ strtolower(strip_tags($name)) }}"
+                    data-remote="{{ strtolower($rid) }}">
+                  <td>
+                    <input type="checkbox" class="row-check" value="{{ $rid }}" @disabled($isAdded)>
+                  </td>
+                  <td>{{ $group }}</td>
+                  <td><code>{{ $rid }}</code></td>
+                  <td>{{ strip_tags($name) }}</td>
+                  <td>{{ number_format($credit,4) }}</td>
+                  <td>{{ strip_tags($time) }}</td>
+                </tr>
+              @endforeach
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
+
   </div>
+@endsection
 
-  <div class="card-body">
-    {{-- نفس UI الموجود في import_modal لكن بدون header/footer modal --}}
-    <div class="row g-2 align-items-end mb-3">
-      <div class="col-md-6">
-        <label class="form-label mb-1">Search</label>
-        <input type="text" class="form-control form-control-sm" id="wizSearch" placeholder="Search...">
-      </div>
-
-      <div class="col-md-3">
-        <label class="form-label mb-1">Pricing mode</label>
-        <select class="form-select form-select-sm" id="wizPricingMode">
-          <option value="fixed">+ Fixed Credits</option>
-          <option value="percent">+ % Profit</option>
-        </select>
-      </div>
-
-      <div class="col-md-3">
-        <label class="form-label mb-1">Value</label>
-        <input type="number" step="0.01" class="form-control form-control-sm" id="wizPricingValue" value="0">
-      </div>
-    </div>
-
-    <div class="d-flex gap-2 mb-2">
-      <button class="btn btn-outline-secondary btn-sm" id="wizSelectAll" type="button">Select all</button>
-      <button class="btn btn-outline-secondary btn-sm" id="wizUnselectAll" type="button">Unselect all</button>
-      <div class="ms-auto small text-muted" id="wizSelectedCount">0 selected</div>
-    </div>
-
-    <div class="table-responsive border rounded" style="max-height:65vh; overflow:auto;">
-      <table class="table table-sm table-striped align-middle mb-0" id="wizTable">
-        <thead class="position-sticky top-0 bg-white" style="z-index:1">
-          <tr>
-            <th style="width:40px"></th>
-            <th style="min-width:260px">Group</th>
-            <th style="width:110px">Remote ID</th>
-            <th style="min-width:520px">Name</th>
-            <th style="width:110px">Credit</th>
-            <th style="width:140px">Time</th>
-          </tr>
-        </thead>
-        <tbody>
-          @foreach($services as $s)
-            @php
-              $rid = (string)($s->remote_id ?? '');
-              $isAdded = isset($existing[$rid]);
-              $price = (float)($s->price ?? $s->credit ?? 0);
-            @endphp
-            <tr data-wiz-row
-                data-group="{{ strtolower((string)($s->group_name ?? '')) }}"
-                data-name="{{ strtolower((string)($s->name ?? '')) }}"
-                data-remote="{{ strtolower($rid) }}">
-              <td>
-                <input type="checkbox" class="wiz-check" value="{{ $rid }}" @disabled($isAdded)>
-              </td>
-              <td>{{ $s->group_name ?? '' }}</td>
-              <td><code>{{ $rid }}</code></td>
-              <td style="min-width:520px;">{{ $s->name ?? '' }}</td>
-              <td>{{ number_format($price, 4) }}</td>
-              <td>{{ $s->time ?? '' }}</td>
-            </tr>
-          @endforeach
-        </tbody>
-      </table>
-    </div>
-
-    <div class="d-flex gap-2 mt-3">
-      <button type="button" class="btn btn-dark" id="wizImportAll">Import ALL</button>
-      <button type="button" class="btn btn-success" id="wizImportSelected">Import Selected</button>
-    </div>
-  </div>
-</div>
-
+@push('scripts')
 <script>
 (function(){
-  const importUrl = @json(route('admin.apis.remote.server.import', $provider));
-  const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+  const csrfToken = @json(csrf_token());
+  const importUrl = @json(route('admin.apis.services.server.import', $provider));
 
-  const wizSearch = document.getElementById('wizSearch');
-  const checks = () => Array.from(document.querySelectorAll('.wiz-check'));
-  const selected = () => checks().filter(x => x.checked && !x.disabled).map(x => x.value);
-
-  function updateCount(){
-    document.getElementById('wizSelectedCount').innerText = `${selected().length} selected`;
-  }
-
-  wizSearch?.addEventListener('input', (e)=>{
-    const q = (e.target.value||'').toLowerCase().trim();
-    document.querySelectorAll('#wizTable tr[data-wiz-row]').forEach(tr=>{
-      const hit = tr.dataset.group.includes(q) || tr.dataset.name.includes(q) || tr.dataset.remote.includes(q);
+  const importSearch = document.getElementById('importSearch');
+  importSearch?.addEventListener('input', () => {
+    const q = (importSearch.value || '').trim().toLowerCase();
+    document.querySelectorAll('#importTable tr[data-row]').forEach(tr => {
+      const hit =
+        (tr.dataset.group || '').includes(q) ||
+        (tr.dataset.name  || '').includes(q) ||
+        (tr.dataset.remote|| '').includes(q);
       tr.style.display = (!q || hit) ? '' : 'none';
     });
   });
 
-  document.getElementById('wizSelectAll')?.addEventListener('click', ()=>{
-    checks().forEach(cb => { if(!cb.disabled) cb.checked = true; });
-    updateCount();
-  });
-
-  document.getElementById('wizUnselectAll')?.addEventListener('click', ()=>{
-    checks().forEach(cb => cb.checked = false);
-    updateCount();
-  });
-
-  document.addEventListener('change', (e)=>{
-    if(e.target.classList?.contains('wiz-check')) updateCount();
-  });
+  const checks = () => Array.from(document.querySelectorAll('.row-check'));
+  const selected = () => checks().filter(x => x.checked && !x.disabled).map(x => x.value);
 
   async function sendImport(payload){
-    const res = await fetch(importUrl,{
-      method:'POST',
-      headers:{
-        'Content-Type':'application/json',
+    const res = await fetch(importUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
         'X-CSRF-TOKEN': csrfToken,
-        'X-Requested-With':'XMLHttpRequest'
+        'X-Requested-With': 'XMLHttpRequest'
       },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
     });
 
-    const data = await res.json().catch(()=>null);
+    const data = await res.json().catch(() => null);
     if(!res.ok || !data?.ok){
       alert(data?.msg || 'Import failed');
       return null;
@@ -144,34 +125,61 @@
     return data;
   }
 
-  document.getElementById('wizImportSelected')?.addEventListener('click', async ()=>{
+  function markDisabled(remoteIds){
+    (remoteIds || []).forEach(id => {
+      const rid = String(id || '').trim();
+      if(!rid) return;
+
+      document.querySelectorAll('.row-check').forEach(cb => {
+        if(String(cb.value) === rid){
+          cb.checked = false;
+          cb.disabled = true;
+        }
+      });
+    });
+  }
+
+  document.getElementById('btnImportSelected')?.addEventListener('click', async () => {
     const ids = selected();
     if(!ids.length) return alert('Select services first');
 
-    const pricing_mode = document.getElementById('wizPricingMode').value;
-    const pricing_value = document.getElementById('wizPricingValue').value;
+    const pricing_mode  = document.getElementById('pricing_mode')?.value || 'percent';
+    const pricing_value = document.getElementById('pricing_value')?.value || 0;
 
-    const data = await sendImport({ apply_all:false, service_ids: ids, pricing_mode, pricing_value });
+    const data = await sendImport({
+      kind: 'server',
+      apply_all: false,
+      service_ids: ids,
+      pricing_mode,
+      pricing_value
+    });
+
     if(data?.ok){
-      alert(`✅ Imported ${data.count} services`);
-      location.reload();
+      markDisabled(data.added_remote_ids || ids);
+      alert(`Imported: ${data.count || 0}`);
     }
   });
 
-  document.getElementById('wizImportAll')?.addEventListener('click', async ()=>{
+  document.getElementById('btnImportAll')?.addEventListener('click', async () => {
     if(!confirm('Import ALL services?')) return;
 
-    const pricing_mode = document.getElementById('wizPricingMode').value;
-    const pricing_value = document.getElementById('wizPricingValue').value;
+    const pricing_mode  = document.getElementById('pricing_mode')?.value || 'percent';
+    const pricing_value = document.getElementById('pricing_value')?.value || 0;
 
-    const data = await sendImport({ apply_all:true, service_ids: [], pricing_mode, pricing_value });
+    const data = await sendImport({
+      kind: 'server',
+      apply_all: true,
+      service_ids: [],
+      pricing_mode,
+      pricing_value
+    });
+
     if(data?.ok){
-      alert(`✅ Imported ${data.count} services`);
-      location.reload();
+      markDisabled(data.added_remote_ids || []);
+      alert(`Imported: ${data.count || 0}`);
     }
   });
 
-  updateCount();
 })();
 </script>
-@endsection
+@endpush
