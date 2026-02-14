@@ -88,8 +88,6 @@
   @include('admin.services.server._modal_create')
 </template>
 
-@include('admin.partials.service-modal')
-
 {{-- ✅ JS خاص للـ Clone فقط --}}
 @vite(['resources/js/admin/remote-server-clone.js'])
 @endsection

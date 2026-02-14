@@ -478,44 +478,47 @@
     if (typeVal) ensureHidden('type', typeVal);
   }
 
-  // ✅ مساعد: تهيئة المحرر بعد ظهور المودال + منع التهيئة المكررة
-  async function initEditorsAfterModalShown(modalEl, body){
+  /* ============================================================
+   * ✅ FIX: init editors AFTER modal shown + fallback init
+   * ============================================================ */
+  async function initEditorsAfterShown(body){
     const okSn = await ensureSummernote();
     await ensureSelect2();
+
     if (!okSn) return;
 
-    // ضع بيانات الـ editor (حتى لو كانت موجودة مسبقًا)
-    const infoEl = body.querySelector('#infoEditor');
-    if (!infoEl) return;
-
-    infoEl.classList.remove('d-none');
-    infoEl.setAttribute('data-summernote', '1');
-    infoEl.setAttribute('data-summernote-height', '320');
-
-    // منع double-init
-    if (infoEl.dataset.editorInitialized === '1') return;
-
-    // نفّذ init بعد ما يكون المودال ظاهر فعليًا
-    await window.initModalEditors(body);
-
-    infoEl.dataset.editorInitialized = '1';
-  }
-
-  // ✅ مساعد: تدمير Summernote عند الإغلاق لتفادي مشاكل التهيئة
-  function destroyEditorsOnHide(body){
-    if (!window.jQuery) return;
-    const $ = window.jQuery;
-    const info = $(body).find('#infoEditor');
-    if (info && info.length && info.summernote) {
-      try {
-        // إذا كان متفعلًا، دمّره
-        if (info.next('.note-editor').length) {
-          info.summernote('destroy');
-        }
-      } catch(e){}
+    // 1) init via initModalEditors
+    try {
+      await window.initModalEditors(body);
+    } catch(e) {
+      console.warn('initModalEditors threw error:', e);
     }
+
+    // 2) verify note-editor exists
     const infoEl = body.querySelector('#infoEditor');
-    if (infoEl) infoEl.dataset.editorInitialized = '0';
+    const hasEditor = body.querySelectorAll('.note-editor').length > 0;
+
+    // 3) fallback: direct init if not created
+    if (infoEl && window.jQuery && typeof window.jQuery.fn.summernote === 'function' && !hasEditor) {
+      try {
+        window.jQuery(infoEl).summernote({
+          height: Number(infoEl.getAttribute('data-summernote-height') || 320),
+          toolbar: [
+            ['style', ['style']],
+            ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
+            ['fontname', ['fontname']],
+            ['fontsize', ['fontsize']],
+            ['color', ['color']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['table', ['table']],
+            ['insert', ['link', 'picture', 'video']],
+            ['view', ['fullscreen', 'codeview', 'help']],
+          ]
+        });
+      } catch(e) {
+        console.error('Fallback summernote init failed:', e);
+      }
+    }
   }
 
   document.addEventListener('click', async (e)=>{
@@ -524,13 +527,13 @@
 
     e.preventDefault();
 
-    const modalEl = document.getElementById('serviceModal');
     const body = document.getElementById('serviceModalBody');
     const tpl  = document.getElementById('serviceCreateTpl');
     if(!tpl) return alert('Template not found');
 
     body.innerHTML = tpl.innerHTML;
 
+    // re-run injected scripts inside template
     (function runInjectedScripts(container){
       const scripts = Array.from(container.querySelectorAll('script'));
       scripts.forEach(old => {
@@ -543,14 +546,11 @@
     })(body);
 
     initTabs(body);
-
-    // ✅ دائماً افتح General أولاً
     openGeneralTab();
 
     const providerId = btn.dataset.providerId;
     const remoteId   = btn.dataset.remoteId;
 
-    // ✅ لو زر Clone يحمل additional_fields طبّقها فوراً (بدون فتح تبويب Additional تلقائياً)
     const afFromBtn = parseJsonAttr(
       btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || ''
     );
@@ -564,8 +564,6 @@
       if (typeof window.__serverServiceSetMainField__ === 'function') {
         window.__serverServiceSetMainField__(body, mf.type, mf.label);
       }
-
-      // ✅ لا تفتح Additional تلقائياً
       openGeneralTab();
     }
 
@@ -706,29 +704,19 @@
           window.__serverServiceSetMainField__(body, mf.type, mf.label);
         }
 
-        // ✅ لا تفتح Additional تلقائياً
         openGeneralTab();
       }
     });
 
-    // ✅ 1) اعرض المودال أولاً
+    const modalEl = document.getElementById('serviceModal');
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
 
-    // ✅ 2) جهّز Listener مرة واحدة لكل فتح (حتى لا تتكرر)
+    // ✅ تهيئة المحررات بعد ظهور المودال (مرة واحدة لكل فتح)
     const onShown = async () => {
       modalEl.removeEventListener('shown.bs.modal', onShown);
-      await initEditorsAfterModalShown(modalEl, body);
+      await initEditorsAfterShown(body);
     };
     modalEl.addEventListener('shown.bs.modal', onShown);
-
-    // ✅ 3) عند الإغلاق دمّر المحرر لتفادي أي تكرار
-    const onHidden = () => {
-      modalEl.removeEventListener('hidden.bs.modal', onHidden);
-      destroyEditorsOnHide(body);
-      // نظافة خفيفة
-      // body.innerHTML = '';
-    };
-    modalEl.addEventListener('hidden.bs.modal', onHidden);
 
     modal.show();
   });
@@ -743,11 +731,9 @@
 
     const infoEditor = window.jQuery ? window.jQuery(form).find('#infoEditor') : null;
     if (infoEditor && infoEditor.length && infoEditor.summernote) {
-      try{
-        const html = infoEditor.summernote('code');
-        const hidden = form.querySelector('#infoHidden');
-        if (hidden) hidden.value = html;
-      }catch(e){}
+      const html = infoEditor.summernote('code');
+      const hidden = form.querySelector('#infoHidden');
+      if (hidden) hidden.value = html;
     }
 
     const btn = form.querySelector('[type="submit"]');
