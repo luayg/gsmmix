@@ -263,3 +263,10 @@ html[dir="rtl"] .admin-sidebar .nav-link.active {
 .apis-table .btn-group.position-static,
 .apis-table .dropdown.position-static { position: static !important; }
 .apis-table .dropdown-menu { z-index: 3000 !important; }
+
+
+
+
+/* Summernote داخل modal: اجعل toolbar ظاهر فوق */
+.modal .note-editor .note-toolbar { position: sticky; top: 0; z-index: 2000; background: #fff; }
+.modal .note-editor { width: 100%; }
