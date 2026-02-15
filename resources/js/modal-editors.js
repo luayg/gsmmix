@@ -10,7 +10,7 @@
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
 
-// CSS خاص بـ summernote (اختياري) — اتركه، ما يسبب تعارض
+// CSS فقط (لا يسبب تعارض)
 import 'summernote/dist/summernote-bs5.css';
 
 let $ = window.jQuery;
@@ -99,7 +99,7 @@ async function ensureSummernoteReady() {
     return;
   }
 
-  // Fallback: حمّل summernote-lite مرة واحدة فقط (بدون bs5)
+  // Fallback: حمّل summernote-lite مرة واحدة فقط
   try {
     await import('summernote/dist/summernote-lite.min.js');
     __summernoteReady = true;
@@ -219,7 +219,7 @@ async function buildOneQuillTextarea(ta) {
 }
 
 /* =========================
-   ✅ Summernote (using lite already loaded in admin.js)
+   ✅ Summernote (lite already loaded in admin.js)
 ========================= */
 async function buildOneSummernoteTextarea(ta) {
   if (!ta || !ta.isConnected) return;
@@ -228,7 +228,6 @@ async function buildOneSummernoteTextarea(ta) {
   await ensureSummernoteReady();
   await ensureGlobalJquery();
 
-  // إذا بعد كل شيء مازال غير موجود، اخرج بوضوح
   if (typeof window.jQuery?.fn?.summernote !== 'function') {
     console.error('Summernote is not available on current window.jQuery.');
     return;
@@ -306,7 +305,11 @@ export async function initModalEditors(scopeEl = document) {
 
   const scope = scopeEl instanceof Element ? scopeEl : document;
 
-  const snTextareas = scope.querySelectorAll('textarea[data-summernote="1"], textarea[data-editor="summernote"]');
+  // Summernote
+  const snTextareas = scope.querySelectorAll(
+    'textarea[data-summernote="1"], textarea[data-editor="summernote"]'
+  );
+
   if (snTextareas.length) {
     for (const ta of snTextareas) {
       try {
@@ -317,6 +320,7 @@ export async function initModalEditors(scopeEl = document) {
     }
   }
 
+  // Quill legacy
   const quillTextareas = scope.querySelectorAll('textarea[data-editor="quill"]');
   if (!quillTextareas.length) return;
 
