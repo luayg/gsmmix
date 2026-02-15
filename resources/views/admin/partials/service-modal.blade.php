@@ -91,32 +91,26 @@
     btnGeneral?.click();
   }
 
-  async function ensureSummernote(){
+  async function ensureSummernote() {
+  // 1) لازم jQuery
   if (!window.jQuery) {
-    console.error('jQuery not found (Vite should provide it).');
+    console.error('jQuery not found. Make sure resources/js/admin.js is loaded.');
     return false;
   }
 
-  const hasSummernote =
-    window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function';
+  // 2) إذا summernote موجود على نفس jQuery خلاص تمام
+  if (window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function') {
+    return true;
+  }
 
-  const hasInitModalEditors =
-    typeof window.initModalEditors === 'function';
-
-  // ✅ اعتبره "جاهز" إذا أي واحد منهم موجود:
-  // - initModalEditors (الطريقة الرسمية)
-  // - أو summernote مباشرة (fallback)
-  if (!hasInitModalEditors && !hasSummernote) {
-    console.error('Summernote not available. Need either window.initModalEditors or $.fn.summernote.');
+  // 3) حاول تحميل summernote-lite ديناميكياً (لو لم يُحمّل لأي سبب)
+  try {
+    await import('summernote/dist/summernote-lite.min.js');
+    return (window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function');
+  } catch (e) {
+    console.error('Failed to dynamically import summernote-lite:', e);
     return false;
   }
-
-  // لو initModalEditors غير موجود، ما نوقف… سنعتمد على fallback تحت
-  if (!hasInitModalEditors) {
-    console.warn('initModalEditors not found; will rely on direct summernote fallback.');
-  }
-
-  return true;
 }
 
   async function ensureSelect2(){

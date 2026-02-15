@@ -3,7 +3,8 @@ import $ from 'jquery';
 window.$ = window.jQuery = $;        // ← اجعل jQuery عالميًا مرة واحدة
 
 import 'bootstrap';
-
+import 'summernote/dist/summernote-lite.min.js';
+import 'summernote/dist/summernote-lite.min.css';
 // DataTables (مرة واحدة هنا)
 import 'datatables.net-bs5';
 import 'datatables.net-responsive-bs5';
