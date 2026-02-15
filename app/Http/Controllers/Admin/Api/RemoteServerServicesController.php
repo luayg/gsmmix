@@ -9,43 +9,46 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
+
 class RemoteServerServicesController extends Controller
 {
+    /**
+     * في بعض قواعد البيانات العمود يكون api_provider_id أو api_id (legacy)
+     * فنعمل detect ديناميكي.
+     */
     private function remoteLinkColumn(): string
     {
-        $table = 'remote_server_services';
-        if (Schema::hasColumn($table, 'supplier_id')) return 'supplier_id';
-        if (Schema::hasColumn($table, 'provider_id')) return 'provider_id';
-        if (Schema::hasColumn($table, 'api_provider_id')) return 'api_provider_id';
-        return 'supplier_id';
+        $cols = DB::getSchemaBuilder()->getColumnListing('remote_server_services');
+        return in_array('api_provider_id', $cols, true) ? 'api_provider_id' : 'api_id';
     }
 
     public function index(ApiProvider $provider, Request $request)
-{
-    $col = $this->remoteLinkColumn();
+    {
+        $col = $this->remoteLinkColumn();
 
-    $rows = DB::table('remote_server_services')
-        ->where($col, $provider->id)
-        ->orderBy('group_name')
-        ->orderBy('remote_id')
-        ->get();
+        $rows = DB::table('remote_server_services')
+            ->where($col, $provider->id)
+            ->orderBy('group_name')
+            ->orderBy('remote_id')
+            ->get();
 
-    $groups = $rows->groupBy('group_name');
+        $groups = $rows->groupBy('group_name');
 
-    $existing = ServerService::where('supplier_id', $provider->id)
-        ->pluck('remote_id')
-        ->map(fn($v) => (string)$v)
-        ->flip()
-        ->all();
+        $existing = ServerService::where('supplier_id', $provider->id)
+            ->pluck('remote_id')
+            ->map(fn ($v) => (string)$v)
+            ->flip()
+            ->all();
 
-    // ✅ Ajax/Modal => modal view
-    if ($request->ajax() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
-        return view('admin.api.remote.server.modal', compact('provider', 'groups', 'existing'));
+        // ✅ لو كان الطلب Ajax/Modal رجّع modal
+        if ($request->ajax() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+            return view('admin.api.remote.server.modal', compact('provider', 'groups', 'existing'));
+        }
+
+        // ✅ غير ذلك رجّع page view
+        return view('admin.api.remote.server.page', compact('provider', 'groups', 'existing'));
     }
 
-    // ✅ Normal navigation => page view
-    return view('admin.api.remote.server.page', compact('provider', 'groups', 'existing'));
-}
 
     public function importPage(ApiProvider $provider, Request $request)
     {
