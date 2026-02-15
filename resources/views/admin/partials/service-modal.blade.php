@@ -92,26 +92,26 @@
   }
 
   async function ensureSummernote() {
-  // 1) لازم jQuery
-  if (!window.jQuery) {
-    console.error('jQuery not found. Make sure resources/js/admin.js is loaded.');
-    return false;
-  }
+    // 1) لازم jQuery
+    if (!window.jQuery) {
+      console.error('jQuery not found. Make sure resources/js/admin.js is loaded.');
+      return false;
+    }
 
-  // 2) إذا summernote موجود على نفس jQuery خلاص تمام
-  if (window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function') {
-    return true;
-  }
+    // 2) إذا summernote موجود على نفس jQuery خلاص تمام
+    if (window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function') {
+      return true;
+    }
 
-  // 3) حاول تحميل summernote-lite ديناميكياً (لو لم يُحمّل لأي سبب)
-  try {
-    await import('summernote/dist/summernote-lite.min.js');
-    return (window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function');
-  } catch (e) {
-    console.error('Failed to dynamically import summernote-lite:', e);
-    return false;
+    // 3) حاول تحميل summernote-lite ديناميكياً (لو لم يُحمّل لأي سبب)
+    try {
+      await import('summernote/dist/summernote-lite.min.js');
+      return (window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function');
+    } catch (e) {
+      console.error('Failed to dynamically import summernote-lite:', e);
+      return false;
+    }
   }
-}
 
   async function ensureSelect2(){
     if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
@@ -489,67 +489,67 @@
   }
 
   // ✅ مساعد: تهيئة المحرر بعد ظهور المودال + منع التهيئة المكررة
-  // ✅ مساعد: تهيئة المحرر بعد ظهور المودال + منع التهيئة المكررة
-async function initEditorsAfterModalShown(modalEl, body) {
-  await ensureSelect2();
+  async function initEditorsAfterModalShown(modalEl, body) {
+    await ensureSelect2();
 
-  const infoEl = body.querySelector('#infoEditor');
-  if (!infoEl) return;
+    const infoEl = body.querySelector('#infoEditor');
+    if (!infoEl) return;
 
-  // تأكد أن attributes موجودة (حتى لو template ناسيها)
-  infoEl.classList.remove('d-none');
-  infoEl.style.display = '';
-  infoEl.setAttribute('data-summernote', '1');
-  infoEl.setAttribute('data-editor', 'summernote');
-  infoEl.setAttribute('data-summernote-height', infoEl.getAttribute('data-summernote-height') || '320');
+    // تأكد أن attributes موجودة (حتى لو template ناسيها)
+    infoEl.classList.remove('d-none');
+    infoEl.style.display = '';
+    infoEl.setAttribute('data-summernote', '1');
+    infoEl.setAttribute('data-editor', 'summernote');
+    infoEl.setAttribute('data-summernote-height', infoEl.getAttribute('data-summernote-height') || '320');
 
-  // ✅ انتظر فريمين بعد shown (Bootstrap أحيانًا يكمّل animation/layout بعدها)
-  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+    // ✅ انتظر فريمين بعد shown (Bootstrap أحيانًا يكمّل animation/layout بعدها)
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-  // جرّب init الرسمي أولاً (إن أحببت)
-  try {
-    if (typeof window.initModalEditors === 'function') {
-      await window.initModalEditors(body);
-    }
-  } catch (e) {
-    console.warn('initModalEditors failed:', e);
-  }
-
-  // ✅ لو ما ظهر note-editor، فعّل summernote مباشرة وبشكل حتمي
-  const $ = window.jQuery;
-  if (!$ || !$.fn || typeof $.fn.summernote !== 'function') {
-    console.error('summernote not available on jQuery (unexpected)');
-    return;
-  }
-
-  // إذا لم يتم إنشاء note-editor داخل جسم المودال
-  if (!body.querySelector('.note-editor')) {
+    // جرّب init الرسمي أولاً (إن أحببت)
     try {
-      // نظف أي بقايا
-      try { $(infoEl).summernote('destroy'); } catch (_) {}
-
-      $(infoEl).summernote({
-        height: Number(infoEl.getAttribute('data-summernote-height') || 320),
-        toolbar: [
-          ['style', ['style']],
-          ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
-          ['fontname', ['fontname']],
-          ['fontsize', ['fontsize']],
-          ['color', ['color']],
-          ['para', ['ul', 'ol', 'paragraph']],
-          ['table', ['table']],
-          ['insert', ['link', 'picture', 'video']],
-          ['view', ['fullscreen', 'codeview', 'help']],
-        ],
-      });
-    } catch (e2) {
-      console.error('Forced summernote init failed', e2);
+      if (typeof window.initModalEditors === 'function') {
+        await window.initModalEditors(body);
+      }
+    } catch (e) {
+      console.warn('initModalEditors failed:', e);
     }
+
+    // ✅ لو ما ظهر note-editor، فعّل summernote مباشرة وبشكل حتمي
+    const $ = window.jQuery;
+    if (!$ || !$.fn || typeof $.fn.summernote !== 'function') {
+      console.error('summernote not available on jQuery (unexpected)');
+      return;
+    }
+
+    // إذا لم يتم إنشاء note-editor داخل جسم المودال
+    if (!body.querySelector('.note-editor')) {
+      try {
+        // نظف أي بقايا
+        try { $(infoEl).summernote('destroy'); } catch (_) {}
+
+        $(infoEl).summernote({
+          height: Number(infoEl.getAttribute('data-summernote-height') || 320),
+          toolbar: [
+            ['style', ['style']],
+            ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
+            ['fontname', ['fontname']],
+            ['fontsize', ['fontsize']],
+            ['color', ['color']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['table', ['table']],
+            ['insert', ['link', 'picture', 'video']],
+            ['view', ['fullscreen', 'codeview', 'help']],
+          ],
+        });
+      } catch (e2) {
+        console.error('Forced summernote init failed', e2);
+      }
+    }
+
+    // علامة تهيئة (موحدة كـ attribute)
+    infoEl.setAttribute('data-editor-initialized', body.querySelector('.note-editor') ? '1' : '0');
   }
 
-  // علامة تهيئة
-  infoEl.dataset.editorInitialized = body.querySelector('.note-editor') ? '1' : '0';
-}
   // ✅ مساعد: تدمير Summernote عند الإغلاق لتفادي مشاكل التهيئة
   function destroyEditorsOnHide(body){
     if (!window.jQuery) return;
@@ -563,7 +563,7 @@ async function initEditorsAfterModalShown(modalEl, body) {
       } catch(e){}
     }
     const infoEl = body.querySelector('#infoEditor');
-    if (infoEl) infoEl.dataset.editorInitialized = '0';
+    if (infoEl) infoEl.setAttribute('data-editor-initialized', '0');
   }
 
   document.addEventListener('click', async (e)=>{
@@ -679,7 +679,7 @@ async function initEditorsAfterModalShown(modalEl, body) {
     if (isClone && apiProviderSel) {
       const pid = String(cloneData.providerId || '').trim();
 
-      if (pid && !apiProviderSel.querySelector(`option[value="${pid.replace(/"/g,'\\"')}"]`)) {
+      if (pid && !apiProviderSel.querySelector(`option[value="${pid.replace(/"/g,'\\\"')}"]`)) {
         const opt = document.createElement('option');
         opt.value = pid;
         opt.textContent = cloneData.providerName || ('Provider #' + pid);
@@ -760,8 +760,46 @@ async function initEditorsAfterModalShown(modalEl, body) {
     const onShown = async () => {
       modalEl.removeEventListener('shown.bs.modal', onShown);
       await initEditorsAfterModalShown(modalEl, body);
+
+      // ✅ إصلاح الـ toolbar: استدعاء forced init بعد shown
+      forceInitInfoEditor(body);
     };
     modalEl.addEventListener('shown.bs.modal', onShown);
+
+    function forceInitInfoEditor(body) {
+      const infoEl = body.querySelector('#infoEditor');
+      if (!infoEl) return;
+
+      const $ = window.jQuery;
+      if (!$ || !$.fn || typeof $.fn.summernote !== 'function') {
+        console.error('summernote missing');
+        return;
+      }
+
+      // ✅ إذا لم يتم إنشاء note-editor → أعد التهيئة
+      const initialized = infoEl.getAttribute('data-editor-initialized') === '1';
+      const hasEditor = !!body.querySelector('.note-editor');
+
+      if (!initialized || !hasEditor) {
+        try { $(infoEl).summernote('destroy'); } catch (_) {}
+
+        $(infoEl).summernote({
+          height: Number(infoEl.getAttribute('data-summernote-height') || 320),
+          toolbar: [
+            ['style', ['style']],
+            ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
+            ['para', ['ul', 'ol', 'paragraph']],
+            ['insert', ['link', 'picture']],
+            ['view', ['fullscreen', 'codeview', 'help']],
+          ],
+        });
+
+        // ✅ لا تكتب ready/initialized إلا بعد نجاح التهيئة
+        const ok = !!body.querySelector('.note-editor');
+        infoEl.setAttribute('data-editor-initialized', ok ? '1' : '0');
+        infoEl.setAttribute('data-summernote-ready', ok ? '1' : '0');
+      }
+    }
 
     const onHidden = () => {
       modalEl.removeEventListener('hidden.bs.modal', onHidden);
