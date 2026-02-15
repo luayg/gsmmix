@@ -21,34 +21,31 @@ class RemoteServerServicesController extends Controller
     }
 
     public function index(ApiProvider $provider, Request $request)
-    {
-        $col = $this->remoteLinkColumn();
+{
+    $col = $this->remoteLinkColumn();
 
-        $rows = DB::table('remote_server_services')
-            ->where($col, $provider->id)
-            ->orderBy('group_name')
-            ->orderBy('remote_id')
-            ->get();
+    $rows = DB::table('remote_server_services')
+        ->where($col, $provider->id)
+        ->orderBy('group_name')
+        ->orderBy('remote_id')
+        ->get();
 
-        $groups = $rows->groupBy('group_name');
+    $groups = $rows->groupBy('group_name');
 
-        $existing = ServerService::where('supplier_id', $provider->id)
-            ->pluck('remote_id')
-            ->map(fn($v) => (string)$v)
-            ->flip()
-            ->all();
+    $existing = ServerService::where('supplier_id', $provider->id)
+        ->pluck('remote_id')
+        ->map(fn($v) => (string)$v)
+        ->flip()
+        ->all();
 
-        /**
-         * ✅ قاعدة واضحة:
-         * - Ajax/Modal requests => modal view (بدون layout)
-         * - Normal navigation / new window => page view (مع layout-standalone وVite)
-         */
-        if ($request->ajax() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
-            return view('admin.api.remote.server.modal', compact('provider', 'groups', 'existing'));
-        }
-
-        return view('admin.api.remote.server.page', compact('provider', 'groups', 'existing'));
+    // ✅ Ajax/Modal => modal view
+    if ($request->ajax() || $request->wantsJson() || $request->header('X-Requested-With') === 'XMLHttpRequest') {
+        return view('admin.api.remote.server.modal', compact('provider', 'groups', 'existing'));
     }
+
+    // ✅ Normal navigation => page view
+    return view('admin.api.remote.server.page', compact('provider', 'groups', 'existing'));
+}
 
     public function importPage(ApiProvider $provider, Request $request)
     {

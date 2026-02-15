@@ -1,10 +1,17 @@
 {{-- resources/views/admin/api/remote/server/modal.blade.php --}}
 @php
   // $provider: ApiProvider
-  // $groups: Collection grouped by group_name (each item has remote_id, name, price/credit, time, additional_fields)
+  // $groups: Collection grouped by group_name
   // $existing: array flip remote_id => true (to disable clone)
-@endphp
 
+  // ✅ حماية: لا تسمح بكسر المودال لو لم تُمرّر $groups
+  if (!isset($groups) || !($groups instanceof \Illuminate\Support\Collection)) {
+    $groups = collect();
+  }
+  if (!isset($existing) || !is_array($existing)) {
+    $existing = [];
+  }
+@endphp
 <div class="modal-header align-items-center" style="background:#111;color:#fff;">
   <div>
     <div class="h6 mb-0">
@@ -43,7 +50,7 @@
       </thead>
 
       <tbody>
-      @forelse($groups as $groupName => $items)
+      @forelse(($groups ?? collect()) as $groupName => $items)
         @foreach($items as $svc)
           @php
             $rid   = (string)($svc->remote_id ?? $svc->REMOTEID ?? $svc->id ?? '');

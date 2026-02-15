@@ -13,6 +13,7 @@
     'resources/css/admin-theme.css',
     'resources/css/admin.css',
     'resources/js/admin.js',
+    
   ])
 
   {{-- حمّل المودال المشترك مرة واحدة فقط --}}
