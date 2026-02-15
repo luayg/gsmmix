@@ -92,16 +92,32 @@
   }
 
   async function ensureSummernote(){
-    if (!window.jQuery) {
-      console.error('jQuery not found (Vite should provide it).');
-      return false;
-    }
-    if (!window.initModalEditors) {
-      console.error('initModalEditors not found on window. Add: window.initModalEditors = initModalEditors in resources/js/admin.js');
-      return false;
-    }
-    return true;
+  if (!window.jQuery) {
+    console.error('jQuery not found (Vite should provide it).');
+    return false;
   }
+
+  const hasSummernote =
+    window.jQuery.fn && typeof window.jQuery.fn.summernote === 'function';
+
+  const hasInitModalEditors =
+    typeof window.initModalEditors === 'function';
+
+  // ✅ اعتبره "جاهز" إذا أي واحد منهم موجود:
+  // - initModalEditors (الطريقة الرسمية)
+  // - أو summernote مباشرة (fallback)
+  if (!hasInitModalEditors && !hasSummernote) {
+    console.error('Summernote not available. Need either window.initModalEditors or $.fn.summernote.');
+    return false;
+  }
+
+  // لو initModalEditors غير موجود، ما نوقف… سنعتمد على fallback تحت
+  if (!hasInitModalEditors) {
+    console.warn('initModalEditors not found; will rely on direct summernote fallback.');
+  }
+
+  return true;
+}
 
   async function ensureSelect2(){
     if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
@@ -496,10 +512,12 @@
 
     // جرّب init الرسمي أولاً
     try {
-      await window.initModalEditors(body);
-    } catch(e) {
-      console.warn('initModalEditors failed, will fallback to direct summernote init', e);
-    }
+  if (typeof window.initModalEditors === 'function') {
+    await window.initModalEditors(body);
+  }
+} catch(e) {
+  console.warn('initModalEditors failed, will fallback to direct summernote init', e);
+}
 
     // ✅ تحقق فعلي: هل تم إنشاء note-editor؟
     const hasEditor = !!body.querySelector('.note-editor');
