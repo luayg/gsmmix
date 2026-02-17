@@ -494,10 +494,17 @@
 async function initEditorsAfterModalShown(modalEl, body) {
   await ensureSelect2();
 
+  // ✅ مهم جدًا: تأكد أن summernote موجودة على jQuery قبل أي init
+  const okSummer = await ensureSummernote();
+  if (!okSummer) {
+    console.error('summernote not loaded (ensureSummernote returned false)');
+    return;
+  }
+
   const infoEl = body.querySelector('#infoEditor');
   if (!infoEl) return;
 
-  // ✅ مهم: صفّر أي flags تمنع initModalEditors من إعادة التهيئة
+  // ✅ صفّر أي flags تمنع إعادة التهيئة
   delete infoEl.dataset.summernoteReady;
   infoEl.removeAttribute('data-summernote-ready');
   delete infoEl.dataset.editorInitialized;
@@ -513,7 +520,7 @@ async function initEditorsAfterModalShown(modalEl, body) {
   // ✅ انتظر فريمين بعد shown
   await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
 
-  // جرّب init الرسمي أولاً
+  // جرّب init الرسمي لو موجود (اختياري)
   try {
     if (typeof window.initModalEditors === 'function') {
       await window.initModalEditors(body);
@@ -528,11 +535,12 @@ async function initEditorsAfterModalShown(modalEl, body) {
     return;
   }
 
-  // ✅ لو ما ظهر note-editor، فعّل summernote مباشرة
-  if (!body.querySelector('.note-editor')) {
-    try { $(infoEl).summernote('destroy'); } catch (_) {}
-
-    try {
+  // ✅ تفعيل summernote بشكل حتمي إذا لم يتم تفعيله
+  try {
+    if ($(infoEl).data('summernote')) {
+      // إذا كان مفعّل أصلاً لا تعيد التفعيل
+    } else {
+      try { $(infoEl).summernote('destroy'); } catch (_) {}
       $(infoEl).summernote({
         height: Number(infoEl.getAttribute('data-summernote-height') || 320),
         toolbar: [
@@ -547,16 +555,17 @@ async function initEditorsAfterModalShown(modalEl, body) {
           ['view', ['fullscreen', 'codeview', 'help']],
         ],
       });
-    } catch (e2) {
-      console.error('Forced summernote init failed', e2);
     }
+  } catch (e2) {
+    console.error('Summernote init failed:', e2);
   }
 
-  // ✅ ضع flags فقط بعد ما تتأكد أن المحرر فعلاً موجود
-  const ok = !!body.querySelector('.note-editor');
+  // ✅ Flags صحيحة بناءً على الحقيقة
+  const ok = !!$(infoEl).data('summernote');
   infoEl.setAttribute('data-editor-initialized', ok ? '1' : '0');
   if (ok) infoEl.setAttribute('data-summernote-ready', '1');
 }
+
 
 
 // ✅ مساعد: تدمير Summernote عند الإغلاق لتفادي مشاكل التهيئة
@@ -564,26 +573,22 @@ function destroyEditorsOnHide(body){
   if (!window.jQuery) return;
 
   const $ = window.jQuery;
-  const $info = $(body).find('#infoEditor');
-
-  if ($info && $info.length) {
-    try {
-      if ($info.next('.note-editor').length) {
-        $info.summernote('destroy');
-      }
-    } catch(e){}
-  }
-
   const infoEl = body.querySelector('#infoEditor');
-  if (infoEl) {
-    // ✅ أهم شيء: صفّر flags حتى لا يتخطى init لاحقاً
-    delete infoEl.dataset.summernoteReady;
-    infoEl.removeAttribute('data-summernote-ready');
-    delete infoEl.dataset.editorInitialized;
-    infoEl.removeAttribute('data-editor-initialized');
-    infoEl.removeAttribute('data-summernote');
-    infoEl.removeAttribute('data-editor');
-  }
+  if (!infoEl) return;
+
+  try {
+    if ($(infoEl).data('summernote')) {
+      $(infoEl).summernote('destroy');
+    }
+  } catch(e){}
+
+  // صفّر flags
+  delete infoEl.dataset.summernoteReady;
+  infoEl.removeAttribute('data-summernote-ready');
+  delete infoEl.dataset.editorInitialized;
+  infoEl.removeAttribute('data-editor-initialized');
+}
+
 }
 
 
@@ -779,8 +784,10 @@ function destroyEditorsOnHide(body){
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
 
     const onShown = async () => {
-      modalEl.removeEventListener('shown.bs.modal', onShown);
-      await initEditorsAfterModalShown(modalEl, body);
+  modalEl.removeEventListener('shown.bs.modal', onShown);
+  await initEditorsAfterModalShown(modalEl, body);
+};
+
 
       // ✅ إصلاح الـ toolbar: استدعاء forced init بعد shown
       forceInitInfoEditor(body);
