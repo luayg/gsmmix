@@ -1,17 +1,9 @@
 // resources/js/modal-editors.js
-// Supports: Quill (legacy) + Summernote (Bootstrap 5)
-// الهدف: محرر غني داخل Ajax Modal بدون تعارضات + حفظ مضمون مع Ajax (FormData)
-//
-// ✅ FIX آمن:
-// - لا نحمل summernote-bs5 إطلاقاً (حتى لا يحدث تعارض مع summernote-lite المحمّل من admin.js)
-// - نعتمد على window.jQuery القادم من admin.js (نفس instance التي عليها select2 + summernote)
-// - إذا لم يكن summernote موجوداً على $.fn نعمل fallback تحميل lite فقط (مرة واحدة)
+// Supports: Quill (legacy) + Summernote (lite)
+// Best practice: init/destroy from ONE JS file, after modal shown.
 
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
-
-// CSS فقط (لا يسبب تعارض)
-import 'summernote/dist/summernote-bs5.css';
 
 let $ = window.jQuery;
 
@@ -26,10 +18,6 @@ async function ensureGlobalJquery() {
   return $;
 }
 
-/**
- * ✅ Bootstrap 5 → jQuery bridge
- * بعض إضافات summernote تستدعي $.fn.tooltip / $.fn.modal
- */
 async function ensureBootstrapAndBridges() {
   await ensureGlobalJquery();
 
@@ -85,7 +73,6 @@ async function ensureBootstrapAndBridges() {
   }
 }
 
-// ✅ تأكد أن summernote موجود على نفس jQuery (بدون تحميل bs5)
 let __summernoteReady = false;
 async function ensureSummernoteReady() {
   if (__summernoteReady) return;
@@ -93,13 +80,13 @@ async function ensureSummernoteReady() {
   await ensureGlobalJquery();
   await ensureBootstrapAndBridges();
 
-  // إذا admin.js حمّل summernote-lite، سيكون موجود هنا:
+  // admin.js already loads summernote-lite normally
   if (typeof window.jQuery?.fn?.summernote === 'function') {
     __summernoteReady = true;
     return;
   }
 
-  // Fallback: حمّل summernote-lite مرة واحدة فقط
+  // fallback (once)
   try {
     await import('summernote/dist/summernote-lite.min.js');
     __summernoteReady = true;
@@ -121,7 +108,7 @@ function injectFixCssOnce() {
     .ql-snow .ql-tooltip { z-index: 20000 !important; }
     .quill-wrap { border: 1px solid #dee2e6; border-radius: .375rem; overflow: hidden; }
 
-    /* ✅ Summernote داخل modal */
+    /* Summernote inside modal */
     .note-editor.note-frame { border-radius: .375rem; }
     .note-editor .note-toolbar { position: sticky; top: 0; z-index: 1060; background: #fff; }
     .note-modal { z-index: 21050 !important; }
@@ -145,12 +132,10 @@ function hookFormOnce(form) {
     'submit',
     () => {
       // Quill -> textarea
-      form
-        .querySelectorAll('textarea[data-editor="quill"][data-quill-ready="1"]')
-        .forEach((t) => {
-          const inst = t.__quillInstance;
-          if (inst) t.value = inst.root.innerHTML;
-        });
+      form.querySelectorAll('textarea[data-editor="quill"][data-quill-ready="1"]').forEach((t) => {
+        const inst = t.__quillInstance;
+        if (inst) t.value = inst.root.innerHTML;
+      });
 
       // Summernote -> hidden
       const infoTa = form.querySelector('#infoEditor');
@@ -164,7 +149,7 @@ function hookFormOnce(form) {
 }
 
 /* =========================
-   ✅ Quill (legacy)
+   Quill (legacy)
 ========================= */
 async function buildOneQuillTextarea(ta) {
   if (ta.dataset.quillReady === '1') return;
@@ -198,20 +183,16 @@ async function buildOneQuillTextarea(ta) {
     modules: { toolbar },
   });
 
-  const initialHtml = ta.value || '';
-  quill.clipboard.dangerouslyPasteHTML(initialHtml);
+  quill.clipboard.dangerouslyPasteHTML(ta.value || '');
 
   const height = Number(ta.getAttribute('data-editor-height') || ta.getAttribute('data-summernote-height') || 320);
   quill.root.style.minHeight = Math.max(200, height - 60) + 'px';
 
-  const sync = () => {
-    ta.value = quill.root.innerHTML;
-  };
+  const sync = () => (ta.value = quill.root.innerHTML);
   quill.on('text-change', sync);
   sync();
 
-  const form = ta.closest('form');
-  hookFormOnce(form);
+  hookFormOnce(ta.closest('form'));
 
   ta.__quillInstance = quill;
   ta.dataset.quillReady = '1';
@@ -219,11 +200,27 @@ async function buildOneQuillTextarea(ta) {
 }
 
 /* =========================
-   ✅ Summernote (lite already loaded in admin.js)
+   Summernote (toolbar like other project)
 ========================= */
+export function destroySummernoteIn(scopeEl = document) {
+  const scope = scopeEl instanceof Element ? scopeEl : document;
+  const tas = scope.querySelectorAll('textarea[data-summernote="1"], textarea[data-editor="summernote"]');
+
+  const $w = window.jQuery;
+  if (!$w || !$w.fn || typeof $w.fn.summernote !== 'function') return;
+
+  tas.forEach((ta) => {
+    try {
+      const $ta = $w(ta);
+      if ($ta.data('summernote') || $ta.next('.note-editor').length) {
+        $ta.summernote('destroy');
+      }
+    } catch (_) {}
+  });
+}
+
 async function buildOneSummernoteTextarea(ta) {
   if (!ta || !ta.isConnected) return;
-  if (ta.dataset.summernoteReady === '1') return;
 
   await ensureSummernoteReady();
   await ensureGlobalJquery();
@@ -233,8 +230,13 @@ async function buildOneSummernoteTextarea(ta) {
     return;
   }
 
-  const form = ta.closest('form');
-  hookFormOnce(form);
+  // IMPORTANT: if reopened / double init → destroy then init
+  try {
+    const $ta = window.jQuery(ta);
+    if ($ta.data('summernote') || $ta.next('.note-editor').length) $ta.summernote('destroy');
+  } catch (_) {}
+
+  hookFormOnce(ta.closest('form'));
 
   const height = Number(ta.getAttribute('data-summernote-height') || 320);
   const uploadUrl = ta.getAttribute('data-upload-url') || '';
@@ -248,9 +250,9 @@ async function buildOneSummernoteTextarea(ta) {
     height,
     toolbar: [
       ['style', ['style']],
+      ['fontsize', ['fontsize']],
       ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
       ['fontname', ['fontname']],
-      ['fontsize', ['fontsize']],
       ['color', ['color']],
       ['para', ['ul', 'ol', 'paragraph']],
       ['table', ['table']],
@@ -259,20 +261,22 @@ async function buildOneSummernoteTextarea(ta) {
     ],
     callbacks: {
       onInit: function () {
+        const form = ta.closest('form');
         const hidden = form?.querySelector('#infoHidden');
         if (hidden) hidden.value = window.jQuery(ta).summernote('code') || '';
       },
       onChange: function (contents) {
+        const form = ta.closest('form');
         const hidden = form?.querySelector('#infoHidden');
         if (hidden) hidden.value = contents || '';
       },
       onImageUpload: function (files) {
         if (!uploadUrl || !files || !files.length) return;
 
-        const file = files[0];
         const fd = new FormData();
-        fd.append('file', file);
+        fd.append('file', files[0]);
 
+        const form = ta.closest('form');
         const token =
           document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ||
           form?.querySelector('input[name="_token"]')?.value ||
@@ -292,13 +296,10 @@ async function buildOneSummernoteTextarea(ta) {
       },
     },
   });
-
-  ta.dataset.summernoteReady = '1';
-  ta.setAttribute('data-summernote-ready', '1');
 }
 
 /* =========================
-   ✅ Public initializer
+   Public initializer
 ========================= */
 export async function initModalEditors(scopeEl = document) {
   injectFixCssOnce();
@@ -306,17 +307,12 @@ export async function initModalEditors(scopeEl = document) {
   const scope = scopeEl instanceof Element ? scopeEl : document;
 
   // Summernote
-  const snTextareas = scope.querySelectorAll(
-    'textarea[data-summernote="1"], textarea[data-editor="summernote"]'
-  );
-
-  if (snTextareas.length) {
-    for (const ta of snTextareas) {
-      try {
-        await buildOneSummernoteTextarea(ta);
-      } catch (e) {
-        console.error('❌ Summernote init failed for textarea:', ta, e);
-      }
+  const snTextareas = scope.querySelectorAll('textarea[data-summernote="1"], textarea[data-editor="summernote"]');
+  for (const ta of snTextareas) {
+    try {
+      await buildOneSummernoteTextarea(ta);
+    } catch (e) {
+      console.error('❌ Summernote init failed for textarea:', ta, e);
     }
   }
 

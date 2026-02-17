@@ -726,24 +726,26 @@
 
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
 
-    // ✅ shown: init select2 + summernote
-    const onShown = async () => {
-      modalEl.removeEventListener('shown.bs.modal', onShown);
+// init after shown (THIS is the key)
+const onShown = async () => {
+  modalEl.removeEventListener('shown.bs.modal', onShown);
+  if (typeof window.initModalEditors === 'function') {
+    await window.initModalEditors(body);
+  }
+};
+modalEl.addEventListener('shown.bs.modal', onShown);
 
-      await ensureSelect2();
-      try { await window.initModalEditors?.(body); } catch(e) {} // Quill وغيره لو موجود
-      await initInfoEditor(body);
-    };
-    modalEl.addEventListener('shown.bs.modal', onShown);
+// destroy on close (prevents broken re-open)
+const onHidden = () => {
+  modalEl.removeEventListener('hidden.bs.modal', onHidden);
+  if (typeof window.destroySummernoteIn === 'function') {
+    window.destroySummernoteIn(body);
+  }
+};
+modalEl.addEventListener('hidden.bs.modal', onHidden);
 
-    const onHidden = () => {
-      modalEl.removeEventListener('hidden.bs.modal', onHidden);
-      destroyInfoEditor(body);
-    };
-    modalEl.addEventListener('hidden.bs.modal', onHidden);
+modal.show();
 
-    modal.show();
-  });
 
   document.addEventListener('submit', async (ev)=>{
     const form = ev.target;

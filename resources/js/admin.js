@@ -44,8 +44,10 @@ import 'select2/dist/js/select2.full.min.js';
   }
 })();
 
-import { initModalEditors } from './modal-editors';
+import { initModalEditors, destroySummernoteIn } from './modal-editors';
 window.initModalEditors = initModalEditors;
+window.destroySummernoteIn = destroySummernoteIn;
+
 
 /* =================================================================
  * Helpers
