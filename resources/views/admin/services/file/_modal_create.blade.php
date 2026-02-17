@@ -7,16 +7,9 @@
       data-ajax="1">
   @csrf
 
-  {{-- ✅ Required by backend validation --}}
-  <input type="hidden" name="name_en" value="">
-  <input type="hidden" name="main_type" value="">
-
-
-
-
-
-  {{-- ✅ Fix name_en required (if your validation requires it) --}}
+  {{-- ✅ Fix name_en required --}}
   <input type="hidden" name="name_en" id="nameEnHidden" value="">
+  <input type="hidden" name="main_type" value="">
 
   {{-- (Optional) keep custom fields unified --}}
   <input type="hidden" name="custom_fields_json" id="customFieldsJson" value="[]">
@@ -205,7 +198,14 @@
         {{-- RIGHT SIDE --}}
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
-          <textarea id="infoEditor" class="form-control d-none"></textarea>
+
+          {{-- ✅ Summernote (NEW consistent style) --}}
+          <textarea
+            class="form-control summernote"
+            data-height="320"
+            data-upload-url="{{ route('admin.uploads.summernote') }}"
+            rows="10"></textarea>
+
           <input type="hidden" name="info" id="infoHidden">
           <small class="text-muted">Description, notes, terms…</small>
         </div>

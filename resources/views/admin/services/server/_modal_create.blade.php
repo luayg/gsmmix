@@ -156,14 +156,14 @@
 
           {{-- ✅ Summernote editor --}}
           <textarea id="infoEditor"
-                    class="form-control"
-                    data-editor="summernote"
-                    data-summernote="1"
-                    data-summernote-height="320"
-                    data-upload-url="{{ route('admin.uploads.summernote') }}"
-                    rows="10"></textarea>
+          class="form-control summernote"
+          data-summernote-height="320"
+          data-summernote-hidden="#infoHidden"
+          data-upload-url="{{ route('admin.uploads.summernote') }}"
+          rows="10"></textarea>
 
-          <input type="hidden" name="info" id="infoHidden" value="">
+<input type="hidden" name="info" id="infoHidden" value="">
+
 
           <small class="text-muted">Description, notes, terms…</small>
         </div>

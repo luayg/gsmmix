@@ -147,13 +147,12 @@
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
 
-          <textarea id="infoEditor"
-                    class="form-control"
-                    data-editor="summernote"
-                    data-summernote="1"
-                    data-summernote-height="320"
-                    data-upload-url="{{ route('admin.uploads.summernote') }}"
-                    rows="10"></textarea>
+          {{-- ✅ Summernote (NEW consistent style): no modal-editors, no data-editor --}}
+          <textarea
+            class="form-control summernote"
+            data-height="320"
+            data-upload-url="{{ route('admin.uploads.summernote') }}"
+            rows="10"></textarea>
 
           <input type="hidden" name="info" id="infoHidden" value="">
           <small class="text-muted">Description, notes, terms…</small>

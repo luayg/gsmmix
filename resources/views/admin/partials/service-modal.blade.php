@@ -14,24 +14,10 @@
   #serviceModal .badge-box .badge{background:#111;color:#fff;padding:.35rem .55rem;border-radius:.35rem;font-size:.75rem}
   #serviceModal .tab-pane{display:none}
   #serviceModal .tab-pane.active{display:block}
-
   #serviceModal .pricing-row{border-bottom:1px solid #eee}
   #serviceModal .pricing-title{background:#f3f3f3;padding:.55rem .75rem;font-weight:600}
   #serviceModal .pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.65rem .75rem}
-
-  .api-box{
-    border:1px solid #e9e9e9;
-    border-radius:.5rem;
-    padding:.75rem;
-    margin-top:.5rem;
-    background:#fafafa;
-  }
-
-  /* ✅ Summernote داخل المودال */
-  #serviceModal .note-editor.note-frame{border-radius:.5rem}
-  #serviceModal .note-editor .note-toolbar{position:sticky;top:0;z-index:1060;background:#fff}
-  #serviceModal .note-modal{z-index:21050 !important}
-  #serviceModal .note-popover{z-index:21060 !important}
+  .api-box{border:1px solid #e9e9e9;border-radius:.5rem;padding:.75rem;margin-top:.5rem;background:#fafafa;}
 </style>
   @endpush
 
@@ -39,7 +25,6 @@
 <div class="modal fade" id="serviceModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
     <div class="modal-content">
-
       <div class="modal-header">
         <div>
           <div class="modal-title">Create service</div>
@@ -69,10 +54,6 @@
   @push('scripts')
 <script>
 (function(){
-  // ✅ منع الربط المكرر (احتياطاً)
-  if (window.__gsmmixServiceModalBound === true) return;
-  window.__gsmmixServiceModalBound = true;
-
   const clean = (v) => {
     if (v === undefined || v === null) return '';
     const s = String(v);
@@ -94,18 +75,8 @@
       });
     });
   }
-
   function openGeneralTab(){
-    const btnGeneral = document.querySelector('#serviceModal .tab-btn[data-tab="general"]');
-    btnGeneral?.click();
-  }
-
-  async function ensureSelect2(){
-    if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
-      console.warn('Select2 not available (Vite should provide it).');
-      return false;
-    }
-    return true;
+    document.querySelector('#serviceModal .tab-btn[data-tab="general"]')?.click();
   }
 
   function slugify(text){
@@ -123,30 +94,9 @@
     return Number.isFinite(price) ? price : 0;
   }
 
-  function updateFinalForRow(row){
-    const priceEl = row.querySelector('[data-price]');
-    const discEl  = row.querySelector('[data-discount]');
-    const typeEl  = row.querySelector('[data-discount-type]');
-    const outEl   = row.querySelector('[data-final]');
-
-    const price = Number(priceEl?.value || 0);
-    const disc  = Number(discEl?.value  || 0);
-    const dtype = Number(typeEl?.value  || 1);
-
-    let final = price;
-    if (dtype === 2) final = price - (price * (disc/100));
-    else final = price - disc;
-
-    if (!Number.isFinite(final)) final = 0;
-    if (final < 0) final = 0;
-
-    if (outEl) outEl.textContent = final.toFixed(4);
-  }
-
   function syncGroupPricesFromService(scope){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if (!wrap) return;
-
     const servicePrice = calcServiceFinalPrice(scope);
 
     wrap.querySelectorAll('.pricing-row').forEach(row=>{
@@ -155,7 +105,8 @@
       if (priceInput.dataset.autoPrice !== '1') return;
 
       priceInput.value = servicePrice.toFixed(4);
-      updateFinalForRow(row);
+      const outEl = row.querySelector('[data-final]');
+      if (outEl) outEl.textContent = servicePrice.toFixed(4);
     });
   }
 
@@ -168,13 +119,10 @@
 
     function recalc(){
       const price = calcServiceFinalPrice(scope);
-
       if(pricePreview) pricePreview.value = price.toFixed(4);
       if(convertedPreview) convertedPreview.value = price.toFixed(4);
-
       const badge = document.getElementById('badgePrice');
       if (badge) badge.innerText = 'Price: ' + price.toFixed(4) + ' Credits';
-
       syncGroupPricesFromService(scope);
     }
 
@@ -190,97 +138,85 @@
     };
   }
 
+  async function loadUserGroups(){
+    const res = await fetch("{{ route('admin.groups.options') }}", { headers:{'X-Requested-With':'XMLHttpRequest'} });
+    const rows = await res.json().catch(()=>[]);
+    if(!Array.isArray(rows)) return [];
+    return rows;
+  }
+
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if(!wrap) return;
-
     wrap.innerHTML = '';
-
     const initialServicePrice = calcServiceFinalPrice(scope);
 
     groups.forEach(g=>{
       const row = document.createElement('div');
       row.className = 'pricing-row';
       row.dataset.groupId = g.id;
-
       row.innerHTML = `
         <div class="pricing-title">${clean(g.name)}</div>
         <div class="pricing-inputs">
-
           <div>
             <label class="form-label">Price</label>
             <div class="input-group">
-              <input
-                type="number" step="0.0001"
-                class="form-control"
-                data-price
-                data-auto-price="1"
-                name="group_prices[${g.id}][price]"
-                value="${initialServicePrice.toFixed(4)}">
+              <input type="number" step="0.0001" class="form-control" data-price data-auto-price="1"
+                     name="group_prices[${g.id}][price]" value="${initialServicePrice.toFixed(4)}">
               <span class="input-group-text">Credits</span>
             </div>
             <div class="small text-muted mt-1">
-              Final: <span class="fw-semibold" data-final>0.0000</span> Credits
+              Final: <span class="fw-semibold" data-final>${initialServicePrice.toFixed(4)}</span> Credits
             </div>
           </div>
-
           <div>
             <label class="form-label">Discount</label>
             <div class="input-group">
-              <input
-                type="number" step="0.0001"
-                class="form-control"
-                data-discount
-                name="group_prices[${g.id}][discount]"
-                value="0.0000">
-              <select class="form-select" style="max-width:110px"
-                data-discount-type
-                name="group_prices[${g.id}][discount_type]">
+              <input type="number" step="0.0001" class="form-control" data-discount
+                     name="group_prices[${g.id}][discount]" value="0.0000">
+              <select class="form-select" style="max-width:110px" data-discount-type
+                      name="group_prices[${g.id}][discount_type]">
                 <option value="1" selected>Credits</option>
                 <option value="2">Percent</option>
               </select>
               <button type="button" class="btn btn-light btn-reset">Reset</button>
             </div>
           </div>
-
         </div>
       `;
 
       const priceInput = row.querySelector('[data-price]');
       const discInput  = row.querySelector('[data-discount]');
       const typeSelect = row.querySelector('[data-discount-type]');
+      const outEl      = row.querySelector('[data-final]');
 
-      priceInput?.addEventListener('input', ()=>{
-        priceInput.dataset.autoPrice = '0';
-      });
+      const updateFinal = () => {
+        const price = Number(priceInput?.value || 0);
+        const disc  = Number(discInput?.value  || 0);
+        const dtype = Number(typeSelect?.value || 1);
+        let final = price;
+        if (dtype === 2) final = price - (price * (disc/100));
+        else final = price - disc;
+        if (!Number.isFinite(final) || final < 0) final = 0;
+        if (outEl) outEl.textContent = final.toFixed(4);
+      };
 
-      row.querySelector('.btn-reset').addEventListener('click', ()=>{
+      priceInput?.addEventListener('input', ()=>{ priceInput.dataset.autoPrice = '0'; updateFinal(); });
+      discInput?.addEventListener('input', updateFinal);
+      typeSelect?.addEventListener('change', updateFinal);
+
+      row.querySelector('.btn-reset')?.addEventListener('click', ()=>{
         const sp = calcServiceFinalPrice(scope);
-        if (priceInput){
-          priceInput.dataset.autoPrice = '1';
-          priceInput.value = sp.toFixed(4);
-        }
-        if (discInput) discInput.value = "0.0000";
-        if (typeSelect) typeSelect.value = "1";
-        updateFinalForRow(row);
+        priceInput.dataset.autoPrice = '1';
+        priceInput.value = sp.toFixed(4);
+        discInput.value = "0.0000";
+        typeSelect.value = "1";
+        updateFinal();
       });
 
-      row.querySelectorAll('input,select').forEach(el=>{
-        const handler = () => updateFinalForRow(row);
-        el.addEventListener('input', handler);
-        el.addEventListener('change', handler);
-      });
-
-      updateFinalForRow(row);
+      updateFinal();
       wrap.appendChild(row);
     });
-  }
-
-  async function loadUserGroups(){
-    const res = await fetch("{{ route('admin.groups.options') }}", { headers:{'X-Requested-With':'XMLHttpRequest'} });
-    const rows = await res.json().catch(()=>[]);
-    if(!Array.isArray(rows)) return [];
-    return rows;
   }
 
   function ensureApiUI(scope){
@@ -296,15 +232,11 @@
         <div class="row g-2">
           <div class="col-md-6">
             <label class="form-label">API connection</label>
-            <select class="form-select" id="apiProviderSelect">
-              <option value="">Select provider...</option>
-            </select>
+            <select class="form-select" id="apiProviderSelect"><option value="">Select provider...</option></select>
           </div>
           <div class="col-md-6">
             <label class="form-label">API service</label>
-            <select class="form-select" id="apiServiceSelect">
-              <option value="">Select service...</option>
-            </select>
+            <select class="form-select" id="apiServiceSelect"><option value="">Select service...</option></select>
             <div class="form-text">اختر الخدمة وسيظهر السعر بجانب اسمها، ثم سيتم تعبئة Remote ID + Provider تلقائياً.</div>
           </div>
         </div>
@@ -332,27 +264,17 @@
     try{
       if(!s) return null;
       let str = String(s);
-      str = str.replaceAll('&quot;', '"')
-               .replaceAll('&#34;', '"')
-               .replaceAll('&amp;', '&');
+      str = str.replaceAll('&quot;', '"').replaceAll('&#34;', '"').replaceAll('&amp;', '&');
       return JSON.parse(str);
-    }catch(e){
-      return null;
-    }
+    }catch(e){ return null; }
   }
 
   function guessMainFieldFromRemoteFields(fields){
     if(!Array.isArray(fields) || fields.length === 0) return { type:'serial', label:'Serial' };
-
     const names = fields.map(f => String(f.fieldname || f.name || '').toLowerCase().trim());
-    const hasImei   = names.some(n => n.includes('imei'));
-    const hasSerial = names.some(n => n.includes('serial'));
-    const hasEmail  = names.some(n => n.includes('email'));
-
-    if (hasImei)   return { type:'imei',   label:'IMEI' };
-    if (hasSerial) return { type:'serial', label:'Serial' };
-    if (hasEmail && fields.length === 1) return { type:'email', label:'Email' };
-
+    if (names.some(n => n.includes('imei')))   return { type:'imei',   label:'IMEI' };
+    if (names.some(n => n.includes('serial'))) return { type:'serial', label:'Serial' };
+    if (names.some(n => n.includes('email')) && fields.length === 1) return { type:'email', label:'Email' };
     const first = fields[0];
     const lab = String(first.fieldname || first.name || 'Text').trim();
     return { type:'text', label: lab || 'Text' };
@@ -369,31 +291,21 @@
     url.searchParams.set('type', type);
 
     const res = await fetch(url.toString(), { headers:{'X-Requested-With':'XMLHttpRequest'} });
-    if(!res.ok){
-      sel.innerHTML = `<option value="">Failed to load</option>`;
-      return;
-    }
+    if(!res.ok){ sel.innerHTML = `<option value="">Failed to load</option>`; return; }
 
     const rows = await res.json().catch(()=>[]);
-    if(!Array.isArray(rows) || rows.length === 0){
-      sel.innerHTML = `<option value="">No services found</option>`;
-      return;
-    }
+    if(!Array.isArray(rows) || rows.length === 0){ sel.innerHTML = `<option value="">No services found</option>`; return; }
 
     sel.innerHTML = `<option value="">Select service...</option>` + rows.map(s=>{
       const rid  = clean(s.remote_id ?? s.id ?? s.service_id);
       const name = clean(s.name);
       const time = clean(s.time ?? s.delivery_time);
-
       const creditNum = Number(s.credit ?? s.price ?? s.cost ?? 0);
       const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
-
       const af = (s.additional_fields ?? s.fields ?? []);
       const afJson = JSON.stringify(Array.isArray(af) ? af : []);
-
       const timeTxt = time ? ` — ${time}` : '';
       const ridTxt  = rid ? ` (#${rid})` : '';
-
       return `<option value="${rid}"
         data-name="${escAttr(name)}"
         data-credit="${creditTxt}"
@@ -406,139 +318,40 @@
   function markCloneAsAdded(remoteId){
     const rid = String(remoteId || '').trim();
     if(!rid) return;
-
-    const esc = (v) => {
-      try { return CSS && CSS.escape ? CSS.escape(v) : v.replace(/["\\]/g, '\\$&'); }
-      catch(e){ return v.replace(/["\\]/g, '\\$&'); }
-    };
-
-    const selectors = [
-      `#svcTable tr[data-remote-id="${esc(rid)}"]`,
-      `#servicesTable tr[data-remote-id="${esc(rid)}"]`,
-      `tr[data-remote-id="${esc(rid)}"]`,
-    ];
-
-    let row = null;
-    for (const sel of selectors){
-      row = document.querySelector(sel);
-      if(row) break;
-    }
+    const esc = (v) => { try { return CSS.escape(v); } catch(e){ return v.replace(/["\\]/g, '\\$&'); } };
+    const row = document.querySelector(`#svcTable tr[data-remote-id="${esc(rid)}"]`) ||
+                document.querySelector(`#servicesTable tr[data-remote-id="${esc(rid)}"]`) ||
+                document.querySelector(`tr[data-remote-id="${esc(rid)}"]`);
     if(!row) return;
 
-    const btn =
-      row.querySelector('.clone-btn') ||
-      row.querySelector('[data-create-service]') ||
-      row.querySelector('button');
+    const btn = row.querySelector('.clone-btn') || row.querySelector('[data-create-service]') || row.querySelector('button');
+    if(!btn) return;
 
-    if(btn){
-      btn.disabled = true;
-
-      btn.classList.remove(
-        'btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary',
-        'btn-light','border-success','text-success','btn-outline-success','btn-outline-primary'
-      );
-
-      btn.classList.add('btn-outline-primary');
-      btn.textContent = 'Added ✅';
-
-      btn.removeAttribute('data-create-service');
-    }
+    btn.disabled = true;
+    btn.classList.remove('btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary','btn-light','btn-outline-success','btn-outline-primary');
+    btn.classList.add('btn-outline-primary');
+    btn.textContent = 'Added ✅';
+    btn.removeAttribute('data-create-service');
   }
 
   function ensureRequiredFields(form){
     const ensureHidden = (name, value) => {
       let el = form.querySelector(`[name="${name}"]`);
-      if (!el) {
-        el = document.createElement('input');
-        el.type = 'hidden';
-        el.name = name;
-        form.appendChild(el);
-      }
-      if (el.value === '' || el.value === null || el.value === undefined) {
-        el.value = (value ?? '');
-      }
+      if (!el) { el = document.createElement('input'); el.type = 'hidden'; el.name = name; form.appendChild(el); }
+      if (el.value === '' || el.value === null || el.value === undefined) el.value = (value ?? '');
       return el;
     };
-
     const nameVal = clean(form.querySelector('[name="name"]')?.value || '');
     ensureHidden('name_en', nameVal);
-
-    const mainFieldVal = clean(
-      form.querySelector('[name="main_type"]')?.value ||
-      form.querySelector('[name="main_field_type"]')?.value ||
-      ''
-    );
+    const mainFieldVal = clean(form.querySelector('[name="main_type"]')?.value || form.querySelector('[name="main_field_type"]')?.value || '');
     ensureHidden('main_type', mainFieldVal);
-
     const typeVal = clean(form.querySelector('[name="type"]')?.value || '');
     if (typeVal) ensureHidden('type', typeVal);
-  }
-
-  /* ============================================================
-   ✅ Summernote init (مثل المثال الذي أرسلته: init مباشر بدون flags)
-  ============================================================ */
-  function destroyInfoEditor(body){
-    const infoEl = body.querySelector('#infoEditor');
-    if (!infoEl) return;
-
-    const $ = window.jQuery;
-    if (!$ || !$.fn || typeof $.fn.summernote !== 'function') return;
-
-    try{
-      const $ta = $(infoEl);
-      if ($ta.next('.note-editor').length) $ta.summernote('destroy');
-    }catch(e){}
-  }
-
-  async function initInfoEditor(body){
-    const infoEl = body.querySelector('#infoEditor');
-    if (!infoEl) return;
-
-    const $ = window.jQuery;
-    if (!$ || !$.fn || typeof $.fn.summernote !== 'function') {
-      console.error('Summernote is not available on window.jQuery. تأكد أن resources/js/admin.js محمّل.');
-      return;
-    }
-
-    // ✅ نظّف أي instance قديمة
-    destroyInfoEditor(body);
-
-    // ✅ انتظر فريمين بعد shown
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-    const form = infoEl.closest('form');
-    const hidden = form ? form.querySelector('#infoHidden') : null;
-
-    $(infoEl).summernote({
-      height: Number(infoEl.getAttribute('data-summernote-height') || 320),
-      toolbar: [
-        ['style', ['style']],
-        ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
-        ['fontname', ['fontname']],
-        ['fontsize', ['fontsize']],
-        ['color', ['color']],
-        ['para', ['ul', 'ol', 'paragraph']],
-        ['table', ['table']],
-        ['insert', ['link', 'picture', 'video']],
-        ['view', ['fullscreen', 'codeview', 'help']],
-      ],
-      callbacks: {
-        onInit: function(){
-          try{
-            if (hidden) hidden.value = $(infoEl).summernote('code') || '';
-          }catch(e){}
-        },
-        onChange: function(contents){
-          if (hidden) hidden.value = contents || '';
-        }
-      }
-    });
   }
 
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-create-service]');
     if(!btn) return;
-
     e.preventDefault();
 
     const modalEl = document.getElementById('serviceModal');
@@ -548,10 +361,9 @@
 
     body.innerHTML = tpl.innerHTML;
 
-    // ✅ شغّل أي سكربتات داخل template (كما كان عندك)
+    // execute scripts embedded in template
     (function runInjectedScripts(container){
-      const scripts = Array.from(container.querySelectorAll('script'));
-      scripts.forEach(old => {
+      Array.from(container.querySelectorAll('script')).forEach(old => {
         const s = document.createElement('script');
         for (const attr of old.attributes) s.setAttribute(attr.name, attr.value);
         s.text = old.textContent || '';
@@ -566,30 +378,16 @@
     const providerId = btn.dataset.providerId;
     const remoteId   = btn.dataset.remoteId;
 
-    const afFromBtn = parseJsonAttr(
-      btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || ''
-    );
-
+    const afFromBtn = parseJsonAttr(btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || '');
     if (Array.isArray(afFromBtn) && afFromBtn.length) {
-      if (typeof window.__serverServiceApplyRemoteFields__ === 'function') {
-        window.__serverServiceApplyRemoteFields__(body, afFromBtn);
-      }
-
+      window.__serverServiceApplyRemoteFields__?.(body, afFromBtn);
       const mf = guessMainFieldFromRemoteFields(afFromBtn);
-      if (typeof window.__serverServiceSetMainField__ === 'function') {
-        window.__serverServiceSetMainField__(body, mf.type, mf.label);
-      }
-
+      window.__serverServiceSetMainField__?.(body, mf.type, mf.label);
       openGeneralTab();
     }
 
-    const isClone = (providerId !== undefined && providerId !== '' && providerId !== 'undefined'
-                  && remoteId   !== undefined && remoteId   !== '' && remoteId   !== 'undefined');
-
-    const providerName =
-      btn.dataset.providerName ||
-      document.querySelector('.card-header h5')?.textContent?.split('|')?.[0]?.trim() ||
-      '—';
+    const isClone = (providerId && providerId !== 'undefined' && remoteId && remoteId !== 'undefined');
+    const providerName = btn.dataset.providerName || document.querySelector('.card-header h5')?.textContent?.split('|')?.[0]?.trim() || '—';
 
     const cloneData = {
       providerId: isClone ? providerId : '',
@@ -603,9 +401,7 @@
     };
 
     document.getElementById('serviceModalSubtitle').innerText =
-      isClone ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}`
-              : `Provider: — | Remote ID: —`;
-
+      isClone ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}` : `Provider: — | Remote ID: —`;
     document.getElementById('badgeType').innerText = `Type: ${cloneData.serviceType.toUpperCase()}`;
 
     body.querySelector('[name="supplier_id"]').value = isClone ? cloneData.providerId : '';
@@ -615,7 +411,6 @@
     body.querySelector('[name="time"]').value        = cloneData.time || '';
     body.querySelector('[name="cost"]').value        = cloneData.credit.toFixed(4);
     body.querySelector('[name="profit"]').value      = '0.0000';
-
     body.querySelector('[name="source"]').value      = isClone ? 2 : 1;
     body.querySelector('[name="type"]').value        = cloneData.serviceType;
     body.querySelector('[name="alias"]').value       = slugify(cloneData.name || '');
@@ -624,8 +419,7 @@
     priceHelper.setCost(cloneData.credit);
 
     fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
-      .then(r=>r.json())
-      .then(rows=>{
+      .then(r=>r.json()).then(rows=>{
         const sel = body.querySelector('[name="group_id"]');
         if(sel){
           sel.innerHTML = `<option value="">Group</option>` +
@@ -635,48 +429,35 @@
 
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
-    syncGroupPricesFromService(body);
 
     ensureApiUI(body);
     body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
-
-    try{ await loadApiProviders(body); }catch(e){}
+    await loadApiProviders(body);
 
     const apiProviderSel = body.querySelector('#apiProviderSelect');
     const apiServiceSel  = body.querySelector('#apiServiceSelect');
 
     if (isClone && apiProviderSel) {
       const pid = String(cloneData.providerId || '').trim();
-
       if (pid && !apiProviderSel.querySelector(`option[value="${pid.replace(/"/g,'\\\"')}"]`)) {
         const opt = document.createElement('option');
         opt.value = pid;
         opt.textContent = cloneData.providerName || ('Provider #' + pid);
         apiProviderSel.appendChild(opt);
       }
-
       apiProviderSel.value = pid;
       apiProviderSel.disabled = true;
 
-      try { await loadProviderServices(body, pid, cloneData.serviceType); } catch(e) {}
+      await loadProviderServices(body, pid, cloneData.serviceType);
 
-      if (apiServiceSel) {
-        const opt2 = Array.from(apiServiceSel.options).find(o => String(o.value) === String(cloneData.remoteId));
-        if (opt2) {
-          apiServiceSel.value = opt2.value;
-          apiServiceSel.dispatchEvent(new Event('change'));
-        }
-      }
+      const opt2 = Array.from(apiServiceSel.options).find(o => String(o.value) === String(cloneData.remoteId));
+      if (opt2) { apiServiceSel.value = opt2.value; apiServiceSel.dispatchEvent(new Event('change')); }
     }
 
     apiProviderSel?.addEventListener('change', async ()=>{
       if (apiProviderSel.disabled) return;
-
       const pid = apiProviderSel.value;
-      if(!pid){
-        apiServiceSel.innerHTML = `<option value="">Select service...</option>`;
-        return;
-      }
+      if(!pid){ apiServiceSel.innerHTML = `<option value="">Select service...</option>`; return; }
       await loadProviderServices(body, pid, cloneData.serviceType);
     });
 
@@ -691,80 +472,51 @@
       const credit = Number(opt.dataset.credit || 0);
       const time = clean(opt.dataset.time);
 
-      if(name){
-        body.querySelector('[name="name"]').value = name;
-        body.querySelector('[name="alias"]').value = slugify(name);
-      }
+      if(name){ body.querySelector('[name="name"]').value = name; body.querySelector('[name="alias"]').value = slugify(name); }
       if(time) body.querySelector('[name="time"]').value = time;
 
       if(Number.isFinite(credit) && credit >= 0){
         body.querySelector('[name="cost"]').value = credit.toFixed(4);
         priceHelper.setCost(credit);
-
-        const wrap = body.querySelector('#groupsPricingWrap');
-        wrap?.querySelectorAll('[data-price]').forEach(inp=>{
-          inp.dataset.autoPrice = '1';
-        });
-        syncGroupPricesFromService(body);
       }
 
       const af = parseJsonAttr(opt.dataset.additionalFields || opt.getAttribute('data-additional-fields') || '');
       if (Array.isArray(af) && af.length) {
-
-        if (typeof window.__serverServiceApplyRemoteFields__ === 'function') {
-          window.__serverServiceApplyRemoteFields__(body, af);
-        }
-
+        window.__serverServiceApplyRemoteFields__?.(body, af);
         const mf = guessMainFieldFromRemoteFields(af);
-        if (typeof window.__serverServiceSetMainField__ === 'function') {
-          window.__serverServiceSetMainField__(body, mf.type, mf.label);
-        }
-
+        window.__serverServiceSetMainField__?.(body, mf.type, mf.label);
         openGeneralTab();
       }
     });
 
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
 
-// init after shown (THIS is the key)
-const onShown = async () => {
-  modalEl.removeEventListener('shown.bs.modal', onShown);
-  if (typeof window.initModalEditors === 'function') {
-    await window.initModalEditors(body);
-  }
-};
-modalEl.addEventListener('shown.bs.modal', onShown);
+    const onShown = async () => {
+      modalEl.removeEventListener('shown.bs.modal', onShown);
+      if (typeof window.initSummernoteIn === 'function') await window.initSummernoteIn(body);
+      else console.error('Missing global summernote script: initSummernoteIn');
+    };
+    modalEl.addEventListener('shown.bs.modal', onShown);
 
-// destroy on close (prevents broken re-open)
-const onHidden = () => {
-  modalEl.removeEventListener('hidden.bs.modal', onHidden);
-  if (typeof window.destroySummernoteIn === 'function') {
-    window.destroySummernoteIn(body);
-  }
-};
-modalEl.addEventListener('hidden.bs.modal', onHidden);
+    const onHidden = () => {
+      modalEl.removeEventListener('hidden.bs.modal', onHidden);
+      window.destroySummernoteIn?.(body);
+    };
+    modalEl.addEventListener('hidden.bs.modal', onHidden);
 
-modal.show();
-
+    modal.show();
+  });
 
   document.addEventListener('submit', async (ev)=>{
     const form = ev.target;
     if(!form || !form.matches('#serviceModal form')) return;
-
     ev.preventDefault();
+
     ensureRequiredFields(form);
+    window.syncSummernoteToHidden?.(form);
 
-    // ✅ تأكد من نقل محتوى summernote إلى hidden قبل الإرسال
-    try{
-      const infoEl = form.querySelector('#infoEditor');
-      const hidden = form.querySelector('#infoHidden');
-      if (infoEl && hidden && window.jQuery && window.jQuery(infoEl).data('summernote')) {
-        hidden.value = window.jQuery(infoEl).summernote('code') || '';
-      }
-    }catch(e){}
-
-    const btn = form.querySelector('[type="submit"]');
-    if(btn) btn.disabled = true;
+    const submitBtn = form.querySelector('[type="submit"]');
+    if(submitBtn) submitBtn.disabled = true;
 
     try{
       const res = await fetch(form.action,{
@@ -776,7 +528,7 @@ modal.show();
         body: new FormData(form)
       });
 
-      if(btn) btn.disabled = false;
+      if(submitBtn) submitBtn.disabled = false;
 
       if(res.status === 422){
         const json = await res.json().catch(()=>({}));
@@ -787,31 +539,18 @@ modal.show();
       if(res.ok){
         const rid = form.querySelector('[name="remote_id"]')?.value;
         markCloneAsAdded(rid);
-
-        const provider_id = form.querySelector('[name="supplier_id"]')?.value || '';
-        const kind = (form.querySelector('[name="type"]')?.value || '').toLowerCase();
-
-        window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
-          detail: { provider_id, kind, remote_id: rid }
-        }));
-
         window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
-
-        if (window.showToast) {
-          window.showToast('success', '✅ Service created successfully', { title: 'Done' });
-        }
+        window.showToast?.('success', '✅ Service created successfully', { title: 'Done' });
         return;
       }else{
         const t = await res.text();
         alert('Failed to save service\n\n' + t);
       }
-
     }catch(e){
-      if(btn) btn.disabled = false;
+      if(submitBtn) submitBtn.disabled = false;
       alert('Network error');
     }
   });
-
 })();
 </script>
   @endpush

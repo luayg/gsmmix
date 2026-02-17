@@ -16,6 +16,10 @@
     
   ])
 
+    @include('global.summernote.script')
+
+
+
   {{-- حمّل المودال المشترك مرة واحدة فقط --}}
   @include('admin.partials.service-modal')
 
