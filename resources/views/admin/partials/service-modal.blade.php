@@ -26,6 +26,12 @@
     margin-top:.5rem;
     background:#fafafa;
   }
+
+  /* ✅ Summernote داخل المودال */
+  #serviceModal .note-editor.note-frame{border-radius:.5rem}
+  #serviceModal .note-editor .note-toolbar{position:sticky;top:0;z-index:1060;background:#fff}
+  #serviceModal .note-modal{z-index:21050 !important}
+  #serviceModal .note-popover{z-index:21060 !important}
 </style>
   @endpush
 
@@ -63,12 +69,9 @@
   @push('scripts')
 <script>
 (function(){
-
-  // ⚠️ مهم جداً:
-  // أي "كود تجارب" في console مثل:
-  // const ta = document.querySelector(...)
-  // إذا لصقته داخل الملف خارج function سيسبب SyntaxError ويكسر زر Clone بالكامل.
-  // هذا الملف نظيف بدون أي تجارب.
+  // ✅ منع الربط المكرر (احتياطاً)
+  if (window.__gsmmixServiceModalBound === true) return;
+  window.__gsmmixServiceModalBound = true;
 
   const clean = (v) => {
     if (v === undefined || v === null) return '';
@@ -99,35 +102,10 @@
 
   async function ensureSelect2(){
     if (!window.jQuery || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
+      console.warn('Select2 not available (Vite should provide it).');
       return false;
     }
     return true;
-  }
-
-  // ✅ نستخدم initializer الموحد في resources/js/modal-editors.js
-  async function initEditorsAfterModalShown(body){
-    await ensureSelect2();
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-    if (typeof window.initModalEditors === 'function') {
-      try { await window.initModalEditors(body); } catch (e) { console.warn('initModalEditors failed:', e); }
-    }
-  }
-
-  function destroyEditorsOnHide(body){
-    if (!window.jQuery) return;
-    const $ = window.jQuery;
-    const $ta = $(body).find('#infoEditor');
-    if ($ta && $ta.length) {
-      try {
-        if ($ta.next('.note-editor').length) $ta.summernote('destroy');
-      } catch(e){}
-    }
-    const infoEl = body.querySelector('#infoEditor');
-    if (infoEl) {
-      delete infoEl.dataset.summernoteReady;
-      infoEl.removeAttribute('data-summernote-ready');
-    }
   }
 
   function slugify(text){
@@ -357,8 +335,7 @@
       str = str.replaceAll('&quot;', '"')
                .replaceAll('&#34;', '"')
                .replaceAll('&amp;', '&');
-      const v = JSON.parse(str);
-      return v;
+      return JSON.parse(str);
     }catch(e){
       return null;
     }
@@ -497,6 +474,67 @@
     if (typeVal) ensureHidden('type', typeVal);
   }
 
+  /* ============================================================
+   ✅ Summernote init (مثل المثال الذي أرسلته: init مباشر بدون flags)
+  ============================================================ */
+  function destroyInfoEditor(body){
+    const infoEl = body.querySelector('#infoEditor');
+    if (!infoEl) return;
+
+    const $ = window.jQuery;
+    if (!$ || !$.fn || typeof $.fn.summernote !== 'function') return;
+
+    try{
+      const $ta = $(infoEl);
+      if ($ta.next('.note-editor').length) $ta.summernote('destroy');
+    }catch(e){}
+  }
+
+  async function initInfoEditor(body){
+    const infoEl = body.querySelector('#infoEditor');
+    if (!infoEl) return;
+
+    const $ = window.jQuery;
+    if (!$ || !$.fn || typeof $.fn.summernote !== 'function') {
+      console.error('Summernote is not available on window.jQuery. تأكد أن resources/js/admin.js محمّل.');
+      return;
+    }
+
+    // ✅ نظّف أي instance قديمة
+    destroyInfoEditor(body);
+
+    // ✅ انتظر فريمين بعد shown
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    const form = infoEl.closest('form');
+    const hidden = form ? form.querySelector('#infoHidden') : null;
+
+    $(infoEl).summernote({
+      height: Number(infoEl.getAttribute('data-summernote-height') || 320),
+      toolbar: [
+        ['style', ['style']],
+        ['font', ['bold', 'italic', 'underline', 'strikethrough', 'clear']],
+        ['fontname', ['fontname']],
+        ['fontsize', ['fontsize']],
+        ['color', ['color']],
+        ['para', ['ul', 'ol', 'paragraph']],
+        ['table', ['table']],
+        ['insert', ['link', 'picture', 'video']],
+        ['view', ['fullscreen', 'codeview', 'help']],
+      ],
+      callbacks: {
+        onInit: function(){
+          try{
+            if (hidden) hidden.value = $(infoEl).summernote('code') || '';
+          }catch(e){}
+        },
+        onChange: function(contents){
+          if (hidden) hidden.value = contents || '';
+        }
+      }
+    });
+  }
+
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-create-service]');
     if(!btn) return;
@@ -510,6 +548,7 @@
 
     body.innerHTML = tpl.innerHTML;
 
+    // ✅ شغّل أي سكربتات داخل template (كما كان عندك)
     (function runInjectedScripts(container){
       const scripts = Array.from(container.querySelectorAll('script'));
       scripts.forEach(old => {
@@ -609,7 +648,7 @@
     if (isClone && apiProviderSel) {
       const pid = String(cloneData.providerId || '').trim();
 
-      if (pid && !apiProviderSel.querySelector(`option[value="${pid.replace(/"/g,'\\\\\"')}"]`)) {
+      if (pid && !apiProviderSel.querySelector(`option[value="${pid.replace(/"/g,'\\\"')}"]`)) {
         const opt = document.createElement('option');
         opt.value = pid;
         opt.textContent = cloneData.providerName || ('Provider #' + pid);
@@ -687,15 +726,19 @@
 
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
 
+    // ✅ shown: init select2 + summernote
     const onShown = async () => {
       modalEl.removeEventListener('shown.bs.modal', onShown);
-      await initEditorsAfterModalShown(body);
+
+      await ensureSelect2();
+      try { await window.initModalEditors?.(body); } catch(e) {} // Quill وغيره لو موجود
+      await initInfoEditor(body);
     };
     modalEl.addEventListener('shown.bs.modal', onShown);
 
     const onHidden = () => {
       modalEl.removeEventListener('hidden.bs.modal', onHidden);
-      destroyEditorsOnHide(body);
+      destroyInfoEditor(body);
     };
     modalEl.addEventListener('hidden.bs.modal', onHidden);
 
@@ -707,19 +750,16 @@
     if(!form || !form.matches('#serviceModal form')) return;
 
     ev.preventDefault();
-
     ensureRequiredFields(form);
 
-    if (window.jQuery) {
-      const $ta = window.jQuery(form).find('#infoEditor');
-      if ($ta && $ta.length && $ta.data('summernote')) {
-        try{
-          const html = $ta.summernote('code');
-          const hidden = form.querySelector('#infoHidden');
-          if (hidden) hidden.value = html;
-        }catch(e){}
+    // ✅ تأكد من نقل محتوى summernote إلى hidden قبل الإرسال
+    try{
+      const infoEl = form.querySelector('#infoEditor');
+      const hidden = form.querySelector('#infoHidden');
+      if (infoEl && hidden && window.jQuery && window.jQuery(infoEl).data('summernote')) {
+        hidden.value = window.jQuery(infoEl).summernote('code') || '';
       }
-    }
+    }catch(e){}
 
     const btn = form.querySelector('[type="submit"]');
     if(btn) btn.disabled = true;
@@ -744,7 +784,6 @@
 
       if(res.ok){
         const rid = form.querySelector('[name="remote_id"]')?.value;
-
         markCloneAsAdded(rid);
 
         const provider_id = form.querySelector('[name="supplier_id"]')?.value || '';
@@ -759,7 +798,6 @@
         if (window.showToast) {
           window.showToast('success', '✅ Service created successfully', { title: 'Done' });
         }
-
         return;
       }else{
         const t = await res.text();
