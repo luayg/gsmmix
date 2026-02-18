@@ -349,6 +349,19 @@
     if (typeVal) ensureHidden('type', typeVal);
   }
 
+  // ✅ dynamic hooks by kind: imei/server/file
+  function pickHook(kind, baseName){
+    const k = String(kind || '').toLowerCase().trim();
+    const fn1 = window[`__${k}Service${baseName}__`];
+    if (typeof fn1 === 'function') return fn1;
+
+    // fallback to server hooks (backward compatibility)
+    const fn2 = window[`__serverService${baseName}__`];
+    if (typeof fn2 === 'function') return fn2;
+
+    return null;
+  }
+
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-create-service]');
     if(!btn) return;
@@ -377,14 +390,6 @@
 
     const providerId = btn.dataset.providerId;
     const remoteId   = btn.dataset.remoteId;
-
-    const afFromBtn = parseJsonAttr(btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || '');
-    if (Array.isArray(afFromBtn) && afFromBtn.length) {
-      window.__serverServiceApplyRemoteFields__?.(body, afFromBtn);
-      const mf = guessMainFieldFromRemoteFields(afFromBtn);
-      window.__serverServiceSetMainField__?.(body, mf.type, mf.label);
-      openGeneralTab();
-    }
 
     const isClone = (providerId && providerId !== 'undefined' && remoteId && remoteId !== 'undefined');
     const providerName = btn.dataset.providerName || document.querySelector('.card-header h5')?.textContent?.split('|')?.[0]?.trim() || '—';
@@ -461,6 +466,19 @@
       await loadProviderServices(body, pid, cloneData.serviceType);
     });
 
+    // ✅ apply additional fields from clone button (if exists)
+    const afFromBtn = parseJsonAttr(btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || '');
+    if (Array.isArray(afFromBtn) && afFromBtn.length) {
+      const applyFn = pickHook(cloneData.serviceType, 'ApplyRemoteFields');
+      applyFn?.(body, afFromBtn);
+
+      const mf = guessMainFieldFromRemoteFields(afFromBtn);
+      const setMainFn = pickHook(cloneData.serviceType, 'SetMainField');
+      setMainFn?.(body, mf.type, mf.label);
+
+      openGeneralTab();
+    }
+
     apiServiceSel?.addEventListener('change', ()=>{
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
@@ -482,9 +500,13 @@
 
       const af = parseJsonAttr(opt.dataset.additionalFields || opt.getAttribute('data-additional-fields') || '');
       if (Array.isArray(af) && af.length) {
-        window.__serverServiceApplyRemoteFields__?.(body, af);
+        const applyFn = pickHook(cloneData.serviceType, 'ApplyRemoteFields');
+        applyFn?.(body, af);
+
         const mf = guessMainFieldFromRemoteFields(af);
-        window.__serverServiceSetMainField__?.(body, mf.type, mf.label);
+        const setMainFn = pickHook(cloneData.serviceType, 'SetMainField');
+        setMainFn?.(body, mf.type, mf.label);
+
         openGeneralTab();
       }
     });
@@ -537,20 +559,21 @@
       }
 
       if(res.ok){
-        const rid = form.querySelector('[name="remote_id"]')?.value;
+        const rid  = String(form.querySelector('[name="remote_id"]')?.value || '').trim();
+        const pid  = String(form.querySelector('[name="supplier_id"]')?.value || '').trim();
+        const kind = String(form.querySelector('[name="type"]')?.value || '').trim().toLowerCase();
+
         markCloneAsAdded(rid);
 
-        // ✅ NEW: ذاكرة + Event للتزامن مع Import Wizard بدون Refresh
-        const providerId = form.querySelector('[name="supplier_id"]')?.value || '';
-        const kind = form.querySelector('[name="type"]')?.value || '';
-        if (providerId && kind && rid) {
+        // ✅ persist in memory + notify import modal to refresh immediately
+        try{
           window.__gsmmixAdded = window.__gsmmixAdded || {};
-          window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(rid)}`] = true;
+          window.__gsmmixAdded[`${pid}:${kind}:${rid}`] = true;
 
           window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
-            detail: { provider_id: String(providerId), kind: String(kind), remote_id: String(rid) }
+            detail: { provider_id: pid, kind, remote_id: rid }
           }));
-        }
+        }catch(e){}
 
         window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
         window.showToast?.('success', '✅ Service created successfully', { title: 'Done' });
