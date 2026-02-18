@@ -349,17 +349,12 @@
     if (typeVal) ensureHidden('type', typeVal);
   }
 
-  // ✅ dynamic hooks by kind: imei/server/file
-  function pickHook(kind, baseName){
-    const k = String(kind || '').toLowerCase().trim();
-    const fn1 = window[`__${k}Service${baseName}__`];
-    if (typeof fn1 === 'function') return fn1;
-
-    // fallback to server hooks (backward compatibility)
-    const fn2 = window[`__serverService${baseName}__`];
-    if (typeof fn2 === 'function') return fn2;
-
-    return null;
+  // ✅ NEW: resolve correct hooks by service type (imei/server/file) مع fallback للـ server hooks
+  function resolveHooks(serviceType){
+    const t = String(serviceType || '').toLowerCase().trim();
+    const apply = window[`__${t}ServiceApplyRemoteFields__`] || window.__serverServiceApplyRemoteFields__ || null;
+    const setMain = window[`__${t}ServiceSetMainField__`] || window.__serverServiceSetMainField__ || null;
+    return { apply, setMain };
   }
 
   document.addEventListener('click', async (e)=>{
@@ -404,6 +399,17 @@
       time: btn.dataset.time || '',
       serviceType: (btn.dataset.serviceType || 'imei').toLowerCase()
     };
+
+    // ✅ resolve hooks now (so IMEI uses __imeiServiceApplyRemoteFields__)
+    const hooks = resolveHooks(cloneData.serviceType);
+
+    const afFromBtn = parseJsonAttr(btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || '');
+    if (Array.isArray(afFromBtn) && afFromBtn.length) {
+      hooks.apply?.(body, afFromBtn);
+      const mf = guessMainFieldFromRemoteFields(afFromBtn);
+      hooks.setMain?.(body, mf.type, mf.label);
+      openGeneralTab();
+    }
 
     document.getElementById('serviceModalSubtitle').innerText =
       isClone ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}` : `Provider: — | Remote ID: —`;
@@ -466,19 +472,6 @@
       await loadProviderServices(body, pid, cloneData.serviceType);
     });
 
-    // ✅ apply additional fields from clone button (if exists)
-    const afFromBtn = parseJsonAttr(btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || '');
-    if (Array.isArray(afFromBtn) && afFromBtn.length) {
-      const applyFn = pickHook(cloneData.serviceType, 'ApplyRemoteFields');
-      applyFn?.(body, afFromBtn);
-
-      const mf = guessMainFieldFromRemoteFields(afFromBtn);
-      const setMainFn = pickHook(cloneData.serviceType, 'SetMainField');
-      setMainFn?.(body, mf.type, mf.label);
-
-      openGeneralTab();
-    }
-
     apiServiceSel?.addEventListener('change', ()=>{
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
@@ -498,15 +491,12 @@
         priceHelper.setCost(credit);
       }
 
+      // ✅ use hooks for correct service type (imei/server/file)
       const af = parseJsonAttr(opt.dataset.additionalFields || opt.getAttribute('data-additional-fields') || '');
       if (Array.isArray(af) && af.length) {
-        const applyFn = pickHook(cloneData.serviceType, 'ApplyRemoteFields');
-        applyFn?.(body, af);
-
+        hooks.apply?.(body, af);
         const mf = guessMainFieldFromRemoteFields(af);
-        const setMainFn = pickHook(cloneData.serviceType, 'SetMainField');
-        setMainFn?.(body, mf.type, mf.label);
-
+        hooks.setMain?.(body, mf.type, mf.label);
         openGeneralTab();
       }
     });
@@ -559,22 +549,8 @@
       }
 
       if(res.ok){
-        const rid  = String(form.querySelector('[name="remote_id"]')?.value || '').trim();
-        const pid  = String(form.querySelector('[name="supplier_id"]')?.value || '').trim();
-        const kind = String(form.querySelector('[name="type"]')?.value || '').trim().toLowerCase();
-
+        const rid = form.querySelector('[name="remote_id"]')?.value;
         markCloneAsAdded(rid);
-
-        // ✅ persist in memory + notify import modal to refresh immediately
-        try{
-          window.__gsmmixAdded = window.__gsmmixAdded || {};
-          window.__gsmmixAdded[`${pid}:${kind}:${rid}`] = true;
-
-          window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
-            detail: { provider_id: pid, kind, remote_id: rid }
-          }));
-        }catch(e){}
-
         window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
         window.showToast?.('success', '✅ Service created successfully', { title: 'Done' });
         return;
