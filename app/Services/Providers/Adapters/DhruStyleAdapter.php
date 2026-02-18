@@ -227,12 +227,38 @@ private function deepFind($data, array $keys)
     }
 
     private function extractAdditionalFields(array $srv): array
-    {
-        $fields = [];
-        $req = $srv['Requires.Custom'] ?? null;
-        if (is_array($req)) $fields = array_values($req);
-        return $fields;
+{
+    // 1) الأكثر شيوعًا في DHRU
+    $req = $srv['Requires.Custom'] ?? null;
+    if (is_array($req) && !empty($req)) return array_values($req);
+
+    // 2) بعض المزودين يضعونها مباشرة باسم CustomFields
+    $req2 = $srv['CustomFields'] ?? $srv['custom_fields'] ?? null;
+    if (is_array($req2) && !empty($req2)) return array_values($req2);
+
+    // 3) أحيانًا تكون داخل CUSTOM
+    $custom = $srv['CUSTOM'] ?? $srv['custom'] ?? null;
+    if (is_array($custom)) {
+        // أحيانًا CUSTOM تكون { fields: [...] }
+        $maybe = $custom['fields'] ?? $custom['FIELDS'] ?? null;
+        if (is_array($maybe) && !empty($maybe)) return array_values($maybe);
+
+        // أو تكون هي نفسها الحقول
+        if (!empty($custom)) return array_values($custom);
     }
+
+    // 4) أحيانًا تكون string JSON
+    foreach (['Requires.Custom', 'CustomFields', 'CUSTOM'] as $k) {
+        $v = $srv[$k] ?? null;
+        if (is_string($v)) {
+            $decoded = json_decode($v, true);
+            if (is_array($decoded) && !empty($decoded)) return array_values($decoded);
+        }
+    }
+
+    return [];
+}
+
 
     private function requires($value): bool
     {

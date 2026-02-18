@@ -159,64 +159,84 @@ class ApiProvidersController extends Controller
      * Services modals
      */
     public function servicesImei(Request $request, ApiProvider $provider)
-    {
-        $rows = RemoteImeiService::where('api_provider_id', $provider->id)
-            ->orderBy('group_name')->orderBy('name')->get();
+{
+    $rows = RemoteImeiService::where('api_provider_id', $provider->id)
+        ->orderBy('group_name')->orderBy('name')->get();
 
-        $services = $rows->map(fn($s) => [
+    $services = $rows->map(function ($s) {
+        $af = $s->additional_fields ?? [];
+        // نخليه array أو json string حسب الحاجة (services.blade.php يتعامل مع الاثنين)
+        $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
+
+        return [
             'GROUPNAME' => (string)($s->group_name ?? ''),
             'REMOTEID'  => (string)($s->remote_id ?? ''),
             'NAME'      => (string)($s->name ?? ''),
             'CREDIT'    => (float)($s->price ?? 0),
             'TIME'      => (string)($s->time ?? ''),
-        ])->values()->all();
+            // ✅ هذا هو المهم
+            'ADDITIONAL_FIELDS' => $afOut,
+        ];
+    })->values()->all();
 
-        return view('admin.api.providers.modals.services', [
-            'provider' => $provider,
-            'kind' => 'imei',
-            'services' => $services,
-        ]);
-    }
+    return view('admin.api.providers.modals.services', [
+        'provider' => $provider,
+        'kind' => 'imei',
+        'services' => $services,
+    ]);
+}
 
-    public function servicesServer(Request $request, ApiProvider $provider)
-    {
-        $rows = RemoteServerService::where('api_provider_id', $provider->id)
-            ->orderBy('group_name')->orderBy('name')->get();
+public function servicesServer(Request $request, ApiProvider $provider)
+{
+    $rows = RemoteServerService::where('api_provider_id', $provider->id)
+        ->orderBy('group_name')->orderBy('name')->get();
 
-        $services = $rows->map(fn($s) => [
+    $services = $rows->map(function ($s) {
+        $af = $s->additional_fields ?? [];
+        $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
+
+        return [
             'GROUPNAME' => (string)($s->group_name ?? ''),
             'REMOTEID'  => (string)($s->remote_id ?? ''),
             'NAME'      => (string)($s->name ?? ''),
             'CREDIT'    => (float)($s->price ?? 0),
             'TIME'      => (string)($s->time ?? ''),
-        ])->values()->all();
+            'ADDITIONAL_FIELDS' => $afOut,
+        ];
+    })->values()->all();
 
-        return view('admin.api.providers.modals.services', [
-            'provider' => $provider,
-            'kind' => 'server',
-            'services' => $services,
-        ]);
-    }
+    return view('admin.api.providers.modals.services', [
+        'provider' => $provider,
+        'kind' => 'server',
+        'services' => $services,
+    ]);
+}
 
-    public function servicesFile(Request $request, ApiProvider $provider)
-    {
-        $rows = RemoteFileService::where('api_provider_id', $provider->id)
-            ->orderBy('group_name')->orderBy('name')->get();
+public function servicesFile(Request $request, ApiProvider $provider)
+{
+    $rows = RemoteFileService::where('api_provider_id', $provider->id)
+        ->orderBy('group_name')->orderBy('name')->get();
 
-        $services = $rows->map(fn($s) => [
+    $services = $rows->map(function ($s) {
+        $af = $s->additional_fields ?? [];
+        $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
+
+        return [
             'GROUPNAME' => (string)($s->group_name ?? ''),
             'REMOTEID'  => (string)($s->remote_id ?? ''),
             'NAME'      => (string)($s->name ?? ''),
             'CREDIT'    => (float)($s->price ?? 0),
             'TIME'      => (string)($s->time ?? ''),
-        ])->values()->all();
+            'ADDITIONAL_FIELDS' => $afOut,
+        ];
+    })->values()->all();
 
-        return view('admin.api.providers.modals.services', [
-            'provider' => $provider,
-            'kind' => 'file',
-            'services' => $services,
-        ]);
-    }
+    return view('admin.api.providers.modals.services', [
+        'provider' => $provider,
+        'kind' => 'file',
+        'services' => $services,
+    ]);
+}
 
     /**
      * IMPORT endpoint
