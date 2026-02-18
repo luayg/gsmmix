@@ -21,7 +21,7 @@
 
   <div class="service-tabs-content">
 
-    {{-- ===================== GENERAL TAB ===================== --}}
+    {{-- ===================== ✅ GENERAL TAB ===================== --}}
     <div class="tab-pane active" data-tab="general">
       <div class="row g-3">
 
@@ -148,12 +148,13 @@
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
 
-          {{-- ✅ Summernote (consistent style) --}}
-          <textarea
-            class="form-control summernote"
-            data-height="320"
-            data-upload-url="{{ route('admin.uploads.summernote') }}"
-            rows="10"></textarea>
+          {{-- ✅ Summernote (GLOBAL script expects textarea.summernote) --}}
+          <textarea id="infoEditor"
+                    class="form-control summernote"
+                    data-summernote-height="320"
+                    data-summernote-hidden="#infoHidden"
+                    data-upload-url="{{ route('admin.uploads.summernote') }}"
+                    rows="10"></textarea>
 
           <input type="hidden" name="info" id="infoHidden" value="">
           <small class="text-muted">Description, notes, terms…</small>
@@ -162,116 +163,113 @@
       </div>
     </div>
 
-    {{-- ===================== ✅ ADDITIONAL TAB (Like Server/File) ===================== --}}
+    {{-- ===================== ✅ ADDITIONAL TAB (LIKE SERVER) ===================== --}}
     <div class="tab-pane" data-tab="additional">
       <div class="row g-3">
 
-        {{-- LEFT: Custom fields --}}
-        <div class="col-lg-7">
-          <div class="d-flex justify-content-between align-items-center mb-2">
-            <div class="fw-bold">Custom fields</div>
-            <a href="javascript:void(0)" class="text-primary small" id="btnAddField">Add field</a>
+        <div class="col-lg-6">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <h6 class="mb-0">Custom fields</h6>
+            <button type="button" class="btn btn-link p-0" id="btnAddField">Add field</button>
           </div>
 
-          <div id="fieldsWrap" class="border rounded bg-white p-2" style="min-height:280px">
-            <div class="text-muted small px-2 py-2">
-              (اختياري) هذه الحقول سيتم حفظها وربطها بالخدمة.
+          <div id="fieldsWrap"></div>
+
+          <template id="fieldTpl">
+            <div class="card mb-2" data-field>
+              <div class="card-header d-flex align-items-center justify-content-between py-2">
+                <div class="form-check form-switch m-0">
+                  <input class="form-check-input" type="checkbox" data-active checked>
+                  <label class="form-check-label small">Active</label>
+                </div>
+                <button type="button" class="btn btn-sm btn-danger" data-remove>&times;</button>
+              </div>
+
+              <div class="card-body">
+                <div class="row g-2">
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Name</label>
+                    <input type="text" class="form-control form-control-sm" data-name placeholder="Name">
+                  </div>
+
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Field type</label>
+                    <select class="form-select form-select-sm" data-type>
+                      <option value="text">Text</option>
+                      <option value="number">Number</option>
+                      <option value="email">Email</option>
+                      <option value="password">Password</option>
+                      <option value="textarea">Textarea</option>
+                      <option value="select">Select</option>
+                    </select>
+                  </div>
+
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Input name</label>
+                    <input type="text" class="form-control form-control-sm" data-input placeholder="machine_name">
+                  </div>
+
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Description</label>
+                    <input type="text" class="form-control form-control-sm" data-desc placeholder="Description">
+                  </div>
+
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Minimum</label>
+                    <input type="number" class="form-control form-control-sm" data-min value="0">
+                  </div>
+
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Maximum</label>
+                    <input type="number" class="form-control form-control-sm" data-max placeholder="Unlimited">
+                  </div>
+
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Validation</label>
+                    <select class="form-select form-select-sm" data-validation>
+                      <option value="">None</option>
+                      <option value="imei">IMEI</option>
+                      <option value="serial">Serial</option>
+                      <option value="email">Email</option>
+                      <option value="numeric">Numeric</option>
+                    </select>
+                  </div>
+
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Required</label>
+                    <select class="form-select form-select-sm" data-required>
+                      <option value="0">No</option>
+                      <option value="1">Yes</option>
+                    </select>
+                  </div>
+
+                  <div class="col-12" data-options-wrap style="display:none;">
+                    <label class="form-label mb-1">Options</label>
+                    <textarea class="form-control form-control-sm" rows="3" data-options></textarea>
+                    <div class="form-text">Used only when Field type = Select</div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          </template>
+
         </div>
 
-        {{-- RIGHT: Groups pricing --}}
-        <div class="col-lg-5">
-          <div class="fw-bold mb-2">Groups</div>
-          <div id="groupsPricingWrap" class="border rounded p-2 bg-white"></div>
-          <div class="text-muted small mt-2">يتم حفظ أسعار الجروبات تلقائياً.</div>
+        <div class="col-lg-6">
+          <h6 class="mb-2">Groups</h6>
+          <div id="groupsPricingWrap"></div>
+
+          <input type="hidden" name="group_prices_json" id="pricingTableHidden" value="[]">
+
+          <div class="form-text">
+            Set special prices/discounts per user group for this service.
+          </div>
         </div>
 
       </div>
-
-      <template id="fieldTpl">
-        <div class="border rounded mb-2 p-2 bg-light field-card" data-field>
-          <div class="d-flex justify-content-between align-items-start">
-            <div class="form-check form-switch">
-              <input class="form-check-input js-field-active" type="checkbox" checked>
-              <label class="form-check-label">Active</label>
-            </div>
-            <button type="button" class="btn btn-sm btn-danger js-remove-field" title="Remove">Remove</button>
-          </div>
-
-          <div class="row g-2 mt-1">
-            <div class="col-md-6">
-              <label class="form-label mb-1">Name</label>
-              <input type="text" class="form-control form-control-sm js-field-name" placeholder="Name">
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Field type</label>
-              <select class="form-select form-select-sm js-field-type">
-                <option value="text" selected>Text</option>
-                <option value="password">Password</option>
-                <option value="dropdown">Dropdown</option>
-                <option value="radio">Radio</option>
-                <option value="textarea">Textarea</option>
-                <option value="checkbox">Checkbox</option>
-                <option value="file">File</option>
-                <option value="image">Image</option>
-                <option value="country">Country</option>
-              </select>
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Input name</label>
-              <input type="text" class="form-control form-control-sm js-field-input" placeholder="service_fields_name">
-            </div>
-
-            <div class="col-md-6">
-              <label class="form-label mb-1">Description</label>
-              <input type="text" class="form-control form-control-sm js-field-desc" placeholder="Description">
-            </div>
-
-            <div class="col-md-3">
-              <label class="form-label mb-1">Minimum</label>
-              <input type="number" class="form-control form-control-sm js-field-min" value="0">
-            </div>
-
-            <div class="col-md-3">
-              <label class="form-label mb-1">Maximum</label>
-              <input type="number" class="form-control form-control-sm js-field-max" value="0">
-            </div>
-
-            <div class="col-md-3">
-              <label class="form-label mb-1">Validation</label>
-              <select class="form-select form-select-sm js-field-validation">
-                <option value="" selected>None</option>
-                <option value="numeric">Numeric</option>
-                <option value="alphanumeric">Alphanumeric</option>
-                <option value="email">Email</option>
-                <option value="url">URL</option>
-                <option value="json">JSON</option>
-                <option value="ip">IP</option>
-                <option value="accepted">Accepted</option>
-              </select>
-            </div>
-
-            <div class="col-md-3">
-              <label class="form-label mb-1">Required</label>
-              <select class="form-select form-select-sm js-field-required">
-                <option value="0" selected>No</option>
-                <option value="1">Yes</option>
-              </select>
-            </div>
-
-            <div class="col-12 js-options-wrap d-none">
-              <label class="form-label mb-1">Options (comma separated)</label>
-              <input type="text" class="form-control form-control-sm js-field-options" placeholder="New,Existing">
-            </div>
-          </div>
-        </div>
-      </template>
     </div>
 
-    {{-- ===================== ✅ META TAB (Unified) ===================== --}}
+    {{-- ===================== ✅ META TAB (MATCH SERVER) ===================== --}}
     <div class="tab-pane" data-tab="meta">
       <div class="row g-3">
         <div class="col-md-6">
@@ -320,14 +318,18 @@
   const form = document.getElementById('serviceCreateForm');
   if(!form) return;
 
-  // =========================
-  // ✅ IMEI main field sync
-  // =========================
+  const fieldsWrap = form.querySelector('#fieldsWrap');
+  const fieldTpl   = form.querySelector('#fieldTpl');
+  const btnAdd     = form.querySelector('#btnAddField');
+  const outJson    = form.querySelector('#customFieldsJson');
+
   const nameInput = form.querySelector('#nameInput');
   const nameEn    = form.querySelector('#nameEnHidden');
 
   const mainTypeHidden = form.querySelector('#mainTypeHidden');
   const mainFieldType  = form.querySelector('#mainFieldType');
+
+  const slugify = (s) => String(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 
   function buildMainFieldJson(){
     const type  = form.querySelector('#mainFieldType')?.value || 'imei';
@@ -356,15 +358,129 @@
     mainTypeHidden.value = mainFieldType.value || 'imei';
   }
 
-  nameInput?.addEventListener('input', () => {
-    if(nameEn) nameEn.value = nameInput.value;
-  });
+  function syncParamsHidden(){
+    const paramsHidden = form.querySelector('#paramsHidden');
+    if (!paramsHidden) return;
 
-  mainFieldType?.addEventListener('change', () => {
-    syncMainTypeHidden();
-    syncMainFieldHidden();
-  });
+    let params = {};
+    try { params = JSON.parse(paramsHidden.value || '{}') || {}; } catch(e){ params = {}; }
 
+    let custom = [];
+    try { custom = JSON.parse(outJson?.value || '[]') || []; } catch(e){ custom = []; }
+
+    params.custom_fields = Array.isArray(custom) ? custom : [];
+    paramsHidden.value = JSON.stringify(params);
+  }
+
+  function toggleOptions(card){
+    const type = card.querySelector('[data-type]')?.value || 'text';
+    const box  = card.querySelector('[data-options-wrap]');
+    if (!box) return;
+    box.style.display = (type === 'select') ? '' : 'none';
+  }
+
+  function serializeFieldsInScope(scope){
+    const wrap = scope.querySelector('#fieldsWrap');
+    const out  = scope.querySelector('#customFieldsJson');
+    if (!wrap || !out) return;
+
+    const data = [];
+    wrap.querySelectorAll('[data-field]').forEach(card => {
+      const type = card.querySelector('[data-type]')?.value || 'text';
+      const options = (card.querySelector('[data-options]')?.value || '').trim();
+
+      data.push({
+        active: card.querySelector('[data-active]')?.checked ? 1 : 0,
+        name: card.querySelector('[data-name]')?.value || '',
+        type,
+        input: card.querySelector('[data-input]')?.value || '',
+        description: card.querySelector('[data-desc]')?.value || '',
+        minimum: Number(card.querySelector('[data-min]')?.value || 0),
+        maximum: Number(card.querySelector('[data-max]')?.value || 0),
+        validation: card.querySelector('[data-validation]')?.value || '',
+        required: Number(card.querySelector('[data-required]')?.value || 0),
+        options,
+      });
+    });
+
+    out.value = JSON.stringify(data);
+    syncParamsHidden();
+  }
+
+  function bindCard(card){
+    card.querySelector('[data-remove]')?.addEventListener('click', () => {
+      card.remove();
+      serializeFieldsInScope(form);
+    });
+
+    card.querySelector('[data-name]')?.addEventListener('input', (e) => {
+      const inp = card.querySelector('[data-input]');
+      if (inp && !inp.value) inp.value = slugify(e.target.value);
+      serializeFieldsInScope(form);
+    });
+
+    card.querySelectorAll('input,select,textarea').forEach(el => {
+      el.addEventListener('input', () => serializeFieldsInScope(form));
+      el.addEventListener('change', () => {
+        toggleOptions(card);
+        serializeFieldsInScope(form);
+      });
+    });
+
+    toggleOptions(card);
+  }
+
+  function addField(scope, prefill = null){
+    const wrap = scope.querySelector('#fieldsWrap');
+    const tpl  = scope.querySelector('#fieldTpl');
+    if (!wrap || !tpl) return;
+
+    const node = tpl.content.cloneNode(true);
+    const card = node.querySelector('[data-field]');
+
+    if (prefill) {
+      card.querySelector('[data-active]').checked = !!prefill.active;
+      card.querySelector('[data-name]').value = prefill.name || '';
+      card.querySelector('[data-type]').value = prefill.type || 'text';
+      card.querySelector('[data-input]').value = prefill.input || '';
+      card.querySelector('[data-desc]').value = prefill.description || '';
+      card.querySelector('[data-min]').value = (prefill.minimum ?? 0);
+      card.querySelector('[data-max]').value = (prefill.maximum ?? 0);
+      card.querySelector('[data-validation]').value = prefill.validation || '';
+      card.querySelector('[data-required]').value = String(prefill.required ?? 0);
+      if (prefill.options !== undefined) card.querySelector('[data-options]').value = String(prefill.options || '');
+    }
+
+    wrap.appendChild(node);
+    const last = wrap.querySelectorAll('[data-field]')[wrap.querySelectorAll('[data-field]').length - 1];
+    bindCard(last);
+    serializeFieldsInScope(form);
+  }
+
+  function mapRemoteType(t){
+    const x = String(t||'').toLowerCase();
+    if (['dropdown','select'].includes(x)) return 'select';
+    if (['textarea','text_area'].includes(x)) return 'textarea';
+    if (['password'].includes(x)) return 'password';
+    if (['email'].includes(x)) return 'email';
+    if (['number','numeric','int','integer'].includes(x)) return 'number';
+    return 'text';
+  }
+
+  function mapRemoteValidationByName(label){
+    const n = String(label||'').toLowerCase();
+    if (n.includes('imei')) return 'imei';
+    if (n.includes('serial')) return 'serial';
+    if (n.includes('email')) return 'email';
+    if (n.includes('number')) return 'numeric';
+    return '';
+  }
+
+  // ===== required hidden sync =====
+  nameInput?.addEventListener('input', () => { if(nameEn) nameEn.value = nameInput.value; });
+  if (nameInput && nameEn) nameEn.value = nameInput.value || '';
+
+  mainFieldType?.addEventListener('change', () => { syncMainTypeHidden(); syncMainFieldHidden(); });
   ['#mainFieldLabel','#allowedChars','#minChars','#maxChars'].forEach(sel=>{
     form.querySelector(sel)?.addEventListener('input', syncMainFieldHidden);
     form.querySelector(sel)?.addEventListener('change', syncMainFieldHidden);
@@ -373,87 +489,69 @@
   syncMainTypeHidden();
   syncMainFieldHidden();
 
-  // =========================
-  // ✅ Additional tab: Custom fields (same style as file)
-  // =========================
-  const wrap   = document.getElementById('fieldsWrap');
-  const tpl    = document.getElementById('fieldTpl');
-  const btnAdd = document.getElementById('btnAddField');
-  const hidden = document.getElementById('customFieldsJson');
+  btnAdd?.addEventListener('click', () => addField(form));
 
-  function toSlugInputName(name){
-    const base = (name || '').trim().toLowerCase()
-      .replace(/[^a-z0-9]+/g,'_')
-      .replace(/^_+|_+$/g,'');
-    return base ? `service_fields_${base}` : `service_fields_${Date.now()}`;
-  }
+  // ===== Hooks for service-modal.blade.php (dynamic) =====
+  window.__imeiServiceApplyRemoteFields__ = function(scope, additionalFields){
+    try{
+      if (!scope || !Array.isArray(additionalFields)) return;
 
-  function serializeFields(){
-    if(!wrap || !hidden) return;
-    const rows = [];
-    wrap.querySelectorAll('[data-field]').forEach(card => {
-      const type = card.querySelector('.js-field-type')?.value || 'text';
-      const obj = {
-        active: card.querySelector('.js-field-active')?.checked ? 1 : 0,
-        name: (card.querySelector('.js-field-name')?.value || '').trim(),
-        input: (card.querySelector('.js-field-input')?.value || '').trim(),
-        description: (card.querySelector('.js-field-desc')?.value || '').trim(),
-        minimum: parseInt(card.querySelector('.js-field-min')?.value || '0', 10),
-        maximum: parseInt(card.querySelector('.js-field-max')?.value || '0', 10),
-        validation: card.querySelector('.js-field-validation')?.value || '',
-        required: parseInt(card.querySelector('.js-field-required')?.value || '0', 10),
-        type: type,
-        options: (card.querySelector('.js-field-options')?.value || '').trim(),
-      };
-      if(obj.name || obj.input) rows.push(obj);
-    });
-    hidden.value = JSON.stringify(rows);
-  }
+      const localWrap = scope.querySelector('#fieldsWrap');
+      if (!localWrap) return;
 
-  function bindCard(card){
-    const typeSel  = card.querySelector('.js-field-type');
-    const optsWrap = card.querySelector('.js-options-wrap');
-    const nameEl   = card.querySelector('.js-field-name');
-    const inputEl  = card.querySelector('.js-field-input');
+      Array.from(localWrap.querySelectorAll('[data-field]')).forEach(x => x.remove());
 
-    function refreshOptions(){
-      const t = typeSel?.value || 'text';
-      const show = (t === 'dropdown' || t === 'radio');
-      optsWrap?.classList.toggle('d-none', !show);
+      additionalFields.forEach((f, idx) => {
+        const label = String(f.fieldname || f.name || '').trim();
+        const input = 'service_fields_' + (idx + 1);
+        const req = (String(f.required || '').toLowerCase() === 'on' || String(f.required) === '1') ? 1 : 0;
+
+        addField(scope, {
+          active: 1,
+          name: label || input,
+          type: mapRemoteType(f.fieldtype || f.type || 'text'),
+          input,
+          description: String(f.description || '').trim(),
+          minimum: 0,
+          maximum: 0,
+          validation: mapRemoteValidationByName(label),
+          required: req,
+          options: Array.isArray(f.fieldoptions) ? f.fieldoptions.join(',') : String(f.fieldoptions || '').trim(),
+        });
+      });
+
+      serializeFieldsInScope(scope);
+    }catch(e){
+      console.warn('imei applyRemoteFields failed', e);
     }
+  };
 
-    typeSel?.addEventListener('change', () => { refreshOptions(); serializeFields(); });
+  window.__imeiServiceSetMainField__ = function(scope, type, label){
+    try{
+      if (!scope) return;
 
-    nameEl?.addEventListener('input', () => {
-      if(inputEl && !inputEl.value.trim()) inputEl.value = toSlugInputName(nameEl.value);
-      serializeFields();
-    });
+      const t = String(type || '').toLowerCase().trim();
+      const l = String(label || '').trim();
 
-    card.addEventListener('input', serializeFields);
+      const typeSel = scope.querySelector('#mainFieldType');
+      const labInp  = scope.querySelector('#mainFieldLabel');
 
-    card.querySelector('.js-remove-field')?.addEventListener('click', () => {
-      card.remove();
-      serializeFields();
-    });
+      if (typeSel && Array.from(typeSel.options).some(o => o.value === t)) {
+        typeSel.value = t;
+        typeSel.dispatchEvent(new Event('change'));
+      }
 
-    refreshOptions();
-  }
+      if (labInp) labInp.value = l || 'IMEI';
 
-  function addField(){
-    if(!wrap || !tpl) return;
-    const node = tpl.content.cloneNode(true);
-    wrap.appendChild(node);
-    const last = wrap.querySelectorAll('[data-field]');
-    const cardEl = last[last.length - 1];
-    if(!cardEl) return;
-    bindCard(cardEl);
-    serializeFields();
-  }
+      syncMainTypeHidden();
+      syncMainFieldHidden();
+    }catch(e){
+      console.warn('imei setMainField failed', e);
+    }
+  };
 
-  if(btnAdd && wrap && tpl && hidden){
-    btnAdd.addEventListener('click', (e) => { e.preventDefault(); addField(); });
-    serializeFields();
-  }
+  // initial
+  serializeFieldsInScope(form);
 
 })();
 </script>
