@@ -21,7 +21,7 @@
 
   <div class="service-tabs-content">
 
-    {{-- ===================== ✅ GENERAL TAB ===================== --}}
+    {{-- ===================== GENERAL TAB ===================== --}}
     <div class="tab-pane active" data-tab="general">
       <div class="row g-3">
 
@@ -148,13 +148,12 @@
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
 
-          {{-- ✅ Summernote (GLOBAL script expects textarea.summernote) --}}
-          <textarea id="infoEditor"
-                    class="form-control summernote"
-                    data-summernote-height="320"
-                    data-summernote-hidden="#infoHidden"
-                    data-upload-url="{{ route('admin.uploads.summernote') }}"
-                    rows="10"></textarea>
+          {{-- ✅ Summernote (consistent style) --}}
+          <textarea
+            class="form-control summernote"
+            data-height="320"
+            data-upload-url="{{ route('admin.uploads.summernote') }}"
+            rows="10"></textarea>
 
           <input type="hidden" name="info" id="infoHidden" value="">
           <small class="text-muted">Description, notes, terms…</small>
@@ -163,14 +162,116 @@
       </div>
     </div>
 
-    {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
+    {{-- ===================== ✅ ADDITIONAL TAB (Like Server/File) ===================== --}}
     <div class="tab-pane" data-tab="additional">
-      <div class="alert alert-light mb-0">
-        Additional tab placeholder (IMEI عادة ما يحتاج حقول أقل، ولكن يمكنك نسخه من server إذا رغبت).
+      <div class="row g-3">
+
+        {{-- LEFT: Custom fields --}}
+        <div class="col-lg-7">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <div class="fw-bold">Custom fields</div>
+            <a href="javascript:void(0)" class="text-primary small" id="btnAddField">Add field</a>
+          </div>
+
+          <div id="fieldsWrap" class="border rounded bg-white p-2" style="min-height:280px">
+            <div class="text-muted small px-2 py-2">
+              (اختياري) هذه الحقول سيتم حفظها وربطها بالخدمة.
+            </div>
+          </div>
+        </div>
+
+        {{-- RIGHT: Groups pricing --}}
+        <div class="col-lg-5">
+          <div class="fw-bold mb-2">Groups</div>
+          <div id="groupsPricingWrap" class="border rounded p-2 bg-white"></div>
+          <div class="text-muted small mt-2">يتم حفظ أسعار الجروبات تلقائياً.</div>
+        </div>
+
       </div>
+
+      <template id="fieldTpl">
+        <div class="border rounded mb-2 p-2 bg-light field-card" data-field>
+          <div class="d-flex justify-content-between align-items-start">
+            <div class="form-check form-switch">
+              <input class="form-check-input js-field-active" type="checkbox" checked>
+              <label class="form-check-label">Active</label>
+            </div>
+            <button type="button" class="btn btn-sm btn-danger js-remove-field" title="Remove">Remove</button>
+          </div>
+
+          <div class="row g-2 mt-1">
+            <div class="col-md-6">
+              <label class="form-label mb-1">Name</label>
+              <input type="text" class="form-control form-control-sm js-field-name" placeholder="Name">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Field type</label>
+              <select class="form-select form-select-sm js-field-type">
+                <option value="text" selected>Text</option>
+                <option value="password">Password</option>
+                <option value="dropdown">Dropdown</option>
+                <option value="radio">Radio</option>
+                <option value="textarea">Textarea</option>
+                <option value="checkbox">Checkbox</option>
+                <option value="file">File</option>
+                <option value="image">Image</option>
+                <option value="country">Country</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Input name</label>
+              <input type="text" class="form-control form-control-sm js-field-input" placeholder="service_fields_name">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Description</label>
+              <input type="text" class="form-control form-control-sm js-field-desc" placeholder="Description">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label mb-1">Minimum</label>
+              <input type="number" class="form-control form-control-sm js-field-min" value="0">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label mb-1">Maximum</label>
+              <input type="number" class="form-control form-control-sm js-field-max" value="0">
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label mb-1">Validation</label>
+              <select class="form-select form-select-sm js-field-validation">
+                <option value="" selected>None</option>
+                <option value="numeric">Numeric</option>
+                <option value="alphanumeric">Alphanumeric</option>
+                <option value="email">Email</option>
+                <option value="url">URL</option>
+                <option value="json">JSON</option>
+                <option value="ip">IP</option>
+                <option value="accepted">Accepted</option>
+              </select>
+            </div>
+
+            <div class="col-md-3">
+              <label class="form-label mb-1">Required</label>
+              <select class="form-select form-select-sm js-field-required">
+                <option value="0" selected>No</option>
+                <option value="1">Yes</option>
+              </select>
+            </div>
+
+            <div class="col-12 js-options-wrap d-none">
+              <label class="form-label mb-1">Options (comma separated)</label>
+              <input type="text" class="form-control form-control-sm js-field-options" placeholder="New,Existing">
+            </div>
+          </div>
+        </div>
+      </template>
     </div>
 
-    {{-- ===================== ✅ META TAB (MATCH SERVER) ===================== --}}
+    {{-- ===================== ✅ META TAB (Unified) ===================== --}}
     <div class="tab-pane" data-tab="meta">
       <div class="row g-3">
         <div class="col-md-6">
@@ -219,6 +320,9 @@
   const form = document.getElementById('serviceCreateForm');
   if(!form) return;
 
+  // =========================
+  // ✅ IMEI main field sync
+  // =========================
   const nameInput = form.querySelector('#nameInput');
   const nameEn    = form.querySelector('#nameEnHidden');
 
@@ -268,5 +372,88 @@
 
   syncMainTypeHidden();
   syncMainFieldHidden();
+
+  // =========================
+  // ✅ Additional tab: Custom fields (same style as file)
+  // =========================
+  const wrap   = document.getElementById('fieldsWrap');
+  const tpl    = document.getElementById('fieldTpl');
+  const btnAdd = document.getElementById('btnAddField');
+  const hidden = document.getElementById('customFieldsJson');
+
+  function toSlugInputName(name){
+    const base = (name || '').trim().toLowerCase()
+      .replace(/[^a-z0-9]+/g,'_')
+      .replace(/^_+|_+$/g,'');
+    return base ? `service_fields_${base}` : `service_fields_${Date.now()}`;
+  }
+
+  function serializeFields(){
+    if(!wrap || !hidden) return;
+    const rows = [];
+    wrap.querySelectorAll('[data-field]').forEach(card => {
+      const type = card.querySelector('.js-field-type')?.value || 'text';
+      const obj = {
+        active: card.querySelector('.js-field-active')?.checked ? 1 : 0,
+        name: (card.querySelector('.js-field-name')?.value || '').trim(),
+        input: (card.querySelector('.js-field-input')?.value || '').trim(),
+        description: (card.querySelector('.js-field-desc')?.value || '').trim(),
+        minimum: parseInt(card.querySelector('.js-field-min')?.value || '0', 10),
+        maximum: parseInt(card.querySelector('.js-field-max')?.value || '0', 10),
+        validation: card.querySelector('.js-field-validation')?.value || '',
+        required: parseInt(card.querySelector('.js-field-required')?.value || '0', 10),
+        type: type,
+        options: (card.querySelector('.js-field-options')?.value || '').trim(),
+      };
+      if(obj.name || obj.input) rows.push(obj);
+    });
+    hidden.value = JSON.stringify(rows);
+  }
+
+  function bindCard(card){
+    const typeSel  = card.querySelector('.js-field-type');
+    const optsWrap = card.querySelector('.js-options-wrap');
+    const nameEl   = card.querySelector('.js-field-name');
+    const inputEl  = card.querySelector('.js-field-input');
+
+    function refreshOptions(){
+      const t = typeSel?.value || 'text';
+      const show = (t === 'dropdown' || t === 'radio');
+      optsWrap?.classList.toggle('d-none', !show);
+    }
+
+    typeSel?.addEventListener('change', () => { refreshOptions(); serializeFields(); });
+
+    nameEl?.addEventListener('input', () => {
+      if(inputEl && !inputEl.value.trim()) inputEl.value = toSlugInputName(nameEl.value);
+      serializeFields();
+    });
+
+    card.addEventListener('input', serializeFields);
+
+    card.querySelector('.js-remove-field')?.addEventListener('click', () => {
+      card.remove();
+      serializeFields();
+    });
+
+    refreshOptions();
+  }
+
+  function addField(){
+    if(!wrap || !tpl) return;
+    const node = tpl.content.cloneNode(true);
+    wrap.appendChild(node);
+    const last = wrap.querySelectorAll('[data-field]');
+    const cardEl = last[last.length - 1];
+    if(!cardEl) return;
+    bindCard(cardEl);
+    serializeFields();
+  }
+
+  if(btnAdd && wrap && tpl && hidden){
+    btnAdd.addEventListener('click', (e) => { e.preventDefault(); addField(); });
+    serializeFields();
+  }
+
 })();
 </script>
