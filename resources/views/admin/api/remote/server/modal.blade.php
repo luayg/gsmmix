@@ -12,6 +12,7 @@
     $existing = [];
   }
 @endphp
+
 <div class="modal-header align-items-center" style="background:#111;color:#fff;">
   <div>
     <div class="h6 mb-0">
@@ -176,12 +177,18 @@
                     $credit= (float)($svc->price ?? $svc->credit ?? 0);
                     $isAdded = isset($existing[$rid]);
                   @endphp
+
                   <tr data-wiz-row
                       data-group="{{ strtolower($groupName) }}"
                       data-name="{{ strtolower(strip_tags($name)) }}"
                       data-remote="{{ strtolower($rid) }}">
                     <td>
-                      <input type="checkbox" class="wiz-check" value="{{ $rid }}" @disabled($isAdded)>
+                      @if($isAdded)
+                        {{-- ✅ لا نُظهر checkbox للخدمة المضافة --}}
+                        <span class="badge bg-success">Added</span>
+                      @else
+                        <input type="checkbox" class="wiz-check" value="{{ $rid }}">
+                      @endif
                     </td>
                     <td>{{ $groupName }}</td>
                     <td><code>{{ $rid }}</code></td>
@@ -207,6 +214,9 @@
 
 <script>
 (function(){
+  const kind = 'server';
+  const providerId = @json($provider->id);
+
   // ===================== Search in remote table =====================
   const svcSearch = document.getElementById('svcSearch');
   svcSearch?.addEventListener('input', () => {
@@ -225,13 +235,6 @@
   const wizardEl = document.getElementById('importWizard');
   const wizard = wizardEl ? bootstrap.Modal.getOrCreateInstance(wizardEl) : null;
 
-  btnOpen?.addEventListener('click', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    wizard?.show();
-    updateCount();
-  });
-
   // ===================== Wizard helpers =====================
   const wizSearch = document.getElementById('wizSearch');
   const wizChecks = () => Array.from(document.querySelectorAll('.wiz-check'));
@@ -242,6 +245,66 @@
     const out = document.getElementById('wizSelectedCount');
     if(out) out.innerText = `${n} selected`;
   }
+
+  function markAsAdded(remoteIds){
+    (remoteIds || []).forEach(id => {
+      const rid = String(id || '').trim();
+      if(!rid) return;
+
+      // زر clone في الجدول الخلفي
+      const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(rid)}"]`);
+      if(row){
+        const btn = row.querySelector('.clone-btn');
+        if(btn){
+          btn.classList.remove('btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary');
+          btn.classList.add('btn-outline-primary');
+          btn.innerText = 'Added ✅';
+          btn.disabled = true;
+          btn.removeAttribute('data-create-service');
+        }
+      }
+
+      // checkbox في الـ wizard (إذا كانت غير مضافة من السيرفر أصلاً)
+      document.querySelectorAll('.wiz-check').forEach(cb => {
+        if(String(cb.value) === rid){
+          cb.checked = false;
+          cb.disabled = true;
+          // اخفاءه بالكامل حسب طلبك
+          cb.closest('td') && (cb.closest('td').innerHTML = '<span class="badge bg-success">Added</span>');
+        }
+      });
+    });
+
+    updateCount();
+  }
+
+  // ==========================================================
+  // ✅ NEW: تطبيق "الذاكرة" قبل الفتح (Clone ثم Import مباشرة)
+  // ==========================================================
+  function applyAddedFromMemory(){
+    const mem = window.__gsmmixAdded || {};
+    const prefix = `${String(providerId)}:${String(kind)}:`;
+    const ids = Object.keys(mem)
+      .filter(k => k.startsWith(prefix))
+      .map(k => k.substring(prefix.length))
+      .filter(Boolean);
+
+    if (ids.length) markAsAdded(ids);
+  }
+
+  btnOpen?.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    applyAddedFromMemory(); // ✅ قبل الفتح
+    wizard?.show();
+    updateCount();
+  });
+
+  wizardEl?.addEventListener('shown.bs.modal', () => {
+    applyAddedFromMemory(); // ✅ احتياط
+    updateCount();
+  });
 
   wizSearch?.addEventListener('input', () => {
     const q = (wizSearch.value || '').trim().toLowerCase();
@@ -291,33 +354,19 @@
     return data;
   }
 
-  function markAsAdded(remoteIds){
-    (remoteIds || []).forEach(id => {
-      const rid = String(id || '').trim();
-      if(!rid) return;
+  // ✅ استمع لحدث “تم إنشاء خدمة بالـ Clone”
+  window.addEventListener('gsmmix:service-created', (ev) => {
+    const d = ev?.detail || {};
+    if (String(d.provider_id) !== String(providerId)) return;
+    if (String(d.kind) !== String(kind)) return;
+    if (!d.remote_id) return;
 
-      const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(rid)}"]`);
-      if(row){
-        const btn = row.querySelector('.clone-btn');
-        if(btn){
-          btn.classList.remove('btn-success');
-          btn.classList.add('btn-outline-primary');
-          btn.innerText = 'Added ✅';
-          btn.disabled = true;
-          btn.removeAttribute('data-create-service');
-        }
-      }
+    window.__gsmmixAdded = window.__gsmmixAdded || {};
+    window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(d.remote_id)}`] = true;
 
-      document.querySelectorAll('.wiz-check').forEach(cb => {
-        if(String(cb.value) === rid){
-          cb.checked = false;
-          cb.disabled = true;
-        }
-      });
-    });
-
+    markAsAdded([d.remote_id]);
     updateCount();
-  }
+  });
 
   document.getElementById('wizImportSelected')?.addEventListener('click', async () => {
     const ids = wizSelected();
@@ -335,6 +384,11 @@
     });
 
     if(data?.ok){
+      (data.added_remote_ids || ids).forEach(rid=>{
+        window.__gsmmixAdded = window.__gsmmixAdded || {};
+        window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(rid)}`] = true;
+      });
+
       markAsAdded(data.added_remote_ids || ids);
       wizard?.hide();
     }
@@ -355,10 +409,18 @@
     });
 
     if(data?.ok){
+      (data.added_remote_ids || []).forEach(rid=>{
+        window.__gsmmixAdded = window.__gsmmixAdded || {};
+        window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(rid)}`] = true;
+      });
+
       markAsAdded(data.added_remote_ids || []);
       wizard?.hide();
     }
   });
+
+  // ✅ تطبيق مبكر عند تحميل الملف
+  applyAddedFromMemory();
 
 })();
 </script>

@@ -539,6 +539,19 @@
       if(res.ok){
         const rid = form.querySelector('[name="remote_id"]')?.value;
         markCloneAsAdded(rid);
+
+        // ✅ NEW: ذاكرة + Event للتزامن مع Import Wizard بدون Refresh
+        const providerId = form.querySelector('[name="supplier_id"]')?.value || '';
+        const kind = form.querySelector('[name="type"]')?.value || '';
+        if (providerId && kind && rid) {
+          window.__gsmmixAdded = window.__gsmmixAdded || {};
+          window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(rid)}`] = true;
+
+          window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
+            detail: { provider_id: String(providerId), kind: String(kind), remote_id: String(rid) }
+          }));
+        }
+
         window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
         window.showToast?.('success', '✅ Service created successfully', { title: 'Done' });
         return;

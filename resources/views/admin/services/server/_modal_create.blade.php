@@ -132,7 +132,6 @@
               <label class="form-label mb-1">Profit</label>
               <div class="input-group">
                 <input name="profit" type="number" step="0.0001" class="form-control" value="0.0000">
-                <span class="input-group-text">Credits</span>
                 <select name="profit_type" class="form-select" style="max-width:120px">
                   <option value="1" selected>Credits</option>
                   <option value="2">Percent</option>
@@ -156,15 +155,13 @@
 
           {{-- ✅ Summernote editor --}}
           <textarea id="infoEditor"
-          class="form-control summernote"
-          data-summernote-height="320"
-          data-summernote-hidden="#infoHidden"
-          data-upload-url="{{ route('admin.uploads.summernote') }}"
-          rows="10"></textarea>
+                  class="form-control summernote"
+                  data-summernote-height="320"
+                  data-summernote-hidden="#infoHidden"
+                  data-upload-url="{{ route('admin.uploads.summernote') }}"
+                  rows="10"></textarea>
 
-<input type="hidden" name="info" id="infoHidden" value="">
-
-
+          <input type="hidden" name="info" id="infoHidden" value="">
           <small class="text-muted">Description, notes, terms…</small>
         </div>
 
@@ -277,9 +274,38 @@
       </div>
     </div>
 
+    {{-- ===================== ✅ META TAB (FIXED) ===================== --}}
     <div class="tab-pane" data-tab="meta">
-      <div class="alert alert-light mb-0">
-        Meta tab placeholder (if you need extra meta fields, add them here).
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Meta keywords</label>
+          <input type="text" class="form-control" name="meta_keywords">
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">After "head" tag opening</label>
+          <textarea class="form-control" rows="3" name="meta_after_head"></textarea>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">Meta description</label>
+          <textarea class="form-control" rows="3" name="meta_description"></textarea>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Before "head" tag closing</label>
+          <textarea class="form-control" rows="3" name="meta_before_head"></textarea>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">After "body" tag opening</label>
+          <textarea class="form-control" rows="3" name="meta_after_body"></textarea>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Before "body" tag closing</label>
+          <textarea class="form-control" rows="3" name="meta_before_body"></textarea>
+        </div>
       </div>
     </div>
 

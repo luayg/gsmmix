@@ -7,9 +7,9 @@
       data-ajax="1">
   @csrf
 
-  {{-- ✅ Fix name_en required --}}
+  {{-- ✅ Required by backend validation --}}
   <input type="hidden" name="name_en" id="nameEnHidden" value="">
-  <input type="hidden" name="main_type" value="">
+  <input type="hidden" name="main_type" value="file">
 
   {{-- (Optional) keep custom fields unified --}}
   <input type="hidden" name="custom_fields_json" id="customFieldsJson" value="[]">
@@ -199,14 +199,15 @@
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
 
-          {{-- ✅ Summernote (NEW consistent style) --}}
-          <textarea
-            class="form-control summernote"
-            data-height="320"
-            data-upload-url="{{ route('admin.uploads.summernote') }}"
-            rows="10"></textarea>
+          {{-- ✅ Summernote (GLOBAL script expects textarea.summernote) --}}
+          <textarea id="infoEditor"
+                    class="form-control summernote d-none"
+                    data-summernote-height="320"
+                    data-summernote-hidden="#infoHidden"
+                    data-upload-url="{{ route('admin.uploads.summernote') }}"
+                    rows="10"></textarea>
 
-          <input type="hidden" name="info" id="infoHidden">
+          <input type="hidden" name="info" id="infoHidden" value="">
           <small class="text-muted">Description, notes, terms…</small>
         </div>
       </div>
@@ -216,7 +217,7 @@
     <div class="tab-pane" data-tab="additional">
       <div class="row g-3">
 
-        {{-- LEFT: Custom fields (optional for file, but unified) --}}
+        {{-- LEFT: Custom fields --}}
         <div class="col-lg-7">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <div class="fw-bold">Custom fields</div>
@@ -321,7 +322,7 @@
       </template>
     </div>
 
-    {{-- ===================== ✅ META TAB (Unified) ===================== --}}
+    {{-- ===================== ✅ META TAB (MATCH SERVER) ===================== --}}
     <div class="tab-pane" data-tab="meta">
       <div class="row g-3">
         <div class="col-md-6">
@@ -404,7 +405,7 @@
   mainType?.addEventListener('change', () => applyPreset(mainType.value));
   if(mainType) applyPreset(mainType.value);
 
-  // Custom fields (optional but unified)
+  // Custom fields
   const wrap   = document.getElementById('fieldsWrap');
   const tpl    = document.getElementById('fieldTpl');
   const btnAdd = document.getElementById('btnAddField');

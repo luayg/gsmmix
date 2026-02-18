@@ -21,6 +21,7 @@
 
   <div class="service-tabs-content">
 
+    {{-- ===================== ✅ GENERAL TAB ===================== --}}
     <div class="tab-pane active" data-tab="general">
       <div class="row g-3">
 
@@ -147,12 +148,13 @@
         <div class="col-xl-5">
           <label class="form-label mb-1">Info</label>
 
-          {{-- ✅ Summernote (NEW consistent style): no modal-editors, no data-editor --}}
-          <textarea
-            class="form-control summernote"
-            data-height="320"
-            data-upload-url="{{ route('admin.uploads.summernote') }}"
-            rows="10"></textarea>
+          {{-- ✅ Summernote (GLOBAL script expects textarea.summernote) --}}
+          <textarea id="infoEditor"
+                    class="form-control summernote"
+                    data-summernote-height="320"
+                    data-summernote-hidden="#infoHidden"
+                    data-upload-url="{{ route('admin.uploads.summernote') }}"
+                    rows="10"></textarea>
 
           <input type="hidden" name="info" id="infoHidden" value="">
           <small class="text-muted">Description, notes, terms…</small>
@@ -161,15 +163,45 @@
       </div>
     </div>
 
+    {{-- ===================== ✅ ADDITIONAL TAB ===================== --}}
     <div class="tab-pane" data-tab="additional">
       <div class="alert alert-light mb-0">
         Additional tab placeholder (IMEI عادة ما يحتاج حقول أقل، ولكن يمكنك نسخه من server إذا رغبت).
       </div>
     </div>
 
+    {{-- ===================== ✅ META TAB (MATCH SERVER) ===================== --}}
     <div class="tab-pane" data-tab="meta">
-      <div class="alert alert-light mb-0">
-        Meta tab placeholder.
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Meta keywords</label>
+          <input type="text" class="form-control" name="meta_keywords">
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">After "head" tag opening</label>
+          <textarea class="form-control" rows="3" name="meta_after_head"></textarea>
+        </div>
+
+        <div class="col-12">
+          <label class="form-label">Meta description</label>
+          <textarea class="form-control" rows="3" name="meta_description"></textarea>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Before "head" tag closing</label>
+          <textarea class="form-control" rows="3" name="meta_before_head"></textarea>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">After "body" tag opening</label>
+          <textarea class="form-control" rows="3" name="meta_after_body"></textarea>
+        </div>
+
+        <div class="col-md-6">
+          <label class="form-label">Before "body" tag closing</label>
+          <textarea class="form-control" rows="3" name="meta_before_body"></textarea>
+        </div>
       </div>
     </div>
 
