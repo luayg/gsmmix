@@ -57,6 +57,7 @@
               <select name="main_field_type" class="form-select" id="mainFieldType">
                 <option value="imei" selected>IMEI</option>
                 <option value="serial">Serial</option>
+                  <option value="imei_serial">IMEI/Serial</option>
                 <option value="number">Number</option>
                 <option value="email">Email</option>
                 <option value="text">Text</option>
@@ -67,9 +68,9 @@
             <div class="col-md-6">
               <label class="form-label mb-1">Type</label>
               <select name="type" class="form-select">
-                <option value="imei" selected>IMEI</option>
-                <option value="server">Server</option>
-                <option value="file">File</option>
+                <option value="imei" selected>Server</option>
+                <option value="server">Calculation</option>
+                <option value="file">Other</option>
               </select>
             </div>
 
@@ -328,15 +329,44 @@
 
   const mainTypeHidden = form.querySelector('#mainTypeHidden');
   const mainFieldType  = form.querySelector('#mainFieldType');
+  const mainFieldLabel = form.querySelector('#mainFieldLabel');
+  const allowedChars   = form.querySelector('#allowedChars');
+  const minChars       = form.querySelector('#minChars');
+  const maxChars       = form.querySelector('#maxChars');
 
   const slugify = (s) => String(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 
+  // ✅ Presets (يرجع سلوك label كما كان)
+  const presets = {
+    imei:   { label:'IMEI',   allowed:'numbers',      min:15, max:15 },
+    serial: { label:'Serial', allowed:'any',          min:10,  max:13 },
+    imei_serial: { label:'IMEI/Serial', allowed:'any', min:10, max:15 },
+    number: { label:'Number', allowed:'numbers',      min:1,  max:255 },
+    email:  { label:'Email',  allowed:'any',          min:3,  max:255 },
+    text:   { label:'Text',   allowed:'any',          min:1,  max:255 },
+    custom: { label:'Custom', allowed:'alphanumeric', min:1,  max:255 },
+  };
+
+  function applyPreset(v){
+    const p = presets[String(v||'').toLowerCase()] || null;
+    if(!p) return;
+
+    // ✅ أهم شيء: label يتغير تلقائياً عند تغيير النوع
+    if(mainFieldLabel) mainFieldLabel.value = p.label;
+
+    if(allowedChars && Array.from(allowedChars.options).some(o => o.value === p.allowed)) {
+      allowedChars.value = p.allowed;
+    }
+    if(minChars) minChars.value = String(p.min);
+    if(maxChars) maxChars.value = String(p.max);
+  }
+
   function buildMainFieldJson(){
-    const type  = form.querySelector('#mainFieldType')?.value || 'imei';
-    const label = form.querySelector('#mainFieldLabel')?.value || 'IMEI';
-    const allowed = form.querySelector('#allowedChars')?.value || 'numbers';
-    const min = Number(form.querySelector('#minChars')?.value || 0);
-    const max = Number(form.querySelector('#maxChars')?.value || 0);
+    const type  = mainFieldType?.value || 'imei';
+    const label = mainFieldLabel?.value || 'IMEI';
+    const allowed = allowedChars?.value || 'numbers';
+    const min = Number(minChars?.value || 0);
+    const max = Number(maxChars?.value || 0);
 
     return {
       type,
@@ -354,9 +384,10 @@
   }
 
   function syncMainTypeHidden(){
-    if(!mainTypeHidden || !mainFieldType) return;
-    mainTypeHidden.value = mainFieldType.value || 'imei';
-  }
+  if(!mainTypeHidden) return;
+  mainTypeHidden.value = 'imei';
+}
+
 
   function syncParamsHidden(){
     const paramsHidden = form.querySelector('#paramsHidden');
@@ -480,18 +511,26 @@
   nameInput?.addEventListener('input', () => { if(nameEn) nameEn.value = nameInput.value; });
   if (nameInput && nameEn) nameEn.value = nameInput.value || '';
 
-  mainFieldType?.addEventListener('change', () => { syncMainTypeHidden(); syncMainFieldHidden(); });
-  ['#mainFieldLabel','#allowedChars','#minChars','#maxChars'].forEach(sel=>{
-    form.querySelector(sel)?.addEventListener('input', syncMainFieldHidden);
-    form.querySelector(sel)?.addEventListener('change', syncMainFieldHidden);
+  // ✅ رجّع سلوك presets + مزامنة الهيدن
+  mainFieldType?.addEventListener('change', () => {
+    applyPreset(mainFieldType.value);
+    syncMainTypeHidden();
+    syncMainFieldHidden();
   });
 
+  [mainFieldLabel, allowedChars, minChars, maxChars].forEach(el=>{
+    el?.addEventListener('input', syncMainFieldHidden);
+    el?.addEventListener('change', syncMainFieldHidden);
+  });
+
+  // init preset on load
+  if(mainFieldType) applyPreset(mainFieldType.value);
   syncMainTypeHidden();
   syncMainFieldHidden();
 
   btnAdd?.addEventListener('click', () => addField(form));
 
-  // ===== Hooks for service-modal.blade.php (dynamic) =====
+  // ===== Hooks (التي نحتاجها) =====
   window.__imeiServiceApplyRemoteFields__ = function(scope, additionalFields){
     try{
       if (!scope || !Array.isArray(additionalFields)) return;
@@ -538,10 +577,12 @@
 
       if (typeSel && Array.from(typeSel.options).some(o => o.value === t)) {
         typeSel.value = t;
+        // هذا سيستدعي applyPreset ويغيّر label تلقائياً حسب النوع
         typeSel.dispatchEvent(new Event('change'));
       }
 
-      if (labInp) labInp.value = l || 'IMEI';
+      // لو API رجع label مخصص، نخليه يغلب الـ preset
+      if (labInp && l) labInp.value = l;
 
       syncMainTypeHidden();
       syncMainFieldHidden();
@@ -549,6 +590,11 @@
       console.warn('imei setMainField failed', e);
     }
   };
+
+  // ✅ الأهم: service-modal يستدعي أسماء server ... فنعمل alias لها هنا
+  // حتى يعمل IMEI بدون تعديل service-modal حالياً
+  window.__serverServiceApplyRemoteFields__ = window.__imeiServiceApplyRemoteFields__;
+  window.__serverServiceSetMainField__      = window.__imeiServiceSetMainField__;
 
   // initial
   serializeFieldsInScope(form);

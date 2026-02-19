@@ -73,9 +73,9 @@
             <div class="col-md-6">
               <label class="form-label mb-1">Type</label>
               <select name="type" class="form-select">
-                <option value="server" selected>Server</option>
-                <option value="imei">IMEI</option>
-                <option value="file">File</option>
+                <option value="imei" selected>Server</option>
+                <option value="server">Calculation</option>
+                <option value="file">Other</option>
               </select>
             </div>
 
