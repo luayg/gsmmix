@@ -14,6 +14,14 @@
   };
 @endphp
 
+<style>
+  .wiz-groups-box{border:1px solid #eee;border-radius:.5rem;padding:.75rem;background:#fafafa}
+  .wiz-pricing-row{border-bottom:1px solid #eee;padding:.6rem 0}
+  .wiz-pricing-row:last-child{border-bottom:0}
+  .wiz-pricing-title{font-weight:600;margin-bottom:.35rem}
+  .wiz-pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+</style>
+
 <div class="modal-header align-items-center" style="background:#3bb37a;color:#fff;">
   <div>
     <div class="h6 mb-0">{{ $provider->name }} | {{ $kindLabel }} services</div>
@@ -61,12 +69,11 @@
           @endphp
 
           @php
-  $af = $s['ADDITIONAL_FIELDS'] ?? $s['additional_fields'] ?? null;
-  // لو جايك كـ array
-  $afJson = is_array($af) ? json_encode($af, JSON_UNESCAPED_UNICODE) : (string)$af;
-@endphp
+            $af = $s['ADDITIONAL_FIELDS'] ?? $s['additional_fields'] ?? null;
+            // لو جايك كـ array
+            $afJson = is_array($af) ? json_encode($af, JSON_UNESCAPED_UNICODE) : (string)$af;
+          @endphp
 
-          
           <tr data-row
               data-group="{{ strtolower($group) }}"
               data-name="{{ strtolower($name) }}"
@@ -81,26 +88,20 @@
               @if($isAdded)
                 <button type="button" class="btn btn-secondary btn-sm" disabled>Added ✅</button>
               @else
-                @php
-  $af = $s['ADDITIONAL_FIELDS'] ?? $s['additional_fields'] ?? null;
-  $afJson = is_array($af) ? json_encode($af, JSON_UNESCAPED_UNICODE) : (string)$af;
-@endphp
-
-<button type="button"
-        class="btn btn-success btn-sm clone-btn"
-        data-create-service
-        data-service-type="{{ $kind }}"
-        data-provider-id="{{ $provider->id }}"
-        data-provider-name="{{ $provider->name }}"
-        data-remote-id="{{ $rid }}"
-        data-group-name="{{ e($group) }}"
-        data-name="{{ e($name) }}"
-        data-credit="{{ number_format($credit, 4, '.', '') }}"
-        data-time="{{ e($time) }}"
-        data-additional-fields="{{ e($afJson) }}">
-  Clone
-</button>
-
+                <button type="button"
+                        class="btn btn-success btn-sm clone-btn"
+                        data-create-service
+                        data-service-type="{{ $kind }}"
+                        data-provider-id="{{ $provider->id }}"
+                        data-provider-name="{{ $provider->name }}"
+                        data-remote-id="{{ $rid }}"
+                        data-group-name="{{ e($group) }}"
+                        data-name="{{ e($name) }}"
+                        data-credit="{{ number_format($credit, 4, '.', '') }}"
+                        data-time="{{ e($time) }}"
+                        data-additional-fields="{{ e($afJson) }}">
+                  Clone
+                </button>
               @endif
             </td>
           </tr>
@@ -156,48 +157,70 @@
             <input type="number" step="0.01" class="form-control form-control-sm" id="wizPricingValue" value="0">
           </div>
 
-          <div class="col-md-4 d-flex align-items-end justify-content-end gap-2">
-            <button type="button" class="btn btn-dark btn-sm" id="wizImportAll">Import ALL</button>
-            <button type="button" class="btn btn-success btn-sm" id="wizImportSelected">Import Selected</button>
+          <div class="col-md-4 d-flex justify-content-end align-items-end gap-2">
+            <button type="button" class="btn btn-sm btn-dark" id="wizImportAll">Import ALL</button>
+            <button type="button" class="btn btn-sm btn-success" id="wizImportSelected">Import Selected</button>
           </div>
         </div>
 
-        <div class="table-responsive border rounded">
-          <table class="table table-sm table-striped mb-0 align-middle" id="wizTable">
+        {{-- ✅ NEW: Group pricing (مثل clone) --}}
+        <div class="wiz-groups-box mb-3">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="fw-semibold">Groups Pricing</div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="wizGroupsResetAll">Reset</button>
+          </div>
+          <div class="small text-muted mt-1">
+            سيتم تطبيق إعدادات الجروبات على <b>كل الخدمات</b> التي تستوردها الآن.
+            <br>
+            <b>Auto price</b> = يأخذ سعر الخدمة النهائي (Cost + Profit) لكل خدمة تلقائيًا، ثم يطبق الخصم لكل Group.
+          </div>
+
+          <div id="wizGroupsWrap" class="mt-2"></div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle" id="wizTable">
             <thead>
               <tr>
                 <th style="width:40px"></th>
-                <th>Group</th>
+                <th style="width:220px">Group</th>
                 <th style="width:110px">Remote ID</th>
                 <th>Name</th>
-                <th style="width:90px">Credits</th>
-                <th style="width:110px">Time</th>
+                <th style="width:100px">Credits</th>
+                <th style="width:140px">Time</th>
               </tr>
             </thead>
             <tbody>
-              @foreach($services as $s)
-                @php
-                  $group = (string)($s['GROUPNAME'] ?? '');
-                  $rid   = (string)($s['REMOTEID'] ?? '');
-                  $name  = (string)($s['NAME'] ?? '');
-                  $credit= (float)($s['CREDIT'] ?? 0);
-                  $time  = (string)($s['TIME'] ?? '');
-                  $isAdded = isset($existing[$rid]);
-                @endphp
-                <tr data-wiz-row
-                    data-group="{{ strtolower($group) }}"
-                    data-name="{{ strtolower($name) }}"
-                    data-remote="{{ strtolower($rid) }}">
-                  <td>
-                    <input type="checkbox" class="wiz-check" value="{{ $rid }}" @disabled($isAdded)>
-                  </td>
-                  <td>{{ $group }}</td>
-                  <td><code>{{ $rid }}</code></td>
-                  <td style="min-width:520px;">{{ $name }}</td>
-                  <td>{{ number_format($credit, 4) }}</td>
-                  <td>{{ $time }}</td>
-                </tr>
-              @endforeach
+            @forelse($services as $s)
+              @php
+                $group = (string)($s['GROUPNAME'] ?? '');
+                $rid   = (string)($s['REMOTEID'] ?? '');
+                $name  = (string)($s['NAME'] ?? '');
+                $credit= (float)($s['CREDIT'] ?? 0);
+                $time  = (string)($s['TIME'] ?? '');
+                $isAdded = isset($existing[$rid]);
+              @endphp
+
+              <tr data-wiz-row
+                  data-group="{{ strtolower($group) }}"
+                  data-name="{{ strtolower($name) }}"
+                  data-remote="{{ strtolower($rid) }}">
+                <td>
+                  @if($isAdded)
+                    <span class="badge bg-success">Added</span>
+                  @else
+                    <input class="form-check-input wiz-check" type="checkbox" value="{{ $rid }}">
+                  @endif
+                </td>
+                <td>{{ $group }}</td>
+                <td><code>{{ $rid }}</code></td>
+                <td style="min-width:520px;">{{ $name }}</td>
+                <td>{{ number_format($credit, 4) }}</td>
+                <td>{{ $time }}</td>
+              </tr>
+            @empty
+              <tr><td colspan="6" class="text-center p-4">No data</td></tr>
+            @endforelse
             </tbody>
           </table>
         </div>
@@ -209,66 +232,105 @@
 
 <script>
 (function(){
-  const kind       = @json($kind);
   const providerId = @json($provider->id);
-  const importUrl  = @json($importUrl);
-  const csrfToken  = @json(csrf_token());
+  const kind = @json($kind);
 
-  const toastOk = (msg) => {
-    if (window.showToast) window.showToast('success', msg, { title: 'Done' });
-    else alert(msg);
-  };
-  const toastErr = (msg) => {
-    if (window.showToast) window.showToast('danger', msg, { title: 'Error', delay: 5000 });
-    else alert(msg);
-  };
-
-  // ===== Main search =====
+  // ===================== Search (main table) =====================
   const svcSearch = document.getElementById('svcSearch');
   svcSearch?.addEventListener('input', () => {
     const q = (svcSearch.value || '').trim().toLowerCase();
     document.querySelectorAll('#svcTable tr[data-row]').forEach(tr => {
       const hit =
-        tr.dataset.group.includes(q) ||
-        tr.dataset.name.includes(q) ||
-        tr.dataset.remote.includes(q);
+        (tr.dataset.group || '').includes(q) ||
+        (tr.dataset.name  || '').includes(q) ||
+        (tr.dataset.remote|| '').includes(q);
       tr.style.display = (!q || hit) ? '' : 'none';
     });
   });
 
-  // ===== Open wizard =====
+  // ===================== Import wizard open =====================
+  const btnOpen = document.getElementById('btnOpenImportWizard');
   const wizardEl = document.getElementById('importWizard');
-  const wizard = bootstrap.Modal.getOrCreateInstance(wizardEl);
+  const wizard = wizardEl ? bootstrap.Modal.getOrCreateInstance(wizardEl) : null;
 
-  document.getElementById('btnOpenImportWizard')?.addEventListener('click', () => {
-    // ✅ قبل الفتح: طبّق الذاكرة (لو صار Clone قبل فتح الـ wizard)
-    applyAddedFromMemory();
-    wizard.show();
-  });
-
-  // ✅ أيضاً عند ظهور المودال فعلاً (احتياط لو انفتح بطرق مختلفة)
-  wizardEl?.addEventListener('shown.bs.modal', () => {
-    applyAddedFromMemory();
-    updateCount();
-  });
-
-  // ===== Wizard helpers =====
+  // ===================== Wizard helpers =====================
   const wizSearch = document.getElementById('wizSearch');
   const wizChecks = () => Array.from(document.querySelectorAll('.wiz-check'));
   const wizSelected = () => wizChecks().filter(x => x.checked && !x.disabled).map(x => x.value);
 
   function updateCount(){
     const n = wizSelected().length;
-    document.getElementById('wizSelectedCount').innerText = `${n} selected`;
+    const out = document.getElementById('wizSelectedCount');
+    if(out) out.innerText = `${n} selected`;
   }
+
+  function markAsAdded(remoteIds){
+    (remoteIds || []).forEach(id => {
+      const rid = String(id || '').trim();
+      if(!rid) return;
+
+      // زر clone في الجدول الخلفي
+      const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(rid)}"]`);
+      if(row){
+        const btn = row.querySelector('.clone-btn');
+        if(btn){
+          btn.classList.remove('btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary');
+          btn.classList.add('btn-outline-primary');
+          btn.innerText = 'Added ✅';
+          btn.disabled = true;
+          btn.removeAttribute('data-create-service');
+        }
+      }
+
+      // checkbox في الـ wizard
+      document.querySelectorAll('.wiz-check').forEach(cb => {
+        if(String(cb.value) === rid){
+          cb.checked = false;
+          cb.disabled = true;
+          cb.closest('td') && (cb.closest('td').innerHTML = '<span class="badge bg-success">Added</span>');
+        }
+      });
+    });
+
+    updateCount();
+  }
+
+  // ==========================================================
+  // ✅ NEW: تطبيق "الذاكرة" قبل الفتح (Clone ثم Import مباشرة)
+  // ==========================================================
+  function applyAddedFromMemory(){
+    const mem = window.__gsmmixAdded || {};
+    const prefix = `${String(providerId)}:${String(kind)}:`;
+    const ids = Object.keys(mem)
+      .filter(k => k.startsWith(prefix))
+      .map(k => k.substring(prefix.length))
+      .filter(Boolean);
+
+    if (ids.length) markAsAdded(ids);
+  }
+
+  btnOpen?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    applyAddedFromMemory();
+    await initWizardGroups(); // ✅ تحميل الجروبات قبل العرض
+    wizard?.show();
+    updateCount();
+  });
+
+  wizardEl?.addEventListener('shown.bs.modal', () => {
+    applyAddedFromMemory();
+    updateCount();
+  });
 
   wizSearch?.addEventListener('input', () => {
     const q = (wizSearch.value || '').trim().toLowerCase();
     document.querySelectorAll('#wizTable tr[data-wiz-row]').forEach(tr => {
       const hit =
-        tr.dataset.group.includes(q) ||
-        tr.dataset.name.includes(q) ||
-        tr.dataset.remote.includes(q);
+        (tr.dataset.group || '').includes(q) ||
+        (tr.dataset.name  || '').includes(q) ||
+        (tr.dataset.remote|| '').includes(q);
       tr.style.display = (!q || hit) ? '' : 'none';
     });
   });
@@ -284,8 +346,139 @@
   });
 
   document.addEventListener('change', (e) => {
-    if (e.target.classList?.contains('wiz-check')) updateCount();
+    if (e.target && e.target.classList && e.target.classList.contains('wiz-check')) updateCount();
   });
+
+  // ===================== ✅ Group pricing (NEW) =====================
+  const groupsUrl = @json(route('admin.groups.options'));
+  let __wizGroupsLoaded = false;
+
+  async function loadUserGroups(){
+    const res = await fetch(groupsUrl, { headers:{'X-Requested-With':'XMLHttpRequest'} });
+    const rows = await res.json().catch(()=>[]);
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  function buildGroupsUI(groups){
+    const wrap = document.getElementById('wizGroupsWrap');
+    if(!wrap) return;
+
+    wrap.innerHTML = '';
+    groups.forEach(g=>{
+      const row = document.createElement('div');
+      row.className = 'wiz-pricing-row';
+      row.dataset.groupId = g.id;
+
+      row.innerHTML = `
+        <div class="wiz-pricing-title">${escapeHtml(g.name || ('Group #' + g.id))}</div>
+
+        <div class="wiz-pricing-inputs">
+          <div>
+            <label class="form-label mb-1">Price</label>
+            <div class="input-group">
+              <input type="number" step="0.0001" class="form-control"
+                     data-price value="0.0000" disabled>
+              <span class="input-group-text">Credits</span>
+            </div>
+
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" data-auto-price checked>
+              <label class="form-check-label small">Auto price (service final price)</label>
+            </div>
+          </div>
+
+          <div>
+            <label class="form-label mb-1">Discount</label>
+            <div class="input-group">
+              <input type="number" step="0.0001" class="form-control" data-discount value="0.0000">
+              <select class="form-select" style="max-width:120px" data-discount-type>
+                <option value="1" selected>Credits</option>
+                <option value="2">Percent</option>
+              </select>
+              <button type="button" class="btn btn-light" data-reset>Reset</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const autoCb = row.querySelector('[data-auto-price]');
+      const price  = row.querySelector('[data-price]');
+      const reset  = row.querySelector('[data-reset]');
+
+      const syncPriceState = () => {
+        const isAuto = !!autoCb?.checked;
+        if(price){
+          price.disabled = isAuto;
+          if(isAuto) price.value = "0.0000";
+        }
+      };
+
+      autoCb?.addEventListener('change', syncPriceState);
+      reset?.addEventListener('click', ()=>{
+        row.querySelector('[data-discount]').value = "0.0000";
+        row.querySelector('[data-discount-type]').value = "1";
+        autoCb.checked = true;
+        syncPriceState();
+      });
+
+      syncPriceState();
+      wrap.appendChild(row);
+    });
+  }
+
+  function collectGroupPrices(){
+    const wrap = document.getElementById('wizGroupsWrap');
+    if(!wrap) return [];
+
+    const out = [];
+    wrap.querySelectorAll('.wiz-pricing-row').forEach(row=>{
+      const group_id = Number(row.dataset.groupId || 0);
+      if(!group_id) return;
+
+      const auto_price = row.querySelector('[data-auto-price]')?.checked ? 1 : 0;
+      const price = Number(row.querySelector('[data-price]')?.value || 0);
+      const discount = Number(row.querySelector('[data-discount]')?.value || 0);
+      const discount_type = Number(row.querySelector('[data-discount-type]')?.value || 1);
+
+      out.push({
+        group_id,
+        auto_price,
+        price: Number.isFinite(price) ? price : 0,
+        discount: Number.isFinite(discount) ? discount : 0,
+        discount_type: (discount_type === 2 ? 2 : 1),
+      });
+    });
+
+    return out;
+  }
+
+  async function initWizardGroups(){
+    if(__wizGroupsLoaded) return;
+    const groups = await loadUserGroups();
+    buildGroupsUI(groups);
+    __wizGroupsLoaded = true;
+
+    document.getElementById('wizGroupsResetAll')?.addEventListener('click', ()=>{
+      document.querySelectorAll('#wizGroupsWrap .wiz-pricing-row').forEach(row=>{
+        row.querySelector('[data-discount]').value = "0.0000";
+        row.querySelector('[data-discount-type]').value = "1";
+        row.querySelector('[data-auto-price]').checked = true;
+        row.querySelector('[data-price]').value = "0.0000";
+        row.querySelector('[data-price]').disabled = true;
+      });
+    });
+  }
+
+  function escapeHtml(s){
+    const str = String(s ?? '');
+    return str.replace(/[&<>"']/g, (m) => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+    }[m]));
+  }
+
+  // ===================== Import submit =====================
+  const importUrl  = @json(route('admin.apis.services.import_wizard', $provider));
+  const csrfToken  = @json(csrf_token());
 
   async function sendImport(payload){
     const res = await fetch(importUrl, {
@@ -293,62 +486,17 @@
       headers: {
         'Content-Type': 'application/json',
         'X-CSRF-TOKEN': csrfToken,
-        'X-Requested-With': 'XMLHttpRequest'
+        'X-Requested-With':'XMLHttpRequest'
       },
       body: JSON.stringify(payload),
     });
 
     const data = await res.json().catch(() => null);
-
-    if (!res.ok || !data?.ok) {
-      toastErr(data?.msg || 'Import failed');
+    if(!res.ok || !data?.ok){
+      alert(data?.msg || 'Import failed');
       return null;
     }
     return data;
-  }
-
-  function markAsAdded(remoteIds){
-    (remoteIds || []).forEach(id => {
-      const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(String(id))}"]`);
-      if (row) {
-        const btn = row.querySelector('.clone-btn');
-        if (btn) {
-          btn.classList.remove('btn-success','btn-secondary','btn-danger','btn-warning','btn-info','btn-dark','btn-primary');
-          btn.classList.add('btn-outline-primary');
-          btn.innerText = 'Added ✅';
-          btn.disabled = true;
-          btn.removeAttribute('data-create-service');
-        }
-      }
-
-      // ✅ عطل checkbox في الـ wizard أيضًا
-      document.querySelectorAll('.wiz-check').forEach(cb => {
-        if (String(cb.value) === String(id)) {
-          cb.checked = false;
-          cb.disabled = true;
-        }
-      });
-    });
-
-    updateCount();
-  }
-
-  // ✅ اجعل markAsAdded متاح عالميًا (موجود عندك)
-  window.gsmmixMarkRemoteAdded = window.gsmmixMarkRemoteAdded || {};
-  window.gsmmixMarkRemoteAdded[`${providerId}:${kind}`] = markAsAdded;
-
-  // ==========================================================
-  // ✅ NEW: تطبيق "الذاكرة" حتى لو حدث Clone قبل فتح هذا المودال
-  // ==========================================================
-  function applyAddedFromMemory(){
-    const mem = window.__gsmmixAdded || {};
-    const prefix = `${String(providerId)}:${String(kind)}:`;
-    const ids = Object.keys(mem)
-      .filter(k => k.startsWith(prefix))
-      .map(k => k.substring(prefix.length))
-      .filter(Boolean);
-
-    if (ids.length) markAsAdded(ids);
   }
 
   // ✅ استمع لحدث “تم إنشاء خدمة بالـ Clone”
@@ -358,7 +506,6 @@
     if (String(d.kind) !== String(kind)) return;
     if (!d.remote_id) return;
 
-    // ✅ خزّن أيضاً في الذاكرة (حتى لو مودال آخر فتح لاحقاً)
     window.__gsmmixAdded = window.__gsmmixAdded || {};
     window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(d.remote_id)}`] = true;
 
@@ -368,10 +515,12 @@
 
   document.getElementById('wizImportSelected')?.addEventListener('click', async () => {
     const ids = wizSelected();
-    if (!ids.length) return toastErr('Select services first');
+    if(!ids.length) return alert('Select services first');
 
-    const pricing_mode  = document.getElementById('wizPricingMode').value;
-    const pricing_value = document.getElementById('wizPricingValue').value;
+    const pricing_mode  = document.getElementById('wizPricingMode')?.value || 'percent';
+    const pricing_value = document.getElementById('wizPricingValue')?.value || 0;
+
+    const group_prices = collectGroupPrices();
 
     const data = await sendImport({
       kind,
@@ -379,26 +528,27 @@
       service_ids: ids,
       pricing_mode,
       pricing_value,
+      group_prices
     });
 
-    if (data?.ok) {
-      // خزّنهم في الذاكرة أيضاً
+    if(data?.ok){
       (data.added_remote_ids || ids).forEach(rid=>{
         window.__gsmmixAdded = window.__gsmmixAdded || {};
         window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(rid)}`] = true;
       });
 
       markAsAdded(data.added_remote_ids || ids);
-      toastOk(`Imported ${data.count} services successfully ✅`);
-      wizard.hide();
+      wizard?.hide();
     }
   });
 
   document.getElementById('wizImportAll')?.addEventListener('click', async () => {
-    if (!confirm('Import ALL services?')) return;
+    if(!confirm('Import ALL services?')) return;
 
-    const pricing_mode  = document.getElementById('wizPricingMode').value;
-    const pricing_value = document.getElementById('wizPricingValue').value;
+    const pricing_mode  = document.getElementById('wizPricingMode')?.value || 'percent';
+    const pricing_value = document.getElementById('wizPricingValue')?.value || 0;
+
+    const group_prices = collectGroupPrices();
 
     const data = await sendImport({
       kind,
@@ -406,33 +556,19 @@
       service_ids: [],
       pricing_mode,
       pricing_value,
+      group_prices
     });
 
-    if (data?.ok) {
+    if(data?.ok){
       (data.added_remote_ids || []).forEach(rid=>{
         window.__gsmmixAdded = window.__gsmmixAdded || {};
         window.__gsmmixAdded[`${String(providerId)}:${String(kind)}:${String(rid)}`] = true;
       });
 
       markAsAdded(data.added_remote_ids || []);
-      toastOk(`Imported ${data.count} services successfully ✅`);
-      wizard.hide();
+      wizard?.hide();
     }
   });
 
-  // ✅ تطبيق مبكر عند تحميل الملف (لو كان المودال جاء بعد clone)
-  applyAddedFromMemory();
-
 })();
 </script>
-
-{{-- Template required for Service Modal Clone --}}
-<template id="serviceCreateTpl">
-  @if($kind === 'imei')
-    @include('admin.services.imei._modal_create')
-  @elseif($kind === 'server')
-    @include('admin.services.server._modal_create')
-  @elseif($kind === 'file')
-    @include('admin.services.file._modal_create')
-  @endif
-</template>

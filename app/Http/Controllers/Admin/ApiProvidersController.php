@@ -15,6 +15,7 @@ use App\Services\Providers\ProviderManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use App\Models\ServiceGroupPrice;
 
 class ApiProvidersController extends Controller
 {
@@ -261,6 +262,16 @@ public function servicesFile(Request $request, ApiProvider $provider)
             }
         }
 
+        $groupPrices = $request->input('group_prices', []);
+if (is_string($groupPrices) && trim($groupPrices) !== '') {
+    $decoded = json_decode($groupPrices, true);
+    if (is_array($decoded)) $groupPrices = $decoded;
+}
+
+$result = $this->doBulkImport($provider, $kind, $applyAll, $ids ?: [], $mode, $value, is_array($groupPrices) ? $groupPrices : []);
+
+
+
         $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
         $mode  = strtolower(trim($mode));
         if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
@@ -418,110 +429,192 @@ public function servicesFile(Request $request, ApiProvider $provider)
         return $out;
     }
 
-    private function doBulkImport(ApiProvider $provider, string $kind, bool $applyAll, array $remoteIds, string $profitMode, float $profitValue): array
-    {
-        [$remoteModel, $localModel] = match ($kind) {
-            'imei'   => [RemoteImeiService::class, ImeiService::class],
-            'server' => [RemoteServerService::class, ServerService::class],
-            'file'   => [RemoteFileService::class, FileService::class],
-        };
+    private function doBulkImport(
+    ApiProvider $provider,
+    string $kind,
+    bool $applyAll,
+    array $remoteIds,
+    string $profitMode,
+    float $profitValue,
+    array $groupPrices = []
+): array
+{
+    [$remoteModel, $localModel] = match ($kind) {
+        'imei'   => [RemoteImeiService::class, ImeiService::class],
+        'server' => [RemoteServerService::class, ServerService::class],
+        'file'   => [RemoteFileService::class, FileService::class],
+    };
 
-        $remoteQ = $remoteModel::query()->where('api_provider_id', $provider->id);
-        if (!$applyAll) {
-            $remoteIds = array_values(array_unique(array_map('strval', $remoteIds)));
-            $remoteQ->whereIn('remote_id', $remoteIds);
-        }
-        $remoteRows = $remoteQ->get();
-
-        $added = [];
-        $count = 0;
-
-        DB::transaction(function () use ($provider, $kind, $remoteRows, $localModel, $profitMode, $profitValue, &$added, &$count) {
-
-            foreach ($remoteRows as $r) {
-                $remoteId = (string)($r->remote_id ?? '');
-                if ($remoteId === '') continue;
-
-                $exists = $localModel::query()
-                    ->where('supplier_id', $provider->id)
-                    ->where('remote_id', $remoteId)
-                    ->exists();
-                if ($exists) continue;
-
-                $groupName = trim((string)($r->group_name ?? ''));
-                $groupId = null;
-
-                if ($groupName !== '') {
-                    $groupType = $this->serviceGroupType($kind);
-                    $group = ServiceGroup::firstOrCreate(
-                        ['type' => $groupType, 'name' => $groupName],
-                        ['ordering' => 0]
-                    );
-                    $groupId = $group->id;
-                }
-
-                $nameText = trim(strip_tags((string)($r->name ?? '')));
-                if ($nameText === '') $nameText = "{$kind}-{$provider->id}-{$remoteId}";
-
-                $timeText = trim(strip_tags((string)($r->time ?? '')));
-                $infoText = trim(strip_tags((string)($r->info ?? '')));
-
-                $nameJson = json_encode(['en' => $nameText, 'fallback' => $nameText], JSON_UNESCAPED_UNICODE);
-                $timeJson = json_encode(['en' => $timeText, 'fallback' => $timeText], JSON_UNESCAPED_UNICODE);
-                $infoJson = json_encode(['en' => $infoText, 'fallback' => $infoText], JSON_UNESCAPED_UNICODE);
-
-                $cost = (float)($r->price ?? 0);
-                $profitType = ($profitMode === 'percent') ? 2 : 1;
-
-                $aliasBase = Str::slug(Str::limit($nameText, 160, ''), '-');
-                if ($aliasBase === '') $aliasBase = 'service';
-                $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
-
-                $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
-
-                $data = [
-                    'alias' => $alias,
-                    'group_id' => $groupId,
-                    'type' => $kind,
-                    'name' => $nameJson,
-                    'time' => $timeJson,
-                    'info' => $infoJson,
-
-                    'cost' => $cost,
-                    'profit' => $profitValue,
-                    'profit_type' => $profitType,
-
-                    'source' => 2,
-                    'supplier_id' => $provider->id,
-                    'remote_id' => $remoteId,
-
-                    'main_field' => $mainField,
-
-                    'active' => 1,
-                    'allow_bulk' => 0,
-                    'allow_duplicates' => 0,
-                    'reply_with_latest' => 0,
-                    'allow_report' => 0,
-                    'allow_cancel' => 0,
-                    'reply_expiration' => 0,
-                ];
-
-                $created = $localModel::query()->create($data);
-
-                $remoteFields = $this->extractRemoteAdditionalFields($r);
-                if (!empty($remoteFields) && $created?->id) {
-                    $localFields = $this->normalizeRemoteFieldsToLocal($remoteFields);
-                    $serviceType = $this->serviceGroupType($kind);
-                    $this->saveCustomFieldsToTable($serviceType, (int)$created->id, $localFields);
-                }
-
-                $added[] = $remoteId;
-                $count++;
-            }
-        });
-
-        return ['count' => $count, 'added_remote_ids' => $added];
+    $remoteQ = $remoteModel::query()->where('api_provider_id', $provider->id);
+    if (!$applyAll) {
+        $remoteIds = array_values(array_unique(array_map('strval', $remoteIds)));
+        $remoteQ->whereIn('remote_id', $remoteIds);
     }
+    $remoteRows = $remoteQ->get();
+
+    $added = [];
+    $count = 0;
+
+    $groupPrices = $this->normalizeGroupPrices($groupPrices);
+
+    DB::transaction(function () use ($provider, $kind, $remoteRows, $localModel, $profitMode, $profitValue, $groupPrices, &$added, &$count) {
+
+        foreach ($remoteRows as $r) {
+            $remoteId = (string)($r->remote_id ?? '');
+            if ($remoteId === '') continue;
+
+            $exists = $localModel::query()
+                ->where('supplier_id', $provider->id)
+                ->where('remote_id', $remoteId)
+                ->exists();
+            if ($exists) continue;
+
+            $groupName = trim((string)($r->group_name ?? ''));
+            $groupId = null;
+
+            if ($groupName !== '') {
+                $groupType = $this->serviceGroupType($kind);
+                $group = ServiceGroup::firstOrCreate(
+                    ['type' => $groupType, 'name' => $groupName],
+                    ['ordering' => 0]
+                );
+                $groupId = $group->id;
+            }
+
+            $nameText = trim(strip_tags((string)($r->name ?? '')));
+            if ($nameText === '') $nameText = "{$kind}-{$provider->id}-{$remoteId}";
+
+            $timeText = trim(strip_tags((string)($r->time ?? '')));
+            $infoText = trim(strip_tags((string)($r->info ?? '')));
+
+            $nameJson = json_encode(['en' => $nameText, 'fallback' => $nameText], JSON_UNESCAPED_UNICODE);
+            $timeJson = json_encode(['en' => $timeText, 'fallback' => $timeText], JSON_UNESCAPED_UNICODE);
+            $infoJson = json_encode(['en' => $infoText, 'fallback' => $infoText], JSON_UNESCAPED_UNICODE);
+
+            $cost = (float)($r->price ?? 0);
+            $profitType = ($profitMode === 'percent') ? 2 : 1;
+
+            $aliasBase = Str::slug(Str::limit($nameText, 160, ''), '-');
+            if ($aliasBase === '') $aliasBase = 'service';
+            $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
+
+            $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
+
+            $data = [
+                'alias' => $alias,
+                'group_id' => $groupId,
+                'type' => $kind,
+                'name' => $nameJson,
+                'time' => $timeJson,
+                'info' => $infoJson,
+
+                'cost' => $cost,
+                'profit' => $profitValue,
+                'profit_type' => $profitType,
+
+                'source' => 2,
+                'supplier_id' => $provider->id,
+                'remote_id' => $remoteId,
+
+                'main_field' => $mainField,
+
+                'active' => 1,
+                'allow_bulk' => 0,
+                'allow_duplicates' => 0,
+                'reply_with_latest' => 0,
+                'allow_report' => 0,
+                'allow_cancel' => 0,
+                'reply_expiration' => 0,
+            ];
+
+            $created = $localModel::query()->create($data);
+
+            // ✅ save custom fields
+            $remoteFields = $this->extractRemoteAdditionalFields($r);
+            if (!empty($remoteFields) && $created?->id) {
+                $localFields = $this->normalizeRemoteFieldsToLocal($remoteFields);
+                $serviceType = $this->serviceGroupType($kind);
+                $this->saveCustomFieldsToTable($serviceType, (int)$created->id, $localFields);
+            }
+
+            // ✅ NEW: save group prices template for this service
+            if ($created?->id && !empty($groupPrices)) {
+                $finalServicePrice = $this->calcFinalPrice($cost, $profitType, $profitValue);
+                $this->saveGroupPricesForService($kind, (int)$created->id, $groupPrices, $finalServicePrice);
+            }
+
+            $added[] = $remoteId;
+            $count++;
+        }
+    });
+
+    return ['count' => $count, 'added_remote_ids' => $added];
+}
+
+
+    private function calcFinalPrice(float $cost, int $profitType, float $profitValue): float
+{
+    // profitType: 1 = fixed, 2 = percent
+    $price = ($profitType === 2) ? ($cost + ($cost * $profitValue / 100)) : ($cost + $profitValue);
+    if (!is_finite($price) || $price < 0) $price = 0;
+    return (float)$price;
+}
+
+private function normalizeGroupPrices($raw): array
+{
+    if (!is_array($raw)) return [];
+
+    $out = [];
+    foreach ($raw as $row) {
+        if (!is_array($row)) continue;
+
+        $gid = (int)($row['group_id'] ?? 0);
+        if ($gid <= 0) continue;
+
+        $out[] = [
+            'group_id' => $gid,
+            'auto_price' => !empty($row['auto_price']) ? 1 : 0,
+            'price' => (float)($row['price'] ?? 0),
+            'discount' => (float)($row['discount'] ?? 0),
+            'discount_type' => ((int)($row['discount_type'] ?? 1) === 2) ? 2 : 1,
+        ];
+    }
+
+    return $out;
+}
+
+private function saveGroupPricesForService(string $kind, int $serviceId, array $groupPrices, float $finalServicePrice): void
+{
+    // نفس values المستخدمة في BaseServiceController (service_type = imei/server/file)
+    foreach ($groupPrices as $row) {
+        $groupId = (int)($row['group_id'] ?? 0);
+        if ($groupId <= 0) continue;
+
+        $auto = !empty($row['auto_price']) ? 1 : 0;
+        $price = $auto ? $finalServicePrice : (float)($row['price'] ?? 0);
+        if (!is_finite($price) || $price < 0) $price = 0;
+
+        $discount = (float)($row['discount'] ?? 0);
+        if (!is_finite($discount) || $discount < 0) $discount = 0;
+
+        $dtype = ((int)($row['discount_type'] ?? 1) === 2) ? 2 : 1;
+
+        ServiceGroupPrice::updateOrCreate(
+            [
+                'service_id' => $serviceId,
+                'service_type' => $kind,
+                'group_id' => $groupId,
+            ],
+            [
+                'price' => $price,
+                'discount' => $discount,
+                'discount_type' => $dtype,
+            ]
+        );
+    }
+}
+
+
 
     private function serviceGroupType(string $kind): string
     {
