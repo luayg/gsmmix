@@ -302,15 +302,23 @@
       const time = clean(s.time ?? s.delivery_time);
       const creditNum = Number(s.credit ?? s.price ?? s.cost ?? 0);
       const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
+
       const af = (s.additional_fields ?? s.fields ?? []);
       const afJson = JSON.stringify(Array.isArray(af) ? af : []);
+
+      // ✅ NEW: allow extensions (File services)
+      // ندعم ALLOW_EXTENSION (كما في الـ docs) + allow_extension + allowed_extensions
+      const allowExt = clean(s.ALLOW_EXTENSION ?? s.allow_extension ?? s.allowed_extensions ?? '');
+
       const timeTxt = time ? ` — ${time}` : '';
       const ridTxt  = rid ? ` (#${rid})` : '';
+
       return `<option value="${rid}"
         data-name="${escAttr(name)}"
         data-credit="${creditTxt}"
         data-time="${escAttr(time)}"
         data-additional-fields="${escAttr(afJson)}"
+        data-allow-extensions="${escAttr(allowExt)}"
       >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
     }).join('');
   }
@@ -349,7 +357,7 @@
     if (typeVal) ensureHidden('type', typeVal);
   }
 
-  // ✅ NEW: resolve correct hooks by service type (imei/server/file) مع fallback للـ server hooks
+  // ✅ resolve correct hooks by service type (imei/server/file) مع fallback للـ server hooks
   function resolveHooks(serviceType){
     const t = String(serviceType || '').toLowerCase().trim();
     const apply = window[`__${t}ServiceApplyRemoteFields__`] || window.__serverServiceApplyRemoteFields__ || null;
@@ -498,6 +506,23 @@
         const mf = guessMainFieldFromRemoteFields(af);
         hooks.setMain?.(body, mf.type, mf.label);
         openGeneralTab();
+      }
+
+      // ✅ NEW: File allow extensions
+      // لو النوع file و opt فيه allow extensions نعبّيها في الواجهة + params
+      const exts = clean(opt.dataset.allowExtensions || opt.getAttribute('data-allow-extensions') || '');
+      if (exts) {
+        // يشتغل إذا موجود في file/_modal_create.blade.php
+        window.__fileServiceSetAllowedExtensions__?.(body, exts);
+
+        // fallback بسيط لو ما في هوك
+        const extBox = body.querySelector('#allowedExtensionsPreview');
+        if (extBox && !extBox.value) extBox.value = exts;
+      } else {
+        // لو ما فيه extensions نظف الحقل (اختياري)
+        const extBox = body.querySelector('#allowedExtensionsPreview');
+        if (extBox) extBox.value = '';
+        window.__fileServiceSetAllowedExtensions__?.(body, '');
       }
     });
 

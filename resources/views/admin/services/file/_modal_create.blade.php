@@ -10,7 +10,7 @@
   {{-- MAIN FIELD JSON --}}
   <input type="hidden" name="main_field" id="mainFieldHidden" value="">
 
-  {{-- PARAMS JSON (we store custom_fields + file extensions here) --}}
+  {{-- PARAMS JSON (custom_fields + allowed_extensions) --}}
   <input type="hidden" name="params" id="paramsHidden" value="{}">
 
   {{-- Required by backend validation --}}
@@ -58,7 +58,7 @@
               </select>
             </div>
 
-            {{-- ✅ File: main field type visible (like IMEI) --}}
+            {{-- ✅ File: main field type visible (مثل IMEI) --}}
             <div class="col-md-6">
               <label class="form-label mb-1">Main field type</label>
               <select name="main_field_type" class="form-select" id="mainFieldType">
@@ -111,10 +111,14 @@
               </div>
             </div>
 
-            {{-- ✅ File extensions (from API) --}}
+            {{-- ✅ Allowed extensions (API) --}}
             <div class="col-12">
               <label class="form-label mb-1">Allowed extensions (API)</label>
-              <input type="text" class="form-control" id="allowedExtensionsPreview" placeholder="jpeg,pdf,zip..." readonly>
+              <input type="text"
+                     class="form-control"
+                     id="allowedExtensionsPreview"
+                     placeholder="jpeg,txt,pdf,csv,xlsx"
+                     readonly>
               <small class="text-muted">سيتم تعبئتها تلقائياً عند اختيار خدمة من الـ API (إن كانت متوفرة).</small>
             </div>
 
@@ -343,7 +347,7 @@
   const nameInput = form.querySelector('#nameInput');
   const nameEn    = form.querySelector('#nameEnHidden');
 
-  const mainTypeHidden = form.querySelector('#mainTypeHidden'); // constant "file"
+  const mainTypeHidden = form.querySelector('#mainTypeHidden'); // ثابت = file
   const mainFieldType  = form.querySelector('#mainFieldType');
   const mainFieldLabel = form.querySelector('#mainFieldLabel');
   const allowedChars   = form.querySelector('#allowedChars');
@@ -355,18 +359,25 @@
   const slugify = (s) => String(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 
   // ✅ Presets (مثل IMEI) + خيار IMEI/Serial
+  // ملاحظة: key يكون lower-case دائماً
   const presets = {
-    serial:     { label:'Serial',     allowed:'any',          min:1,  max:50 },
-    imei:       { label:'IMEI',       allowed:'numbers',      min:15, max:15 },
-    imeiserial: { label:'IMEI/Serial',allowed:'any',          min:10, max:15 },
-    number:     { label:'Number',     allowed:'numbers',      min:1,  max:255 },
-    email:      { label:'Email',      allowed:'any',          min:3,  max:255 },
-    text:       { label:'Text',       allowed:'any',          min:1,  max:255 },
-    custom:     { label:'Custom',     allowed:'alphanumeric', min:1,  max:255 },
+    serial:     { label:'Serial',      allowed:'any',          min:1,  max:50 },
+    imei:       { label:'IMEI',        allowed:'numbers',      min:15, max:15 },
+    imeiserial: { label:'IMEI/Serial', allowed:'any',          min:10, max:15 },
+    number:     { label:'Number',      allowed:'numbers',      min:1,  max:255 },
+    email:      { label:'Email',       allowed:'any',          min:3,  max:255 },
+    text:       { label:'Text',        allowed:'any',          min:1,  max:255 },
+    custom:     { label:'Custom',      allowed:'alphanumeric', min:1,  max:255 },
   };
 
+  function normalizePresetKey(v){
+    const raw = String(v||'').trim();
+    // IMEISerial => imeiserial
+    return raw.toLowerCase();
+  }
+
   function applyPreset(v){
-    const key = String(v||'').toLowerCase();
+    const key = normalizePresetKey(v);
     const p = presets[key] || null;
     if(!p) return;
 
@@ -413,9 +424,10 @@
 
     params.custom_fields = Array.isArray(custom) ? custom : [];
 
-    // keep allowed extensions inside params (if exists)
+    // ✅ allowed extensions (من API)
     const ext = (allowedExtPreview?.value || '').trim();
-    if(ext) params.allowed_extensions = ext;
+    if (ext) params.allowed_extensions = ext;
+    else delete params.allowed_extensions;
 
     paramsHidden.value = JSON.stringify(params);
   }
@@ -500,8 +512,9 @@
     }
 
     wrap.appendChild(node);
-    const last = wrap.querySelectorAll('[data-field]')[wrap.querySelectorAll('[data-field]').length - 1];
-    bindCard(last);
+    const cards = wrap.querySelectorAll('[data-field]');
+    const last = cards[cards.length - 1];
+    if(last) bindCard(last);
     serializeFieldsInScope(form);
   }
 
@@ -548,6 +561,10 @@
   syncMainFieldHidden();
   syncParamsHidden();
 
+  // allowed extensions (لو تم تغييرها من hook)
+  allowedExtPreview?.addEventListener('input', syncParamsHidden);
+  allowedExtPreview?.addEventListener('change', syncParamsHidden);
+
   btnAdd?.addEventListener('click', () => addField(form));
 
   // ===== Hooks for service-modal.blade.php (dynamic) =====
@@ -589,23 +606,26 @@
     try{
       if (!scope) return;
 
-      const t = String(type || '').trim();
+      const tRaw = String(type || '').trim();
+      const tKey = tRaw.toLowerCase(); // IMEISerial => imeiserial
       const l = String(label || '').trim();
 
       const typeSel = scope.querySelector('#mainFieldType');
       const labInp  = scope.querySelector('#mainFieldLabel');
 
-      // support IMEISerial exact key
-      let normalized = String(t).toLowerCase();
-      if (t === 'IMEISerial') normalized = 'IMEISerial'.toLowerCase();
-
       if (typeSel) {
-        const exists = Array.from(typeSel.options).some(o => String(o.value) === t || String(o.value).toLowerCase() === normalized);
-        if (exists) {
-          // prefer exact match if available
-          const exactOpt = Array.from(typeSel.options).find(o => String(o.value) === t);
-          typeSel.value = exactOpt ? t : Array.from(typeSel.options).find(o => String(o.value).toLowerCase() === normalized)?.value;
+        // حاول تطابق exact أولاً
+        const exact = Array.from(typeSel.options).find(o => String(o.value) === tRaw);
+        if (exact) {
+          typeSel.value = tRaw;
           typeSel.dispatchEvent(new Event('change'));
+        } else {
+          // ثم تطابق lower-case
+          const lower = Array.from(typeSel.options).find(o => String(o.value).toLowerCase() === tKey);
+          if (lower) {
+            typeSel.value = lower.value;
+            typeSel.dispatchEvent(new Event('change'));
+          }
         }
       }
 
@@ -618,21 +638,15 @@
     }
   };
 
-  // ✅ allow extensions helper (لو كانت موجودة بالـ dataset أو تم تمريرها)
   window.__fileServiceSetAllowedExtensions__ = function(scope, exts){
     try{
       if (!scope) return;
+
       const box = scope.querySelector('#allowedExtensionsPreview');
       if (!box) return;
+
       box.value = String(exts || '').trim();
-      // update params
-      const paramsHidden = scope.querySelector('#paramsHidden');
-      if(paramsHidden){
-        let params = {};
-        try { params = JSON.parse(paramsHidden.value || '{}') || {}; } catch(e){ params = {}; }
-        if (box.value) params.allowed_extensions = box.value;
-        paramsHidden.value = JSON.stringify(params);
-      }
+      syncParamsHidden();
     }catch(e){
       console.warn('file setAllowedExtensions failed', e);
     }
