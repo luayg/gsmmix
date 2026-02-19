@@ -318,7 +318,7 @@
         data-credit="${creditTxt}"
         data-time="${escAttr(time)}"
         data-additional-fields="${escAttr(afJson)}"
-        data-allow-extension="${escAttr(allowExt)}"
+        data-allow-extensions="${escAttr(allowExt)}"
       >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
     }).join('');
   }
@@ -484,6 +484,18 @@
     apiServiceSel?.addEventListener('change', ()=>{
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
+
+            // ✅ File: apply allowed extensions if provided
+      const st = String(cloneData.serviceType || '').toLowerCase();
+      if (st === 'file') {
+        const exts = clean(opt.dataset.allowExtensions || opt.getAttribute('data-allow-extensions') || '');
+        if (typeof window.__fileServiceSetAllowedExtensions__ === 'function') {
+          window.__fileServiceSetAllowedExtensions__(body, exts);
+        }
+      }
+
+
+
 
       body.querySelector('[name="supplier_id"]').value = apiProviderSel.value;
       body.querySelector('[name="remote_id"]').value   = opt.value;

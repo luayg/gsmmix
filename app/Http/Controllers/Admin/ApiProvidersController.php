@@ -223,13 +223,17 @@ public function servicesFile(Request $request, ApiProvider $provider)
         $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
 
         return [
-            'GROUPNAME' => (string)($s->group_name ?? ''),
-            'REMOTEID'  => (string)($s->remote_id ?? ''),
-            'NAME'      => (string)($s->name ?? ''),
-            'CREDIT'    => (float)($s->price ?? 0),
-            'TIME'      => (string)($s->time ?? ''),
-            'ADDITIONAL_FIELDS' => $afOut,
-        ];
+    'GROUPNAME' => (string)($s->group_name ?? ''),
+    'REMOTEID'  => (string)($s->remote_id ?? ''),
+    'NAME'      => (string)($s->name ?? ''),
+    'CREDIT'    => (float)($s->price ?? 0),
+    'TIME'      => (string)($s->time ?? ''),
+    'ADDITIONAL_FIELDS' => $afOut,
+
+    // ✅ NEW: file extensions from API (ALLOW_EXTENSION)
+    'ALLOW_EXTENSION' => (string)($s->allow_extension ?? $s->allow_extensions ?? ''),
+];
+
     })->values()->all();
 
     return view('admin.api.providers.modals.services', [
@@ -243,53 +247,62 @@ public function servicesFile(Request $request, ApiProvider $provider)
      * IMPORT endpoint
      */
     public function importServices(Request $request, ApiProvider $provider)
-    {
-        $kind = strtolower((string)$request->input('kind', ''));
-        if (!in_array($kind, ['imei', 'server', 'file'], true)) {
-            return response()->json(['ok' => false, 'msg' => 'Invalid kind'], 422);
-        }
+{
+    $kind = strtolower((string)$request->input('kind', ''));
+    if (!in_array($kind, ['imei', 'server', 'file'], true)) {
+        return response()->json(['ok' => false, 'msg' => 'Invalid kind'], 422);
+    }
 
-        $applyAll = (bool)$request->boolean('apply_all', false);
+    $applyAll = (bool)$request->boolean('apply_all', false);
 
-        $ids = $request->input('service_ids', null);
-        if ($ids === null) $ids = $request->input('imported', null);
+    $ids = $request->input('service_ids', null);
+    if ($ids === null) $ids = $request->input('imported', null);
 
-        if (is_string($ids)) $ids = array_filter(array_map('trim', explode(',', $ids)));
+    if (is_string($ids)) $ids = array_filter(array_map('trim', explode(',', $ids)));
 
-        if (!$applyAll) {
-            if (!is_array($ids) || count($ids) === 0) {
-                return response()->json(['ok' => false, 'msg' => 'service_ids is required'], 422);
-            }
-        }
-
-        $groupPrices = $request->input('group_prices', []);
-if (is_string($groupPrices) && trim($groupPrices) !== '') {
-    $decoded = json_decode($groupPrices, true);
-    if (is_array($decoded)) $groupPrices = $decoded;
-}
-
-$result = $this->doBulkImport($provider, $kind, $applyAll, $ids ?: [], $mode, $value, is_array($groupPrices) ? $groupPrices : []);
-
-
-
-        $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
-        $mode  = strtolower(trim($mode));
-        if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
-
-        $value = (float)($request->input('profit_value') ?? $request->input('pricing_value') ?? 0);
-
-        try {
-            $result = $this->doBulkImport($provider, $kind, $applyAll, $ids ?: [], $mode, $value);
-
-            return response()->json([
-                'ok' => true,
-                'count' => $result['count'],
-                'added_remote_ids' => $result['added_remote_ids'],
-            ]);
-        } catch (\Throwable $e) {
-            return response()->json(['ok' => false, 'msg' => $e->getMessage()], 500);
+    if (!$applyAll) {
+        if (!is_array($ids) || count($ids) === 0) {
+            return response()->json(['ok' => false, 'msg' => 'service_ids is required'], 422);
         }
     }
+
+    // ✅ pricing mode/value (لازم قبل أي استدعاء)
+    $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
+    $mode  = strtolower(trim($mode));
+    if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
+
+    $value = (float)($request->input('profit_value') ?? $request->input('pricing_value') ?? 0);
+
+    // ✅ group_prices (قد يصل JSON string)
+    $groupPrices = $request->input('group_prices', []);
+    if (is_string($groupPrices) && trim($groupPrices) !== '') {
+        $decoded = json_decode($groupPrices, true);
+        if (is_array($decoded)) $groupPrices = $decoded;
+    }
+    if (!is_array($groupPrices)) $groupPrices = [];
+
+    try {
+        // ✅ استدعاء واحد صحيح + تمرير group_prices
+        $result = $this->doBulkImport(
+            $provider,
+            $kind,
+            $applyAll,
+            $ids ?: [],
+            $mode,
+            $value,
+            $groupPrices
+        );
+
+        return response()->json([
+            'ok' => true,
+            'count' => $result['count'],
+            'added_remote_ids' => $result['added_remote_ids'],
+        ]);
+    } catch (\Throwable $e) {
+        return response()->json(['ok' => false, 'msg' => $e->getMessage()], 500);
+    }
+}
+
 
     public function importServicesWizard(Request $request, ApiProvider $provider)
     {
