@@ -297,28 +297,28 @@
     if(!Array.isArray(rows) || rows.length === 0){ sel.innerHTML = `<option value="">No services found</option>`; return; }
 
     sel.innerHTML = `<option value="">Select service...</option>` + rows.map(s=>{
-      const rid  = clean(s.remote_id ?? s.id ?? s.service_id);
-      const name = clean(s.name);
-      const time = clean(s.time ?? s.delivery_time);
-      const creditNum = Number(s.credit ?? s.price ?? s.cost ?? 0);
+      const rid  = clean(s.remote_id ?? s.id ?? s.service_id ?? s.SERVICEID);
+      const name = clean(s.name ?? s.SERVICENAME);
+      const time = clean(s.time ?? s.delivery_time ?? s.TIME);
+      const creditNum = Number(s.credit ?? s.price ?? s.cost ?? s.CREDIT ?? 0);
       const creditTxt = Number.isFinite(creditNum) ? creditNum.toFixed(4) : '0.0000';
 
-      const af = (s.additional_fields ?? s.fields ?? []);
+      const af = (s.additional_fields ?? s.fields ?? s.ADDITIONAL_FIELDS ?? []);
       const afJson = JSON.stringify(Array.isArray(af) ? af : []);
 
-      // ✅ NEW: allow extensions (File services)
-      // ندعم ALLOW_EXTENSION (كما في الـ docs) + allow_extension + allowed_extensions
-      const allowExt = clean(s.ALLOW_EXTENSION ?? s.allow_extension ?? s.allowed_extensions ?? '');
+      // ✅ NEW: allow extensions for file services
+      const allowExt = clean(
+        s.allow_extension ?? s.allow_extensions ?? s.ALLOW_EXTENSION ?? s.extensions ?? s.EXTENSIONS ?? ''
+      );
 
       const timeTxt = time ? ` — ${time}` : '';
       const ridTxt  = rid ? ` (#${rid})` : '';
-
       return `<option value="${rid}"
         data-name="${escAttr(name)}"
         data-credit="${creditTxt}"
         data-time="${escAttr(time)}"
         data-additional-fields="${escAttr(afJson)}"
-        data-allow-extensions="${escAttr(allowExt)}"
+        data-allow-extension="${escAttr(allowExt)}"
       >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
     }).join('');
   }
@@ -357,12 +357,13 @@
     if (typeVal) ensureHidden('type', typeVal);
   }
 
-  // ✅ resolve correct hooks by service type (imei/server/file) مع fallback للـ server hooks
+  // ✅ NEW: resolve correct hooks by service type (imei/server/file) + file extensions hook
   function resolveHooks(serviceType){
     const t = String(serviceType || '').toLowerCase().trim();
-    const apply = window[`__${t}ServiceApplyRemoteFields__`] || window.__serverServiceApplyRemoteFields__ || null;
-    const setMain = window[`__${t}ServiceSetMainField__`] || window.__serverServiceSetMainField__ || null;
-    return { apply, setMain };
+    const apply  = window[`__${t}ServiceApplyRemoteFields__`] || window.__serverServiceApplyRemoteFields__ || null;
+    const setMain= window[`__${t}ServiceSetMainField__`]      || window.__serverServiceSetMainField__      || null;
+    const setExt = window[`__${t}ServiceSetAllowedExtensions__`] || null; // file only typically
+    return { apply, setMain, setExt };
   }
 
   document.addEventListener('click', async (e)=>{
@@ -408,7 +409,7 @@
       serviceType: (btn.dataset.serviceType || 'imei').toLowerCase()
     };
 
-    // ✅ resolve hooks now (so IMEI uses __imeiServiceApplyRemoteFields__)
+    // ✅ resolve hooks now (so IMEI uses __imei..., FILE uses __file...)
     const hooks = resolveHooks(cloneData.serviceType);
 
     const afFromBtn = parseJsonAttr(btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || '');
@@ -499,6 +500,10 @@
         priceHelper.setCost(credit);
       }
 
+      // ✅ NEW: FILE only -> fill allowed extensions preview + store it in params via file modal hook
+      const allowExt = clean(opt.dataset.allowExtension || opt.getAttribute('data-allow-extension') || '');
+      hooks.setExt?.(body, allowExt);
+
       // ✅ use hooks for correct service type (imei/server/file)
       const af = parseJsonAttr(opt.dataset.additionalFields || opt.getAttribute('data-additional-fields') || '');
       if (Array.isArray(af) && af.length) {
@@ -506,23 +511,6 @@
         const mf = guessMainFieldFromRemoteFields(af);
         hooks.setMain?.(body, mf.type, mf.label);
         openGeneralTab();
-      }
-
-      // ✅ NEW: File allow extensions
-      // لو النوع file و opt فيه allow extensions نعبّيها في الواجهة + params
-      const exts = clean(opt.dataset.allowExtensions || opt.getAttribute('data-allow-extensions') || '');
-      if (exts) {
-        // يشتغل إذا موجود في file/_modal_create.blade.php
-        window.__fileServiceSetAllowedExtensions__?.(body, exts);
-
-        // fallback بسيط لو ما في هوك
-        const extBox = body.querySelector('#allowedExtensionsPreview');
-        if (extBox && !extBox.value) extBox.value = exts;
-      } else {
-        // لو ما فيه extensions نظف الحقل (اختياري)
-        const extBox = body.querySelector('#allowedExtensionsPreview');
-        if (extBox) extBox.value = '';
-        window.__fileServiceSetAllowedExtensions__?.(body, '');
       }
     });
 
