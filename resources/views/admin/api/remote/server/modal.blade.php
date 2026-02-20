@@ -1,23 +1,20 @@
 {{-- resources/views/admin/api/remote/server/modal.blade.php --}}
 @php
-  // $provider: ApiProvider
-  // $groups: Collection grouped by group_name
-  // $existing: array flip remote_id => true (to disable clone)
-
-  // ✅ حماية: لا تسمح بكسر المودال لو لم تُمرّر $groups
-  if (!isset($groups) || !($groups instanceof \Illuminate\Support\Collection)) {
-    $groups = collect();
-  }
-  if (!isset($existing) || !is_array($existing)) {
-    $existing = [];
-  }
+  if (!isset($groups) || !($groups instanceof \Illuminate\Support\Collection)) $groups = collect();
+  if (!isset($existing) || !is_array($existing)) $existing = [];
 @endphp
+
+<style>
+  .wiz-groups-box{border:1px solid #eee;border-radius:.5rem;padding:.75rem;background:#fafafa}
+  .wiz-pricing-row{border-bottom:1px solid #eee;padding:.6rem 0}
+  .wiz-pricing-row:last-child{border-bottom:0}
+  .wiz-pricing-title{font-weight:600;margin-bottom:.35rem}
+  .wiz-pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+</style>
 
 <div class="modal-header align-items-center" style="background:#111;color:#fff;">
   <div>
-    <div class="h6 mb-0">
-      {{ $provider->name }} | SERVER remote services
-    </div>
+    <div class="h6 mb-0">{{ $provider->name }} | SERVER remote services</div>
     <div class="small opacity-75">Clone services (with additional fields)</div>
   </div>
 
@@ -155,6 +152,20 @@
           </div>
         </div>
 
+        {{-- ✅ Groups Pricing --}}
+        <div class="wiz-groups-box mb-3">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="fw-semibold">Groups Pricing</div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="wizGroupsResetAll">Reset</button>
+          </div>
+          <div class="small text-muted mt-1">
+            سيتم تطبيق إعدادات الجروبات على <b>كل الخدمات</b> التي تستوردها الآن.
+            <br>
+            <b>Auto price</b> = يأخذ سعر الخدمة النهائي (Cost + Profit) لكل خدمة تلقائيًا، ثم يطبق الخصم لكل Group.
+          </div>
+          <div id="wizGroupsWrap" class="mt-2"></div>
+        </div>
+
         <div class="table-responsive border rounded">
           <table class="table table-sm table-striped mb-0 align-middle" id="wizTable">
             <thead>
@@ -184,7 +195,6 @@
                       data-remote="{{ strtolower($rid) }}">
                     <td>
                       @if($isAdded)
-                        {{-- ✅ لا نُظهر checkbox للخدمة المضافة --}}
                         <span class="badge bg-success">Added</span>
                       @else
                         <input type="checkbox" class="wiz-check" value="{{ $rid }}">
@@ -212,12 +222,15 @@
   @include('admin.services.server._modal_create')
 </template>
 
+{{-- Global modal + JS --}}
+@include('admin.partials.service-modal')
+
 <script>
 (function(){
   const kind = 'server';
   const providerId = @json($provider->id);
 
-  // ===================== Search in remote table =====================
+  // Search in remote table
   const svcSearch = document.getElementById('svcSearch');
   svcSearch?.addEventListener('input', () => {
     const q = (svcSearch.value || '').trim().toLowerCase();
@@ -230,12 +243,11 @@
     });
   });
 
-  // ===================== Import wizard open =====================
+  // Import wizard open
   const btnOpen = document.getElementById('btnOpenImportWizard');
   const wizardEl = document.getElementById('importWizard');
   const wizard = wizardEl ? bootstrap.Modal.getOrCreateInstance(wizardEl) : null;
 
-  // ===================== Wizard helpers =====================
   const wizSearch = document.getElementById('wizSearch');
   const wizChecks = () => Array.from(document.querySelectorAll('.wiz-check'));
   const wizSelected = () => wizChecks().filter(x => x.checked && !x.disabled).map(x => x.value);
@@ -251,7 +263,6 @@
       const rid = String(id || '').trim();
       if(!rid) return;
 
-      // زر clone في الجدول الخلفي
       const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(rid)}"]`);
       if(row){
         const btn = row.querySelector('.clone-btn');
@@ -264,12 +275,10 @@
         }
       }
 
-      // checkbox في الـ wizard (إذا كانت غير مضافة من السيرفر أصلاً)
       document.querySelectorAll('.wiz-check').forEach(cb => {
         if(String(cb.value) === rid){
           cb.checked = false;
           cb.disabled = true;
-          // اخفاءه بالكامل حسب طلبك
           cb.closest('td') && (cb.closest('td').innerHTML = '<span class="badge bg-success">Added</span>');
         }
       });
@@ -278,9 +287,6 @@
     updateCount();
   }
 
-  // ==========================================================
-  // ✅ NEW: تطبيق "الذاكرة" قبل الفتح (Clone ثم Import مباشرة)
-  // ==========================================================
   function applyAddedFromMemory(){
     const mem = window.__gsmmixAdded || {};
     const prefix = `${String(providerId)}:${String(kind)}:`;
@@ -292,17 +298,18 @@
     if (ids.length) markAsAdded(ids);
   }
 
-  btnOpen?.addEventListener('click', (e) => {
+  btnOpen?.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
-    applyAddedFromMemory(); // ✅ قبل الفتح
+    applyAddedFromMemory();
+    await initWizardGroups();
     wizard?.show();
     updateCount();
   });
 
   wizardEl?.addEventListener('shown.bs.modal', () => {
-    applyAddedFromMemory(); // ✅ احتياط
+    applyAddedFromMemory();
     updateCount();
   });
 
@@ -331,7 +338,134 @@
     if (e.target && e.target.classList && e.target.classList.contains('wiz-check')) updateCount();
   });
 
-  // ===================== Import submit =====================
+  // ===== Groups pricing (same as other modals) =====
+  const groupsUrl = @json(route('admin.groups.options'));
+  let __wizGroupsLoaded = false;
+
+  async function loadUserGroups(){
+    const res = await fetch(groupsUrl, { headers:{'X-Requested-With':'XMLHttpRequest'} });
+    const rows = await res.json().catch(()=>[]);
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  function escapeHtml(s){
+    const str = String(s ?? '');
+    return str.replace(/[&<>"']/g, (m) => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+    }[m]));
+  }
+
+  function buildGroupsUI(groups){
+    const wrap = document.getElementById('wizGroupsWrap');
+    if(!wrap) return;
+
+    wrap.innerHTML = '';
+    groups.forEach(g=>{
+      const row = document.createElement('div');
+      row.className = 'wiz-pricing-row';
+      row.dataset.groupId = g.id;
+
+      row.innerHTML = `
+        <div class="wiz-pricing-title">${escapeHtml(g.name || ('Group #' + g.id))}</div>
+
+        <div class="wiz-pricing-inputs">
+          <div>
+            <label class="form-label mb-1">Price</label>
+            <div class="input-group">
+              <input type="number" step="0.0001" class="form-control"
+                     data-price value="0.0000" disabled>
+              <span class="input-group-text">Credits</span>
+            </div>
+
+            <div class="form-check mt-1">
+              <input class="form-check-input" type="checkbox" data-auto-price checked>
+              <label class="form-check-label small">Auto price (service final price)</label>
+            </div>
+          </div>
+
+          <div>
+            <label class="form-label mb-1">Discount</label>
+            <div class="input-group">
+              <input type="number" step="0.0001" class="form-control" data-discount value="0.0000">
+              <select class="form-select" style="max-width:120px" data-discount-type>
+                <option value="1" selected>Credits</option>
+                <option value="2">Percent</option>
+              </select>
+              <button type="button" class="btn btn-light" data-reset>Reset</button>
+            </div>
+          </div>
+        </div>
+      `;
+
+      const autoCb = row.querySelector('[data-auto-price]');
+      const price  = row.querySelector('[data-price]');
+      const reset  = row.querySelector('[data-reset]');
+
+      const syncPriceState = () => {
+        const isAuto = !!autoCb?.checked;
+        if(price){
+          price.disabled = isAuto;
+          if(isAuto) price.value = "0.0000";
+        }
+      };
+
+      autoCb?.addEventListener('change', syncPriceState);
+      reset?.addEventListener('click', ()=>{
+        row.querySelector('[data-discount]').value = "0.0000";
+        row.querySelector('[data-discount-type]').value = "1";
+        autoCb.checked = true;
+        syncPriceState();
+      });
+
+      syncPriceState();
+      wrap.appendChild(row);
+    });
+  }
+
+  function collectGroupPrices(){
+    const wrap = document.getElementById('wizGroupsWrap');
+    if(!wrap) return [];
+
+    const out = [];
+    wrap.querySelectorAll('.wiz-pricing-row').forEach(row=>{
+      const group_id = Number(row.dataset.groupId || 0);
+      if(!group_id) return;
+
+      const auto_price = row.querySelector('[data-auto-price]')?.checked ? 1 : 0;
+      const price = Number(row.querySelector('[data-price]')?.value || 0);
+      const discount = Number(row.querySelector('[data-discount]')?.value || 0);
+      const discount_type = Number(row.querySelector('[data-discount-type]')?.value || 1);
+
+      out.push({
+        group_id,
+        auto_price,
+        price: Number.isFinite(price) ? price : 0,
+        discount: Number.isFinite(discount) ? discount : 0,
+        discount_type: (discount_type === 2 ? 2 : 1),
+      });
+    });
+
+    return out;
+  }
+
+  async function initWizardGroups(){
+    if(__wizGroupsLoaded) return;
+    const groups = await loadUserGroups();
+    buildGroupsUI(groups);
+    __wizGroupsLoaded = true;
+
+    document.getElementById('wizGroupsResetAll')?.addEventListener('click', ()=>{
+      document.querySelectorAll('#wizGroupsWrap .wiz-pricing-row').forEach(row=>{
+        row.querySelector('[data-discount]').value = "0.0000";
+        row.querySelector('[data-discount-type]').value = "1";
+        row.querySelector('[data-auto-price]').checked = true;
+        row.querySelector('[data-price]').value = "0.0000";
+        row.querySelector('[data-price]').disabled = true;
+      });
+    });
+  }
+
+  // Import submit
   const importUrl  = @json(route('admin.apis.services.import_wizard', $provider));
   const csrfToken  = @json(csrf_token());
 
@@ -354,7 +488,6 @@
     return data;
   }
 
-  // ✅ استمع لحدث “تم إنشاء خدمة بالـ Clone”
   window.addEventListener('gsmmix:service-created', (ev) => {
     const d = ev?.detail || {};
     if (String(d.provider_id) !== String(providerId)) return;
@@ -375,12 +508,15 @@
     const pricing_mode  = document.getElementById('wizPricingMode')?.value || 'percent';
     const pricing_value = document.getElementById('wizPricingValue')?.value || 0;
 
+    const group_prices = collectGroupPrices();
+
     const data = await sendImport({
       kind: 'server',
       apply_all: false,
       service_ids: ids,
       pricing_mode,
-      pricing_value
+      pricing_value,
+      group_prices
     });
 
     if(data?.ok){
@@ -400,12 +536,15 @@
     const pricing_mode  = document.getElementById('wizPricingMode')?.value || 'percent';
     const pricing_value = document.getElementById('wizPricingValue')?.value || 0;
 
+    const group_prices = collectGroupPrices();
+
     const data = await sendImport({
       kind: 'server',
       apply_all: true,
       service_ids: [],
       pricing_mode,
-      pricing_value
+      pricing_value,
+      group_prices
     });
 
     if(data?.ok){
@@ -419,8 +558,6 @@
     }
   });
 
-  // ✅ تطبيق مبكر عند تحميل الملف
   applyAddedFromMemory();
-
 })();
 </script>

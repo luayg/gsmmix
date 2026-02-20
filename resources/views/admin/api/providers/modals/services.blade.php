@@ -66,11 +66,8 @@
             $credit= (float)($s['CREDIT'] ?? 0);
             $time  = (string)($s['TIME'] ?? '');
             $isAdded = isset($existing[$rid]);
-          @endphp
 
-          @php
             $af = $s['ADDITIONAL_FIELDS'] ?? $s['additional_fields'] ?? null;
-            // لو جايك كـ array
             $afJson = is_array($af) ? json_encode($af, JSON_UNESCAPED_UNICODE) : (string)$af;
           @endphp
 
@@ -163,7 +160,7 @@
           </div>
         </div>
 
-        {{-- ✅ NEW: Group pricing (مثل clone) --}}
+        {{-- ✅ Groups Pricing --}}
         <div class="wiz-groups-box mb-3">
           <div class="d-flex align-items-center justify-content-between">
             <div class="fw-semibold">Groups Pricing</div>
@@ -230,6 +227,14 @@
   </div>
 </div>
 
+{{-- ✅ REQUIRED: Template for Clone modal --}}
+<template id="serviceCreateTpl">
+  @include('admin.services.' . $kind . '._modal_create')
+</template>
+
+{{-- ✅ REQUIRED: Global Create Service Modal + JS --}}
+@include('admin.partials.service-modal')
+
 <script>
 (function(){
   const providerId = @json($provider->id);
@@ -269,7 +274,6 @@
       const rid = String(id || '').trim();
       if(!rid) return;
 
-      // زر clone في الجدول الخلفي
       const row = document.querySelector(`#svcTable tr[data-remote-id="${CSS.escape(rid)}"]`);
       if(row){
         const btn = row.querySelector('.clone-btn');
@@ -282,7 +286,6 @@
         }
       }
 
-      // checkbox في الـ wizard
       document.querySelectorAll('.wiz-check').forEach(cb => {
         if(String(cb.value) === rid){
           cb.checked = false;
@@ -295,9 +298,6 @@
     updateCount();
   }
 
-  // ==========================================================
-  // ✅ NEW: تطبيق "الذاكرة" قبل الفتح (Clone ثم Import مباشرة)
-  // ==========================================================
   function applyAddedFromMemory(){
     const mem = window.__gsmmixAdded || {};
     const prefix = `${String(providerId)}:${String(kind)}:`;
@@ -314,7 +314,7 @@
     e.stopPropagation();
 
     applyAddedFromMemory();
-    await initWizardGroups(); // ✅ تحميل الجروبات قبل العرض
+    await initWizardGroups();
     wizard?.show();
     updateCount();
   });
@@ -349,7 +349,7 @@
     if (e.target && e.target.classList && e.target.classList.contains('wiz-check')) updateCount();
   });
 
-  // ===================== ✅ Group pricing (NEW) =====================
+  // ===================== ✅ Group pricing =====================
   const groupsUrl = @json(route('admin.groups.options'));
   let __wizGroupsLoaded = false;
 
@@ -357,6 +357,13 @@
     const res = await fetch(groupsUrl, { headers:{'X-Requested-With':'XMLHttpRequest'} });
     const rows = await res.json().catch(()=>[]);
     return Array.isArray(rows) ? rows : [];
+  }
+
+  function escapeHtml(s){
+    const str = String(s ?? '');
+    return str.replace(/[&<>"']/g, (m) => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
+    }[m]));
   }
 
   function buildGroupsUI(groups){
@@ -469,13 +476,6 @@
     });
   }
 
-  function escapeHtml(s){
-    const str = String(s ?? '');
-    return str.replace(/[&<>"']/g, (m) => ({
-      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'
-    }[m]));
-  }
-
   // ===================== Import submit =====================
   const importUrl  = @json(route('admin.apis.services.import_wizard', $provider));
   const csrfToken  = @json(csrf_token());
@@ -570,5 +570,6 @@
     }
   });
 
+  applyAddedFromMemory();
 })();
 </script>

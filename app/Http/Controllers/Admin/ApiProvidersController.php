@@ -257,7 +257,6 @@ public function servicesFile(Request $request, ApiProvider $provider)
 
     $ids = $request->input('service_ids', null);
     if ($ids === null) $ids = $request->input('imported', null);
-
     if (is_string($ids)) $ids = array_filter(array_map('trim', explode(',', $ids)));
 
     if (!$applyAll) {
@@ -266,14 +265,14 @@ public function servicesFile(Request $request, ApiProvider $provider)
         }
     }
 
-    // ✅ pricing mode/value (لازم قبل أي استدعاء)
+    // ✅ pricing mode/value (عرّفهم قبل أي استعمال)
     $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
     $mode  = strtolower(trim($mode));
     if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
 
     $value = (float)($request->input('profit_value') ?? $request->input('pricing_value') ?? 0);
 
-    // ✅ group_prices (قد يصل JSON string)
+    // ✅ group prices (قد تصل array أو JSON string)
     $groupPrices = $request->input('group_prices', []);
     if (is_string($groupPrices) && trim($groupPrices) !== '') {
         $decoded = json_decode($groupPrices, true);
@@ -282,7 +281,6 @@ public function servicesFile(Request $request, ApiProvider $provider)
     if (!is_array($groupPrices)) $groupPrices = [];
 
     try {
-        // ✅ استدعاء واحد صحيح + تمرير group_prices
         $result = $this->doBulkImport(
             $provider,
             $kind,
@@ -302,6 +300,7 @@ public function servicesFile(Request $request, ApiProvider $provider)
         return response()->json(['ok' => false, 'msg' => $e->getMessage()], 500);
     }
 }
+
 
 
     public function importServicesWizard(Request $request, ApiProvider $provider)
