@@ -574,11 +574,33 @@
       }
 
       if(res.ok){
-        const rid = form.querySelector('[name="remote_id"]')?.value;
-        markCloneAsAdded(rid);
-        window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
-        window.showToast?.('success', '✅ Service created successfully', { title: 'Done' });
-        return;
+  const rid = (form.querySelector('[name="remote_id"]')?.value || '').trim();
+
+  // ✅ 1) عطّل زر Clone مباشرة في الجدول الخلفي
+  markCloneAsAdded(rid);
+
+  // ✅ 2) خزّنها في ذاكرة الصفحة (حتى Import Wizard يقرأها فوراً)
+  const providerId = (form.querySelector('[name="supplier_id"]')?.value || '').trim();
+  const kind       = (form.querySelector('[name="type"]')?.value || '').trim().toLowerCase(); // imei/server/file
+
+  if (providerId && kind && rid) {
+    window.__gsmmixAdded = window.__gsmmixAdded || {};
+    window.__gsmmixAdded[`${providerId}:${kind}:${rid}`] = true;
+
+    // ✅ 3) أطلق Event عام لكي Import Wizard يعمل refresh فوري
+    window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
+      detail: {
+        provider_id: providerId,
+        kind: kind,
+        remote_id: rid
+      }
+    }));
+  }
+
+  // ✅ اغلق المودال واشعار
+  window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
+  window.showToast?.('success', '✅ Service created successfully', { title: 'Done' });
+  return;
       }else{
         const t = await res.text();
         alert('Failed to save service\n\n' + t);
