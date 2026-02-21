@@ -142,7 +142,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/admin/services/server/{id}/sync-fields', [\App\Http\Controllers\Admin\Services\ServerServiceController::class, 'syncFields'])
             ->name('admin.services.server.syncFields');
 
-        // ===== IMEI services =====
+                // ===== IMEI services =====
         Route::resource('imei-services', ImeiServiceController::class)->except(['show'])->names('imei');
         Route::get('imei-services/{service}/json',    [ImeiServiceController::class, 'showJson'])->name('imei.show.json');
         Route::post('imei-services/{service}/toggle', [ImeiServiceController::class, 'toggle'])->name('imei.toggle');
@@ -151,13 +151,24 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // ===== Server services =====
         Route::resource('server-services', ServerServiceController::class)->except(['show'])->names('server');
-        Route::get('server-services/{service}/json',    [ServerServiceController::class, 'showJson'])->name('server.show.json');
-        Route::post('server-services/{service}/toggle', [ServerServiceController::class, 'toggle'])->name('server.toggle');
+        Route::get('server-services/{service}/json',     [ServerServiceController::class, 'showJson'])->name('server.show.json');
+        Route::post('server-services/{service}/toggle',  [ServerServiceController::class, 'toggle'])->name('server.toggle');
+        Route::get('server-services/modal/create',       [ServerServiceController::class, 'modalCreate'])->name('server.modal.create');
+        Route::get('server-services/{service}/modal/edit',[ServerServiceController::class, 'modalEdit'])->name('server.modal.edit');
 
         // ===== File services =====
         Route::resource('file-services', FileServiceController::class)->except(['show'])->names('file');
-        Route::get('file-services/{service}/json',    [FileServiceController::class, 'showJson'])->name('file.show.json');
-        Route::post('file-services/{service}/toggle', [FileServiceController::class, 'toggle'])->name('file.toggle');
+        Route::get('file-services/{service}/json',       [FileServiceController::class, 'showJson'])->name('file.show.json');
+        Route::post('file-services/{service}/toggle',    [FileServiceController::class, 'toggle'])->name('file.toggle');
+        Route::get('file-services/modal/create',         [FileServiceController::class, 'modalCreate'])->name('file.modal.create');
+        Route::get('file-services/{service}/modal/edit', [FileServiceController::class, 'modalEdit'])->name('file.modal.edit');
+
+        // ✅ Service Groups Modals
+        Route::get('groups/modal/create', [ServiceGroupController::class, 'modalCreate'])->name('groups.modal.create');
+        Route::get('groups/{group}/modal/edit', [ServiceGroupController::class, 'modalEdit'])->name('groups.modal.edit');
+        Route::get('groups/{group}/modal/delete', [ServiceGroupController::class, 'modalDelete'])->name('groups.modal.delete');
+
+
 
         // ===== Clone from API (يستخدمه service-modal.blade.php لتحميل provider services) =====
         Route::get('clone/modal',             [CloneController::class, 'modal'])->name('clone.modal');

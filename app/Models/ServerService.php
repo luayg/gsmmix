@@ -26,4 +26,6 @@ class ServerService extends Model
     ];
 
     public function group(){ return $this->belongsTo(ServiceGroup::class,'group_id'); }
+
+    
 }

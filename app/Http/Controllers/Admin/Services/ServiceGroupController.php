@@ -106,6 +106,23 @@ class ServiceGroupController extends Controller
         return $c1 + $c2 + $c3;
     }
 
+    public function modalCreate()
+{
+    $group = null;
+    return view('admin.services.groups._modal_form', compact('group'));
+}
+
+public function modalEdit(\App\Models\ServiceGroup $group)
+{
+    return view('admin.services.groups._modal_form', compact('group'));
+}
+
+public function modalDelete(\App\Models\ServiceGroup $group)
+{
+    return view('admin.services.groups._modal_delete', compact('group'));
+}
+
+
     /**
      * ✅ AJAX: إرجاع الخيارات بحسب النوع (imei|server|file)
      * IMPORTANT:

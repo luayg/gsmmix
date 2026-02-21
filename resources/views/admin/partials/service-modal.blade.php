@@ -420,6 +420,170 @@
       openGeneralTab();
     }
 
+      // ==========================
+  // ✅ EDIT SERVICE (open same modal, fill values from JSON)
+  // ==========================
+  document.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('[data-edit-service]');
+    if(!btn) return;
+
+    e.preventDefault();
+
+    const jsonUrl = btn.dataset.jsonUrl;
+    const serviceType = (btn.dataset.serviceType || 'imei').toLowerCase();
+    const serviceId = btn.dataset.serviceId;
+
+    if(!jsonUrl) return alert('Missing json url');
+
+    const res = await fetch(jsonUrl, { headers:{'X-Requested-With':'XMLHttpRequest'} });
+    const payload = await res.json().catch(()=>null);
+    if(!res.ok || !payload?.ok) return alert(payload?.msg || 'Failed to load service');
+
+    const s = payload.service || {};
+
+    const modalEl = document.getElementById('serviceModal');
+    const body = document.getElementById('serviceModalBody');
+    const tpl  = document.getElementById('serviceCreateTpl');
+    if(!tpl) return alert('Template not found');
+
+    body.innerHTML = tpl.innerHTML;
+
+    // execute scripts embedded in template
+    (function runInjectedScripts(container){
+      Array.from(container.querySelectorAll('script')).forEach(old => {
+        const sc = document.createElement('script');
+        for (const attr of old.attributes) sc.setAttribute(attr.name, attr.value);
+        sc.text = old.textContent || '';
+        old.parentNode?.removeChild(old);
+        container.appendChild(sc);
+      });
+    })(body);
+
+    initTabs(body);
+    openGeneralTab();
+
+    // ✅ resolve hooks by type
+    const hooks = resolveHooks(serviceType);
+
+    // ✅ subtitle + badges
+    document.getElementById('serviceModalSubtitle').innerText =
+      `Provider: ${clean(s.supplier_name || s.api_name || '—')} | Remote ID: ${clean(s.remote_id || '—')}`;
+    document.getElementById('badgeType').innerText = `Type: ${serviceType.toUpperCase()}`;
+
+    // ✅ fill form basic fields
+    body.querySelector('[name="supplier_id"]').value = clean(s.supplier_id ?? '');
+    body.querySelector('[name="remote_id"]').value   = clean(s.remote_id ?? '');
+    body.querySelector('[name="name"]').value        = clean(s.name ?? '');
+    body.querySelector('[name="time"]').value        = clean(s.time ?? '');
+    body.querySelector('[name="cost"]').value        = Number(s.cost || 0).toFixed(4);
+    body.querySelector('[name="profit"]').value      = Number(s.profit || 0).toFixed(4);
+    body.querySelector('[name="profit_type"]').value = String(s.profit_type || 1);
+    body.querySelector('[name="source"]').value      = Number(s.source || 1);
+    body.querySelector('[name="type"]').value        = serviceType;
+    body.querySelector('[name="alias"]').value       = slugify(clean(s.name ?? ''));
+
+    // group
+    fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(serviceType))
+      .then(r=>r.json()).then(rows=>{
+        const sel = body.querySelector('[name="group_id"]');
+        if(sel){
+          sel.innerHTML = `<option value="">Group</option>` +
+            (Array.isArray(rows) ? rows.map(g=>`<option value="${g.id}">${clean(g.name)}</option>`).join('') : '');
+          if (s.group_id) sel.value = String(s.group_id);
+        }
+      });
+
+    const priceHelper = initPrice(body);
+    priceHelper.setCost(Number(s.cost || 0));
+
+    // ✅ Groups pricing table (load all user groups, then apply stored group_prices)
+    const userGroups = await loadUserGroups();
+    buildPricingTable(body, userGroups);
+
+    // apply existing group prices
+    const gp = Array.isArray(s.group_prices) ? s.group_prices : [];
+    if (gp.length){
+      gp.forEach(row=>{
+        const gid = String(row.group_id || '');
+        const price = Number(row.price || 0);
+        const disc  = Number(row.discount || 0);
+        const dtype = Number(row.discount_type || 1);
+
+        const wrap = body.querySelector('#groupsPricingWrap');
+        const elRow = wrap?.querySelector(`.pricing-row[data-group-id="${gid}"]`);
+        if(!elRow) return;
+
+        const priceInput = elRow.querySelector('[data-price]');
+        const discInput  = elRow.querySelector('[data-discount]');
+        const typeSelect = elRow.querySelector('[data-discount-type]');
+        const outEl      = elRow.querySelector('[data-final]');
+
+        if(priceInput){
+          priceInput.dataset.autoPrice = '0';
+          priceInput.value = price.toFixed(4);
+        }
+        if(discInput) discInput.value = disc.toFixed(4);
+        if(typeSelect) typeSelect.value = String(dtype);
+
+        // update final
+        const p = Number(priceInput?.value || 0);
+        const d = Number(discInput?.value  || 0);
+        const dt = Number(typeSelect?.value || 1);
+        let final = p;
+        if (dt === 2) final = p - (p * (d/100));
+        else final = p - d;
+        if (!Number.isFinite(final) || final < 0) final = 0;
+        if (outEl) outEl.textContent = final.toFixed(4);
+      });
+    }
+
+    // ✅ Custom fields from params/custom_fields
+    const cf = Array.isArray(s.custom_fields) ? s.custom_fields : [];
+    if (cf.length){
+      hooks.apply?.(body, cf);
+      const mf = guessMainFieldFromRemoteFields(cf);
+      hooks.setMain?.(body, mf.type, mf.label);
+      openGeneralTab();
+    }
+
+    // ✅ API UI
+    ensureApiUI(body);
+    body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
+    await loadApiProviders(body);
+
+    // ✅ change FORM to UPDATE
+    const form = body.querySelector('form');
+    if(form){
+      form.action = `{{ url('/admin/service-management') }}/${serviceType}-services/${serviceId}`;
+      form.method = 'POST';
+
+      // add _method PUT
+      let method = form.querySelector('input[name="_method"]');
+      if(!method){
+        method = document.createElement('input');
+        method.type = 'hidden';
+        method.name = '_method';
+        form.appendChild(method);
+      }
+      method.value = 'PUT';
+    }
+
+    const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+    const onShown = async () => {
+      modalEl.removeEventListener('shown.bs.modal', onShown);
+      if (typeof window.initSummernoteIn === 'function') await window.initSummernoteIn(body);
+    };
+    modalEl.addEventListener('shown.bs.modal', onShown);
+
+    const onHidden = () => {
+      modalEl.removeEventListener('hidden.bs.modal', onHidden);
+      window.destroySummernoteIn?.(body);
+    };
+    modalEl.addEventListener('hidden.bs.modal', onHidden);
+
+    modal.show();
+  });
+
     document.getElementById('serviceModalSubtitle').innerText =
       isClone ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}` : `Provider: — | Remote ID: —`;
     document.getElementById('badgeType').innerText = `Type: ${cloneData.serviceType.toUpperCase()}`;
