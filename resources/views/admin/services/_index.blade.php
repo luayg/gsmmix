@@ -9,10 +9,12 @@
       <input class="form-control form-control-sm" name="q" placeholder="Smart search"
              value="{{ request('q') }}" style="max-width:240px">
 
-      <select class="form-select form-select-sm" name="api_provider_id" style="max-width:220px" onchange="this.form.submit()">
+      <select class="form-select form-select-sm" name="api_provider_id" style="max-width:260px" onchange="this.form.submit()">
         <option value="">API connection</option>
-        @foreach($apis as $a)
-          <option value="{{ $a }}" @selected(request('api_provider_id')==$a)>{{ $a }}</option>
+        @foreach(($apis ?? collect()) as $a)
+          <option value="{{ $a->id }}" @selected((string)request('api_provider_id') === (string)$a->id)>
+            {{ $a->name }}
+          </option>
         @endforeach
       </select>
 
@@ -36,7 +38,7 @@
           <th class="text-end">Cost</th>
           <th>Supplier</th>
           <th>API connection</th>
-          <th style="width:160px">Actions</th>
+          <th style="width:200px" class="text-end">Actions</th>
         </tr>
       </thead>
 
@@ -54,10 +56,14 @@
                 }
               }
             }
+
+            $jsonUrl   = route($routePrefix.'.show.json', $r->id);
+            $updateUrl = route($routePrefix.'.update', $r->id);
+            $deleteUrl = route($routePrefix.'.destroy', $r->id);
           @endphp
 
-          <tr>
-            <td>{{ $r->id }}</td>
+          <tr data-service-row data-service-id="{{ $r->id }}">
+            <td><span class="fw-semibold">{{ $r->id }}</span></td>
 
             <td title="{{ is_string($displayName) ? $displayName : '' }}">
               {{ Str::limit((string)$displayName, 80) }}
@@ -75,20 +81,38 @@
               {{ $r->group?->name ?? 'None' }}
             </td>
 
-            <td class="text-end">{{ number_format((float)$r->price, 2) }}</td>
-            <td class="text-end">{{ number_format((float)$r->cost, 2) }}</td>
+            <td class="text-end">{{ number_format((float)($r->price ?? 0), 2) }}</td>
+            <td class="text-end">{{ number_format((float)($r->cost ?? 0), 2) }}</td>
 
             <td>{{ $r->supplier?->name ?? 'None' }}</td>
 
-            <td>{{ $r->supplier?->name ?? 'None' }}</td>
+            {{-- ✅ API connection الصحيح: نفس supplier لو كان source=2 وإلا None --}}
+            <td>
+              @if((int)($r->source ?? 1) === 2)
+                {{ $r->supplier?->name ?? 'API' }}
+              @else
+                None
+              @endif
+            </td>
 
-            <td class="text-nowrap">
-              <a class="btn btn-sm btn-warning" href="{{ route($routePrefix.'.edit', $r->id) }}">Edit</a>
-              <form action="{{ route($routePrefix.'.destroy', $r->id) }}" method="POST" class="d-inline"
-                    onsubmit="return confirm('Delete?')">
-                @csrf @method('DELETE')
-                <button class="btn btn-sm btn-danger">Delete</button>
-              </form>
+            <td class="text-nowrap text-end">
+              <button
+                type="button"
+                class="btn btn-sm btn-warning"
+                data-edit-service
+                data-service-type="{{ $viewPrefix }}"
+                data-service-id="{{ $r->id }}"
+                data-json-url="{{ $jsonUrl }}"
+                data-update-url="{{ $updateUrl }}"
+              >Edit</button>
+
+              <button
+                type="button"
+                class="btn btn-sm btn-outline-danger"
+                data-delete-service
+                data-delete-url="{{ $deleteUrl }}"
+                data-row-id="{{ $r->id }}"
+              >Delete</button>
             </td>
           </tr>
         @empty

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin\Services;
 
 use App\Http\Controllers\Controller;
+use App\Models\ApiProvider;
 use App\Models\ServiceGroupPrice;
 use App\Models\RemoteImeiService;
 use App\Models\RemoteServerService;
@@ -10,6 +11,7 @@ use App\Models\RemoteFileService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 abstract class BaseServiceController extends Controller
@@ -23,7 +25,13 @@ abstract class BaseServiceController extends Controller
 
     public function index(Request $r)
     {
-        $q = ($this->model)::query()->orderByDesc('id');
+        $q = ($this->model)::query();
+
+        // ✅ فلتر مزود API (supplier_id)
+        if ($r->filled('api_provider_id')) {
+            $pid = (int)$r->input('api_provider_id');
+            if ($pid > 0) $q->where('supplier_id', $pid);
+        }
 
         if ($r->filled('q')) {
             $term = trim((string)$r->q);
@@ -33,19 +41,106 @@ abstract class BaseServiceController extends Controller
             });
         }
 
+        // ✅ ترتيب: ordering ثم id (لو موجود ordering) وإلا id فقط
+        try {
+            if (Schema::hasColumn($this->table, 'ordering')) {
+                $q->orderBy('ordering', 'asc');
+            }
+        } catch (\Throwable $e) {
+            // ignore
+        }
+        $q->orderBy('id', 'asc');
+
         $rows = $q->paginate(20)->withQueryString();
 
+        // ✅ قائمة مزودي API لفلتر الـ select
+        $apis = ApiProvider::query()->orderBy('name')->get(['id','name']);
+
         return view("admin.services.{$this->viewPrefix}.index", [
-            'rows' => $rows,
+            'rows'        => $rows,
             'routePrefix' => $this->routePrefix,
             'viewPrefix'  => $this->viewPrefix,
+            'apis'        => $apis,
+        ]);
+    }
+
+    /**
+     * ✅ JSON للـ Edit modal
+     * يرجع:
+     * - service fields الأساسية
+     * - decoded main_field / params
+     * - group_prices من جدول service_group_prices
+     */
+    public function showJson($service)
+    {
+        // route model binding غالبًا يمرر Model، لكن احتياط:
+        if (!$service instanceof Model) {
+            $service = ($this->model)::query()->findOrFail((int)$service);
+        }
+
+        $decode = function ($v) {
+            if (is_array($v)) return $v;
+            if (!is_string($v)) return null;
+            $t = trim($v);
+            if ($t === '' || $t === 'null' || $t === 'undefined') return null;
+            $j = json_decode($t, true);
+            return is_array($j) ? $j : null;
+        };
+
+        $nameArr = $decode($service->name) ?: null;
+        $timeArr = $decode($service->time) ?: null;
+        $infoArr = $decode($service->info) ?: null;
+
+        $mainArr = $decode($service->main_field) ?: null;
+        $paramsArr = $decode($service->params) ?: null;
+
+        $groupPrices = [];
+        try {
+            if (class_exists(ServiceGroupPrice::class)) {
+                $groupPrices = ServiceGroupPrice::query()
+                    ->where('service_type', $this->viewPrefix)
+                    ->where('service_id', (int)$service->id)
+                    ->get(['group_id','price','discount','discount_type'])
+                    ->map(fn($r) => [
+                        'group_id' => (int)$r->group_id,
+                        'price' => (float)$r->price,
+                        'discount' => (float)$r->discount,
+                        'discount_type' => (int)$r->discount_type,
+                    ])->values()->all();
+            }
+        } catch (\Throwable $e) {
+            $groupPrices = [];
+        }
+
+        return response()->json([
+            'ok' => true,
+            'service' => [
+                'id' => (int)$service->id,
+                'alias' => (string)($service->alias ?? ''),
+                'group_id' => $service->group_id ? (int)$service->group_id : null,
+                'type' => (string)($service->type ?? $this->viewPrefix),
+                'source' => (int)($service->source ?? 1),
+                'supplier_id' => $service->supplier_id ? (int)$service->supplier_id : null,
+                'remote_id' => $service->remote_id !== null ? (string)$service->remote_id : null,
+
+                'cost' => (float)($service->cost ?? 0),
+                'profit' => (float)($service->profit ?? 0),
+                'profit_type' => (int)($service->profit_type ?? 1),
+                'active' => (int)($service->active ?? 0),
+
+                'name' => $nameArr ?: (string)($service->name ?? ''),
+                'time' => $timeArr ?: (string)($service->time ?? ''),
+                'info' => $infoArr ?: (string)($service->info ?? ''),
+
+                'main_field' => $mainArr,
+                'params' => $paramsArr,
+                'group_prices' => $groupPrices,
+            ],
         ]);
     }
 
     /**
      * ✅ MODAL CREATE (CLONE)
-     * هنا نجهّز البيانات القادمة من remote service (خصوصًا additional_fields)
-     * حتى تظهر تلقائيًا داخل Additional tab.
      */
     public function modalCreate(Request $r)
     {
@@ -61,13 +156,10 @@ abstract class BaseServiceController extends Controller
             'group_name'  => $r->input('group'),
             'type'        => $this->viewPrefix,
 
-            // ✅ نضيفها هنا ليستخدمها الـ blade
             'remote_additional_fields' => [],
             'remote_additional_fields_json' => '[]',
         ];
 
-        // ✅ إذا كان هذا مودال Clone (عنده provider_id + remote_id)
-        // اجلب additional_fields من جدول remote_*_services
         if (!empty($providerId) && $remoteId !== null && $remoteId !== '') {
             $row = null;
 
@@ -108,9 +200,6 @@ abstract class BaseServiceController extends Controller
         return view("admin.services.{$this->viewPrefix}._modal_create", compact('data'));
     }
 
-    /**
-     * ✅ Save pricing values in service_group_prices table
-     */
     protected function saveGroupPrices(int $serviceId, array $groupPrices): void
     {
         if (!class_exists(ServiceGroupPrice::class)) return;
@@ -131,9 +220,6 @@ abstract class BaseServiceController extends Controller
         }
     }
 
-    /**
-     * ✅ Normalize custom fields from JSON coming from Additional tab
-     */
     protected function normalizeCustomFields($customFieldsRaw, ?string $customFieldsJson): array
     {
         $customFields = [];
@@ -185,9 +271,6 @@ abstract class BaseServiceController extends Controller
         return $out;
     }
 
-    /**
-     * ✅ Save custom fields into DB table: custom_fields
-     */
     protected function saveCustomFieldsToTable(int $serviceId, string $serviceType, array $fields): void
     {
         try {
@@ -390,7 +473,6 @@ abstract class BaseServiceController extends Controller
 
             $this->saveGroupPrices((int)$service->id, $v['group_prices'] ?? []);
 
-            // ✅ ✅ ✅ يحفظ تلقائيًا بجدول custom_fields (الذي نحتاجه في Create Order)
             $this->saveCustomFieldsToTable((int)$service->id, $this->viewPrefix, $customFields);
 
             if ($request->expectsJson() || $request->ajax()) {

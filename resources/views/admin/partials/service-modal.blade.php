@@ -610,6 +610,226 @@
       alert('Network error');
     }
   });
+
+    // ==========================================================
+  // ✅ EDIT SERVICE (open same modal + fill values)
+  // ==========================================================
+  async function openEditService(btn){
+    const modalEl = document.getElementById('serviceModal');
+    const body = document.getElementById('serviceModalBody');
+    const tpl  = document.getElementById('serviceCreateTpl');
+    if(!tpl) return alert('Template not found');
+
+    body.innerHTML = tpl.innerHTML;
+
+    // execute scripts embedded in template
+    (function runInjectedScripts(container){
+      Array.from(container.querySelectorAll('script')).forEach(old => {
+        const s = document.createElement('script');
+        for (const attr of old.attributes) s.setAttribute(attr.name, attr.value);
+        s.text = old.textContent || '';
+        old.parentNode?.removeChild(old);
+        container.appendChild(s);
+      });
+    })(body);
+
+    initTabs(body);
+    openGeneralTab();
+
+    const jsonUrl   = btn.dataset.jsonUrl;
+    const updateUrl = btn.dataset.updateUrl;
+    const serviceType = (btn.dataset.serviceType || '').toLowerCase();
+
+    if(!jsonUrl || !updateUrl) return alert('Missing json/update URL');
+
+    // Load service json
+    const res = await fetch(jsonUrl, { headers:{'X-Requested-With':'XMLHttpRequest'} });
+    const payload = await res.json().catch(()=>null);
+    if(!res.ok || !payload?.ok) return alert(payload?.msg || 'Failed to load service');
+
+    const s = payload.service || {};
+    document.getElementById('serviceModalSubtitle').innerText = `Edit Service #${s.id || ''}`;
+    document.getElementById('badgeType').innerText = `Type: ${(serviceType || s.type || '').toUpperCase()}`;
+
+    // set form action + method PUT
+    const form = body.querySelector('form#serviceCreateForm') || body.querySelector('form');
+    if(!form) return alert('Form not found inside modal');
+
+    form.action = updateUrl;
+    form.method = 'POST';
+
+    let spoof = form.querySelector('input[name="_method"]');
+    if(!spoof){
+      spoof = document.createElement('input');
+      spoof.type = 'hidden';
+      spoof.name = '_method';
+      form.appendChild(spoof);
+    }
+    spoof.value = 'PUT';
+
+    // change button label
+    const submitBtn = form.querySelector('[type="submit"]');
+    if(submitBtn) submitBtn.textContent = 'Save';
+
+    // fill basic fields
+    const nameText = (typeof s.name === 'object' ? (s.name.fallback || s.name.en || '') : (s.name || ''));
+    const timeText = (typeof s.time === 'object' ? (s.time.fallback || s.time.en || '') : (s.time || ''));
+    const infoText = (typeof s.info === 'object' ? (s.info.fallback || s.info.en || '') : (s.info || ''));
+
+    form.querySelector('[name="name"]') && (form.querySelector('[name="name"]').value = nameText);
+    form.querySelector('[name="alias"]') && (form.querySelector('[name="alias"]').value = s.alias || '');
+    form.querySelector('[name="time"]') && (form.querySelector('[name="time"]').value = timeText);
+
+    // Info (summernote hidden)
+    const infoHidden = form.querySelector('#infoHidden');
+    if(infoHidden) infoHidden.value = infoText;
+
+    // pricing
+    form.querySelector('[name="cost"]') && (form.querySelector('[name="cost"]').value = Number(s.cost||0).toFixed(4));
+    form.querySelector('[name="profit"]') && (form.querySelector('[name="profit"]').value = Number(s.profit||0).toFixed(4));
+    form.querySelector('[name="profit_type"]') && (form.querySelector('[name="profit_type"]').value = String(s.profit_type||1));
+
+    // group
+    if(form.querySelector('[name="group_id"]') && s.group_id){
+      form.querySelector('[name="group_id"]').value = String(s.group_id);
+    }
+
+    // source
+    if(form.querySelector('[name="source"]')){
+      form.querySelector('[name="source"]').value = String(s.source || 1);
+    }
+
+    // Keep supplier/remote ids
+    if(form.querySelector('[name="supplier_id"]')) form.querySelector('[name="supplier_id"]').value = s.supplier_id ?? '';
+    if(form.querySelector('[name="remote_id"]')) form.querySelector('[name="remote_id"]').value = s.remote_id ?? '';
+
+    // main_field -> fill selects/inputs
+    const mf = s.main_field || {};
+    const mfType = (mf.type || (mf.label ? 'text' : '') || '').toString();
+    const mfAllowed = (mf.rules?.allowed || '').toString();
+    const mfMin = mf.rules?.minimum ?? '';
+    const mfMax = mf.rules?.maximum ?? '';
+    const mfLabel = (mf.label?.fallback || mf.label?.en || '').toString();
+
+    if(form.querySelector('#mainFieldType') && mfType) form.querySelector('#mainFieldType').value = mfType;
+    if(form.querySelector('#allowedChars') && mfAllowed) form.querySelector('#allowedChars').value = mfAllowed;
+    if(form.querySelector('#minChars')) form.querySelector('#minChars').value = String(mfMin);
+    if(form.querySelector('#maxChars')) form.querySelector('#maxChars').value = String(mfMax);
+    if(form.querySelector('#mainFieldLabel') && mfLabel) form.querySelector('#mainFieldLabel').value = mfLabel;
+
+    // If file service: allowed_extensions preview
+    const params = s.params || {};
+    if(form.querySelector('#allowedExtensionsPreview') && params.allowed_extensions){
+      form.querySelector('#allowedExtensionsPreview').value = String(params.allowed_extensions);
+    }
+
+    // Fill custom fields from params.custom_fields
+    const custom = Array.isArray(params.custom_fields) ? params.custom_fields : [];
+    if(custom.length){
+      // convert local format -> remote-like format for your hooks
+      const additionalFields = custom.map(cf => ({
+        fieldname: cf.name ?? '',
+        fieldtype: cf.field_type ?? cf.type ?? 'text',
+        required: (cf.required ? 'on' : ''),
+        description: cf.description ?? '',
+        fieldoptions: cf.options ?? '',
+      }));
+
+      const hooks = resolveHooks(serviceType);
+      hooks.apply?.(body, additionalFields);
+      openGeneralTab();
+    }
+
+    // Fill group prices if returned
+    try{
+      const gp = Array.isArray(s.group_prices) ? s.group_prices : [];
+      if(gp.length){
+        // after pricing table built, apply values
+        setTimeout(()=>{
+          gp.forEach(row=>{
+            const gid = String(row.group_id || '');
+            if(!gid) return;
+            const priceInput = body.querySelector(`[name="group_prices[${gid}][price]"]`);
+            const discInput  = body.querySelector(`[name="group_prices[${gid}][discount]"]`);
+            const typeSel    = body.querySelector(`[name="group_prices[${gid}][discount_type]"]`);
+            if(priceInput) { priceInput.value = Number(row.price||0).toFixed(4); priceInput.dataset.autoPrice = '0'; }
+            if(discInput)  discInput.value = Number(row.discount||0).toFixed(4);
+            if(typeSel)    typeSel.value = String(row.discount_type||1);
+            // trigger updateFinal if exists
+            priceInput?.dispatchEvent(new Event('input'));
+            discInput?.dispatchEvent(new Event('input'));
+            typeSel?.dispatchEvent(new Event('change'));
+          });
+        }, 300);
+      }
+    }catch(e){}
+
+    // init price previews
+    const priceHelper = initPrice(body);
+    priceHelper.setCost(Number(s.cost||0));
+
+    // show modal and init summernote
+    const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+    const onShown = async () => {
+      modalEl.removeEventListener('shown.bs.modal', onShown);
+      if (typeof window.initSummernoteIn === 'function') await window.initSummernoteIn(body);
+    };
+    modalEl.addEventListener('shown.bs.modal', onShown);
+
+    const onHidden = () => {
+      modalEl.removeEventListener('hidden.bs.modal', onHidden);
+      window.destroySummernoteIn?.(body);
+    };
+    modalEl.addEventListener('hidden.bs.modal', onHidden);
+
+    modal.show();
+  }
+
+  document.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('[data-edit-service]');
+    if(!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    await openEditService(btn);
+  });
+
+  // ==========================================================
+  // ✅ DELETE SERVICE (Ajax)
+  // ==========================================================
+  document.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('[data-delete-service]');
+    if(!btn) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const url = btn.dataset.deleteUrl;
+    const rowId = btn.dataset.rowId;
+
+    if(!url) return alert('Missing delete url');
+    if(!confirm('Delete this service?')) return;
+
+    try{
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-Requested-With':'XMLHttpRequest',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+        },
+        body: new URLSearchParams({ _method:'DELETE' })
+      });
+
+      if(res.ok){
+        document.querySelector(`tr[data-service-row][data-service-id="${CSS.escape(String(rowId))}"]`)?.remove();
+        window.showToast?.('success', '✅ Deleted', { title:'Done' });
+      }else{
+        const t = await res.text();
+        alert('Failed to delete\n\n' + t);
+      }
+    }catch(err){
+      alert('Network error');
+    }
+  });  
 })();
 </script>
   @endpush
