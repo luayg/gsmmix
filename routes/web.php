@@ -24,6 +24,9 @@ use App\Http\Controllers\Admin\Orders\ServerOrdersController;
 use App\Http\Controllers\Admin\Orders\FileOrdersController;
 use App\Http\Controllers\Admin\Orders\ProductOrdersController;
 
+
+
+use App\Http\Controllers\Auth\LoginController;
 /*
 |--------------------------------------------------------------------------
 | Web
@@ -32,6 +35,15 @@ use App\Http\Controllers\Admin\Orders\ProductOrdersController;
 
 Route::get('/', fn () => redirect()->route('admin.dashboard'));
 Route::view('/login', 'auth.login')->name('login');
+
+Route::middleware('guest')->group(function () {
+    Route::get('/login', [LoginController::class, 'create'])->name('login');
+    Route::post('/login', [LoginController::class, 'store']);
+});
+
+Route::middleware('auth')->group(function () {
+    Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
+});
 
 Route::prefix('admin')->name('admin.')->group(function () {
 

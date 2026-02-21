@@ -900,6 +900,36 @@ try {
     if(form.querySelector('[name="supplier_id"]')) form.querySelector('[name="supplier_id"]').value = s.supplier_id ?? '';
     if(form.querySelector('[name="remote_id"]')) form.querySelector('[name="remote_id"]').value = s.remote_id ?? '';
 
+        // API source preselect (provider + remote service)
+    ensureApiUI(body);
+    body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
+    await loadApiProviders(body);
+
+    try {
+      const sourceVal = Number(s.source || 1);
+      const pid = String(s.supplier_id ?? '').trim();
+      const rid = String(s.remote_id ?? '').trim();
+
+      const apiProviderSel = body.querySelector('#apiProviderSelect');
+      const apiServiceSel  = body.querySelector('#apiServiceSelect');
+
+      if (sourceVal === 2 && pid && apiProviderSel) {
+        apiProviderSel.value = pid;
+        await loadProviderServices(body, pid, serviceType);
+
+        if (apiServiceSel && rid) {
+          const opt = Array.from(apiServiceSel.options).find(o => String(o.value) === rid);
+          if (opt) {
+            apiServiceSel.value = opt.value;
+            apiServiceSel.dispatchEvent(new Event('change'));
+          }
+        }
+      }
+    } catch (_) {
+      // ignore API preload errors
+    }
+
+
     // main_field -> fill selects/inputs
     const mf = s.main_field || {};
     const mfType = (mf.type || (mf.label ? 'text' : '') || '').toString();
@@ -987,46 +1017,11 @@ try {
     if(!btn) return;
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
     await openEditService(btn);
   });
 
-  // ==========================================================
-  // ✅ DELETE SERVICE (Ajax)
-  // ==========================================================
-  document.addEventListener('click', async (e)=>{
-    const btn = e.target.closest('[data-delete-service]');
-    if(!btn) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-
-    const url = btn.dataset.deleteUrl;
-    const rowId = btn.dataset.rowId;
-
-    if(!url) return alert('Missing delete url');
-    if(!confirm('Delete this service?')) return;
-
-    try{
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'X-Requested-With':'XMLHttpRequest',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-        },
-        body: new URLSearchParams({ _method:'DELETE' })
-      });
-
-      if(res.ok){
-        document.querySelector(`tr[data-service-row][data-service-id="${CSS.escape(String(rowId))}"]`)?.remove();
-        window.showToast?.('success', '✅ Deleted', { title:'Done' });
-      }else{
-        const t = await res.text();
-        alert('Failed to delete\n\n' + t);
-      }
-    }catch(err){
-      alert('Network error');
-    }
-  });  
+  
 })();
 </script>
   @endpush

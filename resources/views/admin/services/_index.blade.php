@@ -180,6 +180,10 @@
     const btn = e.target.closest('[data-delete-service]');
     if(!btn) return;
 
+    e.preventDefault();
+    e.stopPropagation();
+    e.stopImmediatePropagation();
+
     pendingDeleteUrl = btn.dataset.deleteUrl || null;
     document.getElementById('svcDeleteName').textContent = btn.dataset.name || '—';
     modalShow('svcDeleteModal');

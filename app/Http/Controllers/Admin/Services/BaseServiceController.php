@@ -89,6 +89,7 @@ abstract class BaseServiceController extends Controller
 
         // group prices
         $gp = [];
+        $gpList = [];
         if (class_exists(ServiceGroupPrice::class)) {
             $gpRows = ServiceGroupPrice::query()
                 ->where('service_type', $this->viewPrefix)
@@ -96,10 +97,18 @@ abstract class BaseServiceController extends Controller
                 ->get();
             foreach ($gpRows as $g) {
                 $gp[(int)$g->group_id] = [
+                $item = [
+                    'group_id' => (int)$g->group_id,
                     'price' => (float)$g->price,
                     'discount' => (float)$g->discount,
                     'discount_type' => (int)$g->discount_type,
                 ];
+                $gp[(int)$g->group_id] = [
+                    'price' => $item['price'],
+                    'discount' => $item['discount'],
+                    'discount_type' => $item['discount_type'],
+                ];
+                $gpList[] = $item;
             }
         }
 
@@ -132,6 +141,7 @@ abstract class BaseServiceController extends Controller
 
         return response()->json([
             'ok' => true,
+        $servicePayload = [
             'id' => (int)$row->id,
 
             'alias' => (string)($row->alias ?? ''),
@@ -146,13 +156,39 @@ abstract class BaseServiceController extends Controller
             'time_text' => (string)($time['fallback'] ?? $time['en'] ?? $row->time ?? ''),
             'info_text' => (string)($info['fallback'] ?? $info['en'] ?? $row->info ?? ''),
 
+            'name' => (string)($name['fallback'] ?? $name['en'] ?? $row->name ?? ''),
+            'time' => (string)($time['fallback'] ?? $time['en'] ?? $row->time ?? ''),
+            'info' => (string)($info['fallback'] ?? $info['en'] ?? $row->info ?? ''),
             'cost' => (float)($row->cost ?? 0),
             'profit' => (float)($row->profit ?? 0),
             'profit_type' => (int)($row->profit_type ?? 1),
 
             'main_field' => $main,
             'params' => $params,
+            'group_prices' => $gpList,
+            'custom_fields' => $customFields,
+            'supplier_name' => method_exists($row, 'supplier') ? optional($row->supplier)->name : null,
+            'api_name' => method_exists($row, 'api') ? optional($row->api)->name : null,
+        ];
 
+        return response()->json([
+            'ok' => true,
+            'service' => $servicePayload,
+            'id' => $servicePayload['id'],
+            'alias' => $servicePayload['alias'],
+            'group_id' => $servicePayload['group_id'],
+            'type' => $servicePayload['type'],
+            'source' => $servicePayload['source'],
+            'supplier_id' => $servicePayload['supplier_id'],
+            'remote_id' => $servicePayload['remote_id'],
+            'name_text' => $servicePayload['name'],
+            'time_text' => $servicePayload['time'],
+            'info_text' => $servicePayload['info'],
+            'cost' => $servicePayload['cost'],
+            'profit' => $servicePayload['profit'],
+            'profit_type' => $servicePayload['profit_type'],
+            'main_field' => $servicePayload['main_field'],
+            'params' => $servicePayload['params'],
             'group_prices' => $gp,
             'custom_fields' => $customFields,
         ]);
