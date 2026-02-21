@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Services;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApiProvider;
+use App\Models\ServiceGroup;
 use App\Models\ServiceGroupPrice;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
@@ -16,173 +17,150 @@ abstract class BaseServiceController extends Controller
     protected string $model;
 
     protected string $viewPrefix;   // imei|server|file
-    protected string $routePrefix;  // admin.services.imei / admin.services.server / admin.services.file
-    protected string $table;        // imei_services / server_services / file_services
+    protected string $routePrefix;  // admin.services.server ...
+    protected string $table;        // server_services ...
 
+    // =========================
+    // Index
+    // =========================
     public function index(Request $r)
     {
-        $q = ($this->model)::query();
+        $q = ($this->model)::query()->orderBy('id', 'asc');
 
-        // ✅ Eager load only if relations exist
-        $with = [];
+        // حاول تعمل eager load فقط للعلاقات الموجودة فعليًا (بدون ما يسبب RelationNotFound)
+        $tmp = new ($this->model);
+        $rels = [];
         foreach (['group', 'supplier', 'api'] as $rel) {
-            if (method_exists(($this->model), $rel)) $with[] = $rel;
+            if (method_exists($tmp, $rel)) $rels[] = $rel;
         }
-        if (!empty($with)) $q->with($with);
+        if ($rels) $q->with($rels);
 
-        // ✅ Search
         if ($r->filled('q')) {
-            $term = trim((string) $r->q);
+            $term = trim((string)$r->q);
             $q->where(function ($qq) use ($term) {
-                $qq->where('alias', 'like', "%{$term}%")
-                    ->orWhere('name', 'like', "%{$term}%");
+                $qq->where('alias', 'like', "%$term%")
+                    ->orWhere('name', 'like', "%$term%");
             });
         }
 
-        // ✅ Filter by API provider (supplier_id)
+        // ✅ فلتر API connection الصحيح: supplier_id (مش source)
         if ($r->filled('api_provider_id')) {
             $pid = (int)$r->api_provider_id;
-            if ($pid > 0) {
-                $q->where('supplier_id', $pid);
-            }
+            if ($pid > 0) $q->where('supplier_id', $pid);
         }
-
-        // ✅ ترتيب: ordering ثم id تصاعدي (طلبك)
-        $q->orderBy('ordering', 'asc')->orderBy('id', 'asc');
 
         $rows = $q->paginate(20)->withQueryString();
 
-        // ✅ APIs dropdown: لازم يكون id + name (عشان لا يصير Attempt to read property "id" on int)
+        // ✅ قائمة مزودين API (id + name) بدل pluck int (حل خطأ Attempt to read property "id" on int)
         $apis = ApiProvider::query()
             ->select(['id', 'name'])
             ->orderBy('name')
             ->get();
 
         return view("admin.services.{$this->viewPrefix}.index", [
-            'rows'        => $rows,
-            'apis'        => $apis,
+            'rows' => $rows,
+            'apis' => $apis,
             'routePrefix' => $this->routePrefix,
             'viewPrefix'  => $this->viewPrefix,
         ]);
     }
 
-    /**
-     * ✅ JSON endpoint for Edit modal
-     * GET .../{service}/json
-     */
+    // =========================
+    // JSON for Edit modal
+    // =========================
     public function showJson($service)
     {
-        $s = ($service instanceof Model)
-            ? $service
-            : ($this->model)::query()->findOrFail($service);
+        $row = ($this->model)::query()->findOrFail($service);
+
+        // name/time/info/main_field/params قد تكون JSON مخزنة كنص
+        $decode = function ($v) {
+            if (is_array($v)) return $v;
+            $s = trim((string)$v);
+            if ($s === '') return [];
+            $j = json_decode($s, true);
+            return is_array($j) ? $j : [];
+        };
+
+        $name = $decode($row->name);
+        $time = $decode($row->time);
+        $info = $decode($row->info);
+        $main = $decode($row->main_field);
+        $params = $decode($row->params);
 
         // group prices
         $gp = [];
         if (class_exists(ServiceGroupPrice::class)) {
-            $gp = ServiceGroupPrice::query()
+            $gpRows = ServiceGroupPrice::query()
                 ->where('service_type', $this->viewPrefix)
-                ->where('service_id', $s->id)
-                ->get()
-                ->mapWithKeys(function ($row) {
-                    return [
-                        (int)$row->group_id => [
-                            'price' => (float)$row->price,
-                            'discount' => (float)$row->discount,
-                            'discount_type' => (int)$row->discount_type,
-                        ]
-                    ];
-                })
-                ->toArray();
+                ->where('service_id', (int)$row->id)
+                ->get();
+            foreach ($gpRows as $g) {
+                $gp[(int)$g->group_id] = [
+                    'price' => (float)$g->price,
+                    'discount' => (float)$g->discount,
+                    'discount_type' => (int)$g->discount_type,
+                ];
+            }
         }
 
-        // params json
-        $params = [];
-        $rawParams = $s->params ?? null;
-        if (is_array($rawParams)) $params = $rawParams;
-        if (is_string($rawParams) && trim($rawParams) !== '') {
-            $decoded = json_decode($rawParams, true);
-            if (is_array($decoded)) $params = $decoded;
+        // custom fields (من جدول custom_fields) - إن وجد
+        $customFields = [];
+        try {
+            $cf = DB::table('custom_fields')
+                ->where('service_type', $this->viewPrefix . '_service')
+                ->where('service_id', (int)$row->id)
+                ->orderBy('ordering')
+                ->get();
+            foreach ($cf as $c) {
+                $nm = json_decode((string)$c->name, true);
+                $customFields[] = [
+                    'active' => (int)($c->active ?? 1),
+                    'required' => (int)($c->required ?? 0),
+                    'name' => is_array($nm) ? ($nm['fallback'] ?? $nm['en'] ?? '') : (string)$c->name,
+                    'input' => (string)($c->input ?? ''),
+                    'type' => (string)($c->field_type ?? 'text'),
+                    'description' => (string)($c->description ?? ''),
+                    'minimum' => (int)($c->minimum ?? 0),
+                    'maximum' => (int)($c->maximum ?? 0),
+                    'validation' => (string)($c->validation ?? ''),
+                    'options' => $c->field_options ? (json_decode((string)$c->field_options, true) ?: (string)$c->field_options) : '',
+                ];
+            }
+        } catch (\Throwable $e) {
+            $customFields = [];
         }
-
-        $customFields = $params['custom_fields'] ?? [];
 
         return response()->json([
             'ok' => true,
-            'service' => [
-                'id' => $s->id,
-                'alias' => $s->alias,
-                'type' => $s->type,
-                'group_id' => $s->group_id,
-                'source' => $s->source,
-                'supplier_id' => $s->supplier_id,
-                'remote_id' => $s->remote_id,
+            'id' => (int)$row->id,
 
-                'name' => $this->decodeJsonField($s->name),
-                'time' => $this->decodeJsonField($s->time),
-                'info' => $this->decodeJsonField($s->info),
-                'main_field' => $this->decodeJsonField($s->main_field),
+            'alias' => (string)($row->alias ?? ''),
+            'group_id' => $row->group_id ? (int)$row->group_id : null,
+            'type' => (string)($row->type ?? $this->viewPrefix),
 
-                'cost' => (float)($s->cost ?? 0),
-                'profit' => (float)($s->profit ?? 0),
-                'profit_type' => (int)($s->profit_type ?? 1),
+            'source' => $row->source ?? null,
+            'supplier_id' => $row->supplier_id ?? null,
+            'remote_id' => $row->remote_id ?? null,
 
-                'active' => (int)($s->active ?? 0),
-                'allow_bulk' => (int)($s->allow_bulk ?? 0),
-                'allow_duplicates' => (int)($s->allow_duplicates ?? 0),
-                'reply_with_latest' => (int)($s->reply_with_latest ?? 0),
-                'allow_report' => (int)($s->allow_report ?? 0),
-                'allow_report_time' => (int)($s->allow_report_time ?? 0),
-                'allow_cancel' => (int)($s->allow_cancel ?? 0),
-                'allow_cancel_time' => (int)($s->allow_cancel_time ?? 0),
-                'use_remote_cost' => (int)($s->use_remote_cost ?? 0),
-                'use_remote_price' => (int)($s->use_remote_price ?? 0),
-                'stop_on_api_change' => (int)($s->stop_on_api_change ?? 0),
-                'needs_approval' => (int)($s->needs_approval ?? 0),
-                'reply_expiration' => (int)($s->reply_expiration ?? 0),
-                'reject_on_missing_reply' => (int)($s->reject_on_missing_reply ?? 0),
-                'ordering' => (int)($s->ordering ?? 0),
+            'name_text' => (string)($name['fallback'] ?? $name['en'] ?? $row->name ?? ''),
+            'time_text' => (string)($time['fallback'] ?? $time['en'] ?? $row->time ?? ''),
+            'info_text' => (string)($info['fallback'] ?? $info['en'] ?? $row->info ?? ''),
 
-                // meta (لو موجودة بالـ params)
-                'params' => $params,
-            ],
+            'cost' => (float)($row->cost ?? 0),
+            'profit' => (float)($row->profit ?? 0),
+            'profit_type' => (int)($row->profit_type ?? 1),
+
+            'main_field' => $main,
+            'params' => $params,
+
             'group_prices' => $gp,
             'custom_fields' => $customFields,
-            'custom_fields_json' => json_encode($customFields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ]);
     }
 
-    protected function decodeJsonField($val)
-    {
-        if (is_array($val)) return $val;
-        if (!is_string($val)) return $val;
-
-        $t = trim($val);
-        if ($t === '') return $val;
-        if ($t[0] !== '{' && $t[0] !== '[') return $val;
-
-        $j = json_decode($t, true);
-        return is_array($j) ? $j : $val;
-    }
-
-    // ===================== MODAL CREATE (clone uses same template) =====================
-    public function modalCreate(Request $r)
-    {
-        // ملاحظة: Create Service لازم يبقى نفس الطريقة (من template id=serviceCreateTpl)
-        // هذا الميثود موجود لو احتجته في مكان آخر، لكن المودال الحالي يعتمد template مباشرة.
-        $data = [
-            'supplier_id' => $r->input('provider_id'),
-            'remote_id'   => $r->input('remote_id'),
-            'name'        => $r->input('name'),
-            'cost'        => $r->input('credit'),
-            'time'        => $r->input('time'),
-            'group_name'  => $r->input('group'),
-            'type'        => $this->viewPrefix,
-        ];
-
-        return view("admin.services.{$this->viewPrefix}._modal_create", compact('data'));
-    }
-
-    // ===================== STORE =====================
+    // =========================
+    // Store (Merged)
+    // =========================
     public function store(Request $request)
     {
         foreach (['remote_id', 'supplier_id', 'api_provider_id', 'api_service_remote_id'] as $k) {
@@ -210,14 +188,6 @@ abstract class BaseServiceController extends Controller
             'minimum'            => 'nullable|integer',
             'maximum'            => 'nullable|integer',
             'main_field_label'   => 'nullable|string|max:255',
-
-            // meta (يُستخدم في IMEI وأيضاً نخليه للجميع)
-            'meta_keywords'     => 'nullable|string',
-            'meta_description'  => 'nullable|string',
-            'meta_after_head'   => 'nullable|string',
-            'meta_before_head'  => 'nullable|string',
-            'meta_after_body'   => 'nullable|string',
-            'meta_before_body'  => 'nullable|string',
 
             'cost'        => 'nullable|numeric',
             'profit'      => 'nullable|numeric',
@@ -265,6 +235,7 @@ abstract class BaseServiceController extends Controller
 
         $minVal = $v['min'] ?? $v['minimum'] ?? 0;
         $maxVal = $v['max'] ?? $v['maximum'] ?? 0;
+
         $minVal = is_null($minVal) ? 0 : (int)$minVal;
         $maxVal = is_null($maxVal) ? 0 : (int)$maxVal;
 
@@ -288,19 +259,14 @@ abstract class BaseServiceController extends Controller
             ],
         ];
 
+        // custom_fields_json (إن وجد) نحفظه داخل params + داخل جدول custom_fields عبر نفس منطق مشروعك
         $customFields = $this->normalizeCustomFields(
             $request->input('custom_fields'),
             $request->input('custom_fields_json')
         );
 
         $params = [
-            'meta_keywords'           => $v['meta_keywords'] ?? '',
-            'meta_description'        => $v['meta_description'] ?? '',
-            'after_head_tag_opening'  => $v['meta_after_head'] ?? '',
-            'before_head_tag_closing' => $v['meta_before_head'] ?? '',
-            'after_body_tag_opening'  => $v['meta_after_body'] ?? '',
-            'before_body_tag_closing' => $v['meta_before_body'] ?? '',
-            'custom_fields'           => $customFields,
+            'custom_fields' => $customFields,
         ];
 
         if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
@@ -312,6 +278,7 @@ abstract class BaseServiceController extends Controller
 
             $service = ($this->model)::create([
                 'alias' => $v['alias'],
+
                 'group_id'    => $v['group_id'] ?? null,
                 'type'        => $v['type'],
 
@@ -350,27 +317,42 @@ abstract class BaseServiceController extends Controller
 
             $this->saveGroupPrices((int)$service->id, $v['group_prices'] ?? []);
 
-            // ✅ حفظ custom_fields في جدول custom_fields (لو موجود)
+            // ✅ حفظ custom fields بجدول custom_fields
             $this->saveCustomFieldsToTable((int)$service->id, $this->viewPrefix, $customFields);
 
-            return response()->json([
-                'ok' => true,
-                'msg' => 'Created',
-                'id' => $service->id,
-            ]);
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'ok' => true,
+                    'msg' => 'Created',
+                    'id' => $service->id,
+                ]);
+            }
+
+            return back()->with('ok', 'Created');
         });
     }
 
-    // ===================== UPDATE =====================
+    // =========================
+    // Update (Ajax friendly)
+    // =========================
     public function update(Request $request, $service)
     {
-        $s = ($service instanceof Model)
-            ? $service
-            : ($this->model)::query()->findOrFail($service);
+        $row = ($this->model)::query()->findOrFail($service);
+
+        foreach (['remote_id', 'supplier_id', 'api_provider_id', 'api_service_remote_id'] as $k) {
+            $v = $request->input($k);
+            if ($v === 'undefined' || $v === '') $request->merge([$k => null]);
+        }
 
         $v = $request->validate([
             'alias'        => 'nullable|string|max:255',
             'group_id'     => 'nullable|integer|exists:service_groups,id',
+            'type'         => 'required|string|max:255',
+
+            'source'       => 'nullable|integer',
+            'remote_id'    => 'nullable',
+            'supplier_id'  => 'nullable',
+
             'name'         => 'required|string',
             'time'         => 'nullable|string',
             'info'         => 'nullable|string',
@@ -382,13 +364,6 @@ abstract class BaseServiceController extends Controller
             'minimum'            => 'nullable|integer',
             'maximum'            => 'nullable|integer',
             'main_field_label'   => 'nullable|string|max:255',
-
-            'meta_keywords'     => 'nullable|string',
-            'meta_description'  => 'nullable|string',
-            'meta_after_head'   => 'nullable|string',
-            'meta_before_head'  => 'nullable|string',
-            'meta_after_body'   => 'nullable|string',
-            'meta_before_body'  => 'nullable|string',
 
             'cost'        => 'nullable|numeric',
             'profit'      => 'nullable|numeric',
@@ -410,6 +385,9 @@ abstract class BaseServiceController extends Controller
             'reject_on_missing_reply' => 'sometimes|boolean',
             'ordering'                => 'nullable|integer',
 
+            'api_provider_id'       => 'nullable|integer',
+            'api_service_remote_id' => 'nullable|integer',
+
             'group_prices' => 'nullable|array',
             'group_prices.*.price' => 'nullable|numeric|min:0',
             'group_prices.*.discount' => 'nullable|numeric|min:0',
@@ -418,9 +396,17 @@ abstract class BaseServiceController extends Controller
             'custom_fields_json' => 'nullable|string',
         ]);
 
+        $customFields = $this->normalizeCustomFields(
+            $request->input('custom_fields'),
+            $request->input('custom_fields_json')
+        );
+
         $mainType = strtolower(trim((string)($v['main_field_type'] ?? 'serial')));
+
         $minVal = $v['min'] ?? $v['minimum'] ?? 0;
         $maxVal = $v['max'] ?? $v['maximum'] ?? 0;
+        $minVal = is_null($minVal) ? 0 : (int)$minVal;
+        $maxVal = is_null($maxVal) ? 0 : (int)$maxVal;
 
         $labelVal = trim((string)($v['main_field_label'] ?? ''));
         if ($labelVal === '') $labelVal = strtoupper($mainType);
@@ -433,8 +419,8 @@ abstract class BaseServiceController extends Controller
             'type'  => $mainType,
             'rules' => [
                 'allowed' => $v['allowed_characters'] ?? 'any',
-                'minimum' => (int)$minVal,
-                'maximum' => (int)$maxVal,
+                'minimum' => $minVal,
+                'maximum' => $maxVal,
             ],
             'label' => [
                 'en' => $labelVal,
@@ -442,33 +428,26 @@ abstract class BaseServiceController extends Controller
             ],
         ];
 
-        $customFields = $this->normalizeCustomFields(
-            $request->input('custom_fields'),
-            $request->input('custom_fields_json')
-        );
+        $params = [
+            'custom_fields' => $customFields,
+        ];
 
-        // preserve old params then merge meta/custom_fields
-        $params = [];
-        $rawParams = $s->params ?? null;
-        if (is_array($rawParams)) $params = $rawParams;
-        if (is_string($rawParams) && trim($rawParams) !== '') {
-            $decoded = json_decode($rawParams, true);
-            if (is_array($decoded)) $params = $decoded;
+        if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
+            $v['supplier_id'] = (int)$v['api_provider_id'];
+            $v['remote_id']   = (int)$v['api_service_remote_id'];
         }
 
-        $params['meta_keywords']           = $v['meta_keywords'] ?? ($params['meta_keywords'] ?? '');
-        $params['meta_description']        = $v['meta_description'] ?? ($params['meta_description'] ?? '');
-        $params['after_head_tag_opening']  = $v['meta_after_head'] ?? ($params['after_head_tag_opening'] ?? '');
-        $params['before_head_tag_closing'] = $v['meta_before_head'] ?? ($params['before_head_tag_closing'] ?? '');
-        $params['after_body_tag_opening']  = $v['meta_after_body'] ?? ($params['after_body_tag_opening'] ?? '');
-        $params['before_body_tag_closing'] = $v['meta_before_body'] ?? ($params['before_body_tag_closing'] ?? '');
-        $params['custom_fields']           = $customFields;
+        return DB::transaction(function () use ($request, $row, $v, $name, $time, $info, $main, $params, $customFields) {
 
-        return DB::transaction(function () use ($request, $s, $v, $name, $time, $info, $main, $params, $customFields) {
+            $row->update([
+                'alias' => $v['alias'] ?? $row->alias,
 
-            $s->update([
-                'alias' => $v['alias'] ?? $s->alias,
                 'group_id'    => $v['group_id'] ?? null,
+                'type'        => $v['type'],
+
+                'source'      => $v['source'] ?? null,
+                'remote_id'   => $v['remote_id'] ?? null,
+                'supplier_id' => $v['supplier_id'] ?? null,
 
                 'name'       => json_encode($name, JSON_UNESCAPED_UNICODE),
                 'time'       => json_encode($time, JSON_UNESCAPED_UNICODE),
@@ -476,9 +455,9 @@ abstract class BaseServiceController extends Controller
                 'main_field' => json_encode($main, JSON_UNESCAPED_UNICODE),
                 'params'     => json_encode($params, JSON_UNESCAPED_UNICODE),
 
-                'cost'        => $v['cost'] ?? $s->cost,
-                'profit'      => $v['profit'] ?? $s->profit,
-                'profit_type' => $v['profit_type'] ?? $s->profit_type,
+                'cost'        => $v['cost'] ?? 0,
+                'profit'      => $v['profit'] ?? 0,
+                'profit_type' => $v['profit_type'] ?? 1,
 
                 'active'            => (int)$request->boolean('active'),
                 'allow_bulk'        => (int)$request->boolean('allow_bulk'),
@@ -499,38 +478,50 @@ abstract class BaseServiceController extends Controller
                 'ordering'                => (int)($v['ordering'] ?? 0),
             ]);
 
-            $this->saveGroupPrices((int)$s->id, $v['group_prices'] ?? []);
-            $this->saveCustomFieldsToTable((int)$s->id, $this->viewPrefix, $customFields);
+            $this->saveGroupPrices((int)$row->id, $v['group_prices'] ?? []);
+            $this->saveCustomFieldsToTable((int)$row->id, $this->viewPrefix, $customFields);
 
             return response()->json(['ok' => true, 'msg' => 'Updated']);
         });
     }
 
-    public function destroy($service)
+    // =========================
+    // Destroy (Ajax friendly)
+    // =========================
+    public function destroy(Request $request, $service)
     {
-        $s = ($service instanceof Model)
-            ? $service
-            : ($this->model)::query()->findOrFail($service);
+        $row = ($this->model)::query()->findOrFail($service);
 
-        $s->delete();
+        DB::transaction(function () use ($row) {
+            // prices
+            if (class_exists(ServiceGroupPrice::class)) {
+                ServiceGroupPrice::query()
+                    ->where('service_type', $this->viewPrefix)
+                    ->where('service_id', (int)$row->id)
+                    ->delete();
+            }
 
-        return response()->json(['ok' => true, 'msg' => 'Deleted']);
+            // custom_fields
+            try {
+                DB::table('custom_fields')
+                    ->where('service_type', $this->viewPrefix . '_service')
+                    ->where('service_id', (int)$row->id)
+                    ->delete();
+            } catch (\Throwable $e) {}
+
+            $row->delete();
+        });
+
+        if ($request->expectsJson() || $request->ajax()) {
+            return response()->json(['ok' => true]);
+        }
+
+        return back()->with('ok', 'Deleted');
     }
 
-    public function toggle($service)
-    {
-        $s = ($service instanceof Model)
-            ? $service
-            : ($this->model)::query()->findOrFail($service);
-
-        $s->active = (int)!((int)$s->active);
-        $s->save();
-
-        return response()->json(['ok' => true, 'active' => (int)$s->active]);
-    }
-
-    // ===================== GROUP PRICES + CUSTOM FIELDS HELPERS =====================
-
+    // =========================
+    // Helpers from your existing Base
+    // =========================
     protected function saveGroupPrices(int $serviceId, array $groupPrices): void
     {
         if (!class_exists(ServiceGroupPrice::class)) return;
