@@ -96,23 +96,26 @@ abstract class BaseServiceController extends Controller
                 ->where('service_id', (int)$row->id)
                 ->get();
             foreach ($gpRows as $g) {
-                $gp[(int)$g->group_id] = [
-                $item = [
-                    'group_id' => (int)$g->group_id,
-                    'price' => (float)$g->price,
-                    'discount' => (float)$g->discount,
-                    'discount_type' => (int)$g->discount_type,
+                $groupId = (int) $g->group_id;
+                $price = (float) $g->price;
+                $discount = (float) $g->discount;
+                $discountType = (int) $g->discount_type;
+
+                $gp[$groupId] = [
+                    'price' => $price,
+                    'discount' => $discount,
+                    'discount_type' => $discountType,
                 ];
-                $gp[(int)$g->group_id] = [
-                    'price' => $item['price'],
-                    'discount' => $item['discount'],
-                    'discount_type' => $item['discount_type'],
-                ];
-                $gpList[] = $item;
+
+                $gpList[] = [
+                    'group_id' => $groupId,
+                    'price' => $price,
+                    'discount' => $discount,
+                    'discount_type' => $discountType,
+       ];
             }
         }
-
-        // custom fields (من جدول custom_fields) - إن وجد
+          // custom fields (من جدول custom_fields) - إن وجد
         $customFields = [];
         try {
             $cf = DB::table('custom_fields')
@@ -139,8 +142,6 @@ abstract class BaseServiceController extends Controller
             $customFields = [];
         }
 
-        return response()->json([
-            'ok' => true,
         $servicePayload = [
             'id' => (int)$row->id,
 
