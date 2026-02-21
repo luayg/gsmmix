@@ -551,6 +551,39 @@
     body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
     await loadApiProviders(body);
 
+    // ✅ إذا الخدمة من API: اعمل preselect للـProvider والـService ثم فعّل change
+try {
+  const sourceVal = Number(s.source || 1);
+  const pid = String(s.supplier_id ?? '').trim();
+  const rid = String(s.remote_id ?? '').trim();
+
+  const apiProviderSel = body.querySelector('#apiProviderSelect');
+  const apiServiceSel  = body.querySelector('#apiServiceSelect');
+
+  if (sourceVal === 2 && pid && apiProviderSel) {
+    // اجعل الـSource = API
+    const sourceSel = body.querySelector('[name="source"]');
+    if (sourceSel) { sourceSel.value = '2'; ensureApiUI(body); }
+
+    // اختر المزود
+    apiProviderSel.value = pid;
+
+    // حمّل خدمات المزود لهذا النوع
+    await loadProviderServices(body, pid, serviceType);
+
+    // اختر خدمة المزود (Remote ID) وفعّل change ليتم تطبيق additional_fields + السعر + الوقت
+    if (apiServiceSel && rid) {
+      const opt = Array.from(apiServiceSel.options).find(o => String(o.value) === rid);
+      if (opt) {
+        apiServiceSel.value = opt.value;
+        apiServiceSel.dispatchEvent(new Event('change'));
+      }
+    }
+  }
+} catch (e) {
+  // ignore
+}
+
     // ✅ change FORM to UPDATE
     const form = body.querySelector('form');
     if(form){

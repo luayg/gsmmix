@@ -26,8 +26,8 @@ class ServiceGroupController extends Controller
                     $sub->orWhere('name', 'like', '%' . $q . '%');
                 });
             })
-            ->orderBy('ordering')
-            ->orderBy('name');
+            ->orderBy('name')
+            ->orderBy('id');
 
         $rows = $query->paginate($perPage)->appends([
             'q'        => $q,
@@ -49,7 +49,7 @@ class ServiceGroupController extends Controller
         ]);
 
         $data['type']     = $this->normalizeType($data['type']);
-        $data['ordering'] = $data['ordering'] ?? 1;
+        $data['ordering'] = 1;
 
         ServiceGroup::create($data);
 
@@ -144,7 +144,7 @@ public function modalDelete(\App\Models\ServiceGroup $group)
             $q->whereRaw('LOWER(type) = ?', [$normalized]);
         }
 
-        $rows = $q->orderBy('ordering')->orderBy('id')->get(['id', 'name', 'type']);
+        $rows = $q->orderBy('name')->orderBy('id')->get(['id', 'name', 'type']);
 
         return response()->json(
             $rows->map(fn ($g) => [
