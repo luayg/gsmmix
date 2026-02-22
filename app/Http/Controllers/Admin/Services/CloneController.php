@@ -60,6 +60,7 @@ class CloneController extends Controller
                 'group_name'        => (string) ($s->group_name ?? ''),
                 'standfield'        => $stand,
                 'additional_fields' => $af,
+                'info' => $row->info ?? '',
             ];
         })->values();
 

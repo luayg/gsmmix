@@ -334,12 +334,14 @@
         s.allow_extension ?? s.allow_extensions ?? s.ALLOW_EXTENSION ?? s.extensions ?? s.EXTENSIONS ?? ''
       );
 
+      const info = clean(s.info ?? s.INFO ?? s.description ?? s.DESCRIPTION ?? '');
       const timeTxt = time ? ` — ${time}` : '';
       const ridTxt  = rid ? ` (#${rid})` : '';
       return `<option value="${rid}"
         data-name="${escAttr(name)}"
         data-credit="${creditTxt}"
         data-time="${escAttr(time)}"
+        data-info="${escAttr(info)}"
         data-additional-fields="${escAttr(afJson)}"
         data-allow-extensions="${escAttr(allowExt)}"
       >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
@@ -432,9 +434,12 @@
       name: btn.dataset.name || '',
       credit: Number(btn.dataset.credit || 0),
       time: btn.dataset.time || '',
+      info: btn.dataset.info || '',
       serviceType: (btn.dataset.serviceType || 'imei').toLowerCase()
     };
 
+    const infoHidden = body.querySelector('#infoHidden');
+if (infoHidden) infoHidden.value = clean(cloneData.info);
     const hooks = resolveHooks(cloneData.serviceType);
 
     const afFromBtn = parseJsonAttr(btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || '');
@@ -519,6 +524,15 @@
       const name = clean(opt.dataset.name);
       const credit = Number(opt.dataset.credit || 0);
       const time = clean(opt.dataset.time);
+      const info = clean(opt.dataset.info || '');
+
+const infoHidden = body.querySelector('#infoHidden');
+if (infoHidden) infoHidden.value = info;
+
+// لو Summernote موجودة وتريد تعبئتها مباشرة
+if (typeof window.setSummernoteHtmlIn === 'function') {
+  window.setSummernoteHtmlIn(body, info); // إذا عندك دالة جاهزة
+}
 
       if(name){ body.querySelector('[name="name"]').value = name; body.querySelector('[name="alias"]').value = slugify(name); }
       if(time) body.querySelector('[name="time"]').value = time;
