@@ -25,9 +25,7 @@ class FileService extends Model
         'name'=>'array','time'=>'array','info'=>'array','main_field'=>'array','params'=>'array','expiration_text'=>'array'
     ];
 
-    
     public function group(){ return $this->belongsTo(ServiceGroup::class,'group_id'); }
-
 
     public function supplier()
     {
@@ -38,5 +36,4 @@ class FileService extends Model
     {
         return $this->supplier();
     }
-
 }

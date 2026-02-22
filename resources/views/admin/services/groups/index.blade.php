@@ -9,7 +9,7 @@
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="h4 mb-0">Service groups</h1>
     <button type="button" class="btn btn-primary btn-sm" id="btnNewGroup">
-      <i class="fas fa-plus me-1"></i> New group
+      + New group
     </button>
   </div>
 
@@ -20,8 +20,10 @@
           <tr>
             <th style="width:70px">ID</th>
             <th>Name</th>
-            <th style="width:180px">Type</th>
-            <th class="text-end" style="width:190px">Actions</th>
+            <th style="width:160px">Type</th>
+            <th style="width:100px">Active</th>
+            <th style="width:100px">Ordering</th>
+            <th class="text-end" style="width:180px">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -31,27 +33,38 @@
             <td class="text-truncate" style="max-width:720px" title="{{ e($r->name ?? '') }}">
               {{ $r->name ?? '' }}
             </td>
-            <td class="text-uppercase">{{ $r->type ?? '' }}</td>
-
+            <td class="text-uppercase">
+              {{ $r->type ?? '' }}
+            </td>
+            <td>
+              @if((int)($r->active ?? 0) === 1)
+                <span class="badge bg-success">Active</span>
+              @else
+                <span class="badge bg-secondary">Inactive</span>
+              @endif
+            </td>
+            <td>{{ (int)($r->ordering ?? 0) }}</td>
             <td class="text-end text-nowrap">
-              <button class="btn btn-sm btn-outline-primary"
+              <button class="btn btn-sm btn-warning"
                       data-edit-group
                       data-id="{{ $r->id }}"
                       data-name="{{ e($r->name ?? '') }}"
-                      data-type="{{ e($r->type ?? '') }}">
-                <i class="fas fa-pen me-1"></i> Edit
+                      data-type="{{ e($r->type ?? '') }}"
+                      data-active="{{ (int)($r->active ?? 0) }}"
+                      data-ordering="{{ (int)($r->ordering ?? 0) }}">
+                Edit
               </button>
 
               <button class="btn btn-sm btn-outline-danger"
                       data-delete-group
                       data-id="{{ $r->id }}"
                       data-name="{{ e($r->name ?? '') }}">
-                <i class="fas fa-trash me-1"></i> Delete
+                Delete
               </button>
             </td>
           </tr>
         @empty
-          <tr><td colspan="4" class="text-center text-muted py-4">No groups yet.</td></tr>
+          <tr><td colspan="6" class="text-center text-muted py-4">No groups yet.</td></tr>
         @endforelse
         </tbody>
       </table>
@@ -91,41 +104,50 @@
               <option value="file_service">FILE_SERVICE</option>
             </select>
           </div>
+
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label">Active</label>
+              <select class="form-select" name="active" id="groupActive">
+                <option value="1">Active</option>
+                <option value="0">Inactive</option>
+              </select>
+            </div>
+            <div class="col-6">
+              <label class="form-label">Ordering</label>
+              <input type="number" class="form-control" name="ordering" id="groupOrdering" value="0">
+            </div>
+          </div>
         </form>
+
+        <div class="small text-muted mt-2">
+          Ordering: رقم لترتيب الظهور داخل القوائم (الأصغر يظهر أولاً).
+        </div>
       </div>
 
       <div class="modal-footer">
         <button class="btn btn-light" data-bs-dismiss="modal">Close</button>
-        <button class="btn btn-primary" id="groupSaveBtn">
-          <i class="fas fa-save me-1"></i> Save
-        </button>
+        <button class="btn btn-primary" id="groupSaveBtn">Save</button>
       </div>
     </div>
   </div>
 </div>
 
-{{-- ============ Delete Modal (أجمل) ============ --}}
+{{-- ============ Delete Modal ============ --}}
 <div class="modal fade" id="groupDeleteModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header bg-danger text-white">
-        <div class="modal-title fw-semibold">
-          <i class="fas fa-triangle-exclamation me-1"></i> Delete group
-        </div>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      <div class="modal-header">
+        <div class="modal-title fw-semibold">Delete group</div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-
       <div class="modal-body">
-        <div class="mb-2">Are you sure you want to delete this group?</div>
-        <div class="p-2 border rounded bg-light" id="groupDeleteName">—</div>
-        <div class="small text-muted mt-2">This action cannot be undone.</div>
+        <div class="mb-2">Are you sure you want to delete:</div>
+        <div class="p-2 bg-light border rounded" id="groupDeleteName">—</div>
       </div>
-
       <div class="modal-footer">
         <button class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-danger" id="groupDeleteBtn">
-          <i class="fas fa-trash me-1"></i> Delete
-        </button>
+        <button class="btn btn-danger" id="groupDeleteBtn">Delete</button>
       </div>
     </div>
   </div>
@@ -133,31 +155,11 @@
 
 <script>
 (function(){
-  // ✅ Bootstrap5 OR fallback to jQuery modal (Bootstrap4)
-  function modalShow(id){
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (window.bootstrap?.Modal?.getOrCreateInstance) {
-      window.bootstrap.Modal.getOrCreateInstance(el).show();
-      return;
-    }
-    if (window.jQuery && window.jQuery(el).modal) {
-      window.jQuery(el).modal('show');
-      return;
-    }
-    alert('Modal library not found (bootstrap/jQuery).');
-  }
-  function modalHide(id){
-    const el = document.getElementById(id);
-    if (!el) return;
-    if (window.bootstrap?.Modal?.getOrCreateInstance) {
-      window.bootstrap.Modal.getOrCreateInstance(el).hide();
-      return;
-    }
-    if (window.jQuery && window.jQuery(el).modal) {
-      window.jQuery(el).modal('hide');
-    }
-  }
+  const groupModalEl = document.getElementById('groupModal');
+  const groupModal = groupModalEl ? bootstrap.Modal.getOrCreateInstance(groupModalEl) : null;
+
+  const delEl = document.getElementById('groupDeleteModal');
+  const delModal = delEl ? bootstrap.Modal.getOrCreateInstance(delEl) : null;
 
   const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
@@ -167,34 +169,19 @@
     destroy: (id) => @json(url('/')) + '/admin/service-management/groups/' + id,
   };
 
-  const normalizeGroupType = (type) => {
-    const t = String(type || '').toLowerCase().trim();
-    if (t === 'imei' || t === 'imei_service') return 'imei_service';
-    if (t === 'server' || t === 'server_service') return 'server_service';
-    if (t === 'file' || t === 'file_service') return 'file_service';
-    return 'imei_service';
-  };
-
   const setForm = (mode, data={}) => {
-    document.getElementById('groupModalTitle').textContent =
-      mode === 'edit' ? ('Edit group #' + data.id) : 'New group';
+    document.getElementById('groupModalTitle').textContent = mode === 'edit' ? ('Edit group #' + data.id) : 'New group';
     document.getElementById('groupMethod').value = mode === 'edit' ? 'PUT' : 'POST';
     document.getElementById('groupId').value = data.id || '';
     document.getElementById('groupName').value = data.name || '';
-
-    const typeSel = document.getElementById('groupType');
-    const normalized = normalizeGroupType(data.type);
-    typeSel.value = normalized;
-
-    // fallback if legacy value cannot be matched in options
-    if (typeSel.value !== normalized) {
-      typeSel.value = 'imei_service';
-    }
+    document.getElementById('groupType').value = data.type || 'imei_service';
+    document.getElementById('groupActive').value = String(data.active ?? 1);
+    document.getElementById('groupOrdering').value = String(data.ordering ?? 0);
   };
 
   document.getElementById('btnNewGroup')?.addEventListener('click', () => {
     setForm('new', {});
-    modalShow('groupModal');
+    groupModal?.show();
   });
 
   document.addEventListener('click', (e) => {
@@ -205,9 +192,11 @@
       id: btn.dataset.id,
       name: btn.dataset.name,
       type: btn.dataset.type,
+      active: Number(btn.dataset.active || 0),
+      ordering: Number(btn.dataset.ordering || 0),
     });
 
-    modalShow('groupModal');
+    groupModal?.show();
   });
 
   document.getElementById('groupSaveBtn')?.addEventListener('click', async () => {
@@ -216,7 +205,12 @@
 
     const fd = new FormData(document.getElementById('groupForm'));
     const url = (method === 'PUT') ? routes.update(id) : routes.store;
-    fd.set('_method', method);
+
+    if(method === 'PUT'){
+      fd.set('_method', 'PUT');
+    }else{
+      fd.set('_method', 'POST');
+    }
 
     try{
       const res = await fetch(url, {
@@ -230,13 +224,14 @@
         alert(Object.values(j.errors||{}).flat().join("\n") || 'Validation error');
         return;
       }
+
       if(!res.ok){
         const t = await res.text();
         alert('Save failed\n\n' + t);
         return;
       }
 
-      modalHide('groupModal');
+      groupModal?.hide();
       window.location.reload();
     }catch(err){
       alert('Network error');
@@ -248,10 +243,11 @@
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-delete-group]');
     if(!btn) return;
-
     pendingId = btn.dataset.id;
-    document.getElementById('groupDeleteName').textContent = btn.dataset.name || '—';
-    modalShow('groupDeleteModal');
+
+    const nm = btn.dataset.name || '—';
+    document.getElementById('groupDeleteName').textContent = nm;
+    delModal?.show();
   });
 
   document.getElementById('groupDeleteBtn')?.addEventListener('click', async () => {
@@ -273,12 +269,13 @@
         return;
       }
 
-      modalHide('groupDeleteModal');
+      delModal?.hide();
       window.location.reload();
     }catch(err){
       alert('Network error');
     }
   });
+
 })();
 </script>
 @endsection
