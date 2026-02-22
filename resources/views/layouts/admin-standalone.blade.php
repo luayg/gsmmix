@@ -17,7 +17,7 @@
 
   {{-- مودال Create service (مرة واحدة) --}}
   @include('admin.partials.service-modal')
-
+@include('global.summernote.script')
   {{-- styles stacks --}}
   @stack('styles')
 
