@@ -793,11 +793,17 @@ try {
       }
     }));
   }
-
+   const methodVal = String(form.querySelector('input[name="_method"]')?.value || '').toUpperCase();
+  const isEditMode = methodVal === 'PUT';
   // ✅ اغلق المودال واشعار
   window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
-  window.showToast?.('success', '✅ Service created successfully', { title: 'Done' });
-  return;
+window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : '✅ Service created successfully', { title: 'Done' });
+
+  // في صفحات Service Management نعمل refresh بعد التعديل حتى تظهر الأسعار/البيانات الجديدة فوراً
+  if (isEditMode && window.location.pathname.includes('/admin/service-management/')) {
+    setTimeout(() => window.location.reload(), 200);
+  }
+    return;
       }else{
         const t = await res.text();
         alert('Failed to save service\n\n' + t);

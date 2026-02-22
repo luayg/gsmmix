@@ -28,4 +28,15 @@ class ServerService extends Model
     public function group(){ return $this->belongsTo(ServiceGroup::class,'group_id'); }
 
     
+
+    public function supplier()
+    {
+        return $this->belongsTo(ApiProvider::class, 'supplier_id');
+    }
+
+    public function api()
+    {
+        return $this->supplier();
+    }
+
 }
