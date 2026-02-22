@@ -966,7 +966,10 @@ try {
       hooks.apply?.(body, additionalFields);
       openGeneralTab();
     }
-
+      // Build Groups pricing rows for Additional tab (Edit mode)
+    const userGroups = await loadUserGroups();
+    buildPricingTable(body, userGroups);
+    
     // Fill group prices if returned
     try{
       const gp = Array.isArray(s.group_prices) ? s.group_prices : [];

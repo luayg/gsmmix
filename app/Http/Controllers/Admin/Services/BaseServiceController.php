@@ -68,7 +68,7 @@ abstract class BaseServiceController extends Controller
     // =========================
     // JSON for Edit modal
     // =========================
-    public function showJson($service)
+     public function showJson($service)
     {
         $row = ($this->model)::query()->findOrFail($service);
 
@@ -112,10 +112,11 @@ abstract class BaseServiceController extends Controller
                     'price' => $price,
                     'discount' => $discount,
                     'discount_type' => $discountType,
-       ];
+                ];
             }
         }
-          // custom fields (من جدول custom_fields) - إن وجد
+
+        // custom fields (من جدول custom_fields) - إن وجد
         $customFields = [];
         try {
             $cf = DB::table('custom_fields')
@@ -194,6 +195,7 @@ abstract class BaseServiceController extends Controller
             'custom_fields' => $customFields,
         ]);
     }
+
 
     // =========================
     // Store (Merged)
