@@ -38,6 +38,34 @@
     } catch (_) {}
   }
 
+  // ✅ NEW: set editor html safely (works after init)
+  window.setSummernoteHtmlIn = async function setSummernoteHtmlIn(scopeEl, html) {
+    const scope = (scopeEl instanceof Element) ? scopeEl : document;
+
+    const ok = await waitForSummernote();
+    if (!ok) return;
+
+    const $ = window.jQuery;
+    const textareas = Array.from(scope.querySelectorAll('textarea.summernote'));
+    if (!textareas.length) return;
+
+    // ensure initialized (if not, init first)
+    await window.initSummernoteIn(scope);
+
+    const content = (html ?? '').toString();
+
+    textareas.forEach((ta) => {
+      try {
+        if (!$(ta).data('summernote')) return;
+
+        // set code + sync hidden
+        $(ta).summernote('code', content);
+        const hidden = getHiddenInput(ta);
+        if (hidden) hidden.value = content;
+      } catch (_) {}
+    });
+  };
+
   window.initSummernoteIn = async function initSummernoteIn(scopeEl) {
     const scope = (scopeEl instanceof Element) ? scopeEl : document;
 
@@ -60,6 +88,13 @@
         const height = Number(ta.getAttribute('data-summernote-height') || 320);
         const uploadUrl = ta.getAttribute('data-upload-url') || '';
 
+        // ✅ IMPORTANT: seed textarea from hidden BEFORE init so onInit won't wipe hidden
+        const hidden = getHiddenInput(ta);
+        const seedHtml = (hidden?.value ?? '').toString();
+        if (seedHtml && !ta.value) {
+          ta.value = seedHtml;
+        }
+
         ta.classList.remove('d-none');
         ta.style.display = '';
 
@@ -77,7 +112,15 @@
             ['view', ['fullscreen', 'codeview', 'help']],
           ],
           callbacks: {
-            onInit: function () { syncOne(ta); },
+            onInit: function () {
+              // ✅ ensure editor shows hidden content (and don't wipe it)
+              const h = getHiddenInput(ta);
+              const val = (h?.value ?? '').toString();
+              if (val) {
+                try { $(ta).summernote('code', val); } catch (_) {}
+              }
+              syncOne(ta);
+            },
             onChange: function () { syncOne(ta); },
             onImageUpload: function (files) {
               if (!uploadUrl || !files || !files.length) return;

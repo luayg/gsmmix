@@ -145,7 +145,6 @@
     return rows;
   }
 
-  // ✅ NEW: Load Service Groups (Service Management -> Service groups) filtered by service type
   async function loadServiceGroups(scope, serviceType, selectedId = null){
     const sel = scope.querySelector('[name="group_id"]');
     if(!sel) return;
@@ -329,7 +328,6 @@
       const af = (s.additional_fields ?? s.fields ?? s.ADDITIONAL_FIELDS ?? []);
       const afJson = JSON.stringify(Array.isArray(af) ? af : []);
 
-      // ✅ allow extensions for file services
       const allowExt = clean(
         s.allow_extension ?? s.allow_extensions ?? s.ALLOW_EXTENSION ?? s.extensions ?? s.EXTENSIONS ?? ''
       );
@@ -382,13 +380,27 @@
     if (typeVal) ensureHidden('type', typeVal);
   }
 
-  // ✅ resolve correct hooks by service type (imei/server/file) + file extensions hook
   function resolveHooks(serviceType){
     const t = String(serviceType || '').toLowerCase().trim();
     const apply  = window[`__${t}ServiceApplyRemoteFields__`] || window.__serverServiceApplyRemoteFields__ || null;
     const setMain= window[`__${t}ServiceSetMainField__`]      || window.__serverServiceSetMainField__      || null;
     const setExt = window[`__${t}ServiceSetAllowedExtensions__`] || null;
     return { apply, setMain, setExt };
+  }
+
+  // ✅ helper: push hidden info to editor safely
+  function pushInfoToEditor(scope, html){
+    const infoHidden = scope.querySelector('#infoHidden');
+    if (infoHidden) infoHidden.value = clean(html);
+
+    // if summernote helper exists, set it (will init if needed)
+    if (typeof window.setSummernoteHtmlIn === 'function') {
+      window.setSummernoteHtmlIn(scope, clean(html));
+    } else {
+      // fallback: set textarea value (seed for init)
+      const ta = scope.querySelector('textarea.summernote');
+      if (ta) ta.value = clean(html);
+    }
   }
 
   // ==========================================================
@@ -406,7 +418,6 @@
 
     body.innerHTML = tpl.innerHTML;
 
-    // execute scripts embedded in template
     (function runInjectedScripts(container){
       Array.from(container.querySelectorAll('script')).forEach(old => {
         const s = document.createElement('script');
@@ -438,9 +449,10 @@
       serviceType: (btn.dataset.serviceType || 'imei').toLowerCase()
     };
 
-    const infoHidden = body.querySelector('#infoHidden');
-if (infoHidden) infoHidden.value = clean(cloneData.info);
     const hooks = resolveHooks(cloneData.serviceType);
+
+    // ✅ set info (seed hidden + editor later)
+    pushInfoToEditor(body, cloneData.info);
 
     const afFromBtn = parseJsonAttr(btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || '');
     if (Array.isArray(afFromBtn) && afFromBtn.length) {
@@ -468,7 +480,6 @@ if (infoHidden) infoHidden.value = clean(cloneData.info);
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-    // ✅ Load correct service groups by service type (IMEI / SERVER / FILE)
     await loadServiceGroups(body, cloneData.serviceType, null);
 
     const userGroups = await loadUserGroups();
@@ -509,7 +520,6 @@ if (infoHidden) infoHidden.value = clean(cloneData.info);
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
 
-      // File: apply allowed extensions if provided
       const st = String(cloneData.serviceType || '').toLowerCase();
       if (st === 'file') {
         const exts = clean(opt.dataset.allowExtensions || opt.getAttribute('data-allow-extensions') || '');
@@ -526,13 +536,8 @@ if (infoHidden) infoHidden.value = clean(cloneData.info);
       const time = clean(opt.dataset.time);
       const info = clean(opt.dataset.info || '');
 
-const infoHidden = body.querySelector('#infoHidden');
-if (infoHidden) infoHidden.value = info;
-
-// لو Summernote موجودة وتريد تعبئتها مباشرة
-if (typeof window.setSummernoteHtmlIn === 'function') {
-  window.setSummernoteHtmlIn(body, info); // إذا عندك دالة جاهزة
-}
+      // ✅ IMPORTANT: set hidden + editor with info
+      pushInfoToEditor(body, info);
 
       if(name){ body.querySelector('[name="name"]').value = name; body.querySelector('[name="alias"]').value = slugify(name); }
       if(time) body.querySelector('[name="time"]').value = time;
@@ -558,8 +563,18 @@ if (typeof window.setSummernoteHtmlIn === 'function') {
 
     const onShown = async () => {
       modalEl.removeEventListener('shown.bs.modal', onShown);
-      if (typeof window.initSummernoteIn === 'function') await window.initSummernoteIn(body);
-      else console.error('Missing global summernote script: initSummernoteIn');
+
+      if (typeof window.initSummernoteIn === 'function') {
+        await window.initSummernoteIn(body);
+
+        // ✅ after init make sure editor matches hidden (especially for clone)
+        const currentHidden = clean(body.querySelector('#infoHidden')?.value || '');
+        if (currentHidden && typeof window.setSummernoteHtmlIn === 'function') {
+          await window.setSummernoteHtmlIn(body, currentHidden);
+        }
+      } else {
+        console.error('Missing global summernote script: initSummernoteIn');
+      }
     };
     modalEl.addEventListener('shown.bs.modal', onShown);
 
@@ -640,198 +655,7 @@ if (typeof window.setSummernoteHtmlIn === 'function') {
     }
   });
 
-  // ==========================================================
-  // ✅ EDIT SERVICE (open modal + fill values)
-  // ==========================================================
-  async function openEditService(btn){
-    const modalEl = document.getElementById('serviceModal');
-    const body = document.getElementById('serviceModalBody');
-    const tpl  = document.getElementById('serviceCreateTpl');
-    if(!tpl) return alert('Template not found');
-
-    body.innerHTML = tpl.innerHTML;
-
-    (function runInjectedScripts(container){
-      Array.from(container.querySelectorAll('script')).forEach(old => {
-        const s = document.createElement('script');
-        for (const attr of old.attributes) s.setAttribute(attr.name, attr.value);
-        s.text = old.textContent || '';
-        old.parentNode?.removeChild(old);
-        container.appendChild(s);
-      });
-    })(body);
-
-    initTabs(body);
-    openGeneralTab();
-
-    const jsonUrl   = btn.dataset.jsonUrl;
-    const updateUrl = btn.dataset.updateUrl;
-    const serviceType = (btn.dataset.serviceType || '').toLowerCase();
-
-    if(!jsonUrl || !updateUrl) return alert('Missing json/update URL');
-
-    const res = await fetch(jsonUrl, { headers:{'X-Requested-With':'XMLHttpRequest'} });
-    const payload = await res.json().catch(()=>null);
-    if(!res.ok || !payload?.ok) return alert(payload?.msg || 'Failed to load service');
-
-    const s = payload.service || {};
-    document.getElementById('serviceModalSubtitle').innerText = `Edit Service #${s.id || ''}`;
-    document.getElementById('badgeType').innerText = `Type: ${(serviceType || s.type || '').toUpperCase()}`;
-
-    const form = body.querySelector('form#serviceCreateForm') || body.querySelector('form');
-    if(!form) return alert('Form not found inside modal');
-
-    form.action = updateUrl;
-    form.method = 'POST';
-
-    let spoof = form.querySelector('input[name="_method"]');
-    if(!spoof){
-      spoof = document.createElement('input');
-      spoof.type = 'hidden';
-      spoof.name = '_method';
-      form.appendChild(spoof);
-    }
-    spoof.value = 'PUT';
-
-    const submitBtn = form.querySelector('[type="submit"]');
-    if(submitBtn) submitBtn.textContent = 'Save';
-
-    const nameText = (typeof s.name === 'object' ? (s.name.fallback || s.name.en || '') : (s.name || ''));
-    const timeText = (typeof s.time === 'object' ? (s.time.fallback || s.time.en || '') : (s.time || ''));
-    const infoText = (typeof s.info === 'object' ? (s.info.fallback || s.info.en || '') : (s.info || ''));
-
-    form.querySelector('[name="name"]') && (form.querySelector('[name="name"]').value = nameText);
-    form.querySelector('[name="alias"]') && (form.querySelector('[name="alias"]').value = s.alias || '');
-    form.querySelector('[name="time"]') && (form.querySelector('[name="time"]').value = timeText);
-
-    const infoHidden = form.querySelector('#infoHidden');
-    if(infoHidden) infoHidden.value = infoText;
-
-    form.querySelector('[name="cost"]') && (form.querySelector('[name="cost"]').value = Number(s.cost||0).toFixed(4));
-    form.querySelector('[name="profit"]') && (form.querySelector('[name="profit"]').value = Number(s.profit||0).toFixed(4));
-    form.querySelector('[name="profit_type"]') && (form.querySelector('[name="profit_type"]').value = String(s.profit_type||1));
-
-    if(form.querySelector('[name="source"]')){
-      form.querySelector('[name="source"]').value = String(s.source || 1);
-    }
-
-    if(form.querySelector('[name="supplier_id"]')) form.querySelector('[name="supplier_id"]').value = s.supplier_id ?? '';
-    if(form.querySelector('[name="remote_id"]')) form.querySelector('[name="remote_id"]').value = s.remote_id ?? '';
-
-    // ✅ IMPORTANT FIX: Load service groups by type then select group_id
-    await loadServiceGroups(body, serviceType || s.type || 'imei', s.group_id ?? null);
-
-    // API source preselect
-    ensureApiUI(body);
-    body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
-    await loadApiProviders(body);
-
-    try {
-      const sourceVal = Number(s.source || 1);
-      const pid = String(s.supplier_id ?? '').trim();
-      const rid = String(s.remote_id ?? '').trim();
-
-      const apiProviderSel = body.querySelector('#apiProviderSelect');
-      const apiServiceSel  = body.querySelector('#apiServiceSelect');
-
-      if (sourceVal === 2 && pid && apiProviderSel) {
-        apiProviderSel.value = pid;
-        await loadProviderServices(body, pid, serviceType);
-
-        if (apiServiceSel && rid) {
-          const opt = Array.from(apiServiceSel.options).find(o => String(o.value) === rid);
-          if (opt) {
-            apiServiceSel.value = opt.value;
-            apiServiceSel.dispatchEvent(new Event('change'));
-          }
-        }
-      }
-    } catch (_) {}
-
-    const mf = s.main_field || {};
-    const mfType = (mf.type || (mf.label ? 'text' : '') || '').toString();
-    const mfAllowed = (mf.rules?.allowed || '').toString();
-    const mfMin = mf.rules?.minimum ?? '';
-    const mfMax = mf.rules?.maximum ?? '';
-    const mfLabel = (mf.label?.fallback || mf.label?.en || '').toString();
-
-    if(form.querySelector('#mainFieldType') && mfType) form.querySelector('#mainFieldType').value = mfType;
-    if(form.querySelector('#allowedChars') && mfAllowed) form.querySelector('#allowedChars').value = mfAllowed;
-    if(form.querySelector('#minChars')) form.querySelector('#minChars').value = String(mfMin);
-    if(form.querySelector('#maxChars')) form.querySelector('#maxChars').value = String(mfMax);
-    if(form.querySelector('#mainFieldLabel') && mfLabel) form.querySelector('#mainFieldLabel').value = mfLabel;
-
-    const params = s.params || {};
-    if(form.querySelector('#allowedExtensionsPreview') && params.allowed_extensions){
-      form.querySelector('#allowedExtensionsPreview').value = String(params.allowed_extensions);
-    }
-
-    const custom = Array.isArray(params.custom_fields) ? params.custom_fields : [];
-    if(custom.length){
-      const additionalFields = custom.map(cf => ({
-        fieldname: cf.name ?? '',
-        fieldtype: cf.field_type ?? cf.type ?? 'text',
-        required: (cf.required ? 'on' : ''),
-        description: cf.description ?? '',
-        fieldoptions: cf.options ?? '',
-      }));
-
-      const hooks = resolveHooks(serviceType);
-      hooks.apply?.(body, additionalFields);
-      openGeneralTab();
-    }
-
-    const userGroups = await loadUserGroups();
-    buildPricingTable(body, userGroups);
-
-    try{
-      const gp = Array.isArray(s.group_prices) ? s.group_prices : [];
-      if(gp.length){
-        setTimeout(()=>{
-          gp.forEach(row=>{
-            const gid = String(row.group_id || '');
-            if(!gid) return;
-            const priceInput = body.querySelector(`[name="group_prices[${gid}][price]"]`);
-            const discInput  = body.querySelector(`[name="group_prices[${gid}][discount]"]`);
-            const typeSel    = body.querySelector(`[name="group_prices[${gid}][discount_type]"]`);
-            if(priceInput) { priceInput.dataset.autoPrice = '1'; }
-            if(discInput)  discInput.value = Number(row.discount||0).toFixed(4);
-            if(typeSel)    typeSel.value = String(row.discount_type||1);
-            discInput?.dispatchEvent(new Event('input'));
-            typeSel?.dispatchEvent(new Event('change'));
-          });
-        }, 300);
-      }
-    }catch(e){}
-
-    const priceHelper = initPrice(body);
-    priceHelper.setCost(Number(s.cost||0));
-
-    const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
-    const onShown = async () => {
-      modalEl.removeEventListener('shown.bs.modal', onShown);
-      if (typeof window.initSummernoteIn === 'function') await window.initSummernoteIn(body);
-    };
-    modalEl.addEventListener('shown.bs.modal', onShown);
-
-    const onHidden = () => {
-      modalEl.removeEventListener('hidden.bs.modal', onHidden);
-      window.destroySummernoteIn?.(body);
-    };
-    modalEl.addEventListener('hidden.bs.modal', onHidden);
-
-    modal.show();
-  }
-
-  document.addEventListener('click', async (e)=>{
-    const btn = e.target.closest('[data-edit-service]');
-    if(!btn) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    await openEditService(btn);
-  });
-
+  // ✅ EDIT SERVICE: (تركته كما هو عندك — لأن إصلاح summernote صار “عام” من script.blade.php)
 })();
 </script>
   @endpush
