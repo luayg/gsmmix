@@ -145,6 +145,29 @@
     return rows;
   }
 
+  // ✅ NEW: Load Service Groups (Service Management -> Service groups) filtered by service type
+  async function loadServiceGroups(scope, serviceType, selectedId = null){
+    const sel = scope.querySelector('[name="group_id"]');
+    if(!sel) return;
+
+    try{
+      const url = new URL("{{ route('admin.services.groups.options') }}", window.location.origin);
+      if(serviceType) url.searchParams.set('type', String(serviceType).toLowerCase());
+
+      const res = await fetch(url.toString(), { headers:{'X-Requested-With':'XMLHttpRequest'} });
+      const rows = await res.json().catch(()=>[]);
+
+      sel.innerHTML = `<option value="">Group</option>` +
+        (Array.isArray(rows) ? rows.map(g=>`<option value="${g.id}">${clean(g.name)}</option>`).join('') : '');
+
+      if(selectedId !== null && selectedId !== undefined && String(selectedId).trim() !== ''){
+        sel.value = String(selectedId);
+      }
+    }catch(e){
+      // ignore
+    }
+  }
+
   function buildPricingTable(scope, groups){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if(!wrap) return;
@@ -306,7 +329,7 @@
       const af = (s.additional_fields ?? s.fields ?? s.ADDITIONAL_FIELDS ?? []);
       const afJson = JSON.stringify(Array.isArray(af) ? af : []);
 
-      // ✅ NEW: allow extensions for file services
+      // ✅ allow extensions for file services
       const allowExt = clean(
         s.allow_extension ?? s.allow_extensions ?? s.ALLOW_EXTENSION ?? s.extensions ?? s.EXTENSIONS ?? ''
       );
@@ -357,15 +380,18 @@
     if (typeVal) ensureHidden('type', typeVal);
   }
 
-  // ✅ NEW: resolve correct hooks by service type (imei/server/file) + file extensions hook
+  // ✅ resolve correct hooks by service type (imei/server/file) + file extensions hook
   function resolveHooks(serviceType){
     const t = String(serviceType || '').toLowerCase().trim();
     const apply  = window[`__${t}ServiceApplyRemoteFields__`] || window.__serverServiceApplyRemoteFields__ || null;
     const setMain= window[`__${t}ServiceSetMainField__`]      || window.__serverServiceSetMainField__      || null;
-    const setExt = window[`__${t}ServiceSetAllowedExtensions__`] || null; // file only typically
+    const setExt = window[`__${t}ServiceSetAllowedExtensions__`] || null;
     return { apply, setMain, setExt };
   }
 
+  // ==========================================================
+  // ✅ CREATE / CLONE SERVICE (open modal, fill from button)
+  // ==========================================================
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-create-service]');
     if(!btn) return;
@@ -409,7 +435,6 @@
       serviceType: (btn.dataset.serviceType || 'imei').toLowerCase()
     };
 
-    // ✅ resolve hooks now (so IMEI uses __imei..., FILE uses __file...)
     const hooks = resolveHooks(cloneData.serviceType);
 
     const afFromBtn = parseJsonAttr(btn.dataset.additionalFields || btn.getAttribute('data-additional-fields') || '');
@@ -419,204 +444,6 @@
       hooks.setMain?.(body, mf.type, mf.label);
       openGeneralTab();
     }
-
-      // ==========================
-  // ✅ EDIT SERVICE (open same modal, fill values from JSON)
-  // ==========================
-  document.addEventListener('click', async (e)=>{
-    const btn = e.target.closest('[data-edit-service]');
-    if(!btn) return;
-
-    e.preventDefault();
-
-    const jsonUrl = btn.dataset.jsonUrl;
-    const serviceType = (btn.dataset.serviceType || 'imei').toLowerCase();
-    const serviceId = btn.dataset.serviceId;
-
-    if(!jsonUrl) return alert('Missing json url');
-
-    const res = await fetch(jsonUrl, { headers:{'X-Requested-With':'XMLHttpRequest'} });
-    const payload = await res.json().catch(()=>null);
-    if(!res.ok || !payload?.ok) return alert(payload?.msg || 'Failed to load service');
-
-    const s = payload.service || {};
-
-    const modalEl = document.getElementById('serviceModal');
-    const body = document.getElementById('serviceModalBody');
-    const tpl  = document.getElementById('serviceCreateTpl');
-    if(!tpl) return alert('Template not found');
-
-    body.innerHTML = tpl.innerHTML;
-
-    // execute scripts embedded in template
-    (function runInjectedScripts(container){
-      Array.from(container.querySelectorAll('script')).forEach(old => {
-        const sc = document.createElement('script');
-        for (const attr of old.attributes) sc.setAttribute(attr.name, attr.value);
-        sc.text = old.textContent || '';
-        old.parentNode?.removeChild(old);
-        container.appendChild(sc);
-      });
-    })(body);
-
-    initTabs(body);
-    openGeneralTab();
-
-    // ✅ resolve hooks by type
-    const hooks = resolveHooks(serviceType);
-
-    // ✅ subtitle + badges
-    document.getElementById('serviceModalSubtitle').innerText =
-      `Provider: ${clean(s.supplier_name || s.api_name || '—')} | Remote ID: ${clean(s.remote_id || '—')}`;
-    document.getElementById('badgeType').innerText = `Type: ${serviceType.toUpperCase()}`;
-
-    // ✅ fill form basic fields
-    body.querySelector('[name="supplier_id"]').value = clean(s.supplier_id ?? '');
-    body.querySelector('[name="remote_id"]').value   = clean(s.remote_id ?? '');
-    body.querySelector('[name="name"]').value        = clean(s.name ?? '');
-    body.querySelector('[name="time"]').value        = clean(s.time ?? '');
-    body.querySelector('[name="cost"]').value        = Number(s.cost || 0).toFixed(4);
-    body.querySelector('[name="profit"]').value      = Number(s.profit || 0).toFixed(4);
-    body.querySelector('[name="profit_type"]').value = String(s.profit_type || 1);
-    body.querySelector('[name="source"]').value      = Number(s.source || 1);
-    body.querySelector('[name="type"]').value        = serviceType;
-    body.querySelector('[name="alias"]').value       = slugify(clean(s.name ?? ''));
-
-    // group
-    fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(serviceType))
-      .then(r=>r.json()).then(rows=>{
-        const sel = body.querySelector('[name="group_id"]');
-        if(sel){
-          sel.innerHTML = `<option value="">Group</option>` +
-            (Array.isArray(rows) ? rows.map(g=>`<option value="${g.id}">${clean(g.name)}</option>`).join('') : '');
-          if (s.group_id) sel.value = String(s.group_id);
-        }
-      });
-
-    const priceHelper = initPrice(body);
-    priceHelper.setCost(Number(s.cost || 0));
-
-    // ✅ Groups pricing table (load all user groups, then apply stored group_prices)
-const userGroups = await loadUserGroups();
-buildPricingTable(body, userGroups);
-
-// apply existing group prices
-const gp = Array.isArray(s.group_prices) ? s.group_prices : [];
-if (gp.length){
-  gp.forEach(row=>{
-    const gid = String(row.group_id || '');
-    const price = Number(row.price || 0);
-    const disc  = Number(row.discount || 0);
-    const dtype = Number(row.discount_type || 1);
-
-    const wrap = body.querySelector('#groupsPricingWrap');
-    const elRow = wrap?.querySelector(`.pricing-row[data-group-id="${gid}"]`);
-    if(!elRow) return;
-
-    const priceInput = elRow.querySelector('[data-price]');
-    const discInput  = elRow.querySelector('[data-discount]');
-    const typeSelect = elRow.querySelector('[data-discount-type]');
-    const outEl      = elRow.querySelector('[data-final]');
-
-    if(priceInput){
-      // keep group price in auto-sync with service price while editing
-      priceInput.dataset.autoPrice = '1';
-    }
-    if(discInput) discInput.value = disc.toFixed(4);
-    if(typeSelect) typeSelect.value = String(dtype);
-
-    // update final
-    const p = Number(priceInput?.value || 0);
-    const d = Number(discInput?.value  || 0);
-    const dt = Number(typeSelect?.value || 1);
-    let final = p;
-    if (dt === 2) final = p - (p * (d/100));
-    else final = p - d;
-    if (!Number.isFinite(final) || final < 0) final = 0;
-    if (outEl) outEl.textContent = final.toFixed(4);
-  });
-}
-
-
-    // ✅ Custom fields from params/custom_fields
-    const cf = Array.isArray(s.custom_fields) ? s.custom_fields : [];
-    if (cf.length){
-      hooks.apply?.(body, cf);
-      const mf = guessMainFieldFromRemoteFields(cf);
-      hooks.setMain?.(body, mf.type, mf.label);
-      openGeneralTab();
-    }
-
-    // ✅ API UI
-    ensureApiUI(body);
-    body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
-    await loadApiProviders(body);
-
-    // ✅ إذا الخدمة من API: اعمل preselect للـProvider والـService ثم فعّل change
-try {
-  const sourceVal = Number(s.source || 1);
-  const pid = String(s.supplier_id ?? '').trim();
-  const rid = String(s.remote_id ?? '').trim();
-
-  const apiProviderSel = body.querySelector('#apiProviderSelect');
-  const apiServiceSel  = body.querySelector('#apiServiceSelect');
-
-  if (sourceVal === 2 && pid && apiProviderSel) {
-    // اجعل الـSource = API
-    const sourceSel = body.querySelector('[name="source"]');
-    if (sourceSel) { sourceSel.value = '2'; ensureApiUI(body); }
-
-    // اختر المزود
-    apiProviderSel.value = pid;
-
-    // حمّل خدمات المزود لهذا النوع
-    await loadProviderServices(body, pid, serviceType);
-
-    // اختر خدمة المزود (Remote ID) وفعّل change ليتم تطبيق additional_fields + السعر + الوقت
-    if (apiServiceSel && rid) {
-      const opt = Array.from(apiServiceSel.options).find(o => String(o.value) === rid);
-      if (opt) {
-        apiServiceSel.value = opt.value;
-        apiServiceSel.dispatchEvent(new Event('change'));
-      }
-    }
-  }
-} catch (e) {
-  // ignore
-}
-
-    // ✅ change FORM to UPDATE
-    const form = body.querySelector('form');
-    if(form){
-      form.action = `{{ url('/admin/service-management') }}/${serviceType}-services/${serviceId}`;
-      form.method = 'POST';
-
-      // add _method PUT
-      let method = form.querySelector('input[name="_method"]');
-      if(!method){
-        method = document.createElement('input');
-        method.type = 'hidden';
-        method.name = '_method';
-        form.appendChild(method);
-      }
-      method.value = 'PUT';
-    }
-
-    const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
-    const onShown = async () => {
-      modalEl.removeEventListener('shown.bs.modal', onShown);
-      if (typeof window.initSummernoteIn === 'function') await window.initSummernoteIn(body);
-    };
-    modalEl.addEventListener('shown.bs.modal', onShown);
-
-    const onHidden = () => {
-      modalEl.removeEventListener('hidden.bs.modal', onHidden);
-      window.destroySummernoteIn?.(body);
-    };
-    modalEl.addEventListener('hidden.bs.modal', onHidden);
-
-    modal.show();
-  });
 
     document.getElementById('serviceModalSubtitle').innerText =
       isClone ? `Provider: ${cloneData.providerName} | Remote ID: ${cloneData.remoteId}` : `Provider: — | Remote ID: —`;
@@ -636,14 +463,8 @@ try {
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
 
-    fetch("{{ route('admin.services.groups.options') }}?type="+encodeURIComponent(cloneData.serviceType))
-      .then(r=>r.json()).then(rows=>{
-        const sel = body.querySelector('[name="group_id"]');
-        if(sel){
-          sel.innerHTML = `<option value="">Group</option>` +
-            (Array.isArray(rows) ? rows.map(g=>`<option value="${g.id}">${clean(g.name)}</option>`).join('') : '');
-        }
-      });
+    // ✅ Load correct service groups by service type (IMEI / SERVER / FILE)
+    await loadServiceGroups(body, cloneData.serviceType, null);
 
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);
@@ -683,7 +504,7 @@ try {
       const opt = apiServiceSel.selectedOptions?.[0];
       if(!opt || !opt.value) return;
 
-            // ✅ File: apply allowed extensions if provided
+      // File: apply allowed extensions if provided
       const st = String(cloneData.serviceType || '').toLowerCase();
       if (st === 'file') {
         const exts = clean(opt.dataset.allowExtensions || opt.getAttribute('data-allow-extensions') || '');
@@ -691,9 +512,6 @@ try {
           window.__fileServiceSetAllowedExtensions__(body, exts);
         }
       }
-
-
-
 
       body.querySelector('[name="supplier_id"]').value = apiProviderSel.value;
       body.querySelector('[name="remote_id"]').value   = opt.value;
@@ -710,11 +528,9 @@ try {
         priceHelper.setCost(credit);
       }
 
-      // ✅ NEW: FILE only -> fill allowed extensions preview + store it in params via file modal hook
       const allowExt = clean(opt.dataset.allowExtension || opt.getAttribute('data-allow-extension') || '');
       hooks.setExt?.(body, allowExt);
 
-      // ✅ use hooks for correct service type (imei/server/file)
       const af = parseJsonAttr(opt.dataset.additionalFields || opt.getAttribute('data-additional-fields') || '');
       if (Array.isArray(af) && af.length) {
         hooks.apply?.(body, af);
@@ -742,6 +558,9 @@ try {
     modal.show();
   });
 
+  // ==========================================================
+  // ✅ SAVE (CREATE/UPDATE) SERVICE
+  // ==========================================================
   document.addEventListener('submit', async (ev)=>{
     const form = ev.target;
     if(!form || !form.matches('#serviceModal form')) return;
@@ -772,39 +591,31 @@ try {
       }
 
       if(res.ok){
-  const rid = (form.querySelector('[name="remote_id"]')?.value || '').trim();
+        const rid = (form.querySelector('[name="remote_id"]')?.value || '').trim();
+        markCloneAsAdded(rid);
 
-  // ✅ 1) عطّل زر Clone مباشرة في الجدول الخلفي
-  markCloneAsAdded(rid);
+        const providerId = (form.querySelector('[name="supplier_id"]')?.value || '').trim();
+        const kind       = (form.querySelector('[name="type"]')?.value || '').trim().toLowerCase();
 
-  // ✅ 2) خزّنها في ذاكرة الصفحة (حتى Import Wizard يقرأها فوراً)
-  const providerId = (form.querySelector('[name="supplier_id"]')?.value || '').trim();
-  const kind       = (form.querySelector('[name="type"]')?.value || '').trim().toLowerCase(); // imei/server/file
+        if (providerId && kind && rid) {
+          window.__gsmmixAdded = window.__gsmmixAdded || {};
+          window.__gsmmixAdded[`${providerId}:${kind}:${rid}`] = true;
 
-  if (providerId && kind && rid) {
-    window.__gsmmixAdded = window.__gsmmixAdded || {};
-    window.__gsmmixAdded[`${providerId}:${kind}:${rid}`] = true;
+          window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
+            detail: { provider_id: providerId, kind: kind, remote_id: rid }
+          }));
+        }
 
-    // ✅ 3) أطلق Event عام لكي Import Wizard يعمل refresh فوري
-    window.dispatchEvent(new CustomEvent('gsmmix:service-created', {
-      detail: {
-        provider_id: providerId,
-        kind: kind,
-        remote_id: rid
-      }
-    }));
-  }
-   const methodVal = String(form.querySelector('input[name="_method"]')?.value || '').toUpperCase();
-  const isEditMode = methodVal === 'PUT';
-  // ✅ اغلق المودال واشعار
-  window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
-window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : '✅ Service created successfully', { title: 'Done' });
+        const methodVal = String(form.querySelector('input[name="_method"]')?.value || '').toUpperCase();
+        const isEditMode = methodVal === 'PUT';
 
-  // في صفحات Service Management نعمل refresh بعد التعديل حتى تظهر الأسعار/البيانات الجديدة فوراً
-  if (isEditMode && window.location.pathname.includes('/admin/service-management/')) {
-    setTimeout(() => window.location.reload(), 200);
-  }
-    return;
+        window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
+        window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : '✅ Service created successfully', { title: 'Done' });
+
+        if (isEditMode && window.location.pathname.includes('/admin/service-management/')) {
+          setTimeout(() => window.location.reload(), 200);
+        }
+        return;
       }else{
         const t = await res.text();
         alert('Failed to save service\n\n' + t);
@@ -815,8 +626,8 @@ window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : 
     }
   });
 
-    // ==========================================================
-  // ✅ EDIT SERVICE (open same modal + fill values)
+  // ==========================================================
+  // ✅ EDIT SERVICE (open modal + fill values)
   // ==========================================================
   async function openEditService(btn){
     const modalEl = document.getElementById('serviceModal');
@@ -826,7 +637,6 @@ window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : 
 
     body.innerHTML = tpl.innerHTML;
 
-    // execute scripts embedded in template
     (function runInjectedScripts(container){
       Array.from(container.querySelectorAll('script')).forEach(old => {
         const s = document.createElement('script');
@@ -846,7 +656,6 @@ window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : 
 
     if(!jsonUrl || !updateUrl) return alert('Missing json/update URL');
 
-    // Load service json
     const res = await fetch(jsonUrl, { headers:{'X-Requested-With':'XMLHttpRequest'} });
     const payload = await res.json().catch(()=>null);
     if(!res.ok || !payload?.ok) return alert(payload?.msg || 'Failed to load service');
@@ -855,7 +664,6 @@ window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : 
     document.getElementById('serviceModalSubtitle').innerText = `Edit Service #${s.id || ''}`;
     document.getElementById('badgeType').innerText = `Type: ${(serviceType || s.type || '').toUpperCase()}`;
 
-    // set form action + method PUT
     const form = body.querySelector('form#serviceCreateForm') || body.querySelector('form');
     if(!form) return alert('Form not found inside modal');
 
@@ -871,11 +679,9 @@ window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : 
     }
     spoof.value = 'PUT';
 
-    // change button label
     const submitBtn = form.querySelector('[type="submit"]');
     if(submitBtn) submitBtn.textContent = 'Save';
 
-    // fill basic fields
     const nameText = (typeof s.name === 'object' ? (s.name.fallback || s.name.en || '') : (s.name || ''));
     const timeText = (typeof s.time === 'object' ? (s.time.fallback || s.time.en || '') : (s.time || ''));
     const infoText = (typeof s.info === 'object' ? (s.info.fallback || s.info.en || '') : (s.info || ''));
@@ -884,30 +690,24 @@ window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : 
     form.querySelector('[name="alias"]') && (form.querySelector('[name="alias"]').value = s.alias || '');
     form.querySelector('[name="time"]') && (form.querySelector('[name="time"]').value = timeText);
 
-    // Info (summernote hidden)
     const infoHidden = form.querySelector('#infoHidden');
     if(infoHidden) infoHidden.value = infoText;
 
-    // pricing
     form.querySelector('[name="cost"]') && (form.querySelector('[name="cost"]').value = Number(s.cost||0).toFixed(4));
     form.querySelector('[name="profit"]') && (form.querySelector('[name="profit"]').value = Number(s.profit||0).toFixed(4));
     form.querySelector('[name="profit_type"]') && (form.querySelector('[name="profit_type"]').value = String(s.profit_type||1));
 
-    // group
-    if(form.querySelector('[name="group_id"]') && s.group_id){
-      form.querySelector('[name="group_id"]').value = String(s.group_id);
-    }
-
-    // source
     if(form.querySelector('[name="source"]')){
       form.querySelector('[name="source"]').value = String(s.source || 1);
     }
 
-    // Keep supplier/remote ids
     if(form.querySelector('[name="supplier_id"]')) form.querySelector('[name="supplier_id"]').value = s.supplier_id ?? '';
     if(form.querySelector('[name="remote_id"]')) form.querySelector('[name="remote_id"]').value = s.remote_id ?? '';
 
-        // API source preselect (provider + remote service)
+    // ✅ IMPORTANT FIX: Load service groups by type then select group_id
+    await loadServiceGroups(body, serviceType || s.type || 'imei', s.group_id ?? null);
+
+    // API source preselect
     ensureApiUI(body);
     body.querySelector('[name="source"]')?.addEventListener('change', ()=> ensureApiUI(body));
     await loadApiProviders(body);
@@ -932,12 +732,8 @@ window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : 
           }
         }
       }
-    } catch (_) {
-      // ignore API preload errors
-    }
+    } catch (_) {}
 
-
-    // main_field -> fill selects/inputs
     const mf = s.main_field || {};
     const mfType = (mf.type || (mf.label ? 'text' : '') || '').toString();
     const mfAllowed = (mf.rules?.allowed || '').toString();
@@ -951,16 +747,13 @@ window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : 
     if(form.querySelector('#maxChars')) form.querySelector('#maxChars').value = String(mfMax);
     if(form.querySelector('#mainFieldLabel') && mfLabel) form.querySelector('#mainFieldLabel').value = mfLabel;
 
-    // If file service: allowed_extensions preview
     const params = s.params || {};
     if(form.querySelector('#allowedExtensionsPreview') && params.allowed_extensions){
       form.querySelector('#allowedExtensionsPreview').value = String(params.allowed_extensions);
     }
 
-    // Fill custom fields from params.custom_fields
     const custom = Array.isArray(params.custom_fields) ? params.custom_fields : [];
     if(custom.length){
-      // convert local format -> remote-like format for your hooks
       const additionalFields = custom.map(cf => ({
         fieldname: cf.name ?? '',
         fieldtype: cf.field_type ?? cf.type ?? 'text',
@@ -973,39 +766,33 @@ window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : 
       hooks.apply?.(body, additionalFields);
       openGeneralTab();
     }
-      // Build Groups pricing rows for Additional tab (Edit mode)
-const userGroups = await loadUserGroups();
-buildPricingTable(body, userGroups);
 
-// Fill group prices if returned
-try{
-  const gp = Array.isArray(s.group_prices) ? s.group_prices : [];
-  if(gp.length){
-    // after pricing table built, apply values
-    setTimeout(()=>{
-      gp.forEach(row=>{
-        const gid = String(row.group_id || '');
-        if(!gid) return;
-        const priceInput = body.querySelector(`[name="group_prices[${gid}][price]"]`);
-        const discInput  = body.querySelector(`[name="group_prices[${gid}][discount]"]`);
-        const typeSel    = body.querySelector(`[name="group_prices[${gid}][discount_type]"]`);
-        if(priceInput) { priceInput.dataset.autoPrice = '1'; }
-        if(discInput)  discInput.value = Number(row.discount||0).toFixed(4);
-        if(typeSel)    typeSel.value = String(row.discount_type||1);
-        // trigger updateFinal if exists
-        discInput?.dispatchEvent(new Event('input'));
-        typeSel?.dispatchEvent(new Event('change'));
-      });
-    }, 300);
-  }
-}catch(e){}
+    const userGroups = await loadUserGroups();
+    buildPricingTable(body, userGroups);
 
+    try{
+      const gp = Array.isArray(s.group_prices) ? s.group_prices : [];
+      if(gp.length){
+        setTimeout(()=>{
+          gp.forEach(row=>{
+            const gid = String(row.group_id || '');
+            if(!gid) return;
+            const priceInput = body.querySelector(`[name="group_prices[${gid}][price]"]`);
+            const discInput  = body.querySelector(`[name="group_prices[${gid}][discount]"]`);
+            const typeSel    = body.querySelector(`[name="group_prices[${gid}][discount_type]"]`);
+            if(priceInput) { priceInput.dataset.autoPrice = '1'; }
+            if(discInput)  discInput.value = Number(row.discount||0).toFixed(4);
+            if(typeSel)    typeSel.value = String(row.discount_type||1);
+            discInput?.dispatchEvent(new Event('input'));
+            typeSel?.dispatchEvent(new Event('change'));
+          });
+        }, 300);
+      }
+    }catch(e){}
 
-    // init price previews
     const priceHelper = initPrice(body);
     priceHelper.setCost(Number(s.cost||0));
 
-    // show modal and init summernote
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
     const onShown = async () => {
       modalEl.removeEventListener('shown.bs.modal', onShown);
@@ -1031,7 +818,6 @@ try{
     await openEditService(btn);
   });
 
-  
 })();
 </script>
   @endpush
