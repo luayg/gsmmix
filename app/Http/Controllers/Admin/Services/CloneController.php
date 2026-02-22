@@ -95,7 +95,7 @@ class CloneController extends Controller
                 'time'              => (string) ($s->time ?? ''),
                 'price'             => (float)  ($s->price ?? 0),
                 'group_name'        => (string) ($s->group_name ?? ''),
-                'info'              => (string) ($s->info ?? ''),         // ✅ ADDED
+                'info'      => (string)($s->info ?? ''),         // ✅ ADDED
                 'allow_extensions'  => $allowExt,       // ✅ ADDED (file)
                 'standfield'        => $stand,
                 'additional_fields' => $af,
