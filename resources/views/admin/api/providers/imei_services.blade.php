@@ -48,6 +48,7 @@
               $name     = (string)($svc->name ?? '');
               $credit   = (float)($svc->price ?? 0); // ✅ price في remote_imei_services
               $time     = (string)($svc->time ?? '');
+              $info = (string)($svc->info ?? '');
 
               // ✅ IMPORTANT: additional_fields
               $af = $svc->additional_fields ?? $svc->ADDITIONAL_FIELDS ?? null;
@@ -84,6 +85,7 @@
                           data-name="{{ e(strip_tags($name)) }}"
                           data-credit="{{ number_format($credit, 4, '.', '') }}"
                           data-time="{{ e(strip_tags($time)) }}"
+                          data-info="{{ e($info) }}"
                           data-group-name="{{ e(strip_tags($groupName)) }}"
                           {{-- ✅ هذا هو المفتاح --}}
                           data-additional-fields="{{ e($afJsonTrim) }}">

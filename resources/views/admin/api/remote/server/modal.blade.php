@@ -54,6 +54,7 @@
             $rid   = (string)($svc->remote_id ?? $svc->REMOTEID ?? $svc->id ?? '');
             $name  = (string)($svc->name ?? $svc->NAME ?? '');
             $time  = (string)($svc->time ?? $svc->TIME ?? '');
+            $info = (string)($svc->info ?? '');
             $credit = (float)($svc->price ?? $svc->credit ?? $svc->CREDIT ?? 0);
 
             $af = $svc->additional_fields ?? $svc->ADDITIONAL_FIELDS ?? $svc->fields ?? null;
@@ -87,6 +88,7 @@
                         data-name="{{ e(strip_tags($name)) }}"
                         data-credit="{{ number_format($credit, 4, '.', '') }}"
                         data-time="{{ e(strip_tags($time)) }}"
+                        data-info="{{ e($info) }}"
                         data-additional-fields="{{ e($afJson) }}">
                   Clone
                 </button>

@@ -534,7 +534,7 @@ public function servicesFile(Request $request, ApiProvider $provider)
             if ($nameText === '') $nameText = "{$kind}-{$provider->id}-{$remoteId}";
 
             $timeText = trim(strip_tags((string)($r->time ?? '')));
-            $infoText = $this->extractRemoteInfoText($r);
+            $infoText = trim(strip_tags((string)($r->info ?? '')));
 
             $nameJson = json_encode(['en' => $nameText, 'fallback' => $nameText], JSON_UNESCAPED_UNICODE);
             $timeJson = json_encode(['en' => $timeText, 'fallback' => $timeText], JSON_UNESCAPED_UNICODE);

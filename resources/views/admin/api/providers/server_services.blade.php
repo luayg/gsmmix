@@ -46,6 +46,7 @@
               $name     = (string)($svc->name ?? '');
               $credit   = (float)($svc->price ?? 0);   // ✅ السعر مخزن في price
               $time     = (string)($svc->time ?? '');
+              $info = (string)($svc->info ?? '');
               $isAdded  = isset($existing[$remoteId]);
 
               // ✅ additional fields (قد تكون array أو json string)
@@ -75,6 +76,7 @@
                     data-name="{{ e($name) }}"
                     data-credit="{{ number_format($credit, 4, '.', '') }}"
                     data-time="{{ e($time) }}"
+                    data-info="{{ e($info) }}"
                     data-additional-fields="{{ e($afJson) }}">
                     Clone
                   </button>

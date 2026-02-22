@@ -65,6 +65,7 @@
             $name  = (string)($s['NAME'] ?? '');
             $credit= (float)($s['CREDIT'] ?? 0);
             $time  = (string)($s['TIME'] ?? '');
+            $info = (string)($s['INFO'] ?? $s['info'] ?? $s['DESCRIPTION'] ?? $s['description'] ?? '');
             $isAdded = isset($existing[$rid]);
 
             $af = $s['ADDITIONAL_FIELDS'] ?? $s['additional_fields'] ?? null;
@@ -96,6 +97,7 @@
                         data-name="{{ e($name) }}"
                         data-credit="{{ number_format($credit, 4, '.', '') }}"
                         data-time="{{ e($time) }}"
+                        data-info="{{ e($info) }}"
                         data-additional-fields="{{ e($afJson) }}">
                   Clone
                 </button>
