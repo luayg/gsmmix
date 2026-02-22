@@ -1,13 +1,19 @@
+{{-- resources/views/admin/services/imei/index.blade.php --}}
 @extends('layouts.admin')
 
-@section('title', 'IMEI services')
+@section('title', 'IMEI Services')
 
 @section('content')
-  {{-- جدول الخدمات (البارشيال فيه الزر) --}}
-  @include('admin.services._index', get_defined_vars())
+<div class="container-fluid py-2">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      @include('admin.services._index', ['rows' => $rows, 'kind' => 'imei'])
+    </div>
+  </div>
 
-  {{-- قالب المودال فقط --}}
+  {{-- ✅ REQUIRED by service-modal.js --}}
   <template id="serviceCreateTpl">
     @include('admin.services.imei._modal_create')
   </template>
+</div>
 @endsection

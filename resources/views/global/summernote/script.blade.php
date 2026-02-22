@@ -31,6 +31,7 @@
   function syncOne(ta) {
     const $ = window.jQuery;
     if (!$ || !$.fn || typeof $.fn.summernote !== 'function') return;
+
     try {
       if (!$(ta).data('summernote')) return;
       const hidden = getHiddenInput(ta);
@@ -38,32 +39,32 @@
     } catch (_) {}
   }
 
-  // ✅ NEW: Set HTML inside Summernote + keep hidden in sync
-  function setOneHtml(ta, html) {
-    const val = (html === undefined || html === null) ? '' : String(html);
-
-    // always keep textarea value updated (important BEFORE init)
-    try { ta.value = val; } catch (_) {}
-
-    // keep hidden input updated
-    const hidden = getHiddenInput(ta);
-    if (hidden) hidden.value = val;
-
-    // if summernote already initialized -> update editor content
-    const $ = window.jQuery;
-    if ($ && $.fn && typeof $.fn.summernote === 'function') {
-      try {
-        if ($(ta).data('summernote')) $(ta).summernote('code', val);
-      } catch (_) {}
-    }
-  }
-
-  // ✅ Exposed helper (you already call it in service-modal)
+  // ✅ NEW: set html into summernote + hidden safely (works before/after init)
   window.setSummernoteHtmlIn = function setSummernoteHtmlIn(scopeEl, html) {
     const scope = (scopeEl instanceof Element) ? scopeEl : document;
-    const textareas = Array.from(scope.querySelectorAll('textarea.summernote'));
-    if (!textareas.length) return;
-    textareas.forEach(ta => setOneHtml(ta, html));
+    const val = (html === undefined || html === null) ? '' : String(html);
+
+    const $ = window.jQuery;
+
+    Array.from(scope.querySelectorAll('textarea.summernote')).forEach((ta) => {
+      try {
+        // update hidden first
+        const hidden = getHiddenInput(ta);
+        if (hidden) hidden.value = val;
+
+        // keep textarea value in sync (important before init)
+        ta.value = val;
+
+        // if already initialized, set editor code
+        if ($ && $.fn && typeof $.fn.summernote === 'function') {
+          const $ta = $(ta);
+          if ($ta.data('summernote')) {
+            $ta.summernote('code', val);
+            syncOne(ta);
+          }
+        }
+      } catch (_) {}
+    });
   };
 
   window.initSummernoteIn = async function initSummernoteIn(scopeEl) {
@@ -85,21 +86,14 @@
       try {
         if ($(ta).data('summernote')) return;
 
-        // ✅ IMPORTANT FIX:
-        // قبل تهيئة Summernote، خذ قيمة الـ hidden (infoHidden) وضعها في textarea
-        // حتى لا يقوم onInit بمسحها بمحتوى فارغ.
-        const hidden = getHiddenInput(ta);
-        const initialHtml =
-          (hidden && hidden.value !== undefined && hidden.value !== null)
-            ? String(hidden.value)
-            : (ta.value || '');
-
-        if (initialHtml && initialHtml.trim() !== '') {
-          ta.value = initialHtml;
-        }
-
         const height = Number(ta.getAttribute('data-summernote-height') || 320);
         const uploadUrl = ta.getAttribute('data-upload-url') || '';
+
+        // ✅ CRITICAL FIX:
+        // If hidden already contains HTML (info from API/edit), copy it into textarea BEFORE init.
+        const hidden = getHiddenInput(ta);
+        const hiddenVal = (hidden && typeof hidden.value === 'string') ? hidden.value : '';
+        if (hiddenVal && !ta.value) ta.value = hiddenVal;
 
         ta.classList.remove('d-none');
         ta.style.display = '';
@@ -118,21 +112,7 @@
             ['view', ['fullscreen', 'codeview', 'help']],
           ],
           callbacks: {
-            onInit: function () {
-              // ✅ Ensure editor shows hidden value (Summernote may wipe textarea during init)
-              const h = getHiddenInput(ta);
-              const html =
-                (h && h.value !== undefined && h.value !== null)
-                  ? String(h.value)
-                  : (ta.value || '');
-
-              if (html && html.trim() !== '') {
-                try { $(ta).summernote('code', html); } catch (_) {}
-              }
-
-              // now safe to sync (will NOT overwrite hidden with empty)
-              syncOne(ta);
-            },
+            onInit: function () { syncOne(ta); },
             onChange: function () { syncOne(ta); },
             onImageUpload: function (files) {
               if (!uploadUrl || !files || !files.length) return;
@@ -164,7 +144,7 @@
         ta.dataset.summernoteReady = '1';
         ta.setAttribute('data-summernote-ready', '1');
 
-        // final sync (safe)
+        // ✅ Ensure hidden stays synced after init
         syncOne(ta);
       } catch (e) {
         console.error('Summernote init failed for textarea', ta, e);

@@ -3,66 +3,104 @@
 namespace App\Http\Controllers\Admin\Services;
 
 use App\Http\Controllers\Controller;
-use App\Models\RemoteFileService;
+use Illuminate\Http\Request;
 use App\Models\RemoteImeiService;
 use App\Models\RemoteServerService;
-use Illuminate\Http\Request;
+use App\Models\RemoteFileService;
 
 class CloneController extends Controller
 {
     /**
-     * API: إرجاع خدمات مزوّد محدد (لملء القائمة الثانية)
-     * GET /admin/service-management/clone/provider-services?provider_id=1&type=imei&q=...
+     * Optional: returns the create form partial by kind (if you still use this route anywhere).
+     */
+    public function modal(Request $request)
+    {
+        $kind = strtolower((string) $request->get('kind', 'imei'));
+        if (!in_array($kind, ['imei', 'server', 'file'], true)) {
+            abort(404);
+        }
+
+        // Return the correct create form partial
+        return view('admin.services.' . $kind . '._modal_create');
+    }
+
+    /**
+     * ✅ This is the endpoint used by the "API service" dropdown inside service modal.
+     * Route: admin.services.clone.provider_services
      */
     public function providerServices(Request $request)
     {
         $providerId = (int) $request->get('provider_id', 0);
         $type       = strtolower((string) $request->get('type', 'imei'));
-        $q          = trim((string) $request->get('q', ''));
 
         if ($providerId <= 0) {
             return response()->json([]);
         }
 
-        $query = match ($type) {
-            'server' => RemoteServerService::query()->where('api_provider_id', $providerId),
-            'file'   => RemoteFileService::query()->where('api_provider_id', $providerId),
-            default  => RemoteImeiService::query()->where('api_provider_id', $providerId),
+        $services = match ($type) {
+            'server' => RemoteServerService::query()
+                ->where('api_provider_id', $providerId)
+                ->orderBy('group_name')
+                ->orderBy('name')
+                ->get(),
+
+            'file' => RemoteFileService::query()
+                ->where('api_provider_id', $providerId)
+                ->orderBy('group_name')
+                ->orderBy('name')
+                ->get(),
+
+            default => RemoteImeiService::query()
+                ->where('api_provider_id', $providerId)
+                ->orderBy('group_name')
+                ->orderBy('name')
+                ->get(),
         };
 
-        if ($q !== '') {
-            $query->where(function ($w) use ($q) {
-                $w->where('name', 'like', "%{$q}%")
-                  ->orWhere('remote_id', 'like', "%{$q}%")
-                  ->orWhere('group_name', 'like', "%{$q}%");
-            });
-        }
+        $out = $services->map(function ($s) use ($type) {
 
-        $rows = $query->orderBy('remote_id')->get();
-
-        // ✅ رجّع additional_fields بشكل صريح عشان الـ modal يقرأه
-        $out = $rows->map(function ($s) {
-
-            $af = $s->additional_fields ?? null;
-            if (!is_array($af)) {
-                $af = json_decode((string) $af, true);
-                if (!is_array($af)) $af = [];
+            // Standfield can be array/json/string
+            $stand = $s->standfield ?? null;
+            if (is_string($stand)) {
+                $decoded = json_decode($stand, true);
+                $stand = is_array($decoded) ? $decoded : $stand;
             }
 
-            // standfield (لو موجود في جدول الريموت)
-            $stand = $s->standfield ?? $s->stand_field ?? null;
+            // Additional fields can be array/json/string
+            $af = $s->additional_fields ?? [];
+            if (is_string($af)) {
+                $decoded = json_decode($af, true);
+                $af = is_array($decoded) ? $decoded : [];
+            }
+            if (!is_array($af)) $af = [];
+
+            // ✅ THE MISSING PART: info
+            $info = (string) ($s->info ?? '');
+
+            // ✅ For file services: allowed extensions
+            // (remote_file_services usually stores allowed_extensions)
+            $allowExt = '';
+            if ($type === 'file') {
+                $allowExt = (string) (
+                    $s->allowed_extensions
+                    ?? $s->allow_extensions
+                    ?? $s->allow_extension
+                    ?? ''
+                );
+            }
 
             return [
                 'remote_id'         => (string) ($s->remote_id ?? ''),
                 'name'              => (string) ($s->name ?? ''),
                 'time'              => (string) ($s->time ?? ''),
-                'price'             => (float)  ($s->price ?? 0), // مهم: price مش credit
+                'price'             => (float)  ($s->price ?? 0),
                 'group_name'        => (string) ($s->group_name ?? ''),
+                'info'              => (string) ($s->info ?? ''),         // ✅ ADDED
+                'allow_extensions'  => $allowExt,       // ✅ ADDED (file)
                 'standfield'        => $stand,
                 'additional_fields' => $af,
-                'info' => $row->info ?? '',
             ];
-        })->values();
+        });
 
         return response()->json($out);
     }
