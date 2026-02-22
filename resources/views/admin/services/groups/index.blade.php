@@ -167,13 +167,29 @@
     destroy: (id) => @json(url('/')) + '/admin/service-management/groups/' + id,
   };
 
+  const normalizeGroupType = (type) => {
+    const t = String(type || '').toLowerCase().trim();
+    if (t === 'imei' || t === 'imei_service') return 'imei_service';
+    if (t === 'server' || t === 'server_service') return 'server_service';
+    if (t === 'file' || t === 'file_service') return 'file_service';
+    return 'imei_service';
+  };
+
   const setForm = (mode, data={}) => {
     document.getElementById('groupModalTitle').textContent =
       mode === 'edit' ? ('Edit group #' + data.id) : 'New group';
     document.getElementById('groupMethod').value = mode === 'edit' ? 'PUT' : 'POST';
     document.getElementById('groupId').value = data.id || '';
     document.getElementById('groupName').value = data.name || '';
-    document.getElementById('groupType').value = data.type || 'imei_service';
+
+    const typeSel = document.getElementById('groupType');
+    const normalized = normalizeGroupType(data.type);
+    typeSel.value = normalized;
+
+    // fallback if legacy value cannot be matched in options
+    if (typeSel.value !== normalized) {
+      typeSel.value = 'imei_service';
+    }
   };
 
   document.getElementById('btnNewGroup')?.addEventListener('click', () => {
