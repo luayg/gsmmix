@@ -72,7 +72,6 @@ abstract class BaseServiceController extends Controller
 {
     $row = ($this->model)::query()->findOrFail($service);
 
-    // name/time/info/main_field/params قد تكون JSON مخزنة كنص
     $decode = function ($v) {
         if (is_array($v)) return $v;
         $s = trim((string)$v);
@@ -87,7 +86,6 @@ abstract class BaseServiceController extends Controller
     $main = $decode($row->main_field);
     $params = $decode($row->params);
 
-    // group prices
     $gp = [];
     $gpList = [];
     if (class_exists(ServiceGroupPrice::class)) {
@@ -95,6 +93,7 @@ abstract class BaseServiceController extends Controller
             ->where('service_type', $this->viewPrefix)
             ->where('service_id', (int)$row->id)
             ->get();
+
         foreach ($gpRows as $g) {
             $groupId = (int) $g->group_id;
             $price = (float) $g->price;
@@ -116,7 +115,6 @@ abstract class BaseServiceController extends Controller
         }
     }
 
-    // custom fields (من جدول custom_fields) - إن وجد
     $customFields = [];
     try {
         $cf = DB::table('custom_fields')
@@ -124,6 +122,7 @@ abstract class BaseServiceController extends Controller
             ->where('service_id', (int)$row->id)
             ->orderBy('ordering')
             ->get();
+
         foreach ($cf as $c) {
             $nm = json_decode((string)$c->name, true);
             $customFields[] = [
@@ -187,9 +186,6 @@ abstract class BaseServiceController extends Controller
         'custom_fields' => $customFields,
     ]);
 }
-
-
-
     // =========================
     // Store (Merged)
     // =========================
