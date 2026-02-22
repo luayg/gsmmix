@@ -406,6 +406,43 @@ public function servicesFile(Request $request, ApiProvider $provider)
         return is_array($decoded) ? $decoded : [];
     }
 
+    private function extractRemoteInfoText($r): string
+{
+    // 1) المصدر الأساسي: عمود info
+    $text = trim(strip_tags((string)($r->info ?? '')));
+    if ($text !== '') return $text;
+
+    // 2) fallback: additional_data (قد يكون array بسبب casts أو string JSON)
+    $ad = $r->additional_data ?? null;
+    if ($ad === null) return '';
+
+    if (is_string($ad)) {
+        $ad = json_decode($ad, true);
+    }
+
+    if (!is_array($ad)) return '';
+
+    // مفاتيح شائعة (DHru غالبًا INFO)
+    $text = trim(strip_tags((string)(
+        $ad['INFO'] ?? $ad['info'] ??
+        $ad['DESCRIPTION'] ?? $ad['description'] ??
+        $ad['SERVICEINFO'] ?? $ad['serviceinfo'] ??
+        $ad['SERVICE_INFO'] ?? $ad['service_info'] ??
+        ''
+    )));
+    if ($text !== '') return $text;
+
+    // 3) بعض المزودين يضعونها داخل CUSTOM
+    $custom = $ad['CUSTOM'] ?? $ad['custom'] ?? null;
+    if (is_array($custom)) {
+        $text = trim(strip_tags((string)(
+            $custom['custominfo'] ?? $custom['info'] ?? ''
+        )));
+        if ($text !== '') return $text;
+    }
+
+    return '';
+}
     private function normalizeRemoteFieldsToLocal(array $remoteFields): array
     {
         $out = [];
@@ -497,7 +534,7 @@ public function servicesFile(Request $request, ApiProvider $provider)
             if ($nameText === '') $nameText = "{$kind}-{$provider->id}-{$remoteId}";
 
             $timeText = trim(strip_tags((string)($r->time ?? '')));
-            $infoText = trim(strip_tags((string)($r->info ?? '')));
+            $infoText = $this->extractRemoteInfoText($r);
 
             $nameJson = json_encode(['en' => $nameText, 'fallback' => $nameText], JSON_UNESCAPED_UNICODE);
             $timeJson = json_encode(['en' => $timeText, 'fallback' => $timeText], JSON_UNESCAPED_UNICODE);

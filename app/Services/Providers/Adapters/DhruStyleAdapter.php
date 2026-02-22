@@ -79,6 +79,70 @@ private function deepFind($data, array $keys)
         });
     }
 
+    private function extractInfo(array $srv): ?string
+{
+    // 1) مفاتيح مباشرة شائعة
+    $directKeys = [
+        'INFO','info',
+        'DESCRIPTION','description',
+        'SERVICEINFO','serviceinfo',
+        'SERVICE_INFO','service_info',
+        'DETAILS','details',
+        'INFO_HTML','info_html',
+        'DESCRIPTION_HTML','description_html',
+    ];
+
+    foreach ($directKeys as $k) {
+        if (array_key_exists($k, $srv)) {
+            $v = $srv[$k];
+            $txt = $this->normalizeInfoValue($v);
+            if ($txt !== null) return $txt;
+        }
+    }
+
+    // 2) داخل CUSTOM
+    $custom = $srv['CUSTOM'] ?? $srv['custom'] ?? null;
+    if (is_array($custom)) {
+        foreach (['INFO','info','DESCRIPTION','description','SERVICEINFO','serviceinfo','SERVICE_INFO','service_info'] as $k) {
+            if (array_key_exists($k, $custom)) {
+                $txt = $this->normalizeInfoValue($custom[$k]);
+                if ($txt !== null) return $txt;
+            }
+        }
+    } elseif (is_string($custom)) {
+        $decoded = json_decode($custom, true);
+        if (is_array($decoded)) {
+            foreach (['INFO','info','DESCRIPTION','description','SERVICEINFO','serviceinfo','SERVICE_INFO','service_info'] as $k) {
+                if (array_key_exists($k, $decoded)) {
+                    $txt = $this->normalizeInfoValue($decoded[$k]);
+                    if ($txt !== null) return $txt;
+                }
+            }
+        }
+    }
+
+    // 3) بحث عميق (nested) داخل كامل srv
+    $found = $this->deepFind($srv, $directKeys);
+    $txt = $this->normalizeInfoValue($found);
+    return $txt;
+}
+
+private function normalizeInfoValue($value): ?string
+{
+    if ($value === null) return null;
+
+    // إذا جاءت array (مثل rich data) حولها لنص
+    if (is_array($value)) {
+        $value = json_encode($value, JSON_UNESCAPED_UNICODE);
+    }
+
+    $s = (string)$value;
+    $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $s = trim(strip_tags($s)); // إذا تحب تبقي HTML احذف strip_tags
+
+    return $this->clean($s);
+}
+
     private function syncImeiOrServer(ApiProvider $provider, string $kind, array $data): int
     {
         $target = strtoupper($kind); // IMEI or SERVER
@@ -117,7 +181,7 @@ private function deepFind($data, array $keys)
                     'group_name' => $groupName ?: null,
                     'price' => $this->toFloat($srv['CREDIT'] ?? $srv['credit'] ?? 0),
                     'time' => $this->clean((string)($srv['TIME'] ?? $srv['time'] ?? '')),
-                    'info' => $this->clean((string)($srv['INFO'] ?? $srv['info'] ?? '')),
+                    'info' => $this->extractInfo($srv),
                     'min_qty' => (string)($srv['MINQNT'] ?? null),
                     'max_qty' => (string)($srv['MAXQNT'] ?? null),
                     'additional_data' => $srv,
@@ -207,7 +271,7 @@ private function deepFind($data, array $keys)
                         'group_name' => $groupName ?: null,
                         'price' => $this->toFloat($srv['CREDIT'] ?? $srv['credit'] ?? 0),
                         'time' => $this->clean((string)($srv['TIME'] ?? $srv['time'] ?? '')),
-                        'info' => $this->clean((string)($srv['INFO'] ?? $srv['info'] ?? '')),
+                        'info' => $this->extractInfo($srv),
                         'allowed_extensions' => $this->clean((string)($srv['ALLOW_EXTENSION'] ?? '')),
                         'additional_data' => $srv,
                         'additional_fields' => $this->extractAdditionalFields($srv),
