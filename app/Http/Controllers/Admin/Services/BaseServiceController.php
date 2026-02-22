@@ -68,133 +68,126 @@ abstract class BaseServiceController extends Controller
     // =========================
     // JSON for Edit modal
     // =========================
-     public function showJson($service)
-    {
-        $row = ($this->model)::query()->findOrFail($service);
+      public function showJson($service)
+{
+    $row = ($this->model)::query()->findOrFail($service);
 
-        // name/time/info/main_field/params قد تكون JSON مخزنة كنص
-        $decode = function ($v) {
-            if (is_array($v)) return $v;
-            $s = trim((string)$v);
-            if ($s === '') return [];
-            $j = json_decode($s, true);
-            return is_array($j) ? $j : [];
-        };
+    // name/time/info/main_field/params قد تكون JSON مخزنة كنص
+    $decode = function ($v) {
+        if (is_array($v)) return $v;
+        $s = trim((string)$v);
+        if ($s === '') return [];
+        $j = json_decode($s, true);
+        return is_array($j) ? $j : [];
+    };
 
-        $name = $decode($row->name);
-        $time = $decode($row->time);
-        $info = $decode($row->info);
-        $main = $decode($row->main_field);
-        $params = $decode($row->params);
+    $name = $decode($row->name);
+    $time = $decode($row->time);
+    $info = $decode($row->info);
+    $main = $decode($row->main_field);
+    $params = $decode($row->params);
 
-        // group prices
-        $gp = [];
-        $gpList = [];
-        if (class_exists(ServiceGroupPrice::class)) {
-            $gpRows = ServiceGroupPrice::query()
-                ->where('service_type', $this->viewPrefix)
-                ->where('service_id', (int)$row->id)
-                ->get();
-            foreach ($gpRows as $g) {
-                $groupId = (int) $g->group_id;
-                $price = (float) $g->price;
-                $discount = (float) $g->discount;
-                $discountType = (int) $g->discount_type;
+    // group prices
+    $gp = [];
+    $gpList = [];
+    if (class_exists(ServiceGroupPrice::class)) {
+        $gpRows = ServiceGroupPrice::query()
+            ->where('service_type', $this->viewPrefix)
+            ->where('service_id', (int)$row->id)
+            ->get();
+        foreach ($gpRows as $g) {
+            $groupId = (int) $g->group_id;
+            $price = (float) $g->price;
+            $discount = (float) $g->discount;
+            $discountType = (int) $g->discount_type;
 
-                $gp[$groupId] = [
-                    'price' => $price,
-                    'discount' => $discount,
-                    'discount_type' => $discountType,
-                ];
+            $gp[$groupId] = [
+                'price' => $price,
+                'discount' => $discount,
+                'discount_type' => $discountType,
+            ];
 
-                $gpList[] = [
-                    'group_id' => $groupId,
-                    'price' => $price,
-                    'discount' => $discount,
-                    'discount_type' => $discountType,
-                ];
-            }
+            $gpList[] = [
+                'group_id' => $groupId,
+                'price' => $price,
+                'discount' => $discount,
+                'discount_type' => $discountType,
+            ];
         }
-
-        // custom fields (من جدول custom_fields) - إن وجد
-        $customFields = [];
-        try {
-            $cf = DB::table('custom_fields')
-                ->where('service_type', $this->viewPrefix . '_service')
-                ->where('service_id', (int)$row->id)
-                ->orderBy('ordering')
-                ->get();
-            foreach ($cf as $c) {
-                $nm = json_decode((string)$c->name, true);
-                $customFields[] = [
-                    'active' => (int)($c->active ?? 1),
-                    'required' => (int)($c->required ?? 0),
-                    'name' => is_array($nm) ? ($nm['fallback'] ?? $nm['en'] ?? '') : (string)$c->name,
-                    'input' => (string)($c->input ?? ''),
-                    'type' => (string)($c->field_type ?? 'text'),
-                    'description' => (string)($c->description ?? ''),
-                    'minimum' => (int)($c->minimum ?? 0),
-                    'maximum' => (int)($c->maximum ?? 0),
-                    'validation' => (string)($c->validation ?? ''),
-                    'options' => $c->field_options ? (json_decode((string)$c->field_options, true) ?: (string)$c->field_options) : '',
-                ];
-            }
-        } catch (\Throwable $e) {
-            $customFields = [];
-        }
-
-        $servicePayload = [
-            'id' => (int)$row->id,
-
-            'alias' => (string)($row->alias ?? ''),
-            'group_id' => $row->group_id ? (int)$row->group_id : null,
-            'type' => (string)($row->type ?? $this->viewPrefix),
-
-            'source' => $row->source ?? null,
-            'supplier_id' => $row->supplier_id ?? null,
-            'remote_id' => $row->remote_id ?? null,
-
-            'name_text' => (string)($name['fallback'] ?? $name['en'] ?? $row->name ?? ''),
-            'time_text' => (string)($time['fallback'] ?? $time['en'] ?? $row->time ?? ''),
-            'info_text' => (string)($info['fallback'] ?? $info['en'] ?? $row->info ?? ''),
-
-            'name' => (string)($name['fallback'] ?? $name['en'] ?? $row->name ?? ''),
-            'time' => (string)($time['fallback'] ?? $time['en'] ?? $row->time ?? ''),
-            'info' => (string)($info['fallback'] ?? $info['en'] ?? $row->info ?? ''),
-            'cost' => (float)($row->cost ?? 0),
-            'profit' => (float)($row->profit ?? 0),
-            'profit_type' => (int)($row->profit_type ?? 1),
-
-            'main_field' => $main,
-            'params' => $params,
-            'group_prices' => $gpList,
-            'custom_fields' => $customFields,
-            'supplier_name' => method_exists($row, 'supplier') ? optional($row->supplier)->name : null,
-            'api_name' => method_exists($row, 'api') ? optional($row->api)->name : null,
-        ];
-
-        return response()->json([
-            'ok' => true,
-            'service' => $servicePayload,
-            'id' => $servicePayload['id'],
-            'alias' => $servicePayload['alias'],
-            'group_id' => $servicePayload['group_id'],
-            'type' => $servicePayload['type'],
-            'source' => $servicePayload['source'],
-            'supplier_id' => $servicePayload['supplier_id'],
-            'remote_id' => $servicePayload['remote_id'],
-            'name_text' => $servicePayload['name'],
-            'time_text' => $servicePayload['time'],
-            'info_text' => $servicePayload['info'],
-            'cost' => $servicePayload['cost'],
-            'profit' => $servicePayload['profit'],
-            'profit_type' => $servicePayload['profit_type'],
-            'main_field' => $servicePayload['main_field'],
-            'params' => $servicePayload['params'],
-            'group_prices' => $gp,
-            'custom_fields' => $customFields,
-        ]);
     }
+
+    // custom fields (من جدول custom_fields) - إن وجد
+    $customFields = [];
+    try {
+        $cf = DB::table('custom_fields')
+            ->where('service_type', $this->viewPrefix . '_service')
+            ->where('service_id', (int)$row->id)
+            ->orderBy('ordering')
+            ->get();
+        foreach ($cf as $c) {
+            $nm = json_decode((string)$c->name, true);
+            $customFields[] = [
+                'active' => (int)($c->active ?? 1),
+                'required' => (int)($c->required ?? 0),
+                'name' => is_array($nm) ? ($nm['fallback'] ?? $nm['en'] ?? '') : (string)$c->name,
+                'input' => (string)($c->input ?? ''),
+                'type' => (string)($c->field_type ?? 'text'),
+                'description' => (string)($c->description ?? ''),
+                'minimum' => (int)($c->minimum ?? 0),
+                'maximum' => (int)($c->maximum ?? 0),
+                'validation' => (string)($c->validation ?? ''),
+                'options' => $c->field_options ? (json_decode((string)$c->field_options, true) ?: (string)$c->field_options) : '',
+            ];
+        }
+    } catch (\Throwable $e) {
+        $customFields = [];
+    }
+
+    $servicePayload = [
+        'id' => (int)$row->id,
+        'alias' => (string)($row->alias ?? ''),
+        'group_id' => $row->group_id ? (int)$row->group_id : null,
+        'type' => (string)($row->type ?? $this->viewPrefix),
+        'source' => $row->source ?? null,
+        'supplier_id' => $row->supplier_id ?? null,
+        'remote_id' => $row->remote_id ?? null,
+        'name' => (string)($name['fallback'] ?? $name['en'] ?? $row->name ?? ''),
+        'time' => (string)($time['fallback'] ?? $time['en'] ?? $row->time ?? ''),
+        'info' => (string)($info['fallback'] ?? $info['en'] ?? $row->info ?? ''),
+        'cost' => (float)($row->cost ?? 0),
+        'profit' => (float)($row->profit ?? 0),
+        'profit_type' => (int)($row->profit_type ?? 1),
+        'main_field' => $main,
+        'params' => $params,
+        'group_prices' => $gpList,
+        'custom_fields' => $customFields,
+        'supplier_name' => method_exists($row, 'supplier') ? optional($row->supplier)->name : null,
+        'api_name' => method_exists($row, 'api') ? optional($row->api)->name : null,
+    ];
+
+    return response()->json([
+        'ok' => true,
+        'service' => $servicePayload,
+        'id' => $servicePayload['id'],
+        'alias' => $servicePayload['alias'],
+        'group_id' => $servicePayload['group_id'],
+        'type' => $servicePayload['type'],
+        'source' => $servicePayload['source'],
+        'supplier_id' => $servicePayload['supplier_id'],
+        'remote_id' => $servicePayload['remote_id'],
+        'name_text' => $servicePayload['name'],
+        'time_text' => $servicePayload['time'],
+        'info_text' => $servicePayload['info'],
+        'cost' => $servicePayload['cost'],
+        'profit' => $servicePayload['profit'],
+        'profit_type' => $servicePayload['profit_type'],
+        'main_field' => $servicePayload['main_field'],
+        'params' => $servicePayload['params'],
+        'group_prices' => $gp,
+        'custom_fields' => $customFields,
+    ]);
+}
+
 
 
     // =========================
