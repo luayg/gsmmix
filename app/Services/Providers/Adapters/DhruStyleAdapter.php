@@ -164,8 +164,8 @@ private function deepFind($data, array $keys)
         $s = (string)$value;
         $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-        // Keep safe rich content (especially <img>) instead of flattening all HTML.
-        $s = strip_tags($s, '<img><br><p><div><span><b><strong><i><u><ul><ol><li><a>');
+        /// Keep safe rich content (especially tables/icons/images) instead of flattening all HTML.
+        $s = strip_tags($s, '<img><br><hr><p><div><span><small><sup><sub><b><strong><i><u><ul><ol><li><a><table><thead><tbody><tr><th><td><h1><h2><h3><h4><h5><h6>');
 
         // Basic sanitization for dangerous attributes/protocols.
         $s = preg_replace('/\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/iu', '', $s) ?? $s;
@@ -220,7 +220,8 @@ private function deepFind($data, array $keys)
              return $this->normalizeImageUrl($provider, $m[1]);
         }
 
-        if (preg_match('~(https?:\/\/[^\s"\'<>]+|\/\/[^\s"\'<>]+|data:image\/[^\s"\'<>]+)~iu', $raw, $m)) {
+        // Also support plain relative paths (e.g. /uploads/service.jpg) returned by some providers.
+        if (preg_match('~(https?:\/\/[^\s"\'<>]+|\/\/[^\s"\'<>]+|\/[^\s"\'<>]+|data:image\/[^\s"\'<>]+)~iu', $raw, $m)) {
             return $this->normalizeImageUrl($provider, $m[1]);
         }
 
