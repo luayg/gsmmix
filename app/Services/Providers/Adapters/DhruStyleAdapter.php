@@ -177,23 +177,50 @@ private function deepFind($data, array $keys)
     }
 
     private function extractImageTagFromSrv(array $srv): ?string
-    {
-        $keys = [
-            'IMAGE','image','IMAGE_URL','image_url','IMG','img','PHOTO','photo','ICON','icon',
-            'SERVICE_IMAGE','service_image','DESCRIPTION_IMAGE','description_image',
-        ];
+{
+    $keys = [
+        'IMAGE','image','IMAGE_URL','image_url','IMG','img','PHOTO','photo','ICON','icon',
+        'SERVICE_IMAGE','service_image','DESCRIPTION_IMAGE','description_image',
+    ];
 
-        foreach ($keys as $k) {
-            if (!array_key_exists($k, $srv)) continue;
-            $v = trim((string)($srv[$k] ?? ''));
-            if ($v === '') continue;
-            if (!preg_match('~^https?://~i', $v)) continue;
-            if (!preg_match('~\.(png|jpe?g|gif|webp|svg)(\?.*)?$~i', $v)) continue;
-            return '<img src="'.e($v).'" alt="service image">';
-        }
-
-        return null;
+    // direct keys
+    foreach ($keys as $k) {
+        if (!array_key_exists($k, $srv)) continue;
+        $v = trim((string)($srv[$k] ?? ''));
+        if ($v === '') continue;
+        if (!preg_match('~^https?://~i', $v)) continue;
+        if (!preg_match('~\\.(png|jpe?g|gif|webp|svg)(\\?.*)?$~i', $v)) continue;
+        return '<img src="'.e($v).'" alt="service image">';
     }
+
+    // deep nested search (important)
+    $all = $this->flattenValues($srv);
+    foreach ($all as $v) {
+        $v = trim((string)$v);
+        if ($v === '') continue;
+        if (!preg_match('~^https?://~i', $v)) continue;
+        if (!preg_match('~\\.(png|jpe?g|gif|webp|svg)(\\?.*)?$~i', $v)) continue;
+        return '<img src="'.e($v).'" alt="service image">';
+    }
+
+    return null;
+}
+
+private function flattenValues($data): array
+{
+    $out = [];
+    if (!is_array($data)) return $out;
+
+    foreach ($data as $v) {
+        if (is_array($v)) {
+            $out = array_merge($out, $this->flattenValues($v));
+        } else {
+            $out[] = $v;
+        }
+    }
+    return $out;
+}
+
 
     private function syncImeiOrServer(ApiProvider $provider, string $kind, array $data): int
     {
