@@ -142,15 +142,28 @@
       return `<span class="${cls}">${htmlEscape(v.toUpperCase())}</span>`;
     };
 
+    const extractImageUrl = (value) => {
+      const v = clean(value).trim();
+      if (!v) return '';
+
+      const htmlImg = v.match(/<img[^>]+src\s*=\s*["']?([^"'\s>]+)/i);
+      if (htmlImg?.[1]) return htmlImg[1];
+
+      const direct = v.match(/(https?:\/\/[^\s"'<>]+|\/\/[^\s"'<>]+|data:image\/[^\s"'<>]+)/i);
+      if (!direct?.[1]) return '';
+
+      const url = direct[1].startsWith('//') ? `https:${direct[1]}` : direct[1];
+      return url;
+    };
+
     const renderValue = (value) => {
       const v = value.trim();
       if (/^(yes|no|active|activated|clean|on|unlocked|expired|blocked|blacklisted|off|locked|unknown|n\/a|pending)$/i.test(v)) {
         return renderStatusBadge(v);
       }
-      const imgMatch = v.match(/(https?:\/\/\S+\.(?:png|jpe?g|gif|webp|svg)(?:\?\S*)?)/i);
-      if (imgMatch) {
-        const url = imgMatch[1];
-        return `<img class="info-image" src="${htmlEscape(url)}" alt="info image">`;
+      const imgUrl = extractImageUrl(v);
+      if (imgUrl) {
+        return `<img class="info-image" src="${htmlEscape(imgUrl)}" alt="info image">`;
       }
       return `<span class="info-value">${htmlEscape(v)}</span>`;
     };
@@ -159,8 +172,8 @@
       const i = line.indexOf(':');
       if (i <= 0) {
         const rawLine = line.trim();
-        const imgOnly = rawLine.match(/^(https?:\/\/\S+\.(?:png|jpe?g|gif|webp|svg)(?:\?\S*)?)$/i);
-        if (imgOnly) return `<div class="info-line"><img class="info-image" src="${htmlEscape(imgOnly[1])}" alt="info image"></div>`;
+        const imgUrl = extractImageUrl(rawLine);
+        if (imgUrl) return `<div class="info-line"><img class="info-image" src="${htmlEscape(imgUrl)}" alt="info image"></div>`;
         return `<div class="info-line"><span class="info-value">${htmlEscape(line)}</span></div>`;
       }
       const label = line.slice(0, i).trim();

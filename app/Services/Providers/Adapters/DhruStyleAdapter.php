@@ -80,136 +80,173 @@ private function deepFind($data, array $keys)
     }
 
     private function extractInfo(array $srv): ?string
-{
-    // 1) مفاتيح مباشرة شائعة
-    $directKeys = [
-        'INFO','info',
-        'DESCRIPTION','description',
-        'SERVICEINFO','serviceinfo',
-        'SERVICE_INFO','service_info',
-        'DETAILS','details',
-        'INFO_HTML','info_html',
-        'DESCRIPTION_HTML','description_html',
-    ];
+    {
+        // 1) مفاتيح مباشرة شائعة
+        $directKeys = [
+            'INFO','info',
+            'DESCRIPTION','description',
+            'SERVICEINFO','serviceinfo',
+            'SERVICE_INFO','service_info',
+            'DETAILS','details',
+            'INFO_HTML','info_html',
+            'DESCRIPTION_HTML','description_html',
+        ];
 
-    foreach ($directKeys as $k) {
-        if (array_key_exists($k, $srv)) {
-            $v = $srv[$k];
-            $txt = $this->normalizeInfoValue($v);
-            if ($txt !== null) {
-                $img = $this->extractImageTagFromSrv($srv);
-                if ($img && stripos($txt, '<img') === false) {
-                    $txt .= "\n".$img;
-                }
-                return $txt;
+        foreach ($directKeys as $k) {
+            if (array_key_exists($k, $srv)) {
+                $v = $srv[$k];
+                $txt = $this->normalizeInfoValue($v);
+                if ($txt !== null) return $this->appendImageIfMissing($txt, $srv);
             }
         }
-    }
 
-    // 2) داخل CUSTOM
-    $custom = $srv['CUSTOM'] ?? $srv['custom'] ?? null;
-    if (is_array($custom)) {
-        foreach (['INFO','info','DESCRIPTION','description','SERVICEINFO','serviceinfo','SERVICE_INFO','service_info'] as $k) {
-            if (array_key_exists($k, $custom)) {
-                $txt = $this->normalizeInfoValue($custom[$k]);
-                if ($txt !== null) {
-                    $img = $this->extractImageTagFromSrv($srv);
-                    if ($img && stripos($txt, '<img') === false) {
-                        $txt .= "\n".$img;
-                    }
-                    return $txt;
-                }
-            }
-        }
-    } elseif (is_string($custom)) {
-        $decoded = json_decode($custom, true);
-        if (is_array($decoded)) {
+        // 2) داخل CUSTOM
+        $custom = $srv['CUSTOM'] ?? $srv['custom'] ?? null;
+        if (is_array($custom)) {
             foreach (['INFO','info','DESCRIPTION','description','SERVICEINFO','serviceinfo','SERVICE_INFO','service_info'] as $k) {
-                if (array_key_exists($k, $decoded)) {
-                    $txt = $this->normalizeInfoValue($decoded[$k]);
-                    if ($txt !== null) {
-                        $img = $this->extractImageTagFromSrv($srv);
-                        if ($img && stripos($txt, '<img') === false) {
-                            $txt .= "\n".$img;
-                        }
-                        return $txt;
+                if (array_key_exists($k, $custom)) {
+                    $txt = $this->normalizeInfoValue($custom[$k]);
+                    if ($txt !== null) return $this->appendImageIfMissing($txt, $srv);
+                }
+            }
+        } elseif (is_string($custom)) {
+            $decoded = json_decode($custom, true);
+            if (is_array($decoded)) {
+                foreach (['INFO','info','DESCRIPTION','description','SERVICEINFO','serviceinfo','SERVICE_INFO','service_info'] as $k) {
+                    if (array_key_exists($k, $decoded)) {
+                        $txt = $this->normalizeInfoValue($decoded[$k]);
+                        if ($txt !== null) return $this->appendImageIfMissing($txt, $srv);
                     }
                 }
             }
         }
+
+        // 3) بحث عميق (nested) داخل كامل srv
+        $found = $this->deepFind($srv, $directKeys);
+        $txt = $this->normalizeInfoValue($found);
+        if ($txt !== null) return $this->appendImageIfMissing($txt, $srv);
+
+        return $this->extractImageTagFromSrv($srv);
     }
 
-    // 3) بحث عميق (nested) داخل كامل srv
-    $found = $this->deepFind($srv, $directKeys);
-    $txt = $this->normalizeInfoValue($found);
-    if ($txt !== null) {
+    private function appendImageIfMissing(string $txt, array $srv): string
+    {
+        if (stripos($txt, '<img') !== false) return $txt;
+
         $img = $this->extractImageTagFromSrv($srv);
-        if ($img && stripos($txt, '<img') === false) {
-            $txt .= "\n".$img;
+        if (!$img) return $txt;
+
+        return $txt."\n".$img;
+    }
+
+    private function normalizeInfoValue($value): ?string
+    {
+        if ($value === null) return null;
+
+        // إذا جاءت array (مثل rich data) حولها لنص
+        if (is_array($value)) {
+            $value = json_encode($value, JSON_UNESCAPED_UNICODE);
         }
-        return $txt;
+
+        $s = (string)$value;
+        $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        // Keep safe rich content (especially <img>) instead of flattening all HTML.
+        $s = strip_tags($s, '<img><br><p><div><span><b><strong><i><u><ul><ol><li><a>');
+
+        // Basic sanitization for dangerous attributes/protocols.
+        $s = preg_replace('/\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/iu', '', $s) ?? $s;
+        $s = preg_replace('/\s(href|src)\s*=\s*("|\')\s*javascript:[^"\']*("|\')/iu', ' $1="#"', $s) ?? $s;
+        $s = trim($s);
+
+        return $this->clean($s);
     }
 
-    return $this->extractImageTagFromSrv($srv);
-}
+    private function extractImageTagFromSrv(array $srv): ?string
+    {
+        $keys = [
+            'IMAGE','image','IMAGE_URL','image_url','IMG','img','PHOTO','photo','ICON','icon',
+            'SERVICE_IMAGE','service_image','DESCRIPTION_IMAGE','description_image',
+        ];
 
-private function normalizeInfoValue($value): ?string
-{
-    if ($value === null) return null;
-
-    // إذا جاءت array (مثل rich data) حولها لنص
-    if (is_array($value)) {
-        $value = json_encode($value, JSON_UNESCAPED_UNICODE);
-    }
-
-    $s = (string)$value;
-    $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-
-    // Keep safe rich content (especially <img>) instead of flattening all HTML.
-    $s = strip_tags($s, '<img><br><p><div><span><b><strong><i><u><ul><ol><li><a>');
-
-    // Basic sanitization for dangerous attributes/protocols.
-    $s = preg_replace('/\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/iu', '', $s) ?? $s;
-    $s = preg_replace('/\s(href|src)\s*=\s*("|\')\s*javascript:[^"\']*("|\')/iu', ' $1="#"', $s) ?? $s;
-    $s = trim($s);
-
-    return $this->clean($s);
-}
-
-private function extractImageTagFromSrv(array $srv): ?string
-{
-    $keys = [
-        'IMAGE','image','IMAGE_URL','image_url','IMG','img','PHOTO','photo','ICON','icon',
-        'SERVICE_IMAGE','service_image','DESCRIPTION_IMAGE','description_image',
-    ];
-
-    foreach ($keys as $k) {
-        if (!array_key_exists($k, $srv)) continue;
-        $v = trim((string)($srv[$k] ?? ''));
-        if ($v === '') continue;
-        if (!preg_match('~^https?://~i', $v)) continue;
-        if (!preg_match('~\.(png|jpe?g|gif|webp|svg)(\?.*)?$~i', $v)) continue;
-        return '<img src="'.e($v).'" alt="service image">';
-    }
-
-    return null;
-}
-
-private function flattenValues($data): array
-{
-    $out = [];
-    if (!is_array($data)) return $out;
-
-    foreach ($data as $v) {
-        if (is_array($v)) {
-            $out = array_merge($out, $this->flattenValues($v));
-        } else {
-            $out[] = $v;
+        foreach ($keys as $k) {
+            if (!array_key_exists($k, $srv)) continue;
+            $v = $this->extractImageUrlFromValue($srv[$k] ?? null);
+            if ($v !== null) {
+                return '<img src="'.e($v).'" alt="service image">';
+            }
         }
-    }
-    return $out;
-}
 
+        foreach ($this->flattenValues($srv) as $v) {
+            $url = $this->extractImageUrlFromValue($v);
+            if ($url !== null) {
+                return '<img src="'.e($url).'" alt="service image">';
+            }
+        }
+
+        return null;
+    }
+
+    private function extractImageUrlFromValue($value): ?string
+    {
+        if ($value === null) return null;
+
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                $url = $this->extractImageUrlFromValue($item);
+                if ($url !== null) return $url;
+            }
+            return null;
+        }
+
+        $raw = trim((string)$value);
+        if ($raw === '') return null;
+        $raw = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+
+        if (preg_match('~<img[^>]+src\s*=\s*["\']?([^"\'\s>]+)~iu', $raw, $m)) {
+            return $this->normalizeImageUrl($m[1]);
+        }
+
+        if (preg_match('~(https?:\/\/[^\s"\'<>]+|\/\/[^\s"\'<>]+|data:image\/[^\s"\'<>]+)~iu', $raw, $m)) {
+            return $this->normalizeImageUrl($m[1]);
+        }
+
+        return null;
+    }
+
+    private function normalizeImageUrl(string $url): ?string
+    {
+        $url = trim($url);
+        if ($url === '') return null;
+
+        if (str_starts_with($url, '//')) {
+            $url = 'https:'.$url;
+        }
+
+        if (preg_match('~^data:image\/[a-zA-Z0-9.+-]+;base64,~', $url)) {
+            return $url;
+        }
+
+        return preg_match('~^https?://~i', $url) ? $url : null;
+    }
+
+    private function flattenValues($data): array
+    {
+        if (!is_array($data)) {
+            return [$data];
+        }
+
+        $out = [];
+        foreach ($data as $value) {
+            if (is_array($value)) {
+                $out = array_merge($out, $this->flattenValues($value));
+            } else {
+                $out[] = $value;
+            }
+        }
+
+        return $out;
+    }
 
     private function syncImeiOrServer(ApiProvider $provider, string $kind, array $data): int
     {
