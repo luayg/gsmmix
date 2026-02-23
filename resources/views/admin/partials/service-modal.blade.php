@@ -18,7 +18,7 @@
   #serviceModal .pricing-title{background:#f3f3f3;padding:.55rem .75rem;font-weight:600}
   #serviceModal .pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.65rem .75rem}
   .api-box{border:1px solid #e9e9e9;border-radius:.5rem;padding:.75rem;margin-top:.5rem;background:#fafafa;}
-    #serviceModal .info-line{margin:0 0 .28rem;line-height:1.45}
+  #serviceModal .info-line{margin:0 0 .28rem;line-height:1.45}
   #serviceModal .info-label{font-weight:600;color:#334155}
   #serviceModal .info-value{color:#111827}
   #serviceModal .info-badge{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.74rem;font-weight:700;line-height:1.2;color:#fff;vertical-align:middle}
@@ -131,7 +131,45 @@
     // If already HTML from provider/db, keep as-is.
     if (/<[^>]+>/.test(text)) return text;
 
-    const labels = [
+    const renderStatusBadge = (value) => {
+      const v = value.trim();
+      const vl = v.toLowerCase();
+      let cls = 'info-badge info-badge--gray';
+      if (['yes','active','activated','clean','on'].includes(vl)) cls = 'info-badge info-badge--green';
+      else if (['no','expired','blocked','blacklisted','off'].includes(vl)) cls = 'info-badge info-badge--red';
+      else if (['unknown','n/a','pending'].includes(vl)) cls = 'info-badge info-badge--amber';
+      return `<span class="${cls}">${htmlEscape(v.toUpperCase())}</span>`;
+    };
+
+    const renderValue = (value) => {
+      const v = value.trim();
+      if (/^(yes|no|active|activated|clean|on|expired|blocked|blacklisted|off|unknown|n\/a|pending)$/i.test(v)) {
+        return renderStatusBadge(v);
+      }
+      return `<span class="info-value">${htmlEscape(v)}</span>`;
+    };
+
+    const renderLine = (line) => {
+      const i = line.indexOf(':');
+      if (i <= 0) return `<div class="info-line"><span class="info-value">${htmlEscape(line)}</span></div>`;
+      const label = line.slice(0, i).trim();
+      const value = line.slice(i + 1).trim();
+      return `<div class="info-line"><span class="info-label">${htmlEscape(label)}:</span> ${renderValue(value)}</div>`;
+    };
+
+    // Normalize noisy separators from providers.
+    let prepared = text
+      .replace(/\r\n?/g, '\n')
+      .replace(/\u00a0/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    // Force line break before common section starters even when glued to previous text.
+    const starters = [
+      'The key components of this check include',
+      'Other data points include',
+      'Enhanced with',
+      'Comparison',
       'Model', 'IMEI Number', 'MEID Number', 'Serial Number',
       'Activation Status', 'Warranty Status', 'Telephone Technical Support',
       'Repairs and Service Coverage', 'Repairs and Service Expiration Date',
@@ -140,40 +178,36 @@
       'Blacklist Status', 'iCloud Status', 'SIM-Lock Status', 'Find My iPhone',
       'Demo Unit', 'Carrier', 'Manufacturer Date'
     ];
-
-    let prepared = text.replace(/\r\n?/g, '\n');
-    labels.forEach((label) => {
+    starters.forEach((label) => {
       const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const rx = new RegExp(`\\s*${escaped}\\s*:`, 'gi');
-      prepared = prepared.replace(rx, (m) => `\\n${m.trimStart()}`);
+      const rx = new RegExp(`(?!^)${escaped}\\s*:`, 'gi');
+      prepared = prepared.replace(rx, (m) => `\n${m}`);
     });
 
-    prepared = prepared.replace(/\n+/g, '\n').trim();
-    const lines = prepared.split('\n').map(v => v.trim()).filter(Boolean);
+    // Primary parser: extract label:value pairs from dense blobs.
+    const pairRegex = /([A-Za-z][A-Za-z0-9'()\/\- ]{2,60}):\s*([^:]+?)(?=(?:[A-Za-z][A-Za-z0-9'()\/\- ]{2,60}:\s)|$)/g;
+    const pairs = [];
+    for (const m of prepared.matchAll(pairRegex)) {
+      const label = clean(m[1]).trim();
+      let value = clean(m[2]).trim();
+      value = value.replace(/[|]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+      if (label && value) pairs.push(`${label}: ${value}`);
+    }
 
-    const badgeClass = (value) => {
-      const v = value.trim().toLowerCase();
-      if (['yes','active','activated','clean','on'].includes(v)) return 'info-badge info-badge--green';
-      if (['no','expired','blocked','blacklisted','off'].includes(v)) return 'info-badge info-badge--red';
-      if (['unknown','n/a','pending'].includes(v)) return 'info-badge info-badge--amber';
-      return 'info-badge info-badge--gray';
-    };
+    if (pairs.length >= 4) {
+      return pairs.map(renderLine).join('');
+    }
 
-    const renderValue = (value) => {
-      const v = value.trim();
-      if (/^(yes|no|active|activated|clean|on|expired|blocked|blacklisted|off|unknown|n\/a|pending)$/i.test(v)) {
-        return `<span class="${badgeClass(v)}">${htmlEscape(v.toUpperCase())}</span>`;
-      }
-      return `<span class="info-value">${htmlEscape(v)}</span>`;
-    };
+    // Fallback: split by newlines and long comma chains.
+    const lines = prepared
+      .split('\n')
+      .flatMap((line) => {
+        const l = line.trim();
+        if (!l) return [];
+        return l.split(/,\s+(?=[A-Z][a-zA-Z ]{2,30}:)/g).map(x => x.trim()).filter(Boolean);
+      });
 
-    return lines.map((line) => {
-      const i = line.indexOf(':');
-      if (i <= 0) return `<div class="info-line"><span class="info-value">${htmlEscape(line)}</span></div>`;
-      const label = line.slice(0, i).trim();
-      const value = line.slice(i + 1).trim();
-      return `<div class="info-line"><span class="info-label">${htmlEscape(label)}:</span> ${renderValue(value)}</div>`;
-    }).join('');
+    return lines.map(renderLine).join('');
   }
 
 
@@ -694,7 +728,7 @@
       if (typeof window.initSummernoteIn === 'function') {
         await window.initSummernoteIn(body);
         const ih = body.querySelector('#infoHidden');
-        if (ih && typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, ih.value || '');
+        if (ih && typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, beautifyRemoteInfo(ih.value || ''));
       } else {
         console.error('Missing global summernote script: initSummernoteIn');
       }
