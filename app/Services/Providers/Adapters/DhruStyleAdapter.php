@@ -129,8 +129,21 @@ private function deepFind($data, array $keys)
         return $this->extractImageTagFromSrv($provider, $srv);
     }
 
-    private function appendImageIfMissing(string $txt, array $srv): string
+    private function appendImageIfMissing(ApiProvider $provider, $arg2, $arg3 = null): string
     {
+        // Backward-safe parsing in case of mixed call order after deployments/merges.
+        // Preferred order: (provider, txt, srv)
+        $txt = is_string($arg2) ? $arg2 : (is_string($arg3) ? $arg3 : '');
+
+        $srv = [];
+        if (is_array($arg3)) {
+            $srv = $arg3;
+        } elseif (is_array($arg2)) {
+            // Legacy/order-mismatch fallback: (provider, srv, txt)
+            $srv = $arg2;
+        }
+
+        if ($txt === '') return '';
         if (stripos($txt, '<img') !== false) return $txt;
 
         $img = $this->extractImageTagFromSrv($provider, $srv);
