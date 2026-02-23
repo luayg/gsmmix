@@ -26,6 +26,7 @@
   #serviceModal .info-badge--red{background:#ef4444}
   #serviceModal .info-badge--amber{background:#f59e0b}
   #serviceModal .info-badge--gray{background:#6b7280}
+  #serviceModal .info-image{display:block;max-width:220px;max-height:220px;object-fit:contain;border:1px solid #e5e7eb;border-radius:.5rem;background:#fff;padding:.25rem;margin:.35rem 0}
 </style>
   @endpush
 
@@ -135,23 +136,33 @@
       const v = value.trim();
       const vl = v.toLowerCase();
       let cls = 'info-badge info-badge--gray';
-      if (['yes','active','activated','clean','on'].includes(vl)) cls = 'info-badge info-badge--green';
-      else if (['no','expired','blocked','blacklisted','off'].includes(vl)) cls = 'info-badge info-badge--red';
+      if (['yes','active','activated','clean','on','unlocked'].includes(vl)) cls = 'info-badge info-badge--green';
+      else if (['no','expired','blocked','blacklisted','off','locked'].includes(vl)) cls = 'info-badge info-badge--red';
       else if (['unknown','n/a','pending'].includes(vl)) cls = 'info-badge info-badge--amber';
       return `<span class="${cls}">${htmlEscape(v.toUpperCase())}</span>`;
     };
 
     const renderValue = (value) => {
       const v = value.trim();
-      if (/^(yes|no|active|activated|clean|on|expired|blocked|blacklisted|off|unknown|n\/a|pending)$/i.test(v)) {
+      if (/^(yes|no|active|activated|clean|on|unlocked|expired|blocked|blacklisted|off|locked|unknown|n\/a|pending)$/i.test(v)) {
         return renderStatusBadge(v);
+      }
+      const imgMatch = v.match(/(https?:\/\/\S+\.(?:png|jpe?g|gif|webp|svg)(?:\?\S*)?)/i);
+      if (imgMatch) {
+        const url = imgMatch[1];
+        return `<img class="info-image" src="${htmlEscape(url)}" alt="info image">`;
       }
       return `<span class="info-value">${htmlEscape(v)}</span>`;
     };
 
     const renderLine = (line) => {
       const i = line.indexOf(':');
-      if (i <= 0) return `<div class="info-line"><span class="info-value">${htmlEscape(line)}</span></div>`;
+      if (i <= 0) {
+        const rawLine = line.trim();
+        const imgOnly = rawLine.match(/^(https?:\/\/\S+\.(?:png|jpe?g|gif|webp|svg)(?:\?\S*)?)$/i);
+        if (imgOnly) return `<div class="info-line"><img class="info-image" src="${htmlEscape(imgOnly[1])}" alt="info image"></div>`;
+        return `<div class="info-line"><span class="info-value">${htmlEscape(line)}</span></div>`;
+      }
       const label = line.slice(0, i).trim();
       const value = line.slice(i + 1).trim();
       return `<div class="info-line"><span class="info-label">${htmlEscape(label)}:</span> ${renderValue(value)}</div>`;
@@ -209,8 +220,6 @@
 
     return lines.map(renderLine).join('');
   }
-
-
 
   function getCreateTpl(serviceType){
     const t = String(serviceType || '').toLowerCase().trim();
