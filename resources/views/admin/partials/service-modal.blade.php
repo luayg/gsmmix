@@ -534,32 +534,8 @@
     const apiProviderSel = body.querySelector('#apiProviderSelect');
     const apiServiceSel  = body.querySelector('#apiServiceSelect');
 
-    if (isClone && apiProviderSel) {
-      const pid = String(cloneData.providerId || '').trim();
-      if (pid && !apiProviderSel.querySelector(`option[value="${pid.replace(/"/g,'\\\"')}"]`)) {
-        const opt = document.createElement('option');
-        opt.value = pid;
-        opt.textContent = cloneData.providerName || ('Provider #' + pid);
-        apiProviderSel.appendChild(opt);
-      }
-      apiProviderSel.value = pid;
-      apiProviderSel.disabled = true;
-
-      await loadProviderServices(body, pid, cloneData.serviceType);
-
-      const opt2 = Array.from(apiServiceSel.options).find(o => String(o.value) === String(cloneData.remoteId));
-      if (opt2) { apiServiceSel.value = opt2.value; apiServiceSel.dispatchEvent(new Event('change')); }
-    }
-
-    apiProviderSel?.addEventListener('change', async ()=>{
-      if (apiProviderSel.disabled) return;
-      const pid = apiProviderSel.value;
-      if(!pid){ apiServiceSel.innerHTML = `<option value="">Select service...</option>`; return; }
-      await loadProviderServices(body, pid, cloneData.serviceType);
-    });
-
-    apiServiceSel?.addEventListener('change', ()=>{
-      const opt = apiServiceSel.selectedOptions?.[0];
+    const handleApiServiceChange = ()=>{
+      const opt = apiServiceSel?.selectedOptions?.[0];
       if(!opt || !opt.value) return;
 
       const st = String(cloneData.serviceType || '').toLowerCase();
@@ -607,7 +583,39 @@
         hooks.setMain?.(body, mf.type, mf.label);
         openGeneralTab();
       }
+      };
+
+    apiProviderSel?.addEventListener('change', async ()=>{
+      if (apiProviderSel.disabled) return;
+      const pid = apiProviderSel.value;
+      if(!pid){ apiServiceSel.innerHTML = `<option value="">Select service...</option>`; return; }
+      await loadProviderServices(body, pid, cloneData.serviceType);
+      handleApiServiceChange();
     });
+
+    apiServiceSel?.addEventListener('change', handleApiServiceChange);
+
+    if (isClone && apiProviderSel) {
+      const pid = String(cloneData.providerId || '').trim();
+      if (pid && !apiProviderSel.querySelector(`option[value="${pid.replace(/"/g,'\\"')}"]`)) {
+        const opt = document.createElement('option');
+        opt.value = pid;
+        opt.textContent = cloneData.providerName || ('Provider #' + pid);
+        apiProviderSel.appendChild(opt);
+      }
+      apiProviderSel.value = pid;
+      apiProviderSel.disabled = true;
+
+      await loadProviderServices(body, pid, cloneData.serviceType);
+
+      const opt2 = Array.from(apiServiceSel.options).find(o => String(o.value) === String(cloneData.remoteId));
+      if (opt2) {
+        apiServiceSel.value = opt2.value;
+        handleApiServiceChange();
+      }
+    }
+
+
 
     const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
 
