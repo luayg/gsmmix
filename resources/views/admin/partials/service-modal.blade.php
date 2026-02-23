@@ -221,6 +221,7 @@
     return lines.map(renderLine).join('');
   }
 
+
   function getCreateTpl(serviceType){
     const t = String(serviceType || '').toLowerCase().trim();
     return document.getElementById(`serviceCreateTpl_${t}`) || document.getElementById('serviceCreateTpl');
@@ -696,7 +697,7 @@
         hooks.setMain?.(body, mf.type, mf.label);
         openGeneralTab();
       }
-      };
+    };
 
     apiProviderSel?.addEventListener('change', async ()=>{
       if (apiProviderSel.disabled) return;
@@ -985,7 +986,7 @@
       if (typeof window.initSummernoteIn === 'function') {
         await window.initSummernoteIn(body);
         const ih = body.querySelector('#infoHidden');
-        if (ih && typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, ih.value || '');
+        if (ih && typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, beautifyRemoteInfo(ih.value || ''));
       }
     };
     modalEl.addEventListener('shown.bs.modal', onShown);
@@ -1012,3 +1013,4 @@
 </script>
   @endpush
 @endonce
+
