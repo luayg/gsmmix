@@ -232,34 +232,6 @@ private function deepFind($data, array $keys)
     }
 
 
-    private function looksLikeImagePath(string $url): bool
-    {
-        $u = trim($url);
-        if ($u === '') return false;
-
-        if (preg_match('~^data:image/[a-zA-Z0-9.+-]+;base64,~', $u)) {
-            return true;
-        }
-
-        $path = (string) (parse_url($u, PHP_URL_PATH) ?? '');
-        $path = strtolower($path);
-        if ($path === '') return false;
-
-        // Standard image file extension.
-        if ((bool) preg_match('~\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$~i', $path)) {
-            return true;
-        }
-
-        // Some providers expose image endpoints without extensions.
-        if ((bool) preg_match('~(?:image|img|photo|icon|thumb|thumbnail|logo|media|upload)~i', $path)) {
-            return true;
-        }
-
-        // As a soft fallback, accept deeper paths (not short tokens like /SN]).
-        $segments = array_values(array_filter(explode('/', trim($path, '/')), fn($x) => $x !== ''));
-        return count($segments) >= 2;
-    }
-
     private function normalizeImageUrl(ApiProvider $provider, string $url): ?string
     {
         $url = trim($url);
@@ -283,11 +255,9 @@ private function deepFind($data, array $keys)
             return $url;
         }
 
-        // Relative paths are common in some providers (e.g. /uploads/service.jpg),
-        // but we only accept paths that look like actual image files.
+        // Relative paths are common in some providers (e.g. /uploads/... or /media?id=123).
+        // Keep them unless they are obviously malformed (filtered above).
         if (str_starts_with($url, '/')) {
-            if (!$this->looksLikeImagePath($url)) return null;
-
             $base = rtrim((string) $provider->url, '/');
             if ($base !== '') {
                 return $base . $url;
