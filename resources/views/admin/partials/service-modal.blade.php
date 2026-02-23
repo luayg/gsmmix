@@ -18,6 +18,14 @@
   #serviceModal .pricing-title{background:#f3f3f3;padding:.55rem .75rem;font-weight:600}
   #serviceModal .pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.65rem .75rem}
   .api-box{border:1px solid #e9e9e9;border-radius:.5rem;padding:.75rem;margin-top:.5rem;background:#fafafa;}
+    #serviceModal .info-line{margin:0 0 .28rem;line-height:1.45}
+  #serviceModal .info-label{font-weight:600;color:#334155}
+  #serviceModal .info-value{color:#111827}
+  #serviceModal .info-badge{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.74rem;font-weight:700;line-height:1.2;color:#fff;vertical-align:middle}
+  #serviceModal .info-badge--green{background:#4caf50}
+  #serviceModal .info-badge--red{background:#ef4444}
+  #serviceModal .info-badge--amber{background:#f59e0b}
+  #serviceModal .info-badge--gray{background:#6b7280}
 </style>
   @endpush
 
@@ -107,6 +115,68 @@
 
     return normalizeInfo(el.dataset.info || el.getAttribute('data-info') || '');
   }
+
+
+  const htmlEscape = (v) => clean(v)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+
+  function beautifyRemoteInfo(raw){
+    const text = normalizeInfo(raw);
+    if (!text) return '';
+
+    // If already HTML from provider/db, keep as-is.
+    if (/<[^>]+>/.test(text)) return text;
+
+    const labels = [
+      'Model', 'IMEI Number', 'MEID Number', 'Serial Number',
+      'Activation Status', 'Warranty Status', 'Telephone Technical Support',
+      'Repairs and Service Coverage', 'Repairs and Service Expiration Date',
+      'AppleCare Eligible', 'Valid Purchase Date', 'Registered Device',
+      'Replaced by Apple', 'Loaner Device', 'Purchase Date', 'Purchase Country',
+      'Blacklist Status', 'iCloud Status', 'SIM-Lock Status', 'Find My iPhone',
+      'Demo Unit', 'Carrier', 'Manufacturer Date'
+    ];
+
+    let prepared = text.replace(/\r\n?/g, '\n');
+    labels.forEach((label) => {
+      const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const rx = new RegExp(`\\s*${escaped}\\s*:`, 'gi');
+      prepared = prepared.replace(rx, (m) => `\\n${m.trimStart()}`);
+    });
+
+    prepared = prepared.replace(/\n+/g, '\n').trim();
+    const lines = prepared.split('\n').map(v => v.trim()).filter(Boolean);
+
+    const badgeClass = (value) => {
+      const v = value.trim().toLowerCase();
+      if (['yes','active','activated','clean','on'].includes(v)) return 'info-badge info-badge--green';
+      if (['no','expired','blocked','blacklisted','off'].includes(v)) return 'info-badge info-badge--red';
+      if (['unknown','n/a','pending'].includes(v)) return 'info-badge info-badge--amber';
+      return 'info-badge info-badge--gray';
+    };
+
+    const renderValue = (value) => {
+      const v = value.trim();
+      if (/^(yes|no|active|activated|clean|on|expired|blocked|blacklisted|off|unknown|n\/a|pending)$/i.test(v)) {
+        return `<span class="${badgeClass(v)}">${htmlEscape(v.toUpperCase())}</span>`;
+      }
+      return `<span class="info-value">${htmlEscape(v)}</span>`;
+    };
+
+    return lines.map((line) => {
+      const i = line.indexOf(':');
+      if (i <= 0) return `<div class="info-line"><span class="info-value">${htmlEscape(line)}</span></div>`;
+      const label = line.slice(0, i).trim();
+      const value = line.slice(i + 1).trim();
+      return `<div class="info-line"><span class="info-label">${htmlEscape(label)}:</span> ${renderValue(value)}</div>`;
+    }).join('');
+  }
+
+
 
   function getCreateTpl(serviceType){
     const t = String(serviceType || '').toLowerCase().trim();
@@ -492,7 +562,7 @@
     // ✅ set info early (and keep it before summernote init)
     const infoHidden0 = body.querySelector('#infoHidden');
     if (infoHidden0) infoHidden0.value = clean(cloneData.info);
-    if (typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, clean(cloneData.info));
+    if (typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, beautifyRemoteInfo(cloneData.info));
 
     const hooks = resolveHooks(cloneData.serviceType);
 
@@ -562,7 +632,7 @@
 
       const infoHidden = body.querySelector('#infoHidden');
       if (infoHidden) infoHidden.value = info;
-      if (typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, info);
+      if (typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, beautifyRemoteInfo(info));
 
       if(name){ body.querySelector('[name="name"]').value = name; body.querySelector('[name="alias"]').value = slugify(name); }
       if(time) body.querySelector('[name="time"]').value = time;
@@ -766,7 +836,7 @@
 
     const infoHidden = form.querySelector('#infoHidden');
     if(infoHidden) infoHidden.value = infoText;
-    if (typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, infoText);
+    if (typeof window.setSummernoteHtmlIn === 'function') window.setSummernoteHtmlIn(body, beautifyRemoteInfo(infoText));
 
     form.querySelector('[name="cost"]') && (form.querySelector('[name="cost"]').value = Number(s.cost||0).toFixed(4));
     form.querySelector('[name="profit"]') && (form.querySelector('[name="profit"]').value = Number(s.profit||0).toFixed(4));
