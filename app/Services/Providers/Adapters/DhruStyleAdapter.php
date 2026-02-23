@@ -96,7 +96,7 @@ private function deepFind($data, array $keys)
             if (array_key_exists($k, $srv)) {
                 $v = $srv[$k];
                 $txt = $this->normalizeInfoValue($v);
-                 if ($txt !== null) return $this->appendImageIfMissing($provider, $txt, $srv);
+                if ($txt !== null) return $this->appendImageIfMissing($provider, $txt, $srv);
             }
         }
 
@@ -131,7 +131,7 @@ private function deepFind($data, array $keys)
 
     private function appendImageIfMissing(ApiProvider $provider, $arg2, $arg3 = null): string
     {
-          // Backward-safe parsing in case of mixed call order after deployments/merges.
+        // Backward-safe parsing in case of mixed call order after deployments/merges.
         // Preferred order: (provider, txt, srv)
         $txt = is_string($arg2) ? $arg2 : (is_string($arg3) ? $arg3 : '');
 
@@ -206,7 +206,7 @@ private function deepFind($data, array $keys)
 
         if (is_array($value)) {
             foreach ($value as $item) {
-                 $url = $this->extractImageUrlFromValue($provider, $item);
+                $url = $this->extractImageUrlFromValue($provider, $item);
                 if ($url !== null) return $url;
             }
             return null;
@@ -217,18 +217,21 @@ private function deepFind($data, array $keys)
         $raw = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
         if (preg_match('~<img[^>]+src\s*=\s*["\']?([^"\'\s>]+)~iu', $raw, $m)) {
-             return $this->normalizeImageUrl($provider, $m[1]);
+            $url = $this->normalizeImageUrl($provider, $m[1]);
+            if ($url !== null) return $url;
         }
 
-        // Also support plain relative paths (e.g. /uploads/service.jpg) returned by some providers.
-        if (preg_match('~(https?:\/\/[^\s"\'<>]+|\/\/[^\s"\'<>]+|\/[^\s"\'<>]+|data:image\/[^\s"\'<>]+)~iu', $raw, $m)) {
-            return $this->normalizeImageUrl($provider, $m[1]);
+        // Scan ALL possible URL-like pieces and pick first valid normalized image URL.
+        preg_match_all('~(https?:\/\/[^\s"\'<>]+|\/\/[^\s"\'<>]+|\/[^\s"\'<>]+|data:image\/[^\s"\'<>]+)~iu', $raw, $all);
+        foreach (($all[1] ?? []) as $candidate) {
+            $url = $this->normalizeImageUrl($provider, (string)$candidate);
+            if ($url !== null) return $url;
         }
 
         return null;
     }
 
-    
+
     private function looksLikeImagePath(string $url): bool
     {
         $u = trim($url);
@@ -240,16 +243,30 @@ private function deepFind($data, array $keys)
 
         $path = (string) (parse_url($u, PHP_URL_PATH) ?? '');
         $path = strtolower($path);
+        if ($path === '') return false;
 
-        return (bool) preg_match('~\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$~i', $path);
+        // Standard image file extension.
+        if ((bool) preg_match('~\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$~i', $path)) {
+            return true;
+        }
+
+        // Some providers expose image endpoints without extensions.
+        if ((bool) preg_match('~(?:image|img|photo|icon|thumb|thumbnail|logo|media|upload)~i', $path)) {
+            return true;
+        }
+
+        // As a soft fallback, accept deeper paths (not short tokens like /SN]).
+        $segments = array_values(array_filter(explode('/', trim($path, '/')), fn($x) => $x !== ''));
+        return count($segments) >= 2;
     }
 
     private function normalizeImageUrl(ApiProvider $provider, string $url): ?string
     {
         $url = trim($url);
+        $url = trim($url, "\t\n\r\0\x0B.,;)");
         if ($url === '') return null;
 
-         // Drop obviously broken captures from free text (e.g. /SN], /IMEI/SN]).
+        // Drop obviously broken captures from free text (e.g. /SN], /IMEI/SN]).
         if (preg_match("/[\\[\\]<>\"'\\s]/u", $url)) {
             return null;
         }
