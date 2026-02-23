@@ -131,7 +131,7 @@ private function deepFind($data, array $keys)
 
     private function appendImageIfMissing(ApiProvider $provider, $arg2, $arg3 = null): string
     {
-        // Backward-safe parsing in case of mixed call order after deployments/merges.
+          // Backward-safe parsing in case of mixed call order after deployments/merges.
         // Preferred order: (provider, txt, srv)
         $txt = is_string($arg2) ? $arg2 : (is_string($arg3) ? $arg3 : '');
 
@@ -164,7 +164,7 @@ private function deepFind($data, array $keys)
         $s = (string)$value;
         $s = html_entity_decode($s, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
-        /// Keep safe rich content (especially tables/icons/images) instead of flattening all HTML.
+        // Keep safe rich content (especially tables/icons/images) instead of flattening all HTML.
         $s = strip_tags($s, '<img><br><hr><p><div><span><small><sup><sub><b><strong><i><u><ul><ol><li><a><table><thead><tbody><tr><th><td><h1><h2><h3><h4><h5><h6>');
 
         // Basic sanitization for dangerous attributes/protocols.
@@ -228,10 +228,31 @@ private function deepFind($data, array $keys)
         return null;
     }
 
+    
+    private function looksLikeImagePath(string $url): bool
+    {
+        $u = trim($url);
+        if ($u === '') return false;
+
+        if (preg_match('~^data:image/[a-zA-Z0-9.+-]+;base64,~', $u)) {
+            return true;
+        }
+
+        $path = (string) (parse_url($u, PHP_URL_PATH) ?? '');
+        $path = strtolower($path);
+
+        return (bool) preg_match('~\.(png|jpe?g|gif|webp|bmp|svg|avif|ico)$~i', $path);
+    }
+
     private function normalizeImageUrl(ApiProvider $provider, string $url): ?string
     {
         $url = trim($url);
         if ($url === '') return null;
+
+         // Drop obviously broken captures from free text (e.g. /SN], /IMEI/SN]).
+        if (preg_match("/[\\[\\]<>\"'\\s]/u", $url)) {
+            return null;
+        }
 
         if (str_starts_with($url, '//')) {
             $url = 'https:'.$url;
@@ -245,8 +266,11 @@ private function deepFind($data, array $keys)
             return $url;
         }
 
-        // Relative paths are common in some providers (e.g. /uploads/service.jpg).
+        // Relative paths are common in some providers (e.g. /uploads/service.jpg),
+        // but we only accept paths that look like actual image files.
         if (str_starts_with($url, '/')) {
+            if (!$this->looksLikeImagePath($url)) return null;
+
             $base = rtrim((string) $provider->url, '/');
             if ($base !== '') {
                 return $base . $url;
