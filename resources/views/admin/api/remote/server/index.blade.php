@@ -41,6 +41,7 @@
               $credit   = (float)($svc->price ?? 0);
               $time     = (string)($svc->time ?? '');
               $info = (string)($svc->info ?? '');
+              $infoB64 = base64_encode($info);
               $af       = $svc->additional_fields ?? null;
               $afJson   = is_array($af) ? json_encode($af, JSON_UNESCAPED_UNICODE) : (string)$af;
               $isAdded  = isset($existing[$remoteId]);
@@ -68,7 +69,9 @@
                           data-credit="{{ number_format($credit, 4, '.', '') }}"
                           data-time="{{ e($time) }}"
                           data-info="{{ e($info) }}"
-                          data-additional-fields="{{ e($afJson) }}">
+                          data-info-b64="{{ e($infoB64) }}"
+                          data-additional-fields="{{ e($afJson) }}"
+                          data-provider-base-url="{{ e(rtrim((string)$provider->url, "/")) }}">
                     Clone
                   </button>
                 @endif

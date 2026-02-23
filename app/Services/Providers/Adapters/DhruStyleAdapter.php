@@ -79,7 +79,7 @@ private function deepFind($data, array $keys)
         });
     }
 
-    private function extractInfo(array $srv): ?string
+    private function extractInfo(ApiProvider $provider, array $srv): ?string
     {
         // 1) مفاتيح مباشرة شائعة
         $directKeys = [
@@ -96,7 +96,7 @@ private function deepFind($data, array $keys)
             if (array_key_exists($k, $srv)) {
                 $v = $srv[$k];
                 $txt = $this->normalizeInfoValue($v);
-                if ($txt !== null) return $this->appendImageIfMissing($txt, $srv);
+                 if ($txt !== null) return $this->appendImageIfMissing($provider, $txt, $srv);
             }
         }
 
@@ -106,7 +106,7 @@ private function deepFind($data, array $keys)
             foreach (['INFO','info','DESCRIPTION','description','SERVICEINFO','serviceinfo','SERVICE_INFO','service_info'] as $k) {
                 if (array_key_exists($k, $custom)) {
                     $txt = $this->normalizeInfoValue($custom[$k]);
-                    if ($txt !== null) return $this->appendImageIfMissing($txt, $srv);
+                    if ($txt !== null) return $this->appendImageIfMissing($provider, $txt, $srv);
                 }
             }
         } elseif (is_string($custom)) {
@@ -115,7 +115,7 @@ private function deepFind($data, array $keys)
                 foreach (['INFO','info','DESCRIPTION','description','SERVICEINFO','serviceinfo','SERVICE_INFO','service_info'] as $k) {
                     if (array_key_exists($k, $decoded)) {
                         $txt = $this->normalizeInfoValue($decoded[$k]);
-                        if ($txt !== null) return $this->appendImageIfMissing($txt, $srv);
+                        if ($txt !== null) return $this->appendImageIfMissing($provider, $txt, $srv);
                     }
                 }
             }
@@ -124,16 +124,16 @@ private function deepFind($data, array $keys)
         // 3) بحث عميق (nested) داخل كامل srv
         $found = $this->deepFind($srv, $directKeys);
         $txt = $this->normalizeInfoValue($found);
-        if ($txt !== null) return $this->appendImageIfMissing($txt, $srv);
+        if ($txt !== null) return $this->appendImageIfMissing($provider, $txt, $srv);
 
-        return $this->extractImageTagFromSrv($srv);
+        return $this->extractImageTagFromSrv($provider, $srv);
     }
 
     private function appendImageIfMissing(string $txt, array $srv): string
     {
         if (stripos($txt, '<img') !== false) return $txt;
 
-        $img = $this->extractImageTagFromSrv($srv);
+        $img = $this->extractImageTagFromSrv($provider, $srv);
         if (!$img) return $txt;
 
         return $txt."\n".$img;
@@ -162,7 +162,7 @@ private function deepFind($data, array $keys)
         return $this->clean($s);
     }
 
-    private function extractImageTagFromSrv(array $srv): ?string
+    private function extractImageTagFromSrv(ApiProvider $provider, array $srv): ?string
     {
         $keys = [
             'IMAGE','image','IMAGE_URL','image_url','IMG','img','PHOTO','photo','ICON','icon',
@@ -171,14 +171,14 @@ private function deepFind($data, array $keys)
 
         foreach ($keys as $k) {
             if (!array_key_exists($k, $srv)) continue;
-            $v = $this->extractImageUrlFromValue($srv[$k] ?? null);
+            $v = $this->extractImageUrlFromValue($provider, $srv[$k] ?? null);
             if ($v !== null) {
                 return '<img src="'.e($v).'" alt="service image">';
             }
         }
 
         foreach ($this->flattenValues($srv) as $v) {
-            $url = $this->extractImageUrlFromValue($v);
+            $url = $this->extractImageUrlFromValue($provider, $v);
             if ($url !== null) {
                 return '<img src="'.e($url).'" alt="service image">';
             }
@@ -187,13 +187,13 @@ private function deepFind($data, array $keys)
         return null;
     }
 
-    private function extractImageUrlFromValue($value): ?string
+    private function extractImageUrlFromValue(ApiProvider $provider, $value): ?string
     {
         if ($value === null) return null;
 
         if (is_array($value)) {
             foreach ($value as $item) {
-                $url = $this->extractImageUrlFromValue($item);
+                 $url = $this->extractImageUrlFromValue($provider, $item);
                 if ($url !== null) return $url;
             }
             return null;
@@ -204,17 +204,17 @@ private function deepFind($data, array $keys)
         $raw = html_entity_decode($raw, ENT_QUOTES | ENT_HTML5, 'UTF-8');
 
         if (preg_match('~<img[^>]+src\s*=\s*["\']?([^"\'\s>]+)~iu', $raw, $m)) {
-            return $this->normalizeImageUrl($m[1]);
+             return $this->normalizeImageUrl($provider, $m[1]);
         }
 
         if (preg_match('~(https?:\/\/[^\s"\'<>]+|\/\/[^\s"\'<>]+|data:image\/[^\s"\'<>]+)~iu', $raw, $m)) {
-            return $this->normalizeImageUrl($m[1]);
+            return $this->normalizeImageUrl($provider, $m[1]);
         }
 
         return null;
     }
 
-    private function normalizeImageUrl(string $url): ?string
+    private function normalizeImageUrl(ApiProvider $provider, string $url): ?string
     {
         $url = trim($url);
         if ($url === '') return null;
@@ -227,7 +227,19 @@ private function deepFind($data, array $keys)
             return $url;
         }
 
-        return preg_match('~^https?://~i', $url) ? $url : null;
+        if (preg_match('~^https?://~i', $url)) {
+            return $url;
+        }
+
+        // Relative paths are common in some providers (e.g. /uploads/service.jpg).
+        if (str_starts_with($url, '/')) {
+            $base = rtrim((string) $provider->url, '/');
+            if ($base !== '') {
+                return $base . $url;
+            }
+        }
+
+        return null;
     }
 
     private function flattenValues($data): array
@@ -286,7 +298,7 @@ private function deepFind($data, array $keys)
                     'group_name' => $groupName ?: null,
                     'price' => $this->toFloat($srv['CREDIT'] ?? $srv['credit'] ?? 0),
                     'time' => $this->clean((string)($srv['TIME'] ?? $srv['time'] ?? '')),
-                    'info' => $this->extractInfo($srv),
+                    'info' => $this->extractInfo($provider, $srv),
                     'min_qty' => (string)($srv['MINQNT'] ?? null),
                     'max_qty' => (string)($srv['MAXQNT'] ?? null),
                     'additional_data' => $srv,
@@ -376,7 +388,7 @@ private function deepFind($data, array $keys)
                         'group_name' => $groupName ?: null,
                         'price' => $this->toFloat($srv['CREDIT'] ?? $srv['credit'] ?? 0),
                         'time' => $this->clean((string)($srv['TIME'] ?? $srv['time'] ?? '')),
-                        'info' => $this->extractInfo($srv),
+                        'info' => $this->extractInfo($provider, $srv),
                         'allowed_extensions' => $this->clean((string)($srv['ALLOW_EXTENSION'] ?? '')),
                         'additional_data' => $srv,
                         'additional_fields' => $this->extractAdditionalFields($srv),

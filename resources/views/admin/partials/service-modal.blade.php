@@ -125,12 +125,42 @@
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
+      const absolutizeProviderRelativeImages = (html) => {
+    const base = String(window.__serviceModalProviderBaseUrl || '').trim().replace(/\/$/, '');
+    if (!base) return html;
+
+    return String(html || '').replace(/(<img[^>]+src\s*=\s*["'])(\/[^"'>\s]+)(["'][^>]*>)/gi, (_, p1, p2, p3) => {
+      return `${p1}${base}${p2}${p3}`;
+    });
+  };
+
+  const normalizeProviderHtml = (html) => {
+    let out = String(html || '');
+    if (!out) return '';
+
+    out = absolutizeProviderRelativeImages(out);
+
+    // Keep provider formatting but force consistent image display in editor preview.
+    out = out.replace(/<img([^>]*)>/gi, (full, attrs) => {
+      const hasClass = /class\s*=/.test(attrs);
+      const hasStyle = /style\s*=/.test(attrs);
+      const classPart = hasClass
+        ? attrs.replace(/class\s*=\s*(["'])(.*?)/i, (m, q, cls) => `class=${q}${cls} info-image${q}`)
+        : `${attrs} class="info-image"`;
+      const stylePart = hasStyle
+        ? classPart
+        : `${classPart} style="max-width:220px;height:auto;display:block;margin:.35rem 0;object-fit:contain;border:1px solid #e5e7eb;border-radius:.5rem;background:#fff;padding:.25rem;"`;
+      return `<img${stylePart}>`;
+    });
+
+    return out;
+  };
   function beautifyRemoteInfo(raw){
     const text = normalizeInfo(raw);
     if (!text) return '';
 
     // If already HTML from provider/db, keep as-is.
-    if (/<[^>]+>/.test(text)) return text;
+     if (/<[^>]+>/.test(text)) return normalizeProviderHtml(text);
 
     const renderStatusBadge = (value) => {
       const v = value.trim();
@@ -149,11 +179,16 @@
       const htmlImg = v.match(/<img[^>]+src\s*=\s*["']?([^"'\s>]+)/i);
       if (htmlImg?.[1]) return htmlImg[1];
 
-      const direct = v.match(/(https?:\/\/[^\s"'<>]+|\/\/[^\s"'<>]+|data:image\/[^\s"'<>]+)/i);
+      const direct = v.match(/(https?:\/\/[^\s"'<>]+|\/\/[^\s"'<>]+|\/[^\s"'<>]+|data:image\/[^\s"'<>]+)/i);
       if (!direct?.[1]) return '';
 
-      const url = direct[1].startsWith('//') ? `https:${direct[1]}` : direct[1];
-      return url;
+      const rawUrl = direct[1];
+      if (rawUrl.startsWith('//')) return `https:${rawUrl}`;
+      if (rawUrl.startsWith('/')) {
+        const base = String(window.__serviceModalProviderBaseUrl || '').trim().replace(/\/$/, '');
+        return base ? `${base}${rawUrl}` : rawUrl;
+      }
+      return rawUrl;
     };
 
     const renderValue = (value) => {
@@ -603,6 +638,7 @@
 
     const isClone = (providerId && providerId !== 'undefined' && remoteId && remoteId !== 'undefined');
     const providerName = btn.dataset.providerName || document.querySelector('.card-header h5')?.textContent?.split('|')?.[0]?.trim() || '—';
+    window.__serviceModalProviderBaseUrl = (btn.dataset.providerBaseUrl || '').trim();
 
     const cloneData = {
       providerId: isClone ? providerId : '',
@@ -851,6 +887,7 @@
     if(!res.ok || !payload?.ok) return alert(payload?.msg || 'Failed to load service');
 
     const s = payload.service || {};
+     window.__serviceModalProviderBaseUrl = '';
     const serviceType = (btn.dataset.serviceType || s.type || 'imei').toLowerCase();
 
     const tpl = getCreateTpl(serviceType);

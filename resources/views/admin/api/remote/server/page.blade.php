@@ -41,6 +41,7 @@
               $name  = (string)($svc->name ?? '');
               $time  = (string)($svc->time ?? '');
               $info = (string)($svc->info ?? '');
+              $infoB64 = base64_encode($info);
               $credit= (float)($svc->price ?? $svc->credit ?? 0);
 
               $af = $svc->additional_fields ?? $svc->additional_data ?? null;
@@ -81,7 +82,9 @@
                           data-credit="{{ number_format($credit,4,'.','') }}"
                           data-time="{{ e(strip_tags($time)) }}"
                           data-info="{{ e($info) }}"
-                          data-additional-fields="{{ e($afJson) }}">
+                          data-info-b64="{{ e($infoB64) }}"
+                          data-additional-fields="{{ e($afJson) }}"
+                          data-provider-base-url="{{ e(rtrim((string)$provider->url, "/")) }}">
                     Clone
                   </button>
                 @endif
