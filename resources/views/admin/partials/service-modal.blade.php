@@ -67,6 +67,47 @@
   };
   const escAttr = (s) => clean(s).replaceAll('"','&quot;');
 
+  const decodeB64Unicode = (v) => {
+    try {
+      if (!v) return '';
+      return decodeURIComponent(Array.prototype.map.call(atob(String(v)), (c) =>
+        '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+      ).join(''));
+    } catch (_) {
+      return '';
+    }
+  };
+
+  function normalizeInfo(value){
+    if (value === undefined || value === null) return '';
+    if (typeof value === 'object') {
+      return clean(value.fallback ?? value.en ?? value.info ?? value.description ?? '');
+    }
+
+    const raw = clean(value).trim();
+    if (!raw) return '';
+
+    if ((raw.startsWith('{') && raw.endsWith('}')) || (raw.startsWith('[') && raw.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return clean(parsed.fallback ?? parsed.en ?? parsed.info ?? parsed.description ?? raw);
+        }
+      } catch (_) {}
+    }
+
+    return raw;
+  }
+
+  function readInfoFromData(el){
+    if (!el) return '';
+    const b64 = clean(el.dataset.infoB64 || el.getAttribute('data-info-b64') || '');
+    const b64Text = normalizeInfo(decodeB64Unicode(b64));
+    if (b64Text) return b64Text;
+
+    return normalizeInfo(el.dataset.info || el.getAttribute('data-info') || '');
+  }
+
   function getCreateTpl(serviceType){
     const t = String(serviceType || '').toLowerCase().trim();
     return document.getElementById(`serviceCreateTpl_${t}`) || document.getElementById('serviceCreateTpl');
@@ -352,7 +393,7 @@
         s.allow_extension ?? s.allow_extensions ?? s.ALLOW_EXTENSION ?? s.extensions ?? s.EXTENSIONS ?? ''
       );
 
-      const info = clean(s.info ?? s.INFO ?? s.description ?? s.DESCRIPTION ?? '');
+      const info = normalizeInfo(s.info ?? s.INFO ?? s.description ?? s.DESCRIPTION ?? '');
       const timeTxt = time ? ` — ${time}` : '';
       const ridTxt  = rid ? ` (#${rid})` : '';
       return `<option value="${rid}"
@@ -360,6 +401,7 @@
         data-credit="${creditTxt}"
         data-time="${escAttr(time)}"
         data-info="${escAttr(info)}"
+        data-info-b64="${escAttr(btoa(unescape(encodeURIComponent(info))))}"
         data-additional-fields="${escAttr(afJson)}"
         data-allow-extensions="${escAttr(allowExt)}"
       >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
@@ -443,7 +485,7 @@
       name: btn.dataset.name || '',
       credit: Number(btn.dataset.credit || 0),
       time: btn.dataset.time || '',
-      info: btn.dataset.info || '',
+      info: readInfoFromData(btn) || '',
       serviceType
     };
 
@@ -537,9 +579,9 @@
 
       // ✅ IMPORTANT FIX:
       // If API option info is empty (old backend), fallback to clone button info.
-      let info = clean(opt.dataset.info || '');
+      let info = readInfoFromData(opt);
       if (!info && isClone && String(opt.value) === String(cloneData.remoteId)) {
-        info = clean(cloneData.info);
+        info = normalizeInfo(cloneData.info);
       }
 
       const infoHidden = body.querySelector('#infoHidden');
@@ -708,7 +750,7 @@
 
     const nameText = (typeof s.name === 'object' ? (s.name.fallback || s.name.en || '') : (s.name || ''));
     const timeText = (typeof s.time === 'object' ? (s.time.fallback || s.time.en || '') : (s.time || ''));
-    const infoText = (typeof s.info === 'object' ? (s.info.fallback || s.info.en || '') : (s.info || ''));
+    const infoText = normalizeInfo(s.info ?? s.INFO ?? s.description ?? s.DESCRIPTION ?? '');
 
     form.querySelector('[name="name"]') && (form.querySelector('[name="name"]').value = nameText);
     form.querySelector('[name="alias"]') && (form.querySelector('[name="alias"]').value = s.alias || '');
