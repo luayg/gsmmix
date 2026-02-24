@@ -8,6 +8,7 @@ use App\Models\ImeiOrder;
 use App\Models\ServerOrder;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class DhruOrderGateway
 {
@@ -70,6 +71,15 @@ class DhruOrderGateway
             'too many requests', 'rate limit', 'limit exceeded',
             'bad gateway', 'gateway', 'cloudflare',
             'dns', 'resolve', 'host',
+
+            // Provider wallet/credits errors (wait + retry later)
+            'insufficient', 'insufficent', 'not enough',
+            'low balance', 'no balance', 'insufficient balance', 'balance low',
+            'credit', 'credits', 'insufficient credits',
+            'fund', 'funds', 'wallet',
+
+            // Common API action mismatch responses
+            'command not found', 'invalid action', 'unknown action',
         ];
 
         foreach ($needles as $n) {
@@ -77,6 +87,27 @@ class DhruOrderGateway
         }
 
         return false;
+    }
+
+    private function isCommandNotFoundResult(array $result): bool
+    {
+        $raw = $result['response_raw'] ?? null;
+        $msg = null;
+
+        if (is_array($raw) && isset($raw['ERROR'][0]['MESSAGE'])) {
+            $msg = (string)$raw['ERROR'][0]['MESSAGE'];
+        }
+
+        if (!$msg && isset($result['response_ui']['message'])) {
+            $msg = (string)$result['response_ui']['message'];
+        }
+
+        $m = mb_strtolower(trim((string)$msg));
+        if ($m === '') return false;
+
+        return str_contains($m, 'command not found')
+            || str_contains($m, 'invalid action')
+            || str_contains($m, 'unknown action');
     }
 
     /**
@@ -103,6 +134,60 @@ class DhruOrderGateway
             }
         }
         return $out;
+    }
+
+    /**
+     * Add compatibility aliases for REQUIRED keys from service custom_fields definitions.
+     *
+     * Example: if local key is service_fields_1 but field name/validation says email,
+     * we also send REQUIRED[email] with same value.
+     */
+    private function enrichRequiredFieldAliases(array $fields, $service): array
+    {
+        if (empty($fields) || !$service) return $fields;
+
+        $params = $service->params ?? [];
+        if (is_string($params)) {
+            $decoded = json_decode($params, true);
+            $params = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($params)) return $fields;
+
+        $customFields = $params['custom_fields'] ?? [];
+        if (!is_array($customFields) || empty($customFields)) return $fields;
+
+        foreach ($customFields as $def) {
+            if (!is_array($def)) continue;
+
+            $input = trim((string)($def['input'] ?? ''));
+            if ($input === '' || !array_key_exists($input, $fields)) continue;
+
+            $value = (string)$fields[$input];
+            $name = trim((string)($def['name'] ?? ''));
+            $validation = Str::lower(trim((string)($def['validation'] ?? '')));
+
+            // Alias from field label/name
+            if ($name !== '') {
+                $slug = Str::snake(Str::of($name)->replaceMatches('/[^\pL\pN]+/u', ' ')->trim()->value());
+                if ($slug !== '' && !array_key_exists($slug, $fields)) {
+                    $fields[$slug] = $value;
+                }
+            }
+
+            // Explicit email alias for providers expecting REQUIRED[email]
+            $nameLc = Str::lower($name);
+            if (
+                $validation === 'email'
+                || str_contains($nameLc, 'email')
+                || str_contains($input, 'email')
+            ) {
+                if (!array_key_exists('email', $fields)) {
+                    $fields['email'] = $value;
+                }
+            }
+        }
+
+        return $fields;
     }
 
     private function send(ApiProvider $p, string $action, string $parametersXml): array
@@ -230,6 +315,7 @@ class DhruOrderGateway
             $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
         }
         $fields = $this->normalizeRequiredFields($fields);
+        $fields = $this->enrichRequiredFieldAliases($fields, $order->service);
 
         $xml = '<PARAMETERS>'
             . '<IMEI>' . $this->xmlEscape($imei) . '</IMEI>'
@@ -258,6 +344,7 @@ class DhruOrderGateway
             $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
         }
         $fields = $this->normalizeRequiredFields($fields);
+        $fields = $this->enrichRequiredFieldAliases($fields, $order->service);
 
         $comments = trim((string)($order->comments ?? ''));
 
@@ -276,7 +363,26 @@ class DhruOrderGateway
 
         $xml .= '</PARAMETERS>';
 
-        return $this->send($p, 'placeserverorder', $xml);
+        // Try server-specific action first.
+        $res = $this->send($p, 'placeserverorder', $xml);
+
+        if (($res['ok'] ?? false) === true) {
+            return $res;
+        }
+
+        // Some DHRU providers use placeimeiorder for server services.
+        if ($this->isCommandNotFoundResult($res)) {
+            $fallback = $this->send($p, 'placeimeiorder', $xml);
+            if (($fallback['ok'] ?? false) === true) {
+                return $fallback;
+            }
+
+            $fallback['retryable'] = true;
+            $fallback['status'] = 'waiting';
+            return $fallback;
+        }
+
+        return $res;
     }
 
     /**
@@ -308,6 +414,7 @@ class DhruOrderGateway
             $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
         }
         $fields = $this->normalizeRequiredFields($fields);
+        $fields = $this->enrichRequiredFieldAliases($fields, $order->service);
 
         $xml = '<PARAMETERS>'
             . '<ID>' . $this->xmlEscape($serviceId) . '</ID>'
@@ -343,7 +450,24 @@ class DhruOrderGateway
             . '<ID>' . $this->xmlEscape($referenceId) . '</ID>'
             . '</PARAMETERS>';
 
-        return $this->send($p, 'getserverorder', $xml);
+        $res = $this->send($p, 'getserverorder', $xml);
+
+        if (($res['ok'] ?? false) === true) {
+            return $res;
+        }
+
+        if ($this->isCommandNotFoundResult($res)) {
+            $fallback = $this->send($p, 'getimeiorder', $xml);
+            if (($fallback['ok'] ?? false) === true) {
+                return $fallback;
+            }
+
+            $fallback['retryable'] = true;
+            $fallback['status'] = 'waiting';
+            return $fallback;
+        }
+
+        return $res;
     }
 
     public function getFileOrder(ApiProvider $p, string $referenceId): array
