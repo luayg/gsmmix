@@ -45,6 +45,7 @@
 
   $kind = $kind ?? '';
   $isFileKind   = $kind === 'file';
+  $isServerKind = $kind === 'server';
 
   // ✅ Important: this must be passed from controller, otherwise fallback works (base price only)
   $servicePriceMap = $servicePriceMap ?? [];
@@ -138,6 +139,10 @@
         @if($isFileKind)
           <label class="form-label">Upload file</label>
           <input type="file" class="form-control" name="file" required>
+           @elseif($isServerKind)
+          <div class="alert alert-info mb-0">
+            Server Orders use <strong>Service fields</strong> only. The standard device/email input is disabled for this order type.
+          </div>
         @else
           <label class="form-label">{{ $deviceLabel ?? 'Device' }}</label>
           <input type="text" class="form-control" name="device" placeholder="Enter value">
@@ -201,6 +206,7 @@
   }
 
   const kind = @json($kind);
+  const isServerKind = kind === 'server';
 
   const form = document.getElementById('createOrderForm');
   if (!form) return;
@@ -287,6 +293,13 @@
 
   // ✅ no checkbox: if service allow_bulk=1 show bulk textarea directly, else show single input
   function applyBulkModeByService(){
+      if (isServerKind) {
+      if (bulkHidden) bulkHidden.value = '0';
+      hide(singleWrap);
+      hide(bulkWrap);
+      return;
+    }
+    
     const allowBulk = serviceAllowBulk();
 
     if (allowBulk) {
