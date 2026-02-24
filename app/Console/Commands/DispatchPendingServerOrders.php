@@ -36,7 +36,6 @@ class DispatchPendingServerOrders extends Command
 
         $this->info("Dispatching {$attempted} pending Server orders...");
 
-
         foreach ($orders as $o) {
             $dispatcher->send('server', (int)$o->id);
 
@@ -60,10 +59,10 @@ class DispatchPendingServerOrders extends Command
             $this->warn('No orders received remote_id from provider. Check provider credentials, action mapping, and REQUIRED fields payload.');
         }
 
-        
         return 0;
     }
-private function extractOrderReason(ServerOrder $order): string
+
+    private function extractOrderReason(ServerOrder $order): string
     {
         $response = is_array($order->response)
             ? $order->response

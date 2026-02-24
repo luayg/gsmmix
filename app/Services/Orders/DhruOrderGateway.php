@@ -217,6 +217,140 @@ class DhruOrderGateway
         return $xml;
     }
 
+
+    private function shouldTryLegacyParameters(array $result): bool
+    {
+        $raw = $result['response_raw'] ?? null;
+        $msg = '';
+
+        if (is_array($raw) && isset($raw['ERROR'][0]['MESSAGE'])) {
+            $msg = (string)$raw['ERROR'][0]['MESSAGE'];
+        } elseif (isset($result['response_ui']['message'])) {
+            $msg = (string)$result['response_ui']['message'];
+        }
+
+        $m = mb_strtolower(trim($msg));
+        if ($m === '') return false;
+
+        return str_contains($m, 'validation')
+            || str_contains($m, 'required')
+            || str_contains($m, 'customfield')
+            || str_contains($m, 'custom field')
+            || str_contains($m, 'email');
+    }
+
+    private function sendLegacy(ApiProvider $p, string $action, array $parameters): array
+    {
+        $payload = $this->basePayload($p, $action);
+        $payload['parameters'] = base64_encode(json_encode($parameters, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+
+        $url = $this->endpoint($p);
+
+        try {
+            $resp = Http::asForm()->timeout(60)->post($url, $payload);
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'retryable' => true,
+                'status' => 'waiting',
+                'remote_id' => null,
+                'request' => [
+                    'url' => $url,
+                    'action' => $action,
+                    'payload' => $payload,
+                    'legacy_parameters' => $parameters,
+                    'exception' => $e->getMessage(),
+                ],
+                'response_raw' => ['error' => 'connection_failed', 'message' => $e->getMessage()],
+                'response_ui' => ['type' => 'queued', 'message' => 'Provider unreachable, queued.'],
+            ];
+        }
+
+        $raw = (string)$resp->body();
+        $json = json_decode($raw, true);
+
+        if (!$resp->successful() || !is_array($json)) {
+            return [
+                'ok' => false,
+                'retryable' => true,
+                'status' => 'waiting',
+                'remote_id' => null,
+                'request' => [
+                    'url' => $url,
+                    'action' => $action,
+                    'payload' => $payload,
+                    'legacy_parameters' => $parameters,
+                    'http_status' => $resp->status(),
+                ],
+                'response_raw' => is_array($json) ? $json : ['raw' => $raw, 'http_status' => $resp->status()],
+                'response_ui' => ['type' => 'queued', 'message' => 'Temporary provider error, queued.'],
+            ];
+        }
+
+        if (isset($json['SUCCESS'][0])) {
+            $s0 = $json['SUCCESS'][0];
+            $ref = $s0['REFERENCEID'] ?? null;
+
+            return [
+                'ok' => true,
+                'retryable' => false,
+                'status' => 'inprogress',
+                'remote_id' => $ref,
+                'request' => [
+                    'url' => $url,
+                    'action' => $action,
+                    'payload' => $payload,
+                    'legacy_parameters' => $parameters,
+                    'http_status' => $resp->status(),
+                ],
+                'response_raw' => $json,
+                'response_ui' => $this->normalizeUi($json),
+            ];
+        }
+
+        $errMsg = null;
+        if (isset($json['ERROR'][0]['MESSAGE'])) {
+            $errMsg = (string)$json['ERROR'][0]['MESSAGE'];
+        }
+
+        if ($this->isRetryableErrorMessage($errMsg)) {
+            return [
+                'ok' => false,
+                'retryable' => true,
+                'status' => 'waiting',
+                'remote_id' => null,
+                'request' => [
+                    'url' => $url,
+                    'action' => $action,
+                    'payload' => $payload,
+                    'legacy_parameters' => $parameters,
+                    'http_status' => $resp->status(),
+                ],
+                'response_raw' => $json,
+                'response_ui' => [
+                    'type' => 'queued',
+                    'message' => $errMsg ? ('Temporary provider issue: ' . $errMsg) : 'Temporary provider issue, queued.',
+                ],
+            ];
+        }
+
+        return [
+            'ok' => false,
+            'retryable' => false,
+            'status' => 'rejected',
+            'remote_id' => null,
+            'request' => [
+                'url' => $url,
+                'action' => $action,
+                'payload' => $payload,
+                'legacy_parameters' => $parameters,
+                'http_status' => $resp->status(),
+            ],
+            'response_raw' => $json,
+            'response_ui' => $this->normalizeUi($json),
+        ];
+    }
+
     private function send(ApiProvider $p, string $action, string $parametersXml): array
     {
         $payload = $this->basePayload($p, $action);
@@ -407,9 +541,66 @@ class DhruOrderGateway
                 return $fallback;
             }
 
+            // Legacy DHRU v6.1 style: parameters=base64(json) and customfield=base64(json)
+            $legacyFields = $fields;
+            foreach ($fields as $k => $v) {
+                $uk = strtoupper((string)$k);
+                if ($uk !== '' && !array_key_exists($uk, $legacyFields)) {
+                    $legacyFields[$uk] = $v;
+                }
+            }
+
+            $legacyPayload = [
+                'ID' => (int)$serviceId,
+                'QNT' => $qty,
+                'customfield' => base64_encode(json_encode($legacyFields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+            ];
+
+            if ($comments !== '') {
+                $legacyPayload['COMMENTS'] = $comments;
+            }
+
+            $legacy = $this->sendLegacy($p, 'placeimeiorder', $legacyPayload);
+            if (($legacy['ok'] ?? false) === true) {
+                return $legacy;
+            }
+
             $fallback['retryable'] = true;
             $fallback['status'] = 'waiting';
+
+            if ($this->shouldTryLegacyParameters($fallback)) {
+                return $legacy;
+            }
+
             return $fallback;
+        }
+
+        // Even if action exists, some providers require legacy encoded parameters on validation failures.
+        if ($this->shouldTryLegacyParameters($res)) {
+            $legacyFields = $fields;
+            foreach ($fields as $k => $v) {
+                $uk = strtoupper((string)$k);
+                if ($uk !== '' && !array_key_exists($uk, $legacyFields)) {
+                    $legacyFields[$uk] = $v;
+                }
+            }
+
+            $legacyPayload = [
+                'ID' => (int)$serviceId,
+                'QNT' => $qty,
+                'customfield' => base64_encode(json_encode($legacyFields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
+            ];
+
+            if ($comments !== '') {
+                $legacyPayload['COMMENTS'] = $comments;
+            }
+
+            $legacy = $this->sendLegacy($p, 'placeimeiorder', $legacyPayload);
+            if (($legacy['ok'] ?? false) === true) {
+                return $legacy;
+            }
+
+            return $legacy;
         }
 
         return $res;
