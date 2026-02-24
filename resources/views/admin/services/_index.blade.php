@@ -116,7 +116,7 @@
   </div>
 
   <div class="card-footer">
-    {{ $rows->links() }}
+     {{ $rows->links('admin.components.pagination.compact') }}
   </div>
 </div>
 
