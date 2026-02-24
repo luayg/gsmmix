@@ -102,10 +102,13 @@
             $price  = ($ptype === 2) ? ($cost + ($cost * $profit / 100)) : ($cost + $profit);
 
             // ✅ API connection name (prefer api relation)
+            $sourceVal = (int)($r->source ?? 0);
             $apiConnName =
               $r->api?->name
               ?? $r->supplier?->name
-              ?? (($r->supplier_id ?? null) ? ('#'.$r->supplier_id) : 'None');
+              ?? (($r->supplier_id ?? null)
+                  ? ('#'.$r->supplier_id)
+                  : (($sourceVal === 1) ? 'Manual' : 'None'));
 
             $jsonUrl   = route($routePrefix.'.show.json', $r->id);
             $updateUrl = route($routePrefix.'.update', $r->id);

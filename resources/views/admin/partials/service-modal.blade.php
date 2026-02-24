@@ -964,7 +964,7 @@
         window.bootstrap.Modal.getInstance(document.getElementById('serviceModal'))?.hide();
         window.showToast?.('success', isEditMode ? '✅ Service updated successfully' : '✅ Service created successfully', { title: 'Done' });
 
-        if (isEditMode && window.location.pathname.includes('/admin/service-management/')) {
+        if (window.location.pathname.includes('/admin/service-management/')) {
           setTimeout(() => window.location.reload(), 200);
         }
         return;
