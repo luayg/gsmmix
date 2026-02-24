@@ -6,6 +6,7 @@ use App\Models\ApiProvider;
 use App\Models\ServerOrder;
 use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
+use App\Services\Orders\OrderDispatcher;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -22,6 +23,15 @@ class SyncServerOrders extends Command
         if ($limit > 500) $limit = 500;
 
         $onlyId = $this->option('only-id');
+
+         // ✅ First: auto-dispatch waiting server orders that were never sent (no remote_id)
+        // so this command can be used alone in cron/manual runs.
+        if (empty($onlyId)) {
+            $dispatched = $this->dispatchPendingServerWithoutRemoteId($limit);
+            if ($dispatched > 0) {
+                $this->info("Dispatched {$dispatched} pending server orders before sync.");
+            }
+        }
 
         $q = ServerOrder::query()
             ->with(['service', 'provider'])
@@ -154,6 +164,40 @@ class SyncServerOrders extends Command
         return 0;
     }
 
+    private function dispatchPendingServerWithoutRemoteId(int $limit): int
+    {
+        /** @var OrderDispatcher $dispatcher */
+        $dispatcher = app(OrderDispatcher::class);
+
+        $pending = ServerOrder::query()
+            ->where('api_order', 1)
+            ->where('status', 'waiting')
+            ->where(function ($q) {
+                $q->whereNull('remote_id')->orWhere('remote_id', '');
+            })
+            ->where(function ($q) {
+                $q->whereNull('processing')->orWhere('processing', 0)->orWhere('processing', false);
+            })
+            ->orderBy('id', 'asc')
+            ->limit($limit)
+            ->get();
+
+        $count = 0;
+        foreach ($pending as $order) {
+            try {
+                $dispatcher->send('server', (int)$order->id);
+                $count++;
+            } catch (\Throwable $e) {
+                Log::warning('SyncServerOrders pre-dispatch failed', [
+                    'order_id' => $order->id,
+                    'err' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        return $count;
+    }
+    
     private function mapDhruStatusToLocal(int $statusInt): string
     {
         if ($statusInt === 4) return 'success';
