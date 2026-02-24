@@ -49,6 +49,15 @@ abstract class BaseServiceController extends Controller
             if ($pid > 0) $q->where('supplier_id', $pid);
         }
 
+         if ($r->filled('status')) {
+            $status = strtolower(trim((string)$r->status));
+            if ($status === 'active') {
+                $q->where('active', 1);
+            } elseif ($status === 'inactive') {
+                $q->where('active', 0);
+            }
+        }
+
         $rows = $q->paginate(20)->withQueryString();
 
         // ✅ قائمة مزودين API (id + name) بدل pluck int (حل خطأ Attempt to read property "id" on int)

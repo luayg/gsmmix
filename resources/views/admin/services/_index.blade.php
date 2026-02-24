@@ -2,15 +2,25 @@
 @php use Illuminate\Support\Str; @endphp
 
 @if(isset($viewPrefix))
-  <div class="d-flex align-items-center gap-2 flex-wrap mb-3">
+   <style>
+    .svc-page-toolbar{display:flex;align-items:end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
+    .svc-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:.75rem;align-items:end}
+    .svc-filter-grid .form-control,.svc-filter-grid .form-select{min-width:0}
+    .svc-table th,.svc-table td{vertical-align:middle;padding:.55rem .65rem}
+    .svc-status-badge{display:inline-flex;align-items:center;justify-content:center;min-width:82px;padding:.2rem .55rem;border-radius:999px;font-size:.72rem;font-weight:700}
+    .svc-status-badge--active{background:#22c55e;color:#fff}
+    .svc-status-badge--inactive{background:#ef4444;color:#fff}
+    @media (max-width: 992px){ .svc-filter-grid{grid-template-columns:repeat(2,minmax(150px,1fr));} }
+    @media (max-width: 640px){ .svc-filter-grid{grid-template-columns:1fr;} }
+  </style>
+
+  <div class="svc-page-toolbar">
     <div class="fs-4 fw-semibold text-capitalize">{{ $viewPrefix }} services</div>
 
-    <form class="ms-auto d-flex gap-2 align-items-center" method="GET" action="">
-      <input class="form-control form-control-sm" name="q" placeholder="Smart search"
-             value="{{ request('q') }}" style="max-width:260px">
+    <form class="svc-filter-grid" method="GET" action="">
+      <input class="form-control form-control-sm" name="q" placeholder="Smart search" value="{{ request('q') }}">
 
-      <select class="form-select form-select-sm" name="api_provider_id" style="max-width:260px" onchange="this.form.submit()">
-        <option value="">API connection</option>
+      <select class="form-select form-select-sm" name="api_provider_id" onchange="this.form.submit()">
         @foreach(($apis ?? collect()) as $a)
           <option value="{{ $a->id }}" @selected((string)request('api_provider_id') === (string)$a->id)>
             {{ $a->name }}
@@ -18,24 +28,34 @@
         @endforeach
       </select>
 
-      <a class="btn btn-sm btn-success" href="javascript:;" data-create-service data-service-type="{{ $viewPrefix }}">
-        <i class="fas fa-plus me-1"></i> Create service
-      </a>
+       <select class="form-select form-select-sm" name="status" onchange="this.form.submit()">
+        <option value="">Status</option>
+        <option value="active" @selected(request('status')==='active')>Active</option>
+        <option value="inactive" @selected(request('status')==='inactive')>Not active</option>
+      </select>
+
+      <div class="d-flex gap-2 justify-content-end">
+        <button class="btn btn-sm btn-outline-secondary" type="submit">Filter</button>
+        <a class="btn btn-sm btn-success" href="javascript:;" data-create-service data-service-type="{{ $viewPrefix }}">
+          <i class="fas fa-plus me-1"></i> Create service
+        </a>
+      </div>
     </form>
   </div>
 @endif
 
 <div class="card shadow-sm">
   <div class="table-responsive">
-    <table class="table table-hover table-sm align-middle mb-0">
+    <<table class="table table-hover table-sm align-middle mb-0 svc-table">
       <thead>
         <tr>
           <th style="width:80px">ID</th>
           <th>Name</th>
           <th>Group</th>
-          <th class="text-end">Price</th>
-          <th class="text-end">Cost</th>
-          <th>API connection</th>
+           <th style="width:120px">Status</th>
+          <th class="text-end" style="width:120px">Price</th>
+          <th class="text-end" style="width:120px">Cost</th>
+          <th style="min-width:180px">API connection</th>
           <th class="text-end" style="width:200px">Actions</th>
         </tr>
       </thead>
@@ -81,6 +101,14 @@
 
             <td>{{ $r->group?->name ?? 'None' }}</td>
 
+             <td>
+              @if((int)($r->active ?? 0) === 1)
+                <span class="svc-status-badge svc-status-badge--active">Active</span>
+              @else
+                <span class="svc-status-badge svc-status-badge--inactive">Not active</span>
+              @endif
+            </td>
+
             <td class="text-end">{{ number_format((float)$price, 4) }}</td>
             <td class="text-end">{{ number_format((float)$cost, 4) }}</td>
 
@@ -108,7 +136,7 @@
           </tr>
         @empty
           <tr>
-            <td colspan="7" class="text-center text-muted py-4">No services found</td>
+               <td colspan="8" class="text-center text-muted py-4">No services found</td>
           </tr>
         @endforelse
       </tbody>
