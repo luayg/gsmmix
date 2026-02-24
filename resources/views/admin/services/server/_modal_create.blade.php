@@ -498,15 +498,57 @@
     try{
       if (!scope || !Array.isArray(additionalFields)) return;
 
+      const MAX_REMOTE_FIELDS = 30;
+      let droppedInvalid = 0;
+      let droppedDuplicate = 0;
+      const seenLabels = new Set();
+
+      const normalizedFields = [];
+      additionalFields.forEach((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) {
+          droppedInvalid += 1;
+          return;
+        }
+
+        const label = String(item.fieldname || item.name || item.label || '').trim();
+        const type = String(item.fieldtype || item.type || '').trim();
+        if (!label && !type) {
+          droppedInvalid += 1;
+          return;
+        }
+
+        const normalizedLabel = label.toLowerCase();
+        if (normalizedLabel && seenLabels.has(normalizedLabel)) {
+          droppedDuplicate += 1;
+          return;
+        }
+        if (normalizedLabel) seenLabels.add(normalizedLabel);
+
+        normalizedFields.push(item);
+      });
+
+      const cappedFields = normalizedFields.slice(0, MAX_REMOTE_FIELDS);
+      const droppedByCap = normalizedFields.length - cappedFields.length;
+
+      if (droppedInvalid > 0) {
+        console.warn(`server applyRemoteFields dropped ${droppedInvalid} invalid item(s)`);
+      }
+      if (droppedDuplicate > 0) {
+        console.warn(`server applyRemoteFields dropped ${droppedDuplicate} duplicate item(s)`);
+      }
+      if (droppedByCap > 0) {
+        console.warn(`server applyRemoteFields capped fields at ${MAX_REMOTE_FIELDS}`);
+      }
+
       const localWrap = scope.querySelector('#fieldsWrap');
       if (!localWrap) return;
 
       Array.from(localWrap.querySelectorAll('[data-field]')).forEach(x => x.remove());
 
-      additionalFields.forEach((f, idx) => {
-        const label = String(f.fieldname || f.name || '').trim();
+      cappedFields.forEach((f, idx) => {
+        const label = String(f.fieldname || f.name || f.label || '').trim();
         const input = 'service_fields_' + (idx + 1);
-        const req = (String(f.required || '').toLowerCase() === 'on') ? 1 : 0;
+        const req = (String(f.required || '').toLowerCase() === 'on' || String(f.required) === '1') ? 1 : 0;
 
         addField(scope, {
           active: 1,

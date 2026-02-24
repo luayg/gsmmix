@@ -456,37 +456,86 @@ private function deepFind($data, array $keys)
     }
 
     private function extractAdditionalFields(array $srv): array
-{
-    // 1) الأكثر شيوعًا في DHRU
-    $req = $srv['Requires.Custom'] ?? null;
-    if (is_array($req) && !empty($req)) return array_values($req);
+    {
+        // 1) الأكثر شيوعًا في DHRU
+        $req = $srv['Requires.Custom'] ?? null;
+        $normalizedReq = $this->normalizeAdditionalFieldsPayload($req);
+        if (!empty($normalizedReq)) return $normalizedReq;
 
-    // 2) بعض المزودين يضعونها مباشرة باسم CustomFields
-    $req2 = $srv['CustomFields'] ?? $srv['custom_fields'] ?? null;
-    if (is_array($req2) && !empty($req2)) return array_values($req2);
+        // 2) بعض المزودين يضعونها مباشرة باسم CustomFields
+        $req2 = $srv['CustomFields'] ?? $srv['custom_fields'] ?? null;
+        $normalizedReq2 = $this->normalizeAdditionalFieldsPayload($req2);
+        if (!empty($normalizedReq2)) return $normalizedReq2;
 
-    // 3) أحيانًا تكون داخل CUSTOM
-    $custom = $srv['CUSTOM'] ?? $srv['custom'] ?? null;
-    if (is_array($custom)) {
-        // أحيانًا CUSTOM تكون { fields: [...] }
-        $maybe = $custom['fields'] ?? $custom['FIELDS'] ?? null;
-        if (is_array($maybe) && !empty($maybe)) return array_values($maybe);
+        // 3) أحيانًا تكون داخل CUSTOM
+        $custom = $srv['CUSTOM'] ?? $srv['custom'] ?? null;
+        if (is_array($custom)) {
+            // أحيانًا CUSTOM تكون { fields: [...] }
+            $maybe = $custom['fields'] ?? $custom['FIELDS'] ?? null;
+            $normalizedMaybe = $this->normalizeAdditionalFieldsPayload($maybe);
+            if (!empty($normalizedMaybe)) return $normalizedMaybe;
 
-        // أو تكون هي نفسها الحقول
-        if (!empty($custom)) return array_values($custom);
-    }
-
-    // 4) أحيانًا تكون string JSON
-    foreach (['Requires.Custom', 'CustomFields', 'CUSTOM'] as $k) {
-        $v = $srv[$k] ?? null;
-        if (is_string($v)) {
-            $decoded = json_decode($v, true);
-            if (is_array($decoded) && !empty($decoded)) return array_values($decoded);
+            // IMPORTANT: لا نحول associative CUSTOM إلى array_values().
+            // بعض المزودين يرسلون scalar arrays مثل ["SN", "", ...]؛ هذه قيم خام وليست field objects.
+            // تسطيحها ينتج حقولًا وهمية بدون مفاتيح تعريف مثل name/fieldname/type.
+            $normalizedCustom = $this->normalizeAdditionalFieldsPayload($custom);
+            if (!empty($normalizedCustom)) return $normalizedCustom;
+        } elseif (is_string($custom)) {
+            $decodedCustom = json_decode($custom, true);
+            $normalizedDecodedCustom = $this->normalizeAdditionalFieldsPayload($decodedCustom);
+            if (!empty($normalizedDecodedCustom)) return $normalizedDecodedCustom;
         }
+
+        // 4) أحيانًا تكون string JSON
+        foreach (['Requires.Custom', 'CustomFields', 'custom_fields', 'CUSTOM'] as $k) {
+            $v = $srv[$k] ?? null;
+            if (!is_string($v)) continue;
+
+            $decoded = json_decode($v, true);
+            $normalizedDecoded = $this->normalizeAdditionalFieldsPayload($decoded);
+            if (!empty($normalizedDecoded)) return $normalizedDecoded;
+        }
+
+        return [];
     }
 
-    return [];
-}
+    private function normalizeAdditionalFieldsPayload($payload): array
+    {
+        if (!is_array($payload) || empty($payload)) return [];
+
+        $fieldKeys = ['fieldname', 'name', 'label', 'fieldtype', 'type'];
+
+        $looksLikeFieldObject = static function (array $candidate) use ($fieldKeys): bool {
+            $normalizedKeys = array_map(
+                static fn ($key): string => strtolower((string)$key),
+                array_keys($candidate)
+            );
+
+            foreach ($fieldKeys as $key) {
+                if (in_array($key, $normalizedKeys, true)) return true;
+            }
+
+            return false;
+        };
+
+        // payload is already a list of field objects.
+        if (array_is_list($payload)) {
+            $allFieldObjects = true;
+            foreach ($payload as $item) {
+                if (!is_array($item) || !$looksLikeFieldObject($item)) {
+                    $allFieldObjects = false;
+                    break;
+                }
+            }
+
+            return $allFieldObjects ? $payload : [];
+        }
+
+        // payload is associative; accept only if it resembles one field object.
+        // Reject scalar/metadata associative maps because values like ["SN", "", ...]
+        // are not field definitions and would create bogus additional fields.
+        return $looksLikeFieldObject($payload) ? [$payload] : [];
+    }
 
 
     private function requires($value): bool

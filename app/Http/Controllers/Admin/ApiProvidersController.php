@@ -14,6 +14,7 @@ use App\Models\ServiceGroup;
 use App\Services\Providers\ProviderManager;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Models\ServiceGroupPrice;
 
@@ -443,11 +444,17 @@ public function servicesFile(Request $request, ApiProvider $provider)
             return [];
         }
 
-        // If payload is a single field object, wrap into a list.
-        $singleFieldKeys = ['fieldname', 'name', 'label', 'fieldtype', 'type', 'input'];
-        $hasSingleFieldShape = !empty(array_intersect($singleFieldKeys, array_keys($raw)));
-        if ($hasSingleFieldShape) {
-            return [$raw];
+        // Guard: only associative arrays can represent a field-definition object.
+        // If this is a direct field object, require one of fieldname|name|label and keep it.
+        if ($this->isAssociativeArray($raw)) {
+            $isDirectFieldShape = array_key_exists('fieldname', $raw)
+                || array_key_exists('name', $raw)
+                || array_key_exists('label', $raw);
+
+            if ($isDirectFieldShape) {
+                $label = trim((string)($raw['fieldname'] ?? $raw['name'] ?? $raw['label'] ?? ''));
+                return $label !== '' ? [$raw] : [];
+            }
         }
 
         // If payload is keyed object that contains nested field arrays, flatten those.
@@ -464,12 +471,11 @@ public function servicesFile(Request $request, ApiProvider $provider)
         // Keep only field-like entries.
         $out = [];
         foreach (($flattened ?: $raw) as $item) {
-            if (!is_array($item)) {
+            if (!is_array($item) || !$this->isAssociativeArray($item)) {
                 continue;
             }
             $label = trim((string)($item['fieldname'] ?? $item['name'] ?? $item['label'] ?? ''));
-            $type = trim((string)($item['fieldtype'] ?? $item['type'] ?? ''));
-            if ($label === '' && $type === '') {
+            if ($label === '') {
                 continue;
             }
             $out[] = $item;
@@ -515,14 +521,43 @@ public function servicesFile(Request $request, ApiProvider $provider)
 
     return '';
 }
+
+    private function isAssociativeArray(array $arr): bool
+    {
+        if ($arr === []) {
+            return false;
+        }
+
+        return array_keys($arr) !== range(0, count($arr) - 1);
+    }
+
     private function normalizeRemoteFieldsToLocal(array $remoteFields): array
     {
         $out = [];
-        foreach ($remoteFields as $idx => $rf) {
-            $label = trim((string)($rf['fieldname'] ?? $rf['name'] ?? $rf['label'] ?? ''));
-            if ($label === '') $label = 'Field ' . ($idx + 1);
+        $seen = [];
+        $maxFields = 20;
 
-            $required = strtolower(trim((string)($rf['required'] ?? ''))) === 'on' ? 1 : 0;
+        foreach ($remoteFields as $rf) {
+            if (!is_array($rf) || !$this->isAssociativeArray($rf)) {
+                continue;
+            }
+
+            $label = trim((string)($rf['fieldname'] ?? $rf['name'] ?? $rf['label'] ?? ''));
+            if ($label === '') {
+                continue;
+            }
+
+            $providedInput = trim((string)($rf['input'] ?? ''));
+            $input = $providedInput !== ''
+                ? Str::snake($providedInput)
+                : 'service_fields_' . (count($out) + 1);
+
+            $dedupeKey = Str::lower($label) . '|' . Str::lower($input);
+            if (isset($seen[$dedupeKey])) {
+                continue;
+            }
+
+            $required = $this->parseStrictRequiredFlag($rf['required'] ?? null);
 
             $type = $this->mapRemoteFieldType($rf['fieldtype'] ?? $rf['type'] ?? 'text');
 
@@ -538,7 +573,7 @@ public function servicesFile(Request $request, ApiProvider $provider)
                 'active'      => 1,
                 'name'        => $label,
                 'type'        => $type,
-                'input'       => 'service_fields_' . ($idx + 1),
+                'input'       => $input,
                 'description' => (string)($rf['description'] ?? ''),
                 'minimum'     => 0,
                 'maximum'     => 0,
@@ -546,8 +581,24 @@ public function servicesFile(Request $request, ApiProvider $provider)
                 'required'    => $required,
                 'options'     => $type === 'select' ? $optionsArr : [],
             ];
+
+            $seen[$dedupeKey] = true;
+            if (count($out) >= $maxFields) {
+                break;
+            }
         }
+
         return $out;
+    }
+
+    private function parseStrictRequiredFlag($required): int
+    {
+        if (is_bool($required)) {
+            return $required ? 1 : 0;
+        }
+
+        $value = Str::lower(trim((string)$required));
+        return in_array($value, ['on', '1', 'true', 'yes'], true) ? 1 : 0;
     }
 
     private function doBulkImport(
@@ -622,12 +673,24 @@ public function servicesFile(Request $request, ApiProvider $provider)
             $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
 
             $remoteFields = $this->extractRemoteAdditionalFields($r);
+            $remoteFieldsCount = count($remoteFields);
             $localFields = !empty($remoteFields)
                 ? $this->normalizeRemoteFieldsToLocal($remoteFields)
                 : [];
 
+            $droppedCount = max(0, $remoteFieldsCount - count($localFields));
+            if ($droppedCount > 0) {
+                // Guard log for malformed/duplicate remote payload fields.
+                Log::info('Dropped malformed provider custom fields during bulk import.', [
+                    'provider_id' => (int)$provider->id,
+                    'remote_id' => $remoteId,
+                    'dropped_count' => $droppedCount,
+                ]);
+            }
+
             $params = [];
-            if (!empty($localFields)) {
+            // Guard: persist custom_fields only when normalized entries survived all filters.
+            if (is_array($localFields) && !empty($localFields)) {
                 $params['custom_fields'] = $localFields;
             }
             if ($kind === 'file') {
