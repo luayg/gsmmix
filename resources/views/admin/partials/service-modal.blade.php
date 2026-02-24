@@ -1095,6 +1095,10 @@
       }
     } catch (_) {}
 
+        // Keep saved local service options in Edit mode.
+    // API service auto-selection can temporarily override toggles with remote defaults.
+    applyRemoteServiceSettings(body, editSource);
+    
     const mf = s.main_field || {};
     const mfType = (mf.type || (mf.label ? 'text' : '') || '').toString();
     const mfAllowed = (mf.rules?.allowed || '').toString();
