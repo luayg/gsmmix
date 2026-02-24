@@ -2,7 +2,7 @@
 @php use Illuminate\Support\Str; @endphp
 
 @if(isset($viewPrefix))
-   <style>
+  <style>
     .svc-page-toolbar{display:flex;align-items:end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
     .svc-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:.75rem;align-items:end}
     .svc-filter-grid .form-control,.svc-filter-grid .form-select{min-width:0}
@@ -20,7 +20,8 @@
     <form class="svc-filter-grid" method="GET" action="">
       <input class="form-control form-control-sm" name="q" placeholder="Smart search" value="{{ request('q') }}">
 
-      <select class="form-select form-select-sm" name="api_provider_id" onchange="this.form.submit()">
+      <select class="form-select form-select-sm" name="api_provider_id">
+        <option value="">API connection</option>
         @foreach(($apis ?? collect()) as $a)
           <option value="{{ $a->id }}" @selected((string)request('api_provider_id') === (string)$a->id)>
             {{ $a->name }}
@@ -28,7 +29,7 @@
         @endforeach
       </select>
 
-       <select class="form-select form-select-sm" name="status" onchange="this.form.submit()">
+      <select class="form-select form-select-sm" name="status">
         <option value="">Status</option>
         <option value="active" @selected(request('status')==='active')>Active</option>
         <option value="inactive" @selected(request('status')==='inactive')>Not active</option>
@@ -46,13 +47,13 @@
 
 <div class="card shadow-sm">
   <div class="table-responsive">
-    <<table class="table table-hover table-sm align-middle mb-0 svc-table">
+    <table class="table table-hover table-sm align-middle mb-0 svc-table">
       <thead>
         <tr>
           <th style="width:80px">ID</th>
           <th>Name</th>
           <th>Group</th>
-           <th style="width:120px">Status</th>
+          <th style="width:120px">Status</th>
           <th class="text-end" style="width:120px">Price</th>
           <th class="text-end" style="width:120px">Cost</th>
           <th style="min-width:180px">API connection</th>
@@ -101,7 +102,7 @@
 
             <td>{{ $r->group?->name ?? 'None' }}</td>
 
-             <td>
+            <td>
               @if((int)($r->active ?? 0) === 1)
                 <span class="svc-status-badge svc-status-badge--active">Active</span>
               @else
@@ -136,7 +137,7 @@
           </tr>
         @empty
           <tr>
-               <td colspan="8" class="text-center text-muted py-4">No services found</td>
+            <td colspan="8" class="text-center text-muted py-4">No services found</td>
           </tr>
         @endforelse
       </tbody>
@@ -216,6 +217,25 @@
     document.getElementById('svcDeleteName').textContent = btn.dataset.name || '—';
     modalShow('svcDeleteModal');
   });
+
+
+  const filtersForm = document.querySelector('.svc-filter-grid');
+  const applyFilters = () => {
+    if (!filtersForm) return;
+    const url = new URL(window.location.href);
+    const fd = new FormData(filtersForm);
+
+    ['q','api_provider_id','status'].forEach((k) => url.searchParams.delete(k));
+    for (const [k,v] of fd.entries()) {
+      const val = String(v || '').trim();
+      if (val !== '') url.searchParams.set(k, val);
+    }
+    url.searchParams.delete('page');
+    window.location.assign(url.toString());
+  };
+
+  filtersForm?.querySelector('select[name="api_provider_id"]')?.addEventListener('change', applyFilters);
+  filtersForm?.querySelector('select[name="status"]')?.addEventListener('change', applyFilters);
 
   document.getElementById('svcDeleteConfirmBtn')?.addEventListener('click', async () => {
     if(!pendingDeleteUrl) return;

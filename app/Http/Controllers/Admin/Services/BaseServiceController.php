@@ -52,9 +52,13 @@ abstract class BaseServiceController extends Controller
          if ($r->filled('status')) {
             $status = strtolower(trim((string)$r->status));
             if ($status === 'active') {
-                $q->where('active', 1);
+                $q->where(function ($qq) {
+                    $qq->where('active', 1)->orWhere('active', true)->orWhere('active', '1');
+                });
             } elseif ($status === 'inactive') {
-                $q->where('active', 0);
+                $q->where(function ($qq) {
+                    $qq->where('active', 0)->orWhere('active', false)->orWhere('active', '0')->orWhereNull('active');
+                });
             }
         }
 
