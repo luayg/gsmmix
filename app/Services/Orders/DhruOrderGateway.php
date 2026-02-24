@@ -190,6 +190,33 @@ class DhruOrderGateway
         return $fields;
     }
 
+
+    private function appendWellKnownFieldTags(string $xml, array $fields): string
+    {
+        $map = [
+            'email' => 'EMAIL',
+            'username' => 'USERNAME',
+            'user_name' => 'USERNAME',
+            'account' => 'ACCOUNT',
+            'login' => 'LOGIN',
+            'password' => 'PASSWORD',
+        ];
+
+        foreach ($map as $key => $tag) {
+            if (!array_key_exists($key, $fields)) continue;
+
+            $val = trim((string)$fields[$key]);
+            if ($val === '') continue;
+
+            // avoid duplicate tag append
+            if (str_contains($xml, '<' . $tag . '>')) continue;
+
+            $xml .= '<' . $tag . '>' . $this->xmlEscape($val) . '</' . $tag . '>';
+        }
+
+        return $xml;
+    }
+
     private function send(ApiProvider $p, string $action, string $parametersXml): array
     {
         $payload = $this->basePayload($p, $action);
@@ -326,6 +353,7 @@ class DhruOrderGateway
             $xml .= '<REQUIRED>' . $this->xmlEscape((string)$requiredJson) . '</REQUIRED>';
         }
 
+        $xml = $this->appendWellKnownFieldTags($xml, $fields);
         $xml .= '</PARAMETERS>';
 
         return $this->send($p, 'placeimeiorder', $xml);
@@ -356,6 +384,8 @@ class DhruOrderGateway
             $requiredJson = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             $xml .= '<REQUIRED>' . $this->xmlEscape((string)$requiredJson) . '</REQUIRED>';
         }
+
+        $xml = $this->appendWellKnownFieldTags($xml, $fields);
 
         if ($comments !== '') {
             $xml .= '<COMMENTS>' . $this->xmlEscape($comments) . '</COMMENTS>';
@@ -426,6 +456,7 @@ class DhruOrderGateway
             $xml .= '<REQUIRED>' . $this->xmlEscape((string)$requiredJson) . '</REQUIRED>';
         }
 
+        $xml = $this->appendWellKnownFieldTags($xml, $fields);
         $xml .= '</PARAMETERS>';
 
         return $this->send($p, 'placefileorder', $xml);
