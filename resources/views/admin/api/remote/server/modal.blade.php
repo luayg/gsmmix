@@ -105,6 +105,12 @@
       </tbody>
     </table>
   </div>
+
+<div class="p-2 border-top d-flex justify-content-center">
+  <nav aria-label="Services pagination">
+    <ul class="pagination pagination-sm mb-0" id="svcPagination"></ul>
+  </nav>
+</div>
 </div>
 
 {{-- ============ Import Wizard Modal ============ --}}
@@ -235,18 +241,87 @@
   const kind = 'server';
   const providerId = @json($provider->id);
 
-  // Search in remote table
+  // Search + pagination in remote table
   const svcSearch = document.getElementById('svcSearch');
-  svcSearch?.addEventListener('input', () => {
-    const q = (svcSearch.value || '').trim().toLowerCase();
-    document.querySelectorAll('#svcTable tr[data-row]').forEach(tr => {
-      const hit =
+  const svcPagination = document.getElementById('svcPagination');
+  const svcRows = Array.from(document.querySelectorAll('#svcTable tr[data-row]'));
+  const svcPerPage = 25;
+  let svcFilteredRows = [...svcRows];
+  let svcCurrentPage = 1;
+
+  function svcVisiblePages(total, current){
+    const pages = new Set();
+    for(let i=1; i<=Math.min(5,total); i++) pages.add(i);
+    if (current > 5 && current < total) pages.add(current);
+    if (total > 5) pages.add(total);
+    return Array.from(pages).sort((a,b)=>a-b);
+  }
+
+  function svcRenderPagination(totalPages){
+    if (!svcPagination) return;
+    svcPagination.innerHTML = '';
+    if (totalPages <= 1) return;
+
+    const addItem = (label, page, disabled=false, active=false) => {
+      const li = document.createElement('li');
+      li.className = `page-item${disabled ? ' disabled' : ''}${active ? ' active' : ''}`;
+      const a = document.createElement('a');
+      a.className = 'page-link';
+      a.href = '#';
+      a.textContent = label;
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (disabled || page === svcCurrentPage) return;
+        svcCurrentPage = page;
+        svcRender();
+      });
+      li.appendChild(a);
+      svcPagination.appendChild(li);
+    };
+
+    addItem('Previous', Math.max(1, svcCurrentPage - 1), svcCurrentPage === 1);
+
+    const pages = svcVisiblePages(totalPages, svcCurrentPage);
+    let prev = null;
+    for (const page of pages){
+      if (prev !== null && page - prev > 1){
+        const gap = document.createElement('li');
+        gap.className = 'page-item disabled';
+        gap.innerHTML = '<span class="page-link">&hellip;</span>';
+        svcPagination.appendChild(gap);
+      }
+      addItem(String(page), page, false, page === svcCurrentPage);
+      prev = page;
+    }
+
+    addItem('Next', Math.min(totalPages, svcCurrentPage + 1), svcCurrentPage === totalPages);
+  }
+
+  function svcRender(){
+    const totalPages = Math.max(1, Math.ceil(svcFilteredRows.length / svcPerPage));
+    if (svcCurrentPage > totalPages) svcCurrentPage = totalPages;
+
+    svcRows.forEach(tr => tr.style.display = 'none');
+    const start = (svcCurrentPage - 1) * svcPerPage;
+    svcFilteredRows.slice(start, start + svcPerPage).forEach(tr => tr.style.display = '');
+
+    svcRenderPagination(totalPages);
+  }
+
+  function svcApplyFilter(){
+    const q = (svcSearch?.value || '').trim().toLowerCase();
+    svcFilteredRows = svcRows.filter(tr => {
+      return !q ||
         (tr.dataset.group || '').includes(q) ||
-        (tr.dataset.name  || '').includes(q) ||
-        (tr.dataset.remote|| '').includes(q);
-      tr.style.display = (!q || hit) ? '' : 'none';
+        (tr.dataset.name || '').includes(q) ||
+        (tr.dataset.remote || '').includes(q);
     });
-  });
+    svcCurrentPage = 1;
+    svcRender();
+  }
+
+  svcSearch?.addEventListener('input', svcApplyFilter);
+  svcApplyFilter();
 
   // Import wizard open
   const btnOpen = document.getElementById('btnOpenImportWizard');

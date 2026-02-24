@@ -20,9 +20,6 @@
   .wiz-pricing-row:last-child{border-bottom:0}
   .wiz-pricing-title{font-weight:600;margin-bottom:.35rem}
   .wiz-pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
-  .svc-pagination{display:flex;flex-wrap:wrap;justify-content:center;gap:.35rem;padding:.65rem .75rem;border-top:1px solid #eee;background:#fff}
-  .svc-pagination .btn{min-width:34px;padding:.2rem .5rem}
-  .svc-pagination .btn.active{font-weight:700}
 </style>
 
 <div class="modal-header align-items-center" style="background:#3bb37a;color:#fff;">
@@ -115,7 +112,11 @@
       </tbody>
     </table>
   </div>
-  <div class="svc-pagination" id="svcPagination"></div>
+
+<div class="p-2 border-top d-flex justify-content-center">
+  <nav aria-label="Services pagination">
+    <ul class="pagination pagination-sm mb-0" id="svcPagination"></ul>
+  </nav>
 </div>
 
 {{-- ============ Import Wizard Modal ============ --}}
@@ -247,70 +248,88 @@
 (function(){
   const providerId = @json($provider->id);
   const kind = @json($kind);
-  const perPage = 20;
 
-  const svcRows = () => Array.from(document.querySelectorAll('#svcTable tr[data-row]'));
-  const svcPager = document.getElementById('svcPagination');
+  // ===================== Search + pagination (main table) =====================
+  const svcSearch = document.getElementById('svcSearch');
+  const svcPagination = document.getElementById('svcPagination');
+  const svcRows = Array.from(document.querySelectorAll('#svcTable tr[data-row]'));
+  const svcPerPage = 25;
+  let svcFilteredRows = [...svcRows];
   let svcCurrentPage = 1;
 
-  function getSvcFilteredRows(){
-    const q = (document.getElementById('svcSearch')?.value || '').trim().toLowerCase();
-    return svcRows().filter(tr => {
-      if (!q) return true;
-      return (
+  function svcVisiblePages(total, current){
+    const pages = new Set();
+    for(let i=1; i<=Math.min(5,total); i++) pages.add(i);
+    if (current > 5 && current < total) pages.add(current);
+    if (total > 5) pages.add(total);
+    return Array.from(pages).sort((a,b)=>a-b);
+  }
+
+  function svcRenderPagination(totalPages){
+    if (!svcPagination) return;
+    svcPagination.innerHTML = '';
+    if (totalPages <= 1) return;
+
+    const addItem = (label, page, disabled=false, active=false) => {
+      const li = document.createElement('li');
+      li.className = `page-item${disabled ? ' disabled' : ''}${active ? ' active' : ''}`;
+      const a = document.createElement('a');
+      a.className = 'page-link';
+      a.href = '#';
+      a.textContent = label;
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        if (disabled || page === svcCurrentPage) return;
+        svcCurrentPage = page;
+        svcRender();
+      });
+      li.appendChild(a);
+      svcPagination.appendChild(li);
+    };
+
+    addItem('Previous', Math.max(1, svcCurrentPage - 1), svcCurrentPage === 1);
+
+    const pages = svcVisiblePages(totalPages, svcCurrentPage);
+    let prev = null;
+    for (const page of pages){
+      if (prev !== null && page - prev > 1){
+        const gap = document.createElement('li');
+        gap.className = 'page-item disabled';
+        gap.innerHTML = '<span class="page-link">&hellip;</span>';
+        svcPagination.appendChild(gap);
+      }
+      addItem(String(page), page, false, page === svcCurrentPage);
+      prev = page;
+    }
+
+    addItem('Next', Math.min(totalPages, svcCurrentPage + 1), svcCurrentPage === totalPages);
+  }
+
+  function svcRender(){
+    const totalPages = Math.max(1, Math.ceil(svcFilteredRows.length / svcPerPage));
+    if (svcCurrentPage > totalPages) svcCurrentPage = totalPages;
+
+    svcRows.forEach(tr => tr.style.display = 'none');
+    const start = (svcCurrentPage - 1) * svcPerPage;
+    svcFilteredRows.slice(start, start + svcPerPage).forEach(tr => tr.style.display = '');
+
+    svcRenderPagination(totalPages);
+  }
+
+  function svcApplyFilter(){
+    const q = (svcSearch?.value || '').trim().toLowerCase();
+    svcFilteredRows = svcRows.filter(tr => {
+      return !q ||
         (tr.dataset.group || '').includes(q) ||
-        (tr.dataset.name  || '').includes(q) ||
-        (tr.dataset.remote|| '').includes(q)
-      );
+        (tr.dataset.name || '').includes(q) ||
+        (tr.dataset.remote || '').includes(q);
     });
-  }
-
-  function renderSvcPagination(){
-    if (!svcPager) return;
-
-    const allRows = svcRows();
-    const filtered = getSvcFilteredRows();
-    const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-    svcCurrentPage = Math.min(Math.max(1, svcCurrentPage), totalPages);
-
-    allRows.forEach(tr => tr.style.display = 'none');
-
-    const start = (svcCurrentPage - 1) * perPage;
-    const end = start + perPage;
-    filtered.slice(start, end).forEach(tr => tr.style.display = '');
-
-    if (filtered.length <= perPage) {
-      svcPager.innerHTML = '';
-      return;
-    }
-
-    const maxButtons = 7;
-    let from = Math.max(1, svcCurrentPage - Math.floor(maxButtons / 2));
-    let to = Math.min(totalPages, from + maxButtons - 1);
-    if ((to - from + 1) < maxButtons) from = Math.max(1, to - maxButtons + 1);
-
-    let html = '';
-    html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-svc-page="${svcCurrentPage - 1}" ${svcCurrentPage <= 1 ? 'disabled' : ''}>‹</button>`;
-    for (let p = from; p <= to; p++) {
-      html += `<button type="button" class="btn btn-sm ${p === svcCurrentPage ? 'btn-dark active' : 'btn-outline-secondary'}" data-svc-page="${p}">${p}</button>`;
-    }
-    html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-svc-page="${svcCurrentPage + 1}" ${svcCurrentPage >= totalPages ? 'disabled' : ''}>›</button>`;
-    svcPager.innerHTML = html;
-  }
-
-  svcPager?.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-svc-page]');
-    if (!btn) return;
-    svcCurrentPage = Number(btn.getAttribute('data-svc-page') || 1);
-    renderSvcPagination();
-  });
-
-  // ===================== Search (main table) =====================
-  const svcSearch = document.getElementById('svcSearch');
-  svcSearch?.addEventListener('input', () => {
     svcCurrentPage = 1;
-    renderSvcPagination();
-  });
+    svcRender();
+  }
+
+  svcSearch?.addEventListener('input', svcApplyFilter);
+  svcApplyFilter();
 
   // ===================== Import wizard open =====================
   const btnOpen = document.getElementById('btnOpenImportWizard');
@@ -630,6 +649,5 @@
   });
 
   applyAddedFromMemory();
-  renderSvcPagination();
 })();
 </script>
