@@ -20,6 +20,9 @@
   .wiz-pricing-row:last-child{border-bottom:0}
   .wiz-pricing-title{font-weight:600;margin-bottom:.35rem}
   .wiz-pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+  .svc-pagination{display:flex;flex-wrap:wrap;justify-content:center;gap:.35rem;padding:.65rem .75rem;border-top:1px solid #eee;background:#fff}
+  .svc-pagination .btn{min-width:34px;padding:.2rem .5rem}
+  .svc-pagination .btn.active{font-weight:700}
 </style>
 
 <div class="modal-header align-items-center" style="background:#3bb37a;color:#fff;">
@@ -112,6 +115,7 @@
       </tbody>
     </table>
   </div>
+  <div class="svc-pagination" id="svcPagination"></div>
 </div>
 
 {{-- ============ Import Wizard Modal ============ --}}
@@ -243,18 +247,69 @@
 (function(){
   const providerId = @json($provider->id);
   const kind = @json($kind);
+  const perPage = 20;
+
+  const svcRows = () => Array.from(document.querySelectorAll('#svcTable tr[data-row]'));
+  const svcPager = document.getElementById('svcPagination');
+  let svcCurrentPage = 1;
+
+  function getSvcFilteredRows(){
+    const q = (document.getElementById('svcSearch')?.value || '').trim().toLowerCase();
+    return svcRows().filter(tr => {
+      if (!q) return true;
+      return (
+        (tr.dataset.group || '').includes(q) ||
+        (tr.dataset.name  || '').includes(q) ||
+        (tr.dataset.remote|| '').includes(q)
+      );
+    });
+  }
+
+  function renderSvcPagination(){
+    if (!svcPager) return;
+
+    const allRows = svcRows();
+    const filtered = getSvcFilteredRows();
+    const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+    svcCurrentPage = Math.min(Math.max(1, svcCurrentPage), totalPages);
+
+    allRows.forEach(tr => tr.style.display = 'none');
+
+    const start = (svcCurrentPage - 1) * perPage;
+    const end = start + perPage;
+    filtered.slice(start, end).forEach(tr => tr.style.display = '');
+
+    if (filtered.length <= perPage) {
+      svcPager.innerHTML = '';
+      return;
+    }
+
+    const maxButtons = 7;
+    let from = Math.max(1, svcCurrentPage - Math.floor(maxButtons / 2));
+    let to = Math.min(totalPages, from + maxButtons - 1);
+    if ((to - from + 1) < maxButtons) from = Math.max(1, to - maxButtons + 1);
+
+    let html = '';
+    html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-svc-page="${svcCurrentPage - 1}" ${svcCurrentPage <= 1 ? 'disabled' : ''}>‹</button>`;
+    for (let p = from; p <= to; p++) {
+      html += `<button type="button" class="btn btn-sm ${p === svcCurrentPage ? 'btn-dark active' : 'btn-outline-secondary'}" data-svc-page="${p}">${p}</button>`;
+    }
+    html += `<button type="button" class="btn btn-sm btn-outline-secondary" data-svc-page="${svcCurrentPage + 1}" ${svcCurrentPage >= totalPages ? 'disabled' : ''}>›</button>`;
+    svcPager.innerHTML = html;
+  }
+
+  svcPager?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-svc-page]');
+    if (!btn) return;
+    svcCurrentPage = Number(btn.getAttribute('data-svc-page') || 1);
+    renderSvcPagination();
+  });
 
   // ===================== Search (main table) =====================
   const svcSearch = document.getElementById('svcSearch');
   svcSearch?.addEventListener('input', () => {
-    const q = (svcSearch.value || '').trim().toLowerCase();
-    document.querySelectorAll('#svcTable tr[data-row]').forEach(tr => {
-      const hit =
-        (tr.dataset.group || '').includes(q) ||
-        (tr.dataset.name  || '').includes(q) ||
-        (tr.dataset.remote|| '').includes(q);
-      tr.style.display = (!q || hit) ? '' : 'none';
-    });
+    svcCurrentPage = 1;
+    renderSvcPagination();
   });
 
   // ===================== Import wizard open =====================
@@ -575,5 +630,6 @@
   });
 
   applyAddedFromMemory();
+  renderSvcPagination();
 })();
 </script>
