@@ -24,18 +24,12 @@ class SyncServerOrders extends Command
 
         $onlyId = $this->option('only-id');
 
-        // ✅ First: auto-dispatch waiting server orders that were never sent (no remote_id)
+         // ✅ First: auto-dispatch waiting server orders that were never sent (no remote_id)
         // so this command can be used alone in cron/manual runs.
-        $preDispatch = ['attempted' => 0, 'sent' => 0, 'failed' => 0];
         if (empty($onlyId)) {
-            $preDispatch = $this->dispatchPendingServerWithoutRemoteId($limit);
-            if (($preDispatch['attempted'] ?? 0) > 0) {
-                $this->info(sprintf(
-                    'Pre-dispatch server queue: attempted=%d sent=%d failed=%d.',
-                    (int)($preDispatch['attempted'] ?? 0),
-                    (int)($preDispatch['sent'] ?? 0),
-                    (int)($preDispatch['failed'] ?? 0)
-                ));
+            $dispatched = $this->dispatchPendingServerWithoutRemoteId($limit);
+            if ($dispatched > 0) {
+                $this->info("Dispatched {$dispatched} pending server orders before sync.");
             }
         }
 
@@ -52,7 +46,7 @@ class SyncServerOrders extends Command
         $orders = $q->orderBy('id', 'asc')->limit($limit)->get();
 
         if ($orders->isEmpty()) {
-            $pendingDispatch = ServerOrder::query()
+             $pendingDispatch = ServerOrder::query()
                 ->where('api_order', 1)
                 ->where('status', 'waiting')
                 ->where(function ($q) {
@@ -61,14 +55,8 @@ class SyncServerOrders extends Command
                 ->count();
 
             if ($pendingDispatch > 0) {
-                $attempted = (int)($preDispatch['attempted'] ?? 0);
-                if ($attempted > 0) {
-                    $this->warn("No server orders to sync yet. {$pendingDispatch} order(s) are still waiting without remote_id after dispatch attempt.");
-                    $this->warn('This usually means provider/API validation/connection issue. Check each order response/request payload.');
-                } else {
-                    $this->info("No server orders to sync (remote_id missing). Pending dispatch queue: {$pendingDispatch}.");
-                    $this->info('Run: php artisan orders:dispatch-pending-server --limit=50');
-                }
+                $this->info("No server orders to sync yet. {$pendingDispatch} order(s) are still waiting without remote_id after dispatch attempt.");
+                $this->info('This usually means provider/API validation/connection issue. Check each order response/request payload.');
             } else {
                 $this->info('No server orders to sync.');
             }
@@ -176,7 +164,7 @@ class SyncServerOrders extends Command
         return 0;
     }
 
-    private function dispatchPendingServerWithoutRemoteId(int $limit): array
+    private function dispatchPendingServerWithoutRemoteId(int $limit): int
     {
         /** @var OrderDispatcher $dispatcher */
         $dispatcher = app(OrderDispatcher::class);
@@ -194,31 +182,68 @@ class SyncServerOrders extends Command
             ->limit($limit)
             ->get();
 
-        $attempted = 0;
+        $attempted = $pending->count();
         $sent = 0;
         $failed = 0;
 
         foreach ($pending as $order) {
-            $attempted++;
             try {
                 $dispatcher->send('server', (int)$order->id);
-                $fresh = ServerOrder::query()->find($order->id);
-                $rid = trim((string)($fresh?->remote_id ?? ''));
-                if ($rid !== '') $sent++;
             } catch (\Throwable $e) {
-                $failed++;
                 Log::warning('SyncServerOrders pre-dispatch failed', [
                     'order_id' => $order->id,
                     'err' => $e->getMessage(),
                 ]);
             }
+
+            $order->refresh();
+            if (trim((string)$order->remote_id) !== '') {
+                $sent++;
+                continue;
+            }
+
+            $failed++;
+            $reason = $this->extractDispatchFailureReason($order);
+
+            $this->warn("Pre-dispatch failed for order #{$order->id}: {$reason}");
+
+            Log::warning('SyncServerOrders pre-dispatch no remote_id after dispatch', [
+                'order_id' => $order->id,
+                'status' => $order->status,
+                'reason' => $reason,
+                'response' => $order->response,
+                'request' => $order->request,
+            ]);
         }
 
-        return [
-            'attempted' => $attempted,
-            'sent' => $sent,
-            'failed' => $failed,
+        if ($attempted > 0) {
+            $this->info("Pre-dispatch server queue: attempted={$attempted} sent={$sent} failed={$failed}.");
+        }
+
+        return $sent;
+    }
+    
+
+    private function extractDispatchFailureReason(ServerOrder $order): string
+    {
+        $response = $this->normalizeResponseArray($order->response);
+        $request = $this->normalizeResponseArray($order->request);
+
+        $candidates = [
+            data_get($response, 'message'),
+            data_get($response, 'dhru_comments'),
+            data_get($response, 'result_text'),
+            data_get($request, 'dispatch_error'),
+            data_get($request, 'response_raw.ERROR.0.MESSAGE'),
+            data_get($request, 'response_raw.message'),
         ];
+
+        foreach ($candidates as $msg) {
+            $msg = trim((string)$msg);
+            if ($msg !== '') return $msg;
+        }
+
+        return 'Unknown reason (remote_id still empty after dispatch).';
     }
 
     private function mapDhruStatusToLocal(int $statusInt): string
