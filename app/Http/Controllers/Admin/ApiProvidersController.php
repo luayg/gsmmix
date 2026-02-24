@@ -394,16 +394,88 @@ public function servicesFile(Request $request, ApiProvider $provider)
 
     private function extractRemoteAdditionalFields($r): array
     {
-        $raw = $r->additional_fields ?? $r->additional_data ?? null;
-        if ($raw === null) return [];
+        // 1) Prefer normalized additional_fields column when present
+        $primary = $this->normalizeAdditionalFieldsPayload($r->additional_fields ?? null);
+        if (!empty($primary)) {
+            return $primary;
+        }
 
-        if (is_array($raw)) return $raw;
+        // 2) Fallback to additional_data and well-known keys used by providers
+        $ad = $r->additional_data ?? null;
+        if (is_string($ad)) {
+            $ad = json_decode($ad, true);
+        }
 
-        $rawStr = trim((string)$raw);
-        if ($rawStr === '') return [];
+        if (!is_array($ad)) {
+            return [];
+        }
 
-        $decoded = json_decode($rawStr, true);
-        return is_array($decoded) ? $decoded : [];
+        $candidates = [
+            $ad['Requires.Custom'] ?? null,
+            $ad['CustomFields'] ?? null,
+            $ad['custom_fields'] ?? null,
+            $ad['additional_fields'] ?? null,
+            $ad['CUSTOM']['fields'] ?? null,
+            $ad['CUSTOM']['FIELDS'] ?? null,
+            $ad['CUSTOM'] ?? null,
+            $ad['custom']['fields'] ?? null,
+            $ad['custom']['FIELDS'] ?? null,
+            $ad['custom'] ?? null,
+        ];
+
+        foreach ($candidates as $candidate) {
+            $normalized = $this->normalizeAdditionalFieldsPayload($candidate);
+            if (!empty($normalized)) {
+                return $normalized;
+            }
+        }
+
+        return [];
+    }
+
+    private function normalizeAdditionalFieldsPayload($raw): array
+    {
+        if (is_string($raw)) {
+            $raw = json_decode($raw, true);
+        }
+
+        if (!is_array($raw) || $raw === []) {
+            return [];
+        }
+
+        // If payload is a single field object, wrap into a list.
+        $singleFieldKeys = ['fieldname', 'name', 'label', 'fieldtype', 'type', 'input'];
+        $hasSingleFieldShape = !empty(array_intersect($singleFieldKeys, array_keys($raw)));
+        if ($hasSingleFieldShape) {
+            return [$raw];
+        }
+
+        // If payload is keyed object that contains nested field arrays, flatten those.
+        $flattened = [];
+        foreach ($raw as $value) {
+            if (is_array($value)) {
+                $sub = $this->normalizeAdditionalFieldsPayload($value);
+                if (!empty($sub)) {
+                    $flattened = array_merge($flattened, $sub);
+                }
+            }
+        }
+
+        // Keep only field-like entries.
+        $out = [];
+        foreach (($flattened ?: $raw) as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $label = trim((string)($item['fieldname'] ?? $item['name'] ?? $item['label'] ?? ''));
+            $type = trim((string)($item['fieldtype'] ?? $item['type'] ?? ''));
+            if ($label === '' && $type === '') {
+                continue;
+            }
+            $out[] = $item;
+        }
+
+        return $out;
     }
 
     private function extractRemoteInfoText($r): string
@@ -549,6 +621,22 @@ public function servicesFile(Request $request, ApiProvider $provider)
 
             $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
 
+            $remoteFields = $this->extractRemoteAdditionalFields($r);
+            $localFields = !empty($remoteFields)
+                ? $this->normalizeRemoteFieldsToLocal($remoteFields)
+                : [];
+
+            $params = [];
+            if (!empty($localFields)) {
+                $params['custom_fields'] = $localFields;
+            }
+            if ($kind === 'file') {
+                $allowExtensions = (string)($r->allowed_extensions ?? $r->allow_extensions ?? $r->allow_extension ?? '');
+                if (trim($allowExtensions) !== '') {
+                    $params['allowed_extensions'] = $allowExtensions;
+                }
+            }
+
             $data = [
                 'alias' => $alias,
                 'group_id' => $groupId,
@@ -566,6 +654,7 @@ public function servicesFile(Request $request, ApiProvider $provider)
                 'remote_id' => $remoteId,
 
                 'main_field' => $mainField,
+                'params' => $params ?: null,
 
                 'active' => 1,
                 'allow_bulk' => 0,
@@ -579,9 +668,7 @@ public function servicesFile(Request $request, ApiProvider $provider)
             $created = $localModel::query()->create($data);
 
             // ✅ save custom fields
-            $remoteFields = $this->extractRemoteAdditionalFields($r);
-            if (!empty($remoteFields) && $created?->id) {
-                $localFields = $this->normalizeRemoteFieldsToLocal($remoteFields);
+            if (!empty($localFields) && $created?->id) {
                 $serviceType = $this->serviceGroupType($kind);
                 $this->saveCustomFieldsToTable($serviceType, (int)$created->id, $localFields);
             }
