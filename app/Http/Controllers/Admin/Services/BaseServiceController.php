@@ -554,6 +554,61 @@ abstract class BaseServiceController extends Controller
         });
     }
 
+     public function bulk(Request $request)
+    {
+        $validated = $request->validate([
+            'action' => 'required|string|in:active,inactive,delete',
+            'ids' => 'required|array|min:1',
+            'ids.*' => 'integer|min:1',
+        ]);
+
+        $ids = collect($validated['ids'])->map(fn ($id) => (int)$id)->filter()->unique()->values();
+        if ($ids->isEmpty()) {
+            return response()->json(['ok' => false, 'msg' => 'No services selected'], 422);
+        }
+
+        $affected = 0;
+        DB::transaction(function () use ($validated, $ids, &$affected) {
+            $query = ($this->model)::query()->whereIn('id', $ids->all());
+
+            if ($validated['action'] === 'active') {
+                $affected = (int)$query->update(['active' => 1]);
+                return;
+            }
+
+            if ($validated['action'] === 'inactive') {
+                $affected = (int)$query->update(['active' => 0]);
+                return;
+            }
+
+            $rows = $query->get(['id']);
+            foreach ($rows as $row) {
+                if (class_exists(ServiceGroupPrice::class)) {
+                    ServiceGroupPrice::query()
+                        ->where('service_type', $this->viewPrefix)
+                        ->where('service_id', (int)$row->id)
+                        ->delete();
+                }
+
+                try {
+                    DB::table('custom_fields')
+                        ->where('service_type', $this->viewPrefix . '_service')
+                        ->where('service_id', (int)$row->id)
+                        ->delete();
+                } catch (\Throwable $e) {
+                }
+
+                $row->delete();
+                $affected++;
+            }
+        });
+
+        return response()->json([
+            'ok' => true,
+            'msg' => 'Bulk action applied',
+            'affected' => $affected,
+        ]);
+    }
     // =========================
     // Destroy (Ajax friendly)
     // =========================

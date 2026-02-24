@@ -156,6 +156,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
                 // ===== IMEI services =====
         Route::resource('imei-services', ImeiServiceController::class)->except(['show'])->names('imei');
+        Route::post('imei-services/bulk',            [ImeiServiceController::class, 'bulk'])->name('imei.bulk');
         Route::get('imei-services/{service}/json',    [ImeiServiceController::class, 'showJson'])->name('imei.show.json');
         Route::post('imei-services/{service}/toggle', [ImeiServiceController::class, 'toggle'])->name('imei.toggle');
         Route::get('imei-services/modal/create',         [ImeiServiceController::class, 'modalCreate'])->name('imei.modal.create');
@@ -163,6 +164,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // ===== Server services =====
         Route::resource('server-services', ServerServiceController::class)->except(['show'])->names('server');
+        Route::post('server-services/bulk',           [ServerServiceController::class, 'bulk'])->name('server.bulk');
         Route::get('server-services/{service}/json',     [ServerServiceController::class, 'showJson'])->name('server.show.json');
         Route::post('server-services/{service}/toggle',  [ServerServiceController::class, 'toggle'])->name('server.toggle');
         Route::get('server-services/modal/create',       [ServerServiceController::class, 'modalCreate'])->name('server.modal.create');
@@ -170,6 +172,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         // ===== File services =====
         Route::resource('file-services', FileServiceController::class)->except(['show'])->names('file');
+        Route::post('file-services/bulk',             [FileServiceController::class, 'bulk'])->name('file.bulk');
         Route::get('file-services/{service}/json',       [FileServiceController::class, 'showJson'])->name('file.show.json');
         Route::post('file-services/{service}/toggle',    [FileServiceController::class, 'toggle'])->name('file.toggle');
         Route::get('file-services/modal/create',         [FileServiceController::class, 'modalCreate'])->name('file.modal.create');

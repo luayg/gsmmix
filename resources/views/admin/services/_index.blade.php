@@ -7,6 +7,12 @@
     .svc-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:.75rem;align-items:end}
     .svc-filter-grid .form-control,.svc-filter-grid .form-select{min-width:0}
     .svc-table th,.svc-table td{vertical-align:middle;padding:.55rem .65rem}
+    .svc-table tbody tr:nth-child(odd){background:#f7f7f7}
+    .svc-table tbody tr:nth-child(even){background:#ffffff}
+    .svc-table tbody tr.svc-row-selected{background:#dbeafe !important}
+    .svc-row-select-cell{width:42px}
+    .svc-bulk-toolbar{display:none;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem}
+    .svc-bulk-toolbar.is-visible{display:flex}
     .svc-status-badge{display:inline-flex;align-items:center;justify-content:center;min-width:82px;padding:.2rem .55rem;border-radius:999px;font-size:.72rem;font-weight:700}
     .svc-status-badge--active{background:#22c55e;color:#fff}
     .svc-status-badge--inactive{background:#ef4444;color:#fff}
@@ -43,6 +49,18 @@
       </div>
     </form>
   </div>
+
+  <div class="svc-bulk-toolbar" id="svcBulkToolbar" data-bulk-url="{{ route($routePrefix.'.bulk') }}">
+    <span class="badge bg-primary" id="svcBulkSelectedCount">0 selected</span>
+    <select class="form-select form-select-sm" id="svcBulkAction" style="max-width:180px">
+      <option value="">Select action</option>
+      <option value="active">Active</option>
+      <option value="inactive">Not active</option>
+      <option value="delete">Delete</option>
+    </select>
+    <button type="button" class="btn btn-sm btn-primary" id="svcBulkApplyBtn">Apply</button>
+    <button type="button" class="btn btn-sm btn-light" id="svcBulkClearBtn">Clear</button>
+  </div>
 @endif
 
 <div class="card shadow-sm">
@@ -50,6 +68,7 @@
     <table class="table table-hover table-sm align-middle mb-0 svc-table">
       <thead>
         <tr>
+          <th class="svc-row-select-cell"></th>
           <th style="width:80px">ID</th>
           <th>Name</th>
           <th>Group</th>
@@ -93,7 +112,10 @@
             $deleteUrl = route($routePrefix.'.destroy', $r->id);
           @endphp
 
-          <tr>
+          <tr data-service-row data-service-id="{{ $r->id }}">
+            <td class="svc-row-select-cell">
+              <input type="checkbox" class="form-check-input" data-service-checkbox value="{{ $r->id }}" aria-label="select service {{ $r->id }}">
+            </td>
             <td>{{ $r->id }}</td>
 
             <td title="{{ is_string($displayName) ? $displayName : '' }}">
@@ -137,7 +159,7 @@
           </tr>
         @empty
           <tr>
-            <td colspan="8" class="text-center text-muted py-4">No services found</td>
+            <td colspan="9" class="text-center text-muted py-4">No services found</td>
           </tr>
         @endforelse
       </tbody>
@@ -236,6 +258,100 @@
 
   filtersForm?.querySelector('select[name="api_provider_id"]')?.addEventListener('change', applyFilters);
   filtersForm?.querySelector('select[name="status"]')?.addEventListener('change', applyFilters);
+
+  const bulkToolbar = document.getElementById('svcBulkToolbar');
+  const bulkCountEl = document.getElementById('svcBulkSelectedCount');
+  const bulkActionEl = document.getElementById('svcBulkAction');
+  const bulkApplyBtn = document.getElementById('svcBulkApplyBtn');
+  const bulkClearBtn = document.getElementById('svcBulkClearBtn');
+  const checkboxes = () => Array.from(document.querySelectorAll('[data-service-checkbox]'));
+
+  function selectedIds(){
+    return checkboxes().filter(cb => cb.checked).map(cb => Number(cb.value)).filter(Boolean);
+  }
+
+  function refreshBulkUi(){
+    const ids = selectedIds();
+    bulkCountEl && (bulkCountEl.textContent = `${ids.length} selected`);
+    bulkToolbar?.classList.toggle('is-visible', ids.length > 0);
+
+    checkboxes().forEach((cb) => {
+      const row = cb.closest('tr');
+      if (!row) return;
+      row.classList.toggle('svc-row-selected', cb.checked);
+    });
+  }
+
+  document.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-service-row]');
+    if (!row) return;
+
+    const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+    if (!isCtrlOrCmd) return;
+    if (e.target.closest('button,a,input,select,textarea,label')) return;
+
+    const cb = row.querySelector('[data-service-checkbox]');
+    if (!cb) return;
+    cb.checked = !cb.checked;
+    refreshBulkUi();
+  });
+
+  document.addEventListener('change', (e) => {
+    if (!e.target.matches('[data-service-checkbox]')) return;
+    refreshBulkUi();
+  });
+
+  bulkClearBtn?.addEventListener('click', () => {
+    checkboxes().forEach(cb => cb.checked = false);
+    refreshBulkUi();
+  });
+
+  bulkApplyBtn?.addEventListener('click', async () => {
+    const ids = selectedIds();
+    const action = bulkActionEl?.value || '';
+    const bulkUrl = bulkToolbar?.dataset.bulkUrl || '';
+
+    if (!ids.length) {
+      alert('Select services first');
+      return;
+    }
+    if (!action) {
+      alert('Select an action');
+      return;
+    }
+    if (!bulkUrl) {
+      alert('Bulk URL not configured');
+      return;
+    }
+
+    if (action === 'delete' && !confirm(`Delete ${ids.length} selected services?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch(bulkUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        },
+        body: JSON.stringify({ action, ids })
+      });
+
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.ok) {
+        alert(data?.msg || 'Bulk action failed');
+        return;
+      }
+
+      window.location.reload();
+    } catch (err) {
+      alert('Network error');
+    }
+  });
+
+  refreshBulkUi();
 
   document.getElementById('svcDeleteConfirmBtn')?.addEventListener('click', async () => {
     if(!pendingDeleteUrl) return;
