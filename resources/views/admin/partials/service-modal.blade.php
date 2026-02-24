@@ -184,9 +184,18 @@
     };
 
     const decorateStatusInHtml = (html) => {
-      return String(html || '').replace(
-        /(\:\s*)(yes|no|clean|locked|unlocked|active|activated|not\s+active|on|off|expired|pending|unknown|n\/a|lost\s+mode)(?=(?:<|\n|\r|\s*$))/gi,
-        (_, prefix, word) => `${prefix}${renderStatusBadge(word)}`
+      let out = String(html || '');
+
+      // Normalize provider-colored status spans (e.g. ": <span style='color:green'>Yes</span>")
+      // so they can be converted into the compact badge style.
+      out = out.replace(
+        /(\:\s*)<span[^>]*>\s*(yes|no|clean|locked|unlocked|active|activated|not\s+active|on|off|expired|pending|unknown|n\/a|lost\s+mode)\s*<\/span>/gi,
+        (_, prefix, word) => `${prefix}${word}`
+      );
+
+      return out.replace(
+        /([^>\n\r:]{2,80})(\:\s*)(yes|no|clean|locked|unlocked|active|activated|not\s+active|on|off|expired|pending|unknown|n\/a|lost\s+mode)(?=(?:<|\n|\r|\s*$))/gi,
+        (_, label, prefix, word) => `${label}${prefix}${renderStatusBadge(word, label)}`
       );
     };
 
