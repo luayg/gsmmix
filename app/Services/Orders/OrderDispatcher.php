@@ -33,6 +33,8 @@ class OrderDispatcher
                 'order_id' => $orderId,
                 'err' => $e->getMessage()
             ]);
+            
+            throw $e;
         }
     }
 

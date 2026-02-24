@@ -24,12 +24,18 @@ class SyncServerOrders extends Command
 
         $onlyId = $this->option('only-id');
 
-         // ✅ First: auto-dispatch waiting server orders that were never sent (no remote_id)
+        // ✅ First: auto-dispatch waiting server orders that were never sent (no remote_id)
         // so this command can be used alone in cron/manual runs.
+        $preDispatch = ['attempted' => 0, 'sent' => 0, 'failed' => 0];
         if (empty($onlyId)) {
-            $dispatched = $this->dispatchPendingServerWithoutRemoteId($limit);
-            if ($dispatched > 0) {
-                $this->info("Dispatched {$dispatched} pending server orders before sync.");
+            $preDispatch = $this->dispatchPendingServerWithoutRemoteId($limit);
+            if (($preDispatch['attempted'] ?? 0) > 0) {
+                $this->info(sprintf(
+                    'Pre-dispatch server queue: attempted=%d sent=%d failed=%d.',
+                    (int)($preDispatch['attempted'] ?? 0),
+                    (int)($preDispatch['sent'] ?? 0),
+                    (int)($preDispatch['failed'] ?? 0)
+                ));
             }
         }
 
@@ -46,7 +52,7 @@ class SyncServerOrders extends Command
         $orders = $q->orderBy('id', 'asc')->limit($limit)->get();
 
         if ($orders->isEmpty()) {
-             $pendingDispatch = ServerOrder::query()
+            $pendingDispatch = ServerOrder::query()
                 ->where('api_order', 1)
                 ->where('status', 'waiting')
                 ->where(function ($q) {
@@ -55,8 +61,14 @@ class SyncServerOrders extends Command
                 ->count();
 
             if ($pendingDispatch > 0) {
-                $this->info("No server orders to sync (remote_id missing). Pending dispatch queue: {$pendingDispatch}.");
-                $this->info('Run: php artisan orders:dispatch-pending-server --limit=50');
+                $attempted = (int)($preDispatch['attempted'] ?? 0);
+                if ($attempted > 0) {
+                    $this->warn("No server orders to sync yet. {$pendingDispatch} order(s) are still waiting without remote_id after dispatch attempt.");
+                    $this->warn('This usually means provider/API validation/connection issue. Check each order response/request payload.');
+                } else {
+                    $this->info("No server orders to sync (remote_id missing). Pending dispatch queue: {$pendingDispatch}.");
+                    $this->info('Run: php artisan orders:dispatch-pending-server --limit=50');
+                }
             } else {
                 $this->info('No server orders to sync.');
             }
@@ -164,7 +176,7 @@ class SyncServerOrders extends Command
         return 0;
     }
 
-    private function dispatchPendingServerWithoutRemoteId(int $limit): int
+    private function dispatchPendingServerWithoutRemoteId(int $limit): array
     {
         /** @var OrderDispatcher $dispatcher */
         $dispatcher = app(OrderDispatcher::class);
@@ -182,12 +194,19 @@ class SyncServerOrders extends Command
             ->limit($limit)
             ->get();
 
-        $count = 0;
+        $attempted = 0;
+        $sent = 0;
+        $failed = 0;
+
         foreach ($pending as $order) {
+            $attempted++;
             try {
                 $dispatcher->send('server', (int)$order->id);
-                $count++;
+                $fresh = ServerOrder::query()->find($order->id);
+                $rid = trim((string)($fresh?->remote_id ?? ''));
+                if ($rid !== '') $sent++;
             } catch (\Throwable $e) {
+                $failed++;
                 Log::warning('SyncServerOrders pre-dispatch failed', [
                     'order_id' => $order->id,
                     'err' => $e->getMessage(),
@@ -195,9 +214,13 @@ class SyncServerOrders extends Command
             }
         }
 
-        return $count;
+        return [
+            'attempted' => $attempted,
+            'sent' => $sent,
+            'failed' => $failed,
+        ];
     }
-    
+
     private function mapDhruStatusToLocal(int $statusInt): string
     {
         if ($statusInt === 4) return 'success';
