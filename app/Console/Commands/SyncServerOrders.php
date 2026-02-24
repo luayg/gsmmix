@@ -36,7 +36,20 @@ class SyncServerOrders extends Command
         $orders = $q->orderBy('id', 'asc')->limit($limit)->get();
 
         if ($orders->isEmpty()) {
-            $this->info('No server orders to sync.');
+             $pendingDispatch = ServerOrder::query()
+                ->where('api_order', 1)
+                ->where('status', 'waiting')
+                ->where(function ($q) {
+                    $q->whereNull('remote_id')->orWhere('remote_id', '');
+                })
+                ->count();
+
+            if ($pendingDispatch > 0) {
+                $this->info("No server orders to sync (remote_id missing). Pending dispatch queue: {$pendingDispatch}.");
+                $this->info('Run: php artisan orders:dispatch-pending-server --limit=50');
+            } else {
+                $this->info('No server orders to sync.');
+            }
             return 0;
         }
 

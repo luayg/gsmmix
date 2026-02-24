@@ -40,6 +40,11 @@ class Kernel extends ConsoleKernel
             ->everyMinute()
             ->withoutOverlapping();
 
+            $schedule->command('orders:dispatch-pending-server --limit=50')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
+
         $schedule->command('orders:sync-server --limit=50')
             ->everyMinute()
             ->withoutOverlapping();
@@ -57,6 +62,7 @@ class Kernel extends ConsoleKernel
 
         \App\Console\Commands\RetryImeiApiOrders::class,
         \App\Console\Commands\DispatchPendingImeiOrders::class,
+        \App\Console\Commands\DispatchPendingServerOrders::class,
 
         \App\Console\Commands\SyncImeiOrders::class,
         \App\Console\Commands\SyncServerOrders::class,
