@@ -586,6 +586,21 @@
       );
 
       const info = normalizeInfo(s.info ?? s.INFO ?? s.description ?? s.DESCRIPTION ?? '');
+      const flags = {
+        active: Number(s.active ?? 1),
+        allow_bulk: Number(s.allow_bulk ?? 0),
+        allow_duplicates: Number(s.allow_duplicates ?? 0),
+        reply_with_latest: Number(s.reply_with_latest ?? 0),
+        allow_report: Number(s.allow_report ?? 0),
+        allow_report_time: Number(s.allow_report_time ?? 0),
+        allow_cancel: Number(s.allow_cancel ?? 0),
+        allow_cancel_time: Number(s.allow_cancel_time ?? 0),
+        use_remote_cost: Number(s.use_remote_cost ?? 0),
+        use_remote_price: Number(s.use_remote_price ?? 0),
+        stop_on_api_change: Number(s.stop_on_api_change ?? 0),
+        needs_approval: Number(s.needs_approval ?? 0),
+        reply_expiration: Number(s.reply_expiration ?? 0),
+      };
       const timeTxt = time ? ` — ${time}` : '';
       const ridTxt  = rid ? ` (#${rid})` : '';
       return `<option value="${rid}"
@@ -596,6 +611,19 @@
         data-info-b64="${escAttr(btoa(unescape(encodeURIComponent(info))))}"
         data-additional-fields="${escAttr(afJson)}"
         data-allow-extensions="${escAttr(allowExt)}"
+         data-active="${flags.active}"
+        data-allow-bulk="${flags.allow_bulk}"
+        data-allow-duplicates="${flags.allow_duplicates}"
+        data-reply-with-latest="${flags.reply_with_latest}"
+        data-allow-report="${flags.allow_report}"
+        data-allow-report-time="${flags.allow_report_time}"
+        data-allow-cancel="${flags.allow_cancel}"
+        data-allow-cancel-time="${flags.allow_cancel_time}"
+        data-use-remote-cost="${flags.use_remote_cost}"
+        data-use-remote-price="${flags.use_remote_price}"
+        data-stop-on-api-change="${flags.stop_on_api_change}"
+        data-needs-approval="${flags.needs_approval}"
+        data-reply-expiration="${flags.reply_expiration}"
       >${name}${timeTxt} — ${creditTxt} Credits${ridTxt}</option>`;
     }).join('');
   }
@@ -632,6 +660,52 @@
     ensureHidden('main_type', mainFieldVal);
     const typeVal = clean(form.querySelector('[name="type"]')?.value || '');
     if (typeVal) ensureHidden('type', typeVal);
+  }
+
+  function applyRemoteServiceSettings(scope, source){
+    if (!scope || !source) return;
+
+    const readInt = (keys, fallback = 0) => {
+      for (const key of keys) {
+        const val = source?.dataset?.[key] ?? source?.getAttribute?.(`data-${key.replace(/[A-Z]/g, m => '-' + m.toLowerCase())}`);
+        if (val !== undefined && val !== null && String(val).trim() !== '') {
+          const num = Number(val);
+          return Number.isFinite(num) ? num : fallback;
+        }
+      }
+      return fallback;
+    };
+
+    const toggleMap = {
+      active: ['active'],
+      allow_bulk: ['allowBulk'],
+      allow_duplicates: ['allowDuplicates'],
+      reply_with_latest: ['replyWithLatest'],
+      allow_report: ['allowReport'],
+      allow_cancel: ['allowCancel'],
+      use_remote_cost: ['useRemoteCost'],
+      use_remote_price: ['useRemotePrice'],
+      stop_on_api_change: ['stopOnApiChange'],
+      needs_approval: ['needsApproval'],
+    };
+
+    Object.entries(toggleMap).forEach(([name, keys]) => {
+      const el = scope.querySelector(`[name="${name}"]`);
+      if (!el) return;
+      el.checked = readInt(keys, Number(el.checked ? 1 : 0)) === 1;
+    });
+
+    const numberMap = {
+      allow_report_time: ['allowReportTime'],
+      allow_cancel_time: ['allowCancelTime'],
+      reply_expiration: ['replyExpiration'],
+    };
+
+    Object.entries(numberMap).forEach(([name, keys]) => {
+      const el = scope.querySelector(`[name="${name}"]`);
+      if (!el) return;
+      el.value = String(readInt(keys, Number(el.value || 0)));
+    });
   }
 
   function resolveHooks(serviceType){
@@ -711,6 +785,7 @@
     body.querySelector('[name="source"]').value      = isClone ? 2 : 1;
     body.querySelector('[name="type"]').value        = cloneData.serviceType;
     body.querySelector('[name="alias"]').value       = slugify(cloneData.name || '');
+    applyRemoteServiceSettings(body, btn);
 
     const priceHelper = initPrice(body);
     priceHelper.setCost(cloneData.credit);
@@ -768,6 +843,8 @@
       // ✅ FIX: correct attribute name (allow-extensions)
       const allowExt = clean(opt.dataset.allowExtensions || opt.getAttribute('data-allow-extensions') || '');
       hooks.setExt?.(body, allowExt);
+
+      applyRemoteServiceSettings(body, opt);
 
       const af = parseJsonAttr(opt.dataset.additionalFields || opt.getAttribute('data-additional-fields') || '');
       if (Array.isArray(af) && af.length) {
@@ -972,6 +1049,23 @@
 
     if(form.querySelector('[name="supplier_id"]')) form.querySelector('[name="supplier_id"]').value = s.supplier_id ?? '';
     if(form.querySelector('[name="remote_id"]')) form.querySelector('[name="remote_id"]').value = s.remote_id ?? '';
+
+    const editSource = { dataset: {
+      active: String(Number(s.active ?? 1)),
+      allowBulk: String(Number(s.allow_bulk ?? 0)),
+      allowDuplicates: String(Number(s.allow_duplicates ?? 0)),
+      replyWithLatest: String(Number(s.reply_with_latest ?? 0)),
+      allowReport: String(Number(s.allow_report ?? 0)),
+      allowReportTime: String(Number(s.allow_report_time ?? 0)),
+      allowCancel: String(Number(s.allow_cancel ?? 0)),
+      allowCancelTime: String(Number(s.allow_cancel_time ?? 0)),
+      useRemoteCost: String(Number(s.use_remote_cost ?? 0)),
+      useRemotePrice: String(Number(s.use_remote_price ?? 0)),
+      stopOnApiChange: String(Number(s.stop_on_api_change ?? 0)),
+      needsApproval: String(Number(s.needs_approval ?? 0)),
+      replyExpiration: String(Number(s.reply_expiration ?? 0)),
+    }};
+    applyRemoteServiceSettings(body, editSource);
 
     await loadServiceGroups(body, serviceType || s.type || 'imei', s.group_id ?? null);
 

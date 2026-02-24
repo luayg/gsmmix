@@ -97,6 +97,19 @@ class CloneController extends Controller
                 'group_name'        => (string) ($s->group_name ?? ''),
                 'info'      => (string)($s->info ?? ''),         // ✅ ADDED
                 'allow_extensions'  => $allowExt,       // ✅ ADDED (file)
+                'active'            => (int) ($s->active ?? 1),
+                'allow_bulk'        => (int) ($s->allow_bulk ?? 0),
+                'allow_duplicates'  => (int) ($s->allow_duplicates ?? 0),
+                'reply_with_latest' => (int) ($s->reply_with_latest ?? 0),
+                'allow_report'      => (int) ($s->allow_report ?? 0),
+                'allow_report_time' => (int) ($s->allow_report_time ?? 0),
+                'allow_cancel'      => (int) ($s->allow_cancel ?? 0),
+                'allow_cancel_time' => (int) ($s->allow_cancel_time ?? 0),
+                'use_remote_cost'   => (int) ($s->use_remote_cost ?? 0),
+                'use_remote_price'  => (int) ($s->use_remote_price ?? 0),
+                'stop_on_api_change'=> (int) ($s->stop_on_api_change ?? 0),
+                'needs_approval'    => (int) ($s->needs_approval ?? 0),
+                'reply_expiration'  => (int) ($s->reply_expiration ?? 0),
                 'standfield'        => $stand,
                 'additional_fields' => $af,
             ];

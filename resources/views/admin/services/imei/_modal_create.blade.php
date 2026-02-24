@@ -143,6 +143,49 @@
               </select>
             </div>
 
+             <div class="col-12">
+              <div class="border rounded p-3 bg-light-subtle">
+                <div class="fw-semibold mb-2">Service options</div>
+                @php
+                  $options = [
+                    'use_remote_cost' => 'Sync the cost of this service with price of remote API service',
+                    'use_remote_price' => 'Sync the main and special prices of this service with price of remote API service',
+                    'stop_on_api_change' => 'Stop API if the remote service price went up',
+                    'needs_approval' => 'Needs approval',
+                    'active' => 'Active',
+                    'allow_bulk' => 'Allow bulk orders',
+                    'allow_duplicates' => 'Allow duplicates',
+                    'reply_with_latest' => 'Reply with latest success result if possible',
+                    'allow_report' => 'Allow submit to verify (success orders)',
+                    'allow_cancel' => 'Allow cancel (waiting action orders)',
+                  ];
+                @endphp
+                <div class="d-grid gap-1">
+                  @foreach($options as $name => $label)
+                    <div class="form-check form-switch">
+                      <input class="form-check-input" type="checkbox" name="{{ $name }}" value="1">
+                      <label class="form-check-label">{{ $label }}</label>
+                    </div>
+                  @endforeach
+                </div>
+
+                <div class="row g-2 mt-1">
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Allow report time (min)</label>
+                    <input name="allow_report_time" type="number" class="form-control" value="0">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Allow cancel time (min)</label>
+                    <input name="allow_cancel_time" type="number" class="form-control" value="0">
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label mb-1">Reply expiration (min)</label>
+                    <input name="reply_expiration" type="number" class="form-control" value="0">
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
 
