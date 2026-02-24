@@ -233,10 +233,11 @@ class DhruOrderGateway
         if ($m === '') return false;
 
         return str_contains($m, 'validation')
+            || str_contains($m, 'parameter')
             || str_contains($m, 'required')
             || str_contains($m, 'customfield')
             || str_contains($m, 'custom field')
-            || str_contains($m, 'email');
+            || str_contains($m, "parameter 'id'");
     }
 
     private function sendLegacy(ApiProvider $p, string $action, array $parameters): array
@@ -493,6 +494,49 @@ class DhruOrderGateway
         return $this->send($p, 'placeimeiorder', $xml);
     }
 
+
+    private function legacyCustomfieldBlob(array $fields): string
+    {
+        $legacyFields = $fields;
+        foreach ($fields as $k => $v) {
+            $uk = strtoupper((string)$k);
+            if ($uk !== '' && !array_key_exists($uk, $legacyFields)) {
+                $legacyFields[$uk] = $v;
+            }
+        }
+
+        return base64_encode(json_encode($legacyFields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
+
+    private function buildLegacyServerPayload(string $serviceId, int $qty, array $fields, string $comments): array
+    {
+        $sid = trim((string)$serviceId);
+        $customfieldBlob = $this->legacyCustomfieldBlob($fields);
+
+        $payload = [
+            // Multiple aliases for providers with inconsistent key parsing.
+            'ID' => $sid,
+            'id' => $sid,
+            'SERVICEID' => $sid,
+            'serviceid' => $sid,
+
+            'QNT' => (string)$qty,
+            'qnt' => (string)$qty,
+            'QUANTITY' => (string)$qty,
+
+            // DHRU v6.1 style custom fields.
+            'customfield' => $customfieldBlob,
+            'CUSTOMFIELD' => $customfieldBlob,
+        ];
+
+        if ($comments !== '') {
+            $payload['COMMENTS'] = $comments;
+            $payload['comments'] = $comments;
+        }
+
+        return $payload;
+    }
+
     /**
      * ✅ Updated: REQUIRED is now optional (only if not empty), like IMEI/File
      */
@@ -509,6 +553,21 @@ class DhruOrderGateway
         $fields = $this->enrichRequiredFieldAliases($fields, $order->service);
 
         $comments = trim((string)($order->comments ?? ''));
+
+        if (trim($serviceId) === '') {
+            return [
+                'ok' => false,
+                'retryable' => false,
+                'status' => 'rejected',
+                'remote_id' => null,
+                'request' => [
+                    'action' => 'placeServerOrder',
+                    'service_id' => $serviceId,
+                ],
+                'response_raw' => ['ERROR' => [['MESSAGE' => 'Service remote ID missing']]],
+                'response_ui' => ['type' => 'error', 'message' => 'Service remote ID missing'],
+            ];
+        }
 
         $xml = '<PARAMETERS>'
             . '<ID>' . $this->xmlEscape($serviceId) . '</ID>'
@@ -542,23 +601,7 @@ class DhruOrderGateway
             }
 
             // Legacy DHRU v6.1 style: parameters=base64(json) and customfield=base64(json)
-            $legacyFields = $fields;
-            foreach ($fields as $k => $v) {
-                $uk = strtoupper((string)$k);
-                if ($uk !== '' && !array_key_exists($uk, $legacyFields)) {
-                    $legacyFields[$uk] = $v;
-                }
-            }
-
-            $legacyPayload = [
-                'ID' => (int)$serviceId,
-                'QNT' => $qty,
-                'customfield' => base64_encode(json_encode($legacyFields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
-            ];
-
-            if ($comments !== '') {
-                $legacyPayload['COMMENTS'] = $comments;
-            }
+            $legacyPayload = $this->buildLegacyServerPayload($serviceId, $qty, $fields, $comments);
 
             $legacy = $this->sendLegacy($p, 'placeimeiorder', $legacyPayload);
             if (($legacy['ok'] ?? false) === true) {
@@ -577,23 +620,7 @@ class DhruOrderGateway
 
         // Even if action exists, some providers require legacy encoded parameters on validation failures.
         if ($this->shouldTryLegacyParameters($res)) {
-            $legacyFields = $fields;
-            foreach ($fields as $k => $v) {
-                $uk = strtoupper((string)$k);
-                if ($uk !== '' && !array_key_exists($uk, $legacyFields)) {
-                    $legacyFields[$uk] = $v;
-                }
-            }
-
-            $legacyPayload = [
-                'ID' => (int)$serviceId,
-                'QNT' => $qty,
-                'customfield' => base64_encode(json_encode($legacyFields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)),
-            ];
-
-            if ($comments !== '') {
-                $legacyPayload['COMMENTS'] = $comments;
-            }
+            $legacyPayload = $this->buildLegacyServerPayload($serviceId, $qty, $fields, $comments);
 
             $legacy = $this->sendLegacy($p, 'placeimeiorder', $legacyPayload);
             if (($legacy['ok'] ?? false) === true) {
