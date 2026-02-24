@@ -112,7 +112,7 @@
             $deleteUrl = route($routePrefix.'.destroy', $r->id);
           @endphp
 
-          <tr data-service-row data-service-id="{{ $r->id }}">
+          <tr data-service-row data-service-id="{{ $r->id }}" data-service-name="{{ e((string)$displayName) }}">
             <td class="svc-row-select-cell">
               <input type="checkbox" class="form-check-input" data-service-checkbox value="{{ $r->id }}" aria-label="select service {{ $r->id }}">
             </td>
@@ -176,14 +176,15 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header bg-danger text-white">
-        <div class="modal-title fw-semibold">
+        <div class="modal-title fw-semibold" id="svcDeleteModalTitle">
           <i class="fas fa-triangle-exclamation me-1"></i> Delete service
         </div>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <div class="mb-2">Are you sure you want to delete this service?</div>
+        <div class="mb-2" id="svcDeleteMessage">Are you sure you want to delete this service?</div>
         <div class="p-2 bg-light border rounded" id="svcDeleteName">—</div>
+        <div class="small text-muted mt-2 d-none" id="svcDeleteCount"></div>
         <div class="small text-muted mt-2">This action cannot be undone.</div>
       </div>
       <div class="modal-footer">
@@ -226,6 +227,7 @@
 
   // Delete modal
   let pendingDeleteUrl = null;
+  let pendingBulkDeletePayload = null;
 
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-delete-service]');
@@ -235,8 +237,13 @@
     e.stopPropagation();
     e.stopImmediatePropagation();
 
+    pendingBulkDeletePayload = null;
     pendingDeleteUrl = btn.dataset.deleteUrl || null;
+    document.getElementById('svcDeleteModalTitle').innerHTML = '<i class="fas fa-triangle-exclamation me-1"></i> Delete service';
+    document.getElementById('svcDeleteMessage').textContent = 'Are you sure you want to delete this service?';
     document.getElementById('svcDeleteName').textContent = btn.dataset.name || '—';
+    document.getElementById('svcDeleteCount').classList.add('d-none');
+    document.getElementById('svcDeleteCount').textContent = '';
     modalShow('svcDeleteModal');
   });
 
@@ -324,7 +331,37 @@
       return;
     }
 
-    if (action === 'delete' && !confirm(`Delete ${ids.length} selected services?`)) {
+    if (action === 'delete') {
+      const selectedRows = checkboxes()
+        .filter(cb => cb.checked)
+        .map(cb => cb.closest('[data-service-row]'))
+        .filter(Boolean);
+      const selectedNames = selectedRows
+        .map(row => (row.dataset.serviceName || '').trim())
+        .filter(Boolean);
+
+      pendingDeleteUrl = null;
+      pendingBulkDeletePayload = { action, ids, bulkUrl };
+
+      document.getElementById('svcDeleteModalTitle').innerHTML = '<i class="fas fa-triangle-exclamation me-1"></i> Delete services';
+      document.getElementById('svcDeleteMessage').textContent = 'Are you sure you want to delete the selected services?';
+
+      const previewNames = selectedNames.slice(0, 6);
+      document.getElementById('svcDeleteName').innerHTML = previewNames.length
+        ? previewNames.map(name => `<div>${name}</div>`).join('')
+        : `Selected IDs: ${ids.join(', ')}`;
+
+      const remain = selectedNames.length - previewNames.length;
+      const countEl = document.getElementById('svcDeleteCount');
+      if (remain > 0) {
+        countEl.textContent = `+${remain} more services`;
+        countEl.classList.remove('d-none');
+      } else {
+        countEl.textContent = '';
+        countEl.classList.add('d-none');
+      }
+
+      modalShow('svcDeleteModal');
       return;
     }
 
@@ -354,21 +391,35 @@
   refreshBulkUi();
 
   document.getElementById('svcDeleteConfirmBtn')?.addEventListener('click', async () => {
-    if(!pendingDeleteUrl) return;
+    if(!pendingDeleteUrl && !pendingBulkDeletePayload) return;
 
     try{
-      const res = await fetch(pendingDeleteUrl, {
-        method: 'POST',
-        headers: {
-          'X-Requested-With':'XMLHttpRequest',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
-        },
-        body: (() => {
-          const fd = new FormData();
-          fd.append('_method', 'DELETE');
-          return fd;
-        })()
-      });
+      let res;
+
+      if (pendingBulkDeletePayload) {
+        res = await fetch(pendingBulkDeletePayload.bulkUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With':'XMLHttpRequest',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+          },
+          body: JSON.stringify({ action: pendingBulkDeletePayload.action, ids: pendingBulkDeletePayload.ids })
+        });
+      } else {
+        res = await fetch(pendingDeleteUrl, {
+          method: 'POST',
+          headers: {
+            'X-Requested-With':'XMLHttpRequest',
+            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || ''
+          },
+          body: (() => {
+            const fd = new FormData();
+            fd.append('_method', 'DELETE');
+            return fd;
+          })()
+        });
+      }
 
       const data = await res.json().catch(()=>null);
       if(!res.ok || !data?.ok){
@@ -376,6 +427,8 @@
         return;
       }
 
+      pendingDeleteUrl = null;
+      pendingBulkDeletePayload = null;
       modalHide('svcDeleteModal');
       window.location.reload();
     }catch(err){

@@ -554,7 +554,7 @@ abstract class BaseServiceController extends Controller
         });
     }
 
-     public function bulk(Request $request)
+      public function bulk(Request $request)
     {
         $validated = $request->validate([
             'action' => 'required|string|in:active,inactive,delete',
@@ -609,6 +609,7 @@ abstract class BaseServiceController extends Controller
             'affected' => $affected,
         ]);
     }
+
     // =========================
     // Destroy (Ajax friendly)
     // =========================
