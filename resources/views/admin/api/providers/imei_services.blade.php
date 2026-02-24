@@ -86,6 +86,8 @@
                           data-credit="{{ number_format($credit, 4, '.', '') }}"
                           data-time="{{ e(strip_tags($time)) }}"
                           data-info="{{ e($info) }}"
+                          data-info-b64="{{ e(base64_encode($info)) }}"
+                          data-provider-base-url="{{ e(rtrim((string)$provider->url, '/')) }}"
                           data-group-name="{{ e(strip_tags($groupName)) }}"
                           {{-- ✅ هذا هو المفتاح --}}
                           data-additional-fields="{{ e($afJsonTrim) }}">

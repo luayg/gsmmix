@@ -20,49 +20,48 @@ abstract class DhruStyleAdapter implements ProviderAdapterInterface
     }
 
     public function fetchBalance(\App\Models\ApiProvider $provider): float
-{
-    $client = \App\Services\Api\DhruClient::fromProvider($provider);
-    $data = $client->accountInfo();
+    {
+        $client = \App\Services\Api\DhruClient::fromProvider($provider);
+        $data = $client->accountInfo();
 
-    // 1) حاول المسارات المعروفة (حسب docs)
-    $raw =
-        data_get($data, 'SUCCESS.0.AccoutInfo.creditraw') ??
-        data_get($data, 'SUCCESS.0.AccoutInfo.creditRaw') ??
-        data_get($data, 'SUCCESS.0.AccoutInfo.CREDITRAW') ??
-        data_get($data, 'SUCCESS.0.AccoutInfo.credit') ??
-        data_get($data, 'SUCCESS.0.AccoutInfo.CREDIT') ??
-        data_get($data, 'SUCCESS.0.AccountInfo.creditraw') ??      // بعض المزودين يصححون الاسم
-        data_get($data, 'SUCCESS.0.AccountInfo.creditRaw') ??
-        data_get($data, 'SUCCESS.0.AccountInfo.CREDITRAW') ??
-        data_get($data, 'SUCCESS.0.AccountInfo.credit') ??
-        data_get($data, 'SUCCESS.0.AccountInfo.CREDIT');
+        // 1) حاول المسارات المعروفة (حسب docs)
+        $raw =
+            data_get($data, 'SUCCESS.0.AccoutInfo.creditraw') ??
+            data_get($data, 'SUCCESS.0.AccoutInfo.creditRaw') ??
+            data_get($data, 'SUCCESS.0.AccoutInfo.CREDITRAW') ??
+            data_get($data, 'SUCCESS.0.AccoutInfo.credit') ??
+            data_get($data, 'SUCCESS.0.AccoutInfo.CREDIT') ??
+            data_get($data, 'SUCCESS.0.AccountInfo.creditraw') ??      // بعض المزودين يصححون الاسم
+            data_get($data, 'SUCCESS.0.AccountInfo.creditRaw') ??
+            data_get($data, 'SUCCESS.0.AccountInfo.CREDITRAW') ??
+            data_get($data, 'SUCCESS.0.AccountInfo.credit') ??
+            data_get($data, 'SUCCESS.0.AccountInfo.CREDIT');
 
-    // 2) إذا فشل، ابحث عن أي creditraw في كامل الـ JSON
-    if ($raw === null) {
-        $raw = $this->deepFind($data, ['creditraw', 'creditRaw', 'CREDITRAW', 'credit', 'CREDIT']);
-    }
-
-    return $this->toFloat($raw);
-}
-
-private function deepFind($data, array $keys)
-{
-    if (!is_array($data)) return null;
-
-    foreach ($keys as $k) {
-        if (array_key_exists($k, $data)) return $data[$k];
-    }
-
-    foreach ($data as $v) {
-        if (is_array($v)) {
-            $found = $this->deepFind($v, $keys);
-            if ($found !== null) return $found;
+        // 2) إذا فشل، ابحث عن أي creditraw في كامل الـ JSON
+        if ($raw === null) {
+            $raw = $this->deepFind($data, ['creditraw', 'creditRaw', 'CREDITRAW', 'credit', 'CREDIT']);
         }
+
+        return $this->toFloat($raw);
     }
 
-    return null;
-}
+    private function deepFind($data, array $keys)
+    {
+        if (!is_array($data)) return null;
 
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $data)) return $data[$k];
+        }
+
+        foreach ($data as $v) {
+            if (is_array($v)) {
+                $found = $this->deepFind($v, $keys);
+                if ($found !== null) return $found;
+            }
+        }
+
+        return null;
+    }
 
     public function syncCatalog(ApiProvider $provider, string $kind): int
     {
@@ -222,15 +221,34 @@ private function deepFind($data, array $keys)
         }
 
         // Scan ALL possible URL-like pieces and pick first valid normalized image URL.
-        preg_match_all('~(https?:\/\/[^\s"\'<>]+|\/\/[^\s"\'<>]+|\/[^\s"\'<>]+|data:image\/[^\s"\'<>]+)~iu', $raw, $all);
-        foreach (($all[1] ?? []) as $candidate) {
-            $url = $this->normalizeImageUrl($provider, (string)$candidate);
+        // IMPORTANT: ignore candidates that are part of HTML tags themselves (e.g. </sup> => /sup).
+        preg_match_all(
+            '~(https?:\/\/[^\s"\'<>]+|\/\/[^\s"\'<>]+|\/[^\s"\'<>]+|data:image\/[^\s"\'<>]+)~iu',
+            $raw,
+            $all,
+            PREG_OFFSET_CAPTURE
+        );
+
+        foreach (($all[1] ?? []) as $hit) {
+            $candidate = (string)($hit[0] ?? '');
+            $offset = (int)($hit[1] ?? -1);
+            if ($candidate === '' || $offset < 0) continue;
+
+            // If immediately preceded by '<', it's likely an HTML tag fragment, not a URL.
+            $prev = $offset > 0 ? substr($raw, $offset - 1, 1) : '';
+            if ($prev === '<') continue;
+
+            $url = $this->normalizeImageUrl($provider, $candidate);
             if ($url !== null) return $url;
         }
 
         return null;
     }
 
+    private function isHtmlTagPath(string $url): bool
+    {
+        return (bool) preg_match('~^/(?:sup|sub|b|i|u|br|hr|span|div|p|small|strong|img|table|thead|tbody|tr|td|th|h[1-6])$~i', trim($url));
+    }
 
     private function normalizeImageUrl(ApiProvider $provider, string $url): ?string
     {
@@ -256,8 +274,10 @@ private function deepFind($data, array $keys)
         }
 
         // Relative paths are common in some providers (e.g. /uploads/... or /media?id=123).
-        // Keep them unless they are obviously malformed (filtered above).
+        // But ignore pure HTML closing/opening tag artifacts like /sup from </sup>.
         if (str_starts_with($url, '/')) {
+            if ($this->isHtmlTagPath($url)) return null;
+
             $base = rtrim((string) $provider->url, '/');
             if ($base !== '') {
                 return $base . $url;

@@ -21,7 +21,7 @@
   #serviceModal .info-line{margin:0 0 .28rem;line-height:1.45}
   #serviceModal .info-label{font-weight:600;color:#334155}
   #serviceModal .info-value{color:#111827}
-  #serviceModal .info-badge{display:inline-block;padding:.1rem .5rem;border-radius:999px;font-size:.74rem;font-weight:700;line-height:1.2;color:#fff;vertical-align:middle}
+  #serviceModal .info-badge{display:inline-block;padding:.12rem .52rem;border-radius:999px;font-size:.62rem;font-weight:700;line-height:1;color:#fff;vertical-align:middle;letter-spacing:.2px;text-transform:uppercase}
   #serviceModal .info-badge--green{background:#4caf50}
   #serviceModal .info-badge--red{background:#ef4444}
   #serviceModal .info-badge--amber{background:#f59e0b}
@@ -125,7 +125,7 @@
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#39;');
 
-      const absolutizeProviderRelativeImages = (html) => {
+  const absolutizeProviderRelativeImages = (html) => {
     const base = String(window.__serviceModalProviderBaseUrl || '').trim().replace(/\/$/, '');
     if (!base) return html;
 
@@ -155,22 +155,43 @@
 
     return out;
   };
+
   function beautifyRemoteInfo(raw){
     const text = normalizeInfo(raw);
     if (!text) return '';
 
-    // If already HTML from provider/db, keep as-is.
-     if (/<[^>]+>/.test(text)) return normalizeProviderHtml(text);
-
-    const renderStatusBadge = (value) => {
+    const renderStatusBadge = (value, label = '') => {
       const v = value.trim();
       const vl = v.toLowerCase();
+      const ll = String(label || '').toLowerCase();
       let cls = 'info-badge info-badge--gray';
-      if (['yes','active','activated','clean','on','unlocked'].includes(vl)) cls = 'info-badge info-badge--green';
-      else if (['no','expired','blocked','blacklisted','off','locked'].includes(vl)) cls = 'info-badge info-badge--red';
-      else if (['unknown','n/a','pending'].includes(vl)) cls = 'info-badge info-badge--amber';
+
+      const findMyPhoneContext = ll.includes('find my iphone');
+
+      if (findMyPhoneContext && vl === 'on') {
+        cls = 'info-badge info-badge--red';
+      } else if (findMyPhoneContext && vl === 'off') {
+        cls = 'info-badge info-badge--green';
+      } else if (['yes','active','activated','clean','on','unlocked'].includes(vl)) {
+        cls = 'info-badge info-badge--green';
+      } else if (['no','expired','blocked','blacklisted','off','locked','not active','lost mode'].includes(vl)) {
+        cls = 'info-badge info-badge--red';
+      } else if (['unknown','n/a','pending'].includes(vl)) {
+        cls = 'info-badge info-badge--amber';
+      }
+
       return `<span class="${cls}">${htmlEscape(v.toUpperCase())}</span>`;
     };
+
+    const decorateStatusInHtml = (html) => {
+      return String(html || '').replace(
+        /(\:\s*)(yes|no|clean|locked|unlocked|active|activated|not\s+active|on|off|expired|pending|unknown|n\/a|lost\s+mode)(?=(?:<|\n|\r|\s*$))/gi,
+        (_, prefix, word) => `${prefix}${renderStatusBadge(word)}`
+      );
+    };
+
+    // If already HTML from provider/db, keep formatting and decorate status words.
+    if (/<[^>]+>/.test(text)) return decorateStatusInHtml(normalizeProviderHtml(text));
 
     const extractImageUrl = (value) => {
       const v = clean(value).trim();
@@ -191,10 +212,10 @@
       return rawUrl;
     };
 
-    const renderValue = (value) => {
+    const renderValue = (value, label = "") => {
       const v = value.trim();
-      if (/^(yes|no|active|activated|clean|on|unlocked|expired|blocked|blacklisted|off|locked|unknown|n\/a|pending)$/i.test(v)) {
-        return renderStatusBadge(v);
+      if (/^(yes|no|active|activated|clean|on|unlocked|expired|blocked|blacklisted|off|locked|not active|lost mode|unknown|n\/a|pending)$/i.test(v)) {
+        return renderStatusBadge(v, label);
       }
       const imgUrl = extractImageUrl(v);
       if (imgUrl) {
@@ -213,7 +234,7 @@
       }
       const label = line.slice(0, i).trim();
       const value = line.slice(i + 1).trim();
-      return `<div class="info-line"><span class="info-label">${htmlEscape(label)}:</span> ${renderValue(value)}</div>`;
+      return `<div class="info-line"><span class="info-label">${htmlEscape(label)}:</span> ${renderValue(value, label)}</div>`;
     };
 
     // Normalize noisy separators from providers.
@@ -887,7 +908,7 @@
     if(!res.ok || !payload?.ok) return alert(payload?.msg || 'Failed to load service');
 
     const s = payload.service || {};
-     window.__serviceModalProviderBaseUrl = '';
+    window.__serviceModalProviderBaseUrl = '';
     const serviceType = (btn.dataset.serviceType || s.type || 'imei').toLowerCase();
 
     const tpl = getCreateTpl(serviceType);

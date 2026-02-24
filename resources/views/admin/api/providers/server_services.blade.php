@@ -77,6 +77,8 @@
                     data-credit="{{ number_format($credit, 4, '.', '') }}"
                     data-time="{{ e($time) }}"
                     data-info="{{ e($info) }}"
+                    data-info-b64="{{ e(base64_encode($info)) }}"
+                    data-provider-base-url="{{ e(rtrim((string)$provider->url, '/')) }}"
                     data-additional-fields="{{ e($afJson) }}">
                     Clone
                   </button>
