@@ -220,7 +220,12 @@ class SyncImeiOrders extends Command
                 if ($ptype !== 'dhru' && $ptype !== 'gsmhub') {
                     $newStatus = $this->normalizeGatewayStatus((string)($res['status'] ?? 'inprogress'));
 
-                    $order->status = $newStatus;
+                // ✅ لا ترجع Waiting بعد ما وصل الطلب للمزوّد
+                if ($newStatus === 'waiting' && !empty($order->remote_id)) {
+               $newStatus = 'inprogress';
+            }
+
+$order->status = $newStatus;
                     $final = in_array($newStatus, ['success', 'rejected', 'cancelled'], true);
                     $order->processing = $final ? 0 : 1;
                     if ($final) {

@@ -9,18 +9,17 @@ use App\Models\ServerOrder;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class WebxOrderGateway
 {
     private function apiBase(ApiProvider $p): string
     {
-        // WebX doc/library: $url . '/api/' . route
         return rtrim((string)$p->url, '/') . '/api';
     }
 
     private function client(ApiProvider $p): PendingRequest
     {
-        // WebX doc/library: Auth-Key = bcrypt(username + key)
         $auth = password_hash((string)$p->username . (string)$p->api_key, PASSWORD_BCRYPT);
 
         return Http::withHeaders([
@@ -31,13 +30,109 @@ class WebxOrderGateway
 
     private function normalizeFields($order): array
     {
-        // نفس فكرة DhruOrderGateway: fields من params['fields'] أو params['required']
-        // (ImeiOrder/ServerOrder/FileOrder عندك params cast array) :contentReference[oaicite:4]{index=4}
         $fields = [];
         if (is_array($order->params ?? null)) {
             $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
         }
         return is_array($fields) ? $fields : [];
+    }
+
+    /**
+     * ✅ أهم خطوة: توليد aliases مثل DHRU:
+     * - يحوّل service_fields_1 إلى email إذا كان تعريف الحقل Email أو validation=email
+     * - ويضيف snake_case من اسم الحقل
+     */
+    private function enrichRequiredFieldAliases(array $fields, $service): array
+    {
+        if (empty($fields) || !$service) return $fields;
+
+        $params = $service->params ?? [];
+        if (is_string($params)) {
+            $decoded = json_decode($params, true);
+            $params = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($params)) return $fields;
+
+        $customFields = $params['custom_fields'] ?? [];
+        if (!is_array($customFields) || empty($customFields)) return $fields;
+
+        foreach ($customFields as $def) {
+            if (!is_array($def)) continue;
+
+            $input = trim((string)($def['input'] ?? ''));
+            if ($input === '' || !array_key_exists($input, $fields)) continue;
+
+            $value = (string)$fields[$input];
+            $name = trim((string)($def['name'] ?? ''));
+            $validation = Str::lower(trim((string)($def['validation'] ?? '')));
+
+            // alias باسم الحقل (snake_case)
+            if ($name !== '') {
+                $slug = Str::snake(Str::of($name)->replaceMatches('/[^\pL\pN]+/u', ' ')->trim()->value());
+                if ($slug !== '' && !array_key_exists($slug, $fields)) {
+                    $fields[$slug] = $value;
+                }
+            }
+
+            // alias email
+            $nameLc = Str::lower($name);
+            if (
+                $validation === 'email'
+                || str_contains($nameLc, 'email')
+                || str_contains(Str::lower($input), 'email')
+            ) {
+                if (!array_key_exists('email', $fields)) {
+                    $fields['email'] = $value;
+                }
+                if (!array_key_exists('EMAIL', $fields)) {
+                    $fields['EMAIL'] = $value;
+                }
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * ✅ fallback: لو ما عندنا custom_fields، اكتشف الإيميل من القيمة نفسها
+     */
+    private function ensureEmailAliasFromValues(array $fields): array
+    {
+        if (array_key_exists('email', $fields) || array_key_exists('EMAIL', $fields)) {
+            return $fields;
+        }
+
+        foreach ($fields as $k => $v) {
+            $key = strtolower(trim((string)$k));
+            $val = trim((string)$v);
+
+            if ($val === '') continue;
+
+            if (str_contains($key, 'email') || filter_var($val, FILTER_VALIDATE_EMAIL)) {
+                $fields['email'] = $val;
+                $fields['EMAIL'] = $val;
+                break;
+            }
+        }
+
+        return $fields;
+    }
+
+    /**
+     * ✅ طبّق aliases على fields قبل الإرسال
+     */
+    private function prepareFields($order): array
+    {
+        $fields = $this->normalizeFields($order);
+        $fields = $this->enrichRequiredFieldAliases($fields, $order->service ?? null);
+        $fields = $this->ensureEmailAliasFromValues($fields);
+
+        // بعض APIs تتطلب lowercase فقط، فنضمن email lowercase موجود
+        if (isset($fields['EMAIL']) && !isset($fields['email'])) {
+            $fields['email'] = (string)$fields['EMAIL'];
+        }
+
+        return $fields;
     }
 
     private function errorResult(ApiProvider $p, string $url, string $method, array $params, $raw, int $httpStatus = 0, string $msg = 'Temporary provider error, queued.'): array
@@ -58,11 +153,20 @@ class WebxOrderGateway
         ];
     }
 
+    private function flattenErrors($errors): string
+    {
+        if (!is_array($errors) || empty($errors)) return 'could_not_connect_to_api';
+        $messages = [];
+        foreach ($errors as $err) {
+            $messages[] = is_array($err) ? implode(', ', $err) : (string)$err;
+        }
+        return trim(implode(', ', array_filter($messages)));
+    }
+
     private function post(ApiProvider $p, string $route, array $params): array
     {
         $url = rtrim($this->apiBase($p), '/') . '/' . ltrim($route, '/');
 
-        // WebX requires username param
         $params['username'] = (string)$p->username;
 
         $resp = $this->client($p)->asForm()->post($url, $params);
@@ -78,7 +182,6 @@ class WebxOrderGateway
 
         $remoteId = (string)($data['id'] ?? '');
         if ($remoteId === '' || $remoteId === '0') {
-            // لم يرجع رقم طلب => نخليها retryable (queued)
             return $this->errorResult($p, $url, 'POST', $params, $data, $resp->status(), 'WebX: missing order id, queued.');
         }
 
@@ -119,7 +222,6 @@ class WebxOrderGateway
             return $this->errorResult($p, $url, 'GET', $params, $data, $resp->status(), $this->flattenErrors($data['errors']));
         }
 
-        // WebX library returns: id, status (0..4), response
         $st = (int)($data['status'] ?? 1);
         $mapped = match ($st) {
             4 => 'success',
@@ -151,16 +253,6 @@ class WebxOrderGateway
         ];
     }
 
-    private function flattenErrors($errors): string
-    {
-        if (!is_array($errors) || empty($errors)) return 'could_not_connect_to_api';
-        $messages = [];
-        foreach ($errors as $err) {
-            $messages[] = is_array($err) ? implode(', ', $err) : (string)$err;
-        }
-        return trim(implode(', ', array_filter($messages)));
-    }
-
     // ===== PLACE =====
 
     public function placeImeiOrder(ApiProvider $p, ImeiOrder $order): array
@@ -168,7 +260,7 @@ class WebxOrderGateway
         $serviceId = trim((string)($order->service?->remote_id ?? ''));
         $imei = (string)($order->device ?? '');
 
-        $fields = $this->normalizeFields($order);
+        $fields = $this->prepareFields($order);
 
         return $this->post($p, 'imei-orders', array_merge([
             'service_id' => $serviceId,
@@ -183,7 +275,7 @@ class WebxOrderGateway
         $qty = (int)($order->quantity ?? 1);
         if ($qty < 1) $qty = 1;
 
-        $fields = $this->normalizeFields($order);
+        $fields = $this->prepareFields($order);
 
         return $this->post($p, 'server-orders', array_merge([
             'service_id' => $serviceId,
@@ -194,7 +286,6 @@ class WebxOrderGateway
 
     public function placeFileOrder(ApiProvider $p, FileOrder $order): array
     {
-        // WebX library uses device as CURLFile. عندنا storage_path
         $serviceId = trim((string)($order->service?->remote_id ?? ''));
         $path = (string)($order->storage_path ?? '');
         $filename = (string)($order->device ?? '');
@@ -222,7 +313,7 @@ class WebxOrderGateway
             'comments'   => (string)($order->comments ?? ''),
         ];
 
-        $fields = $this->normalizeFields($order);
+        $fields = $this->prepareFields($order);
         $params = array_merge($params, $fields);
 
         $resp = $this->client($p)
