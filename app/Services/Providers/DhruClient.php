@@ -3,72 +3,97 @@
 namespace App\Services\Providers;
 
 use App\Models\ApiProvider;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 
 class DhruClient
 {
     public function __construct(protected ApiProvider $provider) {}
 
+    public static function fromProvider(ApiProvider $provider): self
+    {
+        return new self($provider);
+    }
+
     /**
-     * DHRU Fusion V6.x common request
-     * POST:
+     * Resolve the API endpoint.
+     *
+     * Most DHRU-style suppliers use: {base}/api/index.php
+     * Some store the full endpoint already in provider->url.
+     * You can also override via $provider->params['endpoint'] (relative or absolute).
+     */
+    private function endpoint(): string
+    {
+        $base = rtrim((string)$this->provider->url, '/');
+
+        $params = $this->provider->params ?? null;
+        if (is_string($params)) {
+            $decoded = json_decode($params, true);
+            if (is_array($decoded)) $params = $decoded;
+        }
+        if (is_array($params) && !empty($params['endpoint'])) {
+            $ep = (string)$params['endpoint'];
+            if (Str::startsWith($ep, ['http://', 'https://'])) return $ep;
+
+            return rtrim($base, '/') . '/' . ltrim($ep, '/');
+        }
+
+        // If url already points to a php endpoint, use it as-is.
+        if (Str::contains($base, ['index.php', '.php'])) {
+            return $base;
+        }
+
+        return $base . '/api/index.php';
+    }
+
+    /**
+     * Common DHRU-style request:
      * - username
      * - apiaccesskey
      * - action
-     * - requestformat=json
-     * - parameters=base64_encode(json_encode($parameters))
+     * - requestformat=JSON
+     * - parameters=base64(json_encode([...]))   (for most actions)
      */
     public function call(string $action, array $parameters = []): array
     {
-        $url = rtrim((string)$this->provider->url, '/').'/';
-
-        $post = [
+        $payload = [
             'username'      => (string)$this->provider->username,
             'apiaccesskey'  => (string)$this->provider->api_key,
             'action'        => $action,
-            'requestformat' => 'json',
-            'parameters'    => base64_encode(json_encode($parameters, JSON_UNESCAPED_UNICODE)),
+            'requestformat' => 'JSON',
         ];
 
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL            => $url,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => http_build_query($post),
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 20,
-            CURLOPT_TIMEOUT        => 60,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => false,
-        ]);
-
-        $raw = curl_exec($ch);
-        $err = curl_error($ch);
-        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-
-        if ($raw === false || $raw === null) {
-            return ['ok' => false, 'error' => 'cURL error: '.$err, 'http' => $code];
+        if (!empty($parameters)) {
+            $payload['parameters'] = base64_encode(json_encode($parameters, JSON_UNESCAPED_UNICODE));
         }
 
-        $json = json_decode($raw, true);
-        if (!is_array($json)) {
-            return ['ok' => false, 'error' => 'Invalid JSON from provider', 'http' => $code, 'raw' => $raw];
+        try {
+            $res = Http::asForm()
+                ->timeout(60)
+                ->retry(2, 300) // 2 retries, 300ms backoff
+                ->post($this->endpoint(), $payload);
+
+            $json = $res->json();
+            return is_array($json) ? $json : ['ERROR' => [['MESSAGE' => 'Invalid JSON', 'RAW' => $res->body()]]];
+        } catch (\Throwable $e) {
+            return ['ERROR' => [['MESSAGE' => $e->getMessage()]]];
         }
-
-        return ['ok' => true, 'http' => $code, 'data' => $json, 'raw' => $raw];
     }
 
-    public function placeOrder(int $serviceRemoteId, array $payload): array
+    public function accountInfo(): array
     {
-        // DHRU commonly uses placeimeiorder for all service types (IMEI/SERVER),
-        // and file sometimes uses "placefileorder" depending on supplier implementation.
-        // We'll start with placeimeiorder and adjust if needed.
-        $params = array_merge(['ID' => $serviceRemoteId], $payload);
-        return $this->call('placeimeiorder', $params);
+        return $this->call('accountinfo');
     }
 
-    public function getOrder(int $remoteOrderId): array
+    /** Returns services + groups for IMEI & SERVER. */
+    public function getAllServicesAndGroups(): array
     {
-        return $this->call('getimeiorder', ['ID' => $remoteOrderId]);
+        return $this->call('getallservicesandgroups');
+    }
+
+    /** Returns file services list. */
+    public function getFileServices(): array
+    {
+        return $this->call('fileservicelist');
     }
 }

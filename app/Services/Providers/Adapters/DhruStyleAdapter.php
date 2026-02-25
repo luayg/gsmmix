@@ -6,7 +6,7 @@ use App\Models\ApiProvider;
 use App\Models\RemoteFileService;
 use App\Models\RemoteImeiService;
 use App\Models\RemoteServerService;
-use App\Services\Api\DhruClient;
+use App\Services\Providers\DhruClient;
 use App\Services\Providers\ProviderAdapterInterface;
 use Illuminate\Support\Facades\DB;
 
