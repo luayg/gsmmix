@@ -108,6 +108,11 @@ class SyncServerOrders extends Command
                         $newStatus = 'inprogress';
                     }
 
+                    // ✅ نفس منطق IMEI: لا تسمح بالرجوع إلى waiting بعد وصول الطلب للمزوّد
+                    if ($newStatus === 'waiting' && !empty($order->remote_id)) {
+                        $newStatus = 'inprogress';
+                    }
+
                     $respArr = $this->normalizeResponseArray($order->response);
                     $ui = is_array($res['response_ui'] ?? null) ? $res['response_ui'] : [];
                     $respArr = array_merge($respArr, $ui, [

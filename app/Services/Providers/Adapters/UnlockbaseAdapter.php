@@ -17,7 +17,7 @@ class UnlockbaseAdapter implements ProviderAdapterInterface
 
     public function supportsCatalog(string $kind): bool
     {
-        // UnlockBase API v2 = IMEI only
+        // UnlockBase = IMEI tools/catalog (PlaceOrder/GetOrders etc for IMEI)
         return $kind === 'imei';
     }
 
@@ -36,10 +36,9 @@ class UnlockbaseAdapter implements ProviderAdapterInterface
             return 0;
         }
 
+        // v3 still supports GetTools
         $data = $this->call($provider, 'GetTools');
 
-        // Expected shape:
-        // <API><Group>..<Tool>..</Tool></Group>...</API>
         $groups = data_get($data, 'Group', []);
         if (!is_array($groups)) $groups = [];
 
@@ -85,7 +84,7 @@ class UnlockbaseAdapter implements ProviderAdapterInterface
                         'time'            => $this->deliveryToText($t),
                         'info'            => $this->cleanStr($t['Message'] ?? null),
 
-                        // Flags (match your DB casts in RemoteImeiService) :contentReference[oaicite:3]{index=3}
+                        // Flags (match your DB casts in RemoteImeiService)
                         'network'   => $requires['network'],
                         'mobile'    => $requires['mobile'],
                         'provider'  => $requires['provider'],
@@ -126,7 +125,7 @@ class UnlockbaseAdapter implements ProviderAdapterInterface
                 }
             }
 
-            // Cleanup removed services (same style you already use in DhruStyleAdapter)
+            // Cleanup removed services
             if (!empty($seen)) {
                 RemoteImeiService::where('api_provider_id', $provider->id)
                     ->whereNotIn('remote_id', $seen)
@@ -141,24 +140,55 @@ class UnlockbaseAdapter implements ProviderAdapterInterface
      * HTTP + XML helpers
      * ============================ */
 
-    private function endpoint(): string
+    private function endpoint(ApiProvider $p): string
     {
-        // Doc says http://www.unlockbase.com/xml/api/v2
-        // using https is fine in practice
-        return 'https://www.unlockbase.com/xml/api/v2';
+        // Allow override from admin: provider.params.endpoint
+        $ep = $p->params['endpoint'] ?? null;
+        if (is_string($ep) && trim($ep) !== '') return trim($ep);
+
+        // Default: UnlockBase v3 (per v3.2 doc)
+        return 'https://www.unlockbase.com/xml/api/v3';
+    }
+
+    private function resolveApiKey(ApiProvider $p): string
+    {
+        $key = trim((string)($p->api_key ?? ''));
+
+        // Fallback: some admins may paste the key into username by mistake
+        if ($key === '') {
+            $maybe = trim((string)($p->username ?? ''));
+            if ($this->looksLikeUnlockbaseKey($maybe)) {
+                $key = $maybe;
+            }
+        }
+
+        // Normalize: remove surrounding parentheses if present: "(XXXX-...)" -> "XXXX-..."
+        $key = trim($key);
+        $key = preg_replace('/^\((.+)\)$/', '$1', $key) ?? $key;
+
+        return trim($key);
+    }
+
+    private function looksLikeUnlockbaseKey(string $s): bool
+    {
+        $s = trim($s);
+        $s = preg_replace('/^\((.+)\)$/', '$1', $s) ?? $s;
+        return (bool)preg_match('/^[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{4}\-[0-9A-Fa-f]{4}$/', trim($s));
     }
 
     private function call(ApiProvider $provider, string $action, array $params = []): array
     {
+        $apiKey = $this->resolveApiKey($provider);
+
         $payload = array_merge([
-            'Key'    => (string)$provider->api_key,
+            'Key'    => $apiKey,
             'Action' => $action,
         ], $params);
 
         $resp = Http::asForm()
             ->timeout(60)
             ->retry(2, 500)
-            ->post($this->endpoint(), $payload);
+            ->post($this->endpoint($provider), $payload);
 
         $body = (string)$resp->body();
         $xml  = @simplexml_load_string($body, 'SimpleXMLElement', LIBXML_NOCDATA);
@@ -173,7 +203,7 @@ class UnlockbaseAdapter implements ProviderAdapterInterface
         // Error handling: <Error>...</Error>
         $err = $arr['Error'] ?? null;
         if (is_string($err) && trim($err) !== '') {
-            throw new \RuntimeException("UnlockBase: " . trim($err));
+            throw new \RuntimeException(trim($err));
         }
 
         return $arr;

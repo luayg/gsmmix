@@ -87,6 +87,11 @@ class SyncFileOrders extends Command
                         $newStatus = 'inprogress';
                     }
 
+                    // ✅ نفس منطق IMEI: لا تسمح بالرجوع إلى waiting بعد وصول الطلب للمزوّد
+                    if ($newStatus === 'waiting' && !empty($order->remote_id)) {
+                        $newStatus = 'inprogress';
+                    }
+
                     $respArr = $this->normalizeResponseArray($order->response);
                     $ui = is_array($res['response_ui'] ?? null) ? $res['response_ui'] : [];
                     $respArr = array_merge($respArr, $ui, [
@@ -199,8 +204,6 @@ class SyncFileOrders extends Command
 
     private function extractDhruStatusCodeComments($raw): array
     {
-        // raw expected:
-        // ['SUCCESS' => [ ['STATUS'=>4,'CODE'=>'...','COMMENTS'=>'...'] ] ]
         if (is_string($raw)) {
             $j = json_decode($raw, true);
             if (is_array($j)) $raw = $j;
