@@ -98,7 +98,7 @@ class WebxOrderGateway
      */
     private function ensureEmailAliasFromValues(array $fields): array
     {
-        if (array_key_exists('email', $fields) || array_key_exists('EMAIL', $fields)) {
+        if (array_key_exists('email', $fields) || array_key_exists('EMAIL', $fields) || array_key_exists('Email', $fields)) {
             return $fields;
         }
 
@@ -111,6 +111,7 @@ class WebxOrderGateway
             if (str_contains($key, 'email') || filter_var($val, FILTER_VALIDATE_EMAIL)) {
                 $fields['email'] = $val;
                 $fields['EMAIL'] = $val;
+                $fields['Email'] = $val; // ✅ NEW: بعض WebX يطلبها هكذا حرفيًا
                 break;
             }
         }
@@ -127,9 +128,18 @@ class WebxOrderGateway
         $fields = $this->enrichRequiredFieldAliases($fields, $order->service ?? null);
         $fields = $this->ensureEmailAliasFromValues($fields);
 
-        // بعض APIs تتطلب lowercase فقط، فنضمن email lowercase موجود
+        // ✅ NEW: توحيد email keys (email/EMAIL/Email)
         if (isset($fields['EMAIL']) && !isset($fields['email'])) {
             $fields['email'] = (string)$fields['EMAIL'];
+        }
+        if (isset($fields['email']) && !isset($fields['Email'])) {
+            $fields['Email'] = (string)$fields['email'];
+        }
+        if (isset($fields['Email']) && !isset($fields['email'])) {
+            $fields['email'] = (string)$fields['Email'];
+        }
+        if (isset($fields['Email']) && !isset($fields['EMAIL'])) {
+            $fields['EMAIL'] = (string)$fields['Email'];
         }
 
         return $fields;
