@@ -6,6 +6,8 @@ use App\Models\ApiProvider;
 use App\Models\ImeiOrder;
 use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
+use App\Services\Orders\UnlockbaseOrderGateway;
+use App\Services\Orders\WebxOrderGateway;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 class SyncImeiOrders extends Command
 {
     protected $signature = 'orders:sync-imei {--limit=50} {--only-id=}';
-    protected $description = 'Sync IMEI orders status/result using DHRU getimeiorder';
+    protected $description = 'Sync IMEI orders status/result from providers (DHRU/WebX/UnlockBase)';
 
     private function providerBaseUrl(ApiProvider $p): string
     {
@@ -128,8 +130,25 @@ class SyncImeiOrders extends Command
         return 'inprogress';
     }
 
-    public function handle(DhruOrderGateway $dhru): int
+    private function normalizeGatewayStatus(string $st): string
     {
+        $st = strtolower(trim($st));
+        if (in_array($st, ['success', 'rejected', 'cancelled', 'canceled', 'inprogress', 'waiting'], true)) {
+            return $st === 'canceled' ? 'cancelled' : $st;
+        }
+        return 'inprogress';
+    }
+
+    private function pickGatewayType(ApiProvider $provider): string
+    {
+        return strtolower(trim((string)($provider->type ?? 'dhru')));
+    }
+
+    public function handle(
+        DhruOrderGateway $dhru,
+        WebxOrderGateway $webx,
+        UnlockbaseOrderGateway $unlockbase
+    ): int {
         $limit = (int)$this->option('limit');
         if ($limit < 1) $limit = 50;
         if ($limit > 500) $limit = 500;
@@ -169,7 +188,14 @@ class SyncImeiOrders extends Command
                 $ref = trim((string)$order->remote_id);
                 if ($ref === '') continue;
 
-                $res = $dhru->getImeiOrder($provider, $ref);
+                $ptype = $this->pickGatewayType($provider);
+
+                // Call the correct provider gateway
+                $res = match ($ptype) {
+                    'unlockbase' => $unlockbase->getImeiOrder($provider, $ref),
+                    'webx'       => $webx->getImeiOrder($provider, $ref),
+                    default      => $dhru->getImeiOrder($provider, $ref),
+                };
 
                 // ✅ always store last check + raw
                 $req = $this->normalizeArr($order->request ?? []);
@@ -177,9 +203,61 @@ class SyncImeiOrders extends Command
                 $req['status_check_raw']  = $res['response_raw'] ?? null;
                 $order->request = $req;
 
+                // If gateway did not return an array => keep waiting
+                if (!is_array($res)) {
+                    $order->status = 'waiting';
+                    $order->processing = 0;
+                    $order->save();
+                    continue;
+                }
+
+                /**
+                 * Non-DHRU providers (WebX / UnlockBase):
+                 * Gateways return normalized:
+                 * - status: success|rejected|inprogress|cancelled|waiting
+                 * - response_ui: message/result_text/result_items...
+                 */
+                if ($ptype !== 'dhru' && $ptype !== 'gsmhub') {
+                    $newStatus = $this->normalizeGatewayStatus((string)($res['status'] ?? 'inprogress'));
+
+                    $order->status = $newStatus;
+                    $final = in_array($newStatus, ['success', 'rejected', 'cancelled'], true);
+                    $order->processing = $final ? 0 : 1;
+                    if ($final) {
+                        $order->replied_at = $order->replied_at ?: now();
+                    }
+
+                    $ui = is_array($res['response_ui'] ?? null) ? $res['response_ui'] : [];
+                    $ui['reference_id'] = $order->remote_id;
+                    $ui['provider_type'] = $ptype;
+
+                    // If provider returns HTML/text, try to extract image + items (same UX as DHRU)
+                    $rt = (string)($ui['result_text'] ?? '');
+                    if ($rt !== '') {
+                        $imgSrc = $this->extractFirstImgSrc($rt);
+                        if ($imgSrc) {
+                            $imgUrl = $this->resolveImageUrl($provider, $imgSrc);
+                            if ($imgUrl) $ui['result_image'] = $imgUrl;
+                        }
+                        $lines = $this->cleanHtmlResultToLines($rt);
+                        $ui['result_items'] = $ui['result_items'] ?? $this->linesToKeyValue($lines);
+                    }
+
+                    $order->response = $ui;
+                    $order->save();
+
+                    if ($newStatus === 'rejected') {
+                        $this->refundIfNeeded($order, 'sync_rejected_non_dhru');
+                    }
+
+                    $synced++;
+                    continue;
+                }
+
+                // ===== DHRU logic (existing behavior) =====
                 $raw = $res['response_raw'] ?? null;
 
-                // لو queued/connection failure => نخليها waiting وما نحكم عليها
+                // queued/connection failure => waiting
                 if (!is_array($raw)) {
                     $order->status = 'waiting';
                     $order->processing = 0;
@@ -192,7 +270,7 @@ class SyncImeiOrders extends Command
                     $msg = (string)$raw['ERROR'][0]['MESSAGE'];
                     $m = strtolower($msg);
 
-                    // errors that should NOT reject the order (invalid action, parameter required)
+                    // errors that should NOT reject the order
                     if (
                         str_contains($m, 'command not found') ||
                         str_contains($m, 'invalid action') ||
@@ -293,7 +371,7 @@ class SyncImeiOrders extends Command
                 // do not reject on sync crash
                 $order->status = 'waiting';
                 $order->processing = 0;
-                $order->response = ['type'=>'queued','message'=>'Sync error, will retry: '.$e->getMessage()];
+                $order->response = ['type' => 'queued', 'message' => 'Sync error, will retry: ' . $e->getMessage()];
                 $order->save();
             }
         }

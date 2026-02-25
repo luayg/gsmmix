@@ -6,6 +6,7 @@ use App\Models\ApiProvider;
 use App\Models\FileOrder;
 use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
+use App\Services\Orders\WebxOrderGateway;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,9 +14,9 @@ use Illuminate\Support\Facades\Log;
 class SyncFileOrders extends Command
 {
     protected $signature = 'orders:sync-file {--limit=50} {--only-id=}';
-    protected $description = 'Sync File Orders status/result from provider (DHRU getfileorder)';
+    protected $description = 'Sync File Orders status/result from providers (DHRU/WebX)';
 
-    public function handle(): int
+    public function handle(DhruOrderGateway $dhru, WebxOrderGateway $webx): int
     {
         $limit = (int)$this->option('limit');
         if ($limit < 1) $limit = 50;
@@ -40,9 +41,6 @@ class SyncFileOrders extends Command
             return 0;
         }
 
-        /** @var DhruOrderGateway $gw */
-        $gw = app(DhruOrderGateway::class);
-
         $synced = 0;
 
         foreach ($orders as $order) {
@@ -59,8 +57,13 @@ class SyncFileOrders extends Command
                     continue;
                 }
 
-                // ✅ Requires DhruOrderGateway::getFileOrder($provider, $ref)
-                $res = $gw->getFileOrder($provider, $ref);
+                $ptype = strtolower(trim((string)($provider->type ?? 'dhru')));
+
+                // WebX supports file-orders; UnlockBase doesn't => default to DHRU
+                $res = match ($ptype) {
+                    'webx' => $webx->getFileOrder($provider, $ref),
+                    default => $dhru->getFileOrder($provider, $ref),
+                };
 
                 // ✅ always store last check + raw
                 $req = $this->normalizeResponseArray($order->request);
@@ -76,6 +79,47 @@ class SyncFileOrders extends Command
                     continue;
                 }
 
+                // Non-DHRU (WebX) normalized status path
+                if ($ptype === 'webx') {
+                    $newStatus = strtolower(trim((string)($res['status'] ?? 'inprogress')));
+                    if ($newStatus === 'canceled') $newStatus = 'cancelled';
+                    if (!in_array($newStatus, ['success','rejected','cancelled','inprogress','waiting'], true)) {
+                        $newStatus = 'inprogress';
+                    }
+
+                    $respArr = $this->normalizeResponseArray($order->response);
+                    $ui = is_array($res['response_ui'] ?? null) ? $res['response_ui'] : [];
+                    $respArr = array_merge($respArr, $ui, [
+                        'provider_type' => 'webx',
+                        'reference_id' => $order->remote_id,
+                    ]);
+
+                    $final = in_array($newStatus, ['success','rejected','cancelled'], true);
+
+                    $order->status = $newStatus;
+                    $order->processing = $final ? 0 : 1;
+                    if ($final) {
+                        $order->replied_at = $order->replied_at ?: now();
+                    }
+
+                    $req = $this->normalizeResponseArray($order->request);
+                    $req['sync_last_at'] = now()->toDateTimeString();
+                    $req['sync_raw'] = $res['response_raw'] ?? null;
+                    $order->request = $req;
+
+                    $order->response = $respArr;
+                    $order->save();
+
+                    if ($newStatus === 'rejected') {
+                        $this->refundIfNeeded($order, 'api_rejected');
+                    }
+
+                    $synced++;
+                    $this->info("Order #{$order->id} synced => {$newStatus} (WEBX)");
+                    continue;
+                }
+
+                // ===== DHRU parsing (existing behavior) =====
                 $raw = $res['response_raw'] ?? $res;
 
                 [$statusInt, $code, $comments] = $this->extractDhruStatusCodeComments($raw);
