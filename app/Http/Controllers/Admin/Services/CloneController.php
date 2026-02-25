@@ -80,11 +80,19 @@ class CloneController extends Controller
             // ✅ For file services: allowed extensions
             // (remote_file_services usually stores allowed_extensions)
             $allowExt = '';
+            $formatHint = '';
             if ($type === 'file') {
                 $allowExt = (string) (
                     $s->allowed_extensions
                     ?? $s->allow_extensions
                     ?? $s->allow_extension
+                    ?? ''
+                );
+                
+                $formatHint = (string) (
+                    $s->format
+                    ?? $s->file_format
+                    ?? $s->format_hint
                     ?? ''
                 );
             }
@@ -96,7 +104,8 @@ class CloneController extends Controller
                 'price'             => (float)  ($s->price ?? 0),
                 'group_name'        => (string) ($s->group_name ?? ''),
                 'info'      => (string)($s->info ?? ''),         // ✅ ADDED
-                'allow_extensions'  => $allowExt,       // ✅ ADDED (file)
+                'allow_extensions'  => $allowExt,
+                'format'            => $formatHint,
                 'active'            => (int) ($s->active ?? 1),
                 'allow_bulk'        => (int) ($s->allow_bulk ?? 0),
                 'allow_duplicates'  => (int) ($s->allow_duplicates ?? 0),

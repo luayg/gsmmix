@@ -58,8 +58,8 @@
               </select>
             </div>
 
-            {{-- ✅ File: main field type visible (مثل IMEI) --}}
-            <div class="col-md-6">
+            {{-- File main field config is kept hidden and synced in JSON --}}
+            <div class="col-md-6 d-none">
               <label class="form-label mb-1">Main field type</label>
               <select name="main_field_type" class="form-select" id="mainFieldType">
                 <option value="serial" selected>Serial</option>
@@ -75,18 +75,18 @@
             <div class="col-md-6">
               <label class="form-label mb-1">Type</label>
               <select name="type" class="form-select">
+                <option value="server">Server</option>
                 <option value="file" selected>File</option>
                 <option value="imei">IMEI</option>
-                <option value="server">Server</option>
               </select>
             </div>
 
-            <div class="col-md-6">
+            <div class="col-md-6 d-none">
               <label class="form-label mb-1">Main field label</label>
               <input name="main_field_label" id="mainFieldLabel" type="text" class="form-control" value="Serial">
             </div>
 
-            <div class="col-md-6">
+            <div class="col-md-6 d-none">
               <label class="form-label mb-1">Allowed characters</label>
               <select name="allowed_characters" id="allowedChars" class="form-select">
                 <option value="any" selected>Any</option>
@@ -95,7 +95,7 @@
               </select>
             </div>
 
-            <div class="col-md-6">
+            <div class="col-md-6 d-none">
               <label class="form-label mb-1">Minimum</label>
               <div class="input-group">
                 <input name="minimum" id="minChars" type="number" class="form-control" value="1">
@@ -103,7 +103,7 @@
               </div>
             </div>
 
-            <div class="col-md-6">
+            <div class="col-md-6 d-none">
               <label class="form-label mb-1">Maximum</label>
               <div class="input-group">
                 <input name="maximum" id="maxChars" type="number" class="form-control" value="50">
@@ -111,15 +111,22 @@
               </div>
             </div>
 
-            {{-- ✅ Allowed extensions (API) --}}
-            <div class="col-12">
-              <label class="form-label mb-1">Allowed extensions (API)</label>
+            <div class="col-md-6">
+              <label class="form-label mb-1">Allowed extensions</label>
               <input type="text"
                      class="form-control"
                      id="allowedExtensionsPreview"
-                     placeholder="jpeg,txt,pdf,csv,xlsx"
-                     readonly>
-              <small class="text-muted">سيتم تعبئتها تلقائياً عند اختيار خدمة من الـ API (إن كانت متوفرة).</small>
+                           placeholder="sha,bcl,log,bat">
+              <small class="text-muted">Comma separated allowed extensions, leave empty to accept any extension</small>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label mb-1">Format</label>
+              <input type="text"
+                     class="form-control"
+                     id="fileFormatPreview"
+                     placeholder="File format hint, leave empty to not show any hint">
+              <small class="text-muted">File format hint, leave empty to not show any hint</small>
             </div>
 
             <div class="col-12">
@@ -398,6 +405,7 @@
   const maxChars       = form.querySelector('#maxChars');
 
   const allowedExtPreview = form.querySelector('#allowedExtensionsPreview');
+  const fileFormatPreview = form.querySelector('#fileFormatPreview');
 
   const slugify = (s) => String(s||'').toLowerCase().trim().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 
@@ -471,6 +479,10 @@
     const ext = (allowedExtPreview?.value || '').trim();
     if (ext) params.allowed_extensions = ext;
     else delete params.allowed_extensions;
+
+    const format = (fileFormatPreview?.value || '').trim();
+    if (format) params.format = format;
+    else delete params.format;
 
     paramsHidden.value = JSON.stringify(params);
   }
@@ -607,6 +619,8 @@
   // allowed extensions (لو تم تغييرها من hook)
   allowedExtPreview?.addEventListener('input', syncParamsHidden);
   allowedExtPreview?.addEventListener('change', syncParamsHidden);
+  fileFormatPreview?.addEventListener('input', syncParamsHidden);
+  fileFormatPreview?.addEventListener('change', syncParamsHidden);
 
   btnAdd?.addEventListener('click', () => addField(form));
 
@@ -734,6 +748,20 @@
       syncParamsHidden();
     }catch(e){
       console.warn('file setAllowedExtensions failed', e);
+    }
+  };
+
+  window.__fileServiceSetFormat__ = function(scope, format){
+    try{
+      if (!scope) return;
+
+      const box = scope.querySelector('#fileFormatPreview');
+      if (!box) return;
+
+      box.value = String(format || '').trim();
+      syncParamsHidden();
+    }catch(e){
+      console.warn('file setFormat failed', e);
     }
   };
 

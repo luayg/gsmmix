@@ -334,9 +334,18 @@ abstract class BaseServiceController extends Controller
             $request->input('custom_fields_json')
         );
 
-        $params = [
-            'custom_fields' => $customFields,
-        ];
+        $incomingParams = $request->input('params');
+        if (is_string($incomingParams)) {
+            $decodedIncomingParams = json_decode($incomingParams, true);
+            $incomingParams = is_array($decodedIncomingParams) ? $decodedIncomingParams : [];
+        }
+
+        if (!is_array($incomingParams)) {
+            $incomingParams = [];
+        }
+
+        $params = $incomingParams;
+        $params['custom_fields'] = $customFields;
 
         if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
             $v['supplier_id'] = (int)$v['api_provider_id'];
@@ -497,9 +506,18 @@ abstract class BaseServiceController extends Controller
             ],
         ];
 
-        $params = [
-            'custom_fields' => $customFields,
-        ];
+        $incomingParams = $request->input('params');
+        if (is_string($incomingParams)) {
+            $decodedIncomingParams = json_decode($incomingParams, true);
+            $incomingParams = is_array($decodedIncomingParams) ? $decodedIncomingParams : [];
+        }
+
+        if (!is_array($incomingParams)) {
+            $incomingParams = [];
+        }
+
+        $params = $incomingParams;
+        $params['custom_fields'] = $customFields;
 
         if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
             $v['supplier_id'] = (int)$v['api_provider_id'];

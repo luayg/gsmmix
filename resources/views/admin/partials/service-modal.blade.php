@@ -584,6 +584,7 @@
       const allowExt = clean(
         s.allow_extension ?? s.allow_extensions ?? s.ALLOW_EXTENSION ?? s.extensions ?? s.EXTENSIONS ?? ''
       );
+      const format = clean(s.format ?? s.file_format ?? s.FORMAT ?? '');
 
       const info = normalizeInfo(s.info ?? s.INFO ?? s.description ?? s.DESCRIPTION ?? '');
       const flags = {
@@ -611,6 +612,7 @@
         data-info-b64="${escAttr(btoa(unescape(encodeURIComponent(info))))}"
         data-additional-fields="${escAttr(afJson)}"
         data-allow-extensions="${escAttr(allowExt)}"
+        data-format="${escAttr(format)}"
          data-active="${flags.active}"
         data-allow-bulk="${flags.allow_bulk}"
         data-allow-duplicates="${flags.allow_duplicates}"
@@ -809,8 +811,12 @@
       const st = String(cloneData.serviceType || '').toLowerCase();
       if (st === 'file') {
         const exts = clean(opt.dataset.allowExtensions || opt.getAttribute('data-allow-extensions') || '');
+        const format = clean(opt.dataset.format || opt.getAttribute('data-format') || '');
         if (typeof window.__fileServiceSetAllowedExtensions__ === 'function') {
           window.__fileServiceSetAllowedExtensions__(body, exts);
+        }
+        if (typeof window.__fileServiceSetFormat__ === 'function') {
+          window.__fileServiceSetFormat__(body, format);
         }
       }
 
@@ -1115,6 +1121,9 @@
     const params = s.params || {};
     if(form.querySelector('#allowedExtensionsPreview') && params.allowed_extensions){
       form.querySelector('#allowedExtensionsPreview').value = String(params.allowed_extensions);
+    }
+    if(form.querySelector('#fileFormatPreview') && params.format){
+      form.querySelector('#fileFormatPreview').value = String(params.format);
     }
 
     const custom = Array.isArray(params.custom_fields) ? params.custom_fields : [];
