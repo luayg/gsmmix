@@ -19,7 +19,7 @@ class GsmhubAdapter implements ProviderAdapterInterface
 
     public function supportsCatalog(string $kind): bool
     {
-        return in_array($kind, ['imei', 'server', 'file'], true);
+        return in_array($kind, ['imei','server','file'], true);
     }
 
     public function fetchBalance(ApiProvider $provider): float
@@ -27,7 +27,7 @@ class GsmhubAdapter implements ProviderAdapterInterface
         $client = GsmhubClient::fromProvider($provider);
         $data = $client->accountInfo();
 
-        // imei.us عادة يرجع SUCCESS -> AccountInfo / AccoutInfo وبداخلها credit/creditraw
+        // Different imei.us installs may use slightly different keys.
         $raw =
             data_get($data, 'SUCCESS.0.AccoutInfo.creditraw') ??
             data_get($data, 'SUCCESS.0.AccoutInfo.credit') ??
@@ -44,20 +44,19 @@ class GsmhubAdapter implements ProviderAdapterInterface
 
         return DB::transaction(function () use ($provider, $kind, $client) {
             $data = match ($kind) {
-                'imei' => $client->imeiServiceList(),
+                'imei'   => $client->imeiServiceList(),
                 'server' => $client->serverServiceList(),
-                'file' => $client->fileServiceList(),
-                default => [],
+                'file'   => $client->fileServiceList(),
+                default  => [],
             };
 
-            // أغلب هذه الـ APIs ترجع LIST داخل SUCCESS.0.LIST
+            // Usually: SUCCESS.0.LIST -> groups -> SERVICES
             $list = data_get($data, 'SUCCESS.0.LIST', []);
             if (!is_array($list)) $list = [];
 
-            // بعضهم يرجع list مباشرة
             if (empty($list)) {
-                $list = $this->deepFind($data, ['LIST','list']) ?? [];
-                if (!is_array($list)) $list = [];
+                $maybe = $this->deepFind($data, ['LIST','list']);
+                $list = is_array($maybe) ? $maybe : [];
             }
 
             $seen = [];
@@ -117,7 +116,7 @@ class GsmhubAdapter implements ProviderAdapterInterface
                             ['api_provider_id' => $provider->id, 'remote_id' => $remoteId],
                             $payload
                         );
-                    } else { // file
+                    } else {
                         $payload['allowed_extensions'] = $this->clean((string)($srv['ALLOW_EXTENSION'] ?? $srv['allow_extension'] ?? ''));
                         RemoteFileService::updateOrCreate(
                             ['api_provider_id' => $provider->id, 'remote_id' => $remoteId],
@@ -129,7 +128,7 @@ class GsmhubAdapter implements ProviderAdapterInterface
                 }
             }
 
-            // cleanup
+            // cleanup removed services
             if (!empty($seen)) {
                 if ($kind === 'imei') {
                     RemoteImeiService::where('api_provider_id', $provider->id)->whereNotIn('remote_id', $seen)->delete();
@@ -146,14 +145,12 @@ class GsmhubAdapter implements ProviderAdapterInterface
 
     private function extractAdditionalFields(array $srv): array
     {
-        // نفس فلسفة النظام عندك: حاول Requires.Custom / CustomFields / CUSTOM
         $candidates = [
             $srv['Requires.Custom'] ?? null,
             $srv['CustomFields'] ?? null,
             $srv['custom_fields'] ?? null,
             $srv['CUSTOM']['fields'] ?? null,
             $srv['CUSTOM']['FIELDS'] ?? null,
-            $srv['CUSTOM'] ?? null,
         ];
 
         foreach ($candidates as $raw) {
@@ -161,8 +158,8 @@ class GsmhubAdapter implements ProviderAdapterInterface
                 $decoded = json_decode($raw, true);
                 if (is_array($decoded)) $raw = $decoded;
             }
-            if (is_array($raw) && !empty($raw)) {
-                return array_is_list($raw) ? $raw : [];
+            if (is_array($raw) && array_is_list($raw)) {
+                return $raw;
             }
         }
 
@@ -185,7 +182,6 @@ class GsmhubAdapter implements ProviderAdapterInterface
         $s = trim((string)$value);
         $s = str_replace([',', '$', 'USD', 'usd', ' '], '', $s);
         $s = preg_replace('/[^0-9\.\-]/', '', $s) ?? '';
-
         return is_numeric($s) ? (float)$s : 0.0;
     }
 

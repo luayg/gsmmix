@@ -10,7 +10,7 @@ use Illuminate\Support\Str;
 class GsmhubClient
 {
     public function __construct(
-        private string $endpoint,
+        private string $baseUrl,     // ex: https://imei.us/public
         private string $username,
         private string $apiKey,
         private string $requestFormat = 'JSON'
@@ -18,53 +18,26 @@ class GsmhubClient
 
     public static function fromProvider(ApiProvider $provider): self
     {
-        // ✅ endpoint priority:
-        // 1) params.endpoint (absolute or relative)
-        // 2) if provider->url already contains .php -> use as-is
-        // 3) default -> {base}/api.php  (per imei.us docs)
+        // Per provider note: API URL must be https://imei.us/public
         $base = rtrim((string)$provider->url, '/');
 
-        $params = $provider->params ?? null;
-        if (is_string($params) && trim($params) !== '') {
-            $decoded = json_decode($params, true);
-            if (is_array($decoded)) $params = $decoded;
+        // If admin mistakenly saved https://imei.us (without /public), append it.
+        if (!Str::endsWith($base, '/public')) {
+            $base .= '/public';
         }
 
-        if (is_array($params) && !empty($params['endpoint'])) {
-            $ep = trim((string)$params['endpoint']);
-            if ($ep !== '') {
-                if (Str::startsWith($ep, ['http://', 'https://'])) {
-                    return new self($ep, (string)$provider->username, (string)$provider->api_key, 'JSON');
-                }
-                return new self(rtrim($base, '/') . '/' . ltrim($ep, '/'), (string)$provider->username, (string)$provider->api_key, 'JSON');
-            }
-        }
-
-        if (Str::contains($base, ['.php', 'api.php'])) {
-            return new self($base, (string)$provider->username, (string)$provider->api_key, 'JSON');
-        }
-
-        return new self($base . '/api.php', (string)$provider->username, (string)$provider->api_key, 'JSON');
+        return new self(
+            $base,
+            (string)$provider->username,
+            (string)$provider->api_key,
+            'JSON'
+        );
     }
 
-    public function accountInfo(): array
+    public function endpoint(): string
     {
-        return $this->call('accountinfo');
-    }
-
-    public function imeiServiceList(): array
-    {
-        return $this->call('imeiservicelist');
-    }
-
-    public function serverServiceList(): array
-    {
-        return $this->call('serverservicelist');
-    }
-
-    public function fileServiceList(): array
-    {
-        return $this->call('fileservicelist');
+        // Official library uses: IMEI_URL . '/api/index.php'
+        return rtrim($this->baseUrl, '/') . '/api/index.php';
     }
 
     public function call(string $action, array $params = []): array
@@ -72,31 +45,39 @@ class GsmhubClient
         $payload = [
             'username'      => $this->username,
             'apiaccesskey'  => $this->apiKey,
-            'requestformat' => $this->requestFormat,
             'action'        => $action,
+            'requestformat' => $this->requestFormat,
         ];
 
+        // Official library uses POST field name: "parameters" (NOT requestxml)
         if (!empty($params)) {
-            $payload['requestxml'] = $this->buildRequestXml($params);
+            $payload['parameters'] = $this->buildParametersXml($params);
+        } else {
+            // Some APIs accept empty parameters, library still sends an empty <PARAMETERS/>
+            $payload['parameters'] = '<PARAMETERS></PARAMETERS>';
         }
+
+        $url = $this->endpoint();
 
         $resp = Http::asForm()
             ->timeout(60)
             ->retry(2, 500)
-            ->post($this->endpoint, $payload);
+            ->post($url, $payload);
+
+        $body = (string)$resp->body();
 
         if (!$resp->successful()) {
             throw new ProviderApiException('gsmhub', $action, [
                 'http_status' => $resp->status(),
-                'body' => $resp->body(),
-                'endpoint' => $this->endpoint,
+                'endpoint' => $url,
+                'body' => $body,
             ], "HTTP {$resp->status()}");
         }
 
-        $body = trim((string)$resp->body());
         $data = json_decode($body, true);
 
         if (!is_array($data)) {
+            // fallback XML
             $xml = @simplexml_load_string($body);
             if ($xml !== false) {
                 $data = json_decode(json_encode($xml), true);
@@ -104,7 +85,10 @@ class GsmhubClient
         }
 
         if (!is_array($data)) {
-            throw new ProviderApiException('gsmhub', $action, ['body' => $body, 'endpoint' => $this->endpoint], 'Invalid response');
+            throw new ProviderApiException('gsmhub', $action, [
+                'endpoint' => $url,
+                'raw' => $body,
+            ], 'Invalid response');
         }
 
         if (isset($data['ERROR'])) {
@@ -118,14 +102,37 @@ class GsmhubClient
         return $data;
     }
 
-    private function buildRequestXml(array $params): string
-    {
-        $xml = new \SimpleXMLElement('<PARAMETERS/>');
+    // Actions (per your doc)
+    public function accountInfo(): array { return $this->call('accountinfo', []); }
+    public function imeiServiceList(): array { return $this->call('imeiservicelist', []); }
+    public function serverServiceList(): array { return $this->call('serverservicelist', []); }
+    public function fileServiceList(): array { return $this->call('fileservicelist', []); }
 
-        foreach ($params as $key => $value) {
-            $xml->addChild($key, htmlspecialchars((string)$value));
+    public function placeImeiOrder(array $params): array { return $this->call('placeimeiorder', $params); }
+    public function getImeiOrder(string $id): array { return $this->call('getimeiorder', ['ID' => $id]); }
+
+    public function placeServerOrder(array $params): array { return $this->call('placeserverorder', $params); }
+    public function getServerOrder(string $id): array { return $this->call('getserverorder', ['ID' => $id]); }
+
+    public function placeFileOrder(array $params): array { return $this->call('placefileorder', $params); }
+    public function getFileOrder(string $id): array { return $this->call('getfileorder', ['ID' => $id]); }
+
+    private function buildParametersXml(array $params): string
+    {
+        // Official library creates <PARAMETERS><KEY>VALUE</KEY>...</PARAMETERS>
+        // and uppercases tags
+        $xml = new \DOMDocument('1.0', 'UTF-8');
+        $root = $xml->createElement('PARAMETERS');
+        $xml->appendChild($root);
+
+        foreach ($params as $k => $v) {
+            $tag = strtoupper((string)$k);
+            $node = $xml->createElement($tag);
+            $node->appendChild($xml->createTextNode((string)$v));
+            $root->appendChild($node);
         }
 
-        return $xml->asXML() ?: '';
+        // Equivalent to library's saveHTML() output.
+        return $xml->saveHTML($root) ?: '<PARAMETERS></PARAMETERS>';
     }
 }
