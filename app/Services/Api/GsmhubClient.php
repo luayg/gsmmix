@@ -11,7 +11,7 @@ class GsmhubClient
 {
     public function __construct(
         private ApiProvider $provider,
-        private string $baseUrl,     // ex: https://imei.us/public OR https://imei.us
+        private string $baseUrl,
         private string $username,
         private string $apiKey,
         private string $requestFormat = 'JSON'
@@ -31,56 +31,8 @@ class GsmhubClient
     }
 
     /**
-     * If we already resolved a working endpoint before, use it first.
-     */
-    private function resolvedEndpoint(): ?string
-    {
-        $params = $this->provider->params ?? null;
-
-        if (is_string($params) && trim($params) !== '') {
-            $decoded = json_decode($params, true);
-            $params = is_array($decoded) ? $decoded : null;
-        }
-
-        if (is_array($params) && !empty($params['gsmhub_resolved_endpoint'])) {
-            $u = trim((string)$params['gsmhub_resolved_endpoint']);
-            return $u !== '' ? $u : null;
-        }
-
-        return null;
-    }
-
-    private function saveResolvedEndpoint(string $endpoint): void
-    {
-        $endpoint = trim($endpoint);
-        if ($endpoint === '') return;
-
-        try {
-            $params = $this->provider->params ?? [];
-            if (is_string($params) && trim($params) !== '') {
-                $decoded = json_decode($params, true);
-                $params = is_array($decoded) ? $decoded : [];
-            }
-            if (!is_array($params)) $params = [];
-
-            // only write if changed (avoid DB spam)
-            if (($params['gsmhub_resolved_endpoint'] ?? null) === $endpoint) {
-                return;
-            }
-
-            $params['gsmhub_resolved_endpoint'] = $endpoint;
-            $this->provider->params = $params;
-            $this->provider->save();
-        } catch (\Throwable $e) {
-            // caching is optional; do not break API calls if DB write fails
-        }
-    }
-
-    /**
-     * Build candidate endpoints to try.
-     * 0) cached resolved endpoint (if any)
-     * 1) {base}/api/index.php
-     * 2) If base endswith /public => try parent /api/index.php
+     * We want to be aligned with the doc: base URL is https://imei.us/public
+     * Most installs expose the API script under /public/api.php
      */
     private function endpointCandidates(): array
     {
@@ -88,14 +40,25 @@ class GsmhubClient
 
         $candidates = [];
 
-        $cached = $this->resolvedEndpoint();
-        if ($cached) $candidates[] = $cached;
+        // ✅ Preferred (document-friendly): /public/api.php
+        if (Str::endsWith($base, '/public')) {
+            $candidates[] = $base . '/api.php';
+        }
 
+        // Secondary: /public/api/index.php (some installs)
+        if (Str::endsWith($base, '/public')) {
+            $candidates[] = $base . '/api/index.php';
+        }
+
+        // Fallbacks (older/other setups)
+        $candidates[] = $base . '/api.php';
         $candidates[] = $base . '/api/index.php';
 
+        // If base endswith /public, also try parent (NOT preferred, but last resort)
         if (Str::endsWith($base, '/public')) {
             $parent = rtrim(Str::beforeLast($base, '/public'), '/');
             if ($parent !== '') {
+                $candidates[] = $parent . '/api.php';
                 $candidates[] = $parent . '/api/index.php';
             }
         }
@@ -105,6 +68,7 @@ class GsmhubClient
         foreach ($candidates as $u) {
             if (!in_array($u, $unique, true)) $unique[] = $u;
         }
+
         return $unique;
     }
 
@@ -115,6 +79,7 @@ class GsmhubClient
             'apiaccesskey'  => $this->apiKey,
             'action'        => $action,
             'requestformat' => $this->requestFormat,
+            // imei.us style:
             'parameters'    => $this->buildParametersXml($params),
         ];
 
@@ -130,7 +95,6 @@ class GsmhubClient
             $lastStatus = $resp->status();
             $lastBody = (string)$resp->body();
 
-            // if 404 => try next candidate
             if ($resp->status() === 404) {
                 continue;
             }
@@ -167,8 +131,10 @@ class GsmhubClient
                 throw new ProviderApiException('gsmhub', $action, $data, (string)$msg);
             }
 
-            // ✅ SUCCESS: cache working endpoint
-            $this->saveResolvedEndpoint($url);
+            // ✅ SUCCESS:
+            // Do NOT persist resolved endpoint outside /public to keep doc-consistency.
+            // If you still want caching, cache ONLY if url starts with baseUrl (doc-friendly).
+            $this->saveResolvedEndpointIfDocFriendly($url);
 
             return $data;
         }
@@ -180,7 +146,36 @@ class GsmhubClient
         ], 'HTTP 404 (endpoint not found on all candidates)');
     }
 
-    // Actions per imei.us doc
+    private function saveResolvedEndpointIfDocFriendly(string $endpoint): void
+    {
+        $endpoint = trim($endpoint);
+        if ($endpoint === '') return;
+
+        $base = rtrim($this->baseUrl, '/');
+
+        // Cache ONLY if endpoint is under the provided base URL (so docs stay true).
+        if (!Str::startsWith($endpoint, $base)) {
+            return;
+        }
+
+        try {
+            $params = $this->provider->params ?? [];
+            if (is_string($params) && trim($params) !== '') {
+                $decoded = json_decode($params, true);
+                $params = is_array($decoded) ? $decoded : [];
+            }
+            if (!is_array($params)) $params = [];
+
+            $params['gsmhub_resolved_endpoint'] = $endpoint;
+
+            $this->provider->params = $params;
+            $this->provider->save();
+        } catch (\Throwable $e) {
+            // ignore
+        }
+    }
+
+    // Actions
     public function accountInfo(): array { return $this->call('accountinfo'); }
     public function imeiServiceList(): array { return $this->call('imeiservicelist'); }
     public function serverServiceList(): array { return $this->call('serverservicelist'); }

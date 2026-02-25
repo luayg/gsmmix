@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Log;
 class SyncFileOrders extends Command
 {
     protected $signature = 'orders:sync-file {--limit=50} {--only-id=}';
-    protected $description = 'Sync File Orders status/result from providers (DHRU/WebX)';
+    protected $description = 'Sync File Orders status/result from providers (DHRU/WebX/GSMHub/others)';
 
     public function handle(DhruOrderGateway $dhru, WebxOrderGateway $webx): int
     {
@@ -59,11 +59,10 @@ class SyncFileOrders extends Command
 
                 $ptype = strtolower(trim((string)($provider->type ?? 'dhru')));
 
-                // WebX supports file-orders; UnlockBase doesn't => default to DHRU
                 $res = match ($ptype) {
-                'webx'   => $webx->getFileOrder($provider, $ref),
-                 'gsmhub' => app(\App\Services\Orders\GsmhubOrderGateway::class)->getFileOrder($provider, $ref),
-                 default  => $dhru->getFileOrder($provider, $ref),
+                    'webx'   => $webx->getFileOrder($provider, $ref),
+                    'gsmhub' => app(\App\Services\Orders\GsmhubOrderGateway::class)->getFileOrder($provider, $ref),
+                    default  => $dhru->getFileOrder($provider, $ref),
                 };
 
                 // ✅ always store last check + raw
@@ -80,15 +79,18 @@ class SyncFileOrders extends Command
                     continue;
                 }
 
-                // Non-DHRU (WebX) normalized status path
-                if ($ptype === 'webx') {
+                /**
+                 * ✅ GLOBAL normalized path for ANY non-dhru provider
+                 */
+                if ($ptype !== 'dhru') {
                     $newStatus = strtolower(trim((string)($res['status'] ?? 'inprogress')));
                     if ($newStatus === 'canceled') $newStatus = 'cancelled';
+
                     if (!in_array($newStatus, ['success','rejected','cancelled','inprogress','waiting'], true)) {
                         $newStatus = 'inprogress';
                     }
 
-                    // ✅ نفس منطق IMEI: لا تسمح بالرجوع إلى waiting بعد وصول الطلب للمزوّد
+                    // ✅ GLOBAL FIX: never go back to waiting after remote_id exists
                     if ($newStatus === 'waiting' && !empty($order->remote_id)) {
                         $newStatus = 'inprogress';
                     }
@@ -96,8 +98,8 @@ class SyncFileOrders extends Command
                     $respArr = $this->normalizeResponseArray($order->response);
                     $ui = is_array($res['response_ui'] ?? null) ? $res['response_ui'] : [];
                     $respArr = array_merge($respArr, $ui, [
-                        'provider_type' => 'webx',
-                        'reference_id' => $order->remote_id,
+                        'provider_type' => $ptype,
+                        'reference_id'  => $order->remote_id,
                     ]);
 
                     $final = in_array($newStatus, ['success','rejected','cancelled'], true);
@@ -121,7 +123,7 @@ class SyncFileOrders extends Command
                     }
 
                     $synced++;
-                    $this->info("Order #{$order->id} synced => {$newStatus} (WEBX)");
+                    $this->info("Order #{$order->id} synced => {$newStatus} ({$ptype})");
                     continue;
                 }
 
@@ -142,7 +144,6 @@ class SyncFileOrders extends Command
                 $respArr['dhru_comments'] = $comments;
                 $respArr['result_text']   = $code;
 
-                // لو CODE يحتوي HTML نخزنه كـ provider_reply_html
                 $providerHtml = $this->asProviderReplyHtml($code, $comments);
                 if ($providerHtml !== '') {
                     $respArr['provider_reply_html'] = $providerHtml;

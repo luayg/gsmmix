@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 class SyncImeiOrders extends Command
 {
     protected $signature = 'orders:sync-imei {--limit=50} {--only-id=}';
-    protected $description = 'Sync IMEI orders status/result from providers (DHRU/WebX/UnlockBase)';
+    protected $description = 'Sync IMEI orders status/result from providers (DHRU/WebX/UnlockBase/GSMHub)';
 
     private function providerBaseUrl(ApiProvider $p): string
     {
@@ -204,7 +204,7 @@ class SyncImeiOrders extends Command
                 $req['status_check_raw']  = $res['response_raw'] ?? null;
                 $order->request = $req;
 
-                // If gateway did not return an array => keep waiting
+                // If gateway did not return an array => keep waiting (network/parse issue)
                 if (!is_array($res)) {
                     $order->status = 'waiting';
                     $order->processing = 0;
@@ -213,15 +213,14 @@ class SyncImeiOrders extends Command
                 }
 
                 /**
-                 * Non-DHRU providers (WebX / UnlockBase):
-                 * Gateways return normalized:
-                 * - status: success|rejected|inprogress|cancelled|waiting
-                 * - response_ui: message/result_text/result_items...
+                 * ✅ GLOBAL RULE:
+                 * Any NON-DHRU provider returns normalized statuses.
+                 * (WebX / UnlockBase / GSMHub / any future provider)
                  */
-                if ($ptype !== 'dhru' && $ptype !== 'gsmhub') {
+                if ($ptype !== 'dhru') {
                     $newStatus = $this->normalizeGatewayStatus((string)($res['status'] ?? 'inprogress'));
 
-                    // ✅ FIX: لا ترجع Waiting بعد ما الطلب وصل للمزوّد (remote_id موجود)
+                    // ✅ GLOBAL FIX (ALL PROVIDERS): never go back to waiting after remote_id exists
                     if ($newStatus === 'waiting' && !empty($order->remote_id)) {
                         $newStatus = 'inprogress';
                     }
@@ -234,7 +233,7 @@ class SyncImeiOrders extends Command
                     }
 
                     $ui = is_array($res['response_ui'] ?? null) ? $res['response_ui'] : [];
-                    $ui['reference_id'] = $order->remote_id;
+                    $ui['reference_id']  = $order->remote_id;
                     $ui['provider_type'] = $ptype;
 
                     // If provider returns HTML/text, try to extract image + items (same UX as DHRU)
@@ -317,6 +316,11 @@ class SyncImeiOrders extends Command
                     $code = $s0['CODE'] ?? null;
 
                     $newStatus = $this->mapDhruStatusToLocal($statusInt);
+
+                    // ✅ extra safety: if any path ever yields waiting while remote_id exists -> inprogress
+                    if ($newStatus === 'waiting' && !empty($order->remote_id)) {
+                        $newStatus = 'inprogress';
+                    }
 
                     $order->status = $newStatus;
                     $order->processing = in_array($newStatus, ['success','rejected','cancelled'], true) ? 0 : 1;
