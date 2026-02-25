@@ -18,10 +18,8 @@ class GsmhubClient
 
     public static function fromProvider(ApiProvider $provider): self
     {
-        // Per provider note: API URL must be https://imei.us/public
+        // Per imei.us note: API URL must be https://imei.us/public
         $base = rtrim((string)$provider->url, '/');
-
-        // If admin mistakenly saved https://imei.us (without /public), append it.
         if (!Str::endsWith($base, '/public')) {
             $base .= '/public';
         }
@@ -36,7 +34,7 @@ class GsmhubClient
 
     public function endpoint(): string
     {
-        // Official library uses: IMEI_URL . '/api/index.php'
+        // ✅ Official style: /api/index.php
         return rtrim($this->baseUrl, '/') . '/api/index.php';
     }
 
@@ -47,15 +45,9 @@ class GsmhubClient
             'apiaccesskey'  => $this->apiKey,
             'action'        => $action,
             'requestformat' => $this->requestFormat,
+            // ✅ IMPORTANT: imei.us uses "parameters" not "requestxml"
+            'parameters'    => $this->buildParametersXml($params),
         ];
-
-        // Official library uses POST field name: "parameters" (NOT requestxml)
-        if (!empty($params)) {
-            $payload['parameters'] = $this->buildParametersXml($params);
-        } else {
-            // Some APIs accept empty parameters, library still sends an empty <PARAMETERS/>
-            $payload['parameters'] = '<PARAMETERS></PARAMETERS>';
-        }
 
         $url = $this->endpoint();
 
@@ -74,7 +66,7 @@ class GsmhubClient
             ], "HTTP {$resp->status()}");
         }
 
-        $data = json_decode($body, true);
+        $data = json_decode(trim($body), true);
 
         if (!is_array($data)) {
             // fallback XML
@@ -102,11 +94,11 @@ class GsmhubClient
         return $data;
     }
 
-    // Actions (per your doc)
-    public function accountInfo(): array { return $this->call('accountinfo', []); }
-    public function imeiServiceList(): array { return $this->call('imeiservicelist', []); }
-    public function serverServiceList(): array { return $this->call('serverservicelist', []); }
-    public function fileServiceList(): array { return $this->call('fileservicelist', []); }
+    // Actions per imei.us docs
+    public function accountInfo(): array { return $this->call('accountinfo'); }
+    public function imeiServiceList(): array { return $this->call('imeiservicelist'); }
+    public function serverServiceList(): array { return $this->call('serverservicelist'); }
+    public function fileServiceList(): array { return $this->call('fileservicelist'); }
 
     public function placeImeiOrder(array $params): array { return $this->call('placeimeiorder', $params); }
     public function getImeiOrder(string $id): array { return $this->call('getimeiorder', ['ID' => $id]); }
@@ -119,8 +111,7 @@ class GsmhubClient
 
     private function buildParametersXml(array $params): string
     {
-        // Official library creates <PARAMETERS><KEY>VALUE</KEY>...</PARAMETERS>
-        // and uppercases tags
+        // imei.us library sends <PARAMETERS> with UPPERCASE tags
         $xml = new \DOMDocument('1.0', 'UTF-8');
         $root = $xml->createElement('PARAMETERS');
         $xml->appendChild($root);
@@ -132,7 +123,7 @@ class GsmhubClient
             $root->appendChild($node);
         }
 
-        // Equivalent to library's saveHTML() output.
+        // Return only the <PARAMETERS>...</PARAMETERS> block
         return $xml->saveHTML($root) ?: '<PARAMETERS></PARAMETERS>';
     }
 }

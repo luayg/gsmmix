@@ -20,6 +20,33 @@ class GsmhubOrderGateway
         return is_array($fields) ? $fields : [];
     }
 
+    private function mapImeiFields(array $fields): array
+    {
+        // imei.us expects: MODELID, PROVIDERID, MEP, PIN, KBH, PRD, TYPE, REFERENCE, LOCKS
+        $map = [
+            'modelid' => 'MODELID',
+            'model_id' => 'MODELID',
+            'providerid' => 'PROVIDERID',
+            'provider_id' => 'PROVIDERID',
+            'mep' => 'MEP',
+            'pin' => 'PIN',
+            'kbh' => 'KBH',
+            'prd' => 'PRD',
+            'type' => 'TYPE',
+            'reference' => 'REFERENCE',
+            'locks' => 'LOCKS',
+        ];
+
+        $out = [];
+        foreach ($fields as $k => $v) {
+            $key = strtolower(trim((string)$k));
+            $val = trim((string)$v);
+            if ($val === '') continue;
+            if (isset($map[$key])) $out[$map[$key]] = $val;
+        }
+        return $out;
+    }
+
     public function placeImeiOrder(ApiProvider $p, ImeiOrder $order): array
     {
         $client = GsmhubClient::fromProvider($p);
@@ -35,17 +62,16 @@ class GsmhubOrderGateway
         ], $this->mapImeiFields($fields));
 
         $raw = $client->placeImeiOrder($params);
-
-        $rid = data_get($raw, 'SUCCESS.0.ID') ?? data_get($raw, 'SUCCESS.0.REFERENCEID') ?? data_get($raw, 'ID');
+        $rid = (string)(data_get($raw, 'SUCCESS.0.ID') ?? data_get($raw, 'SUCCESS.0.REFERENCEID') ?? data_get($raw, 'ID') ?? '');
 
         return [
             'ok' => true,
             'retryable' => false,
             'status' => 'inprogress',
-            'remote_id' => (string)$rid,
+            'remote_id' => $rid,
             'request' => ['endpoint' => $client->endpoint(), 'action' => 'placeimeiorder', 'params' => $params],
             'response_raw' => $raw,
-            'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => (string)$rid],
+            'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $rid],
         ];
     }
 
@@ -53,8 +79,7 @@ class GsmhubOrderGateway
     {
         $client = GsmhubClient::fromProvider($p);
         $raw = $client->getImeiOrder($id);
-
-        return $this->normalizeStatusResult($client->endpoint(), 'getimeiorder', ['ID'=>$id], $raw, $id);
+        return $this->normalizeStatusResult($client->endpoint(), 'getimeiorder', ['ID' => $id], $raw, $id);
     }
 
     public function placeServerOrder(ApiProvider $p, ServerOrder $order): array
@@ -70,21 +95,24 @@ class GsmhubOrderGateway
         $params = [
             'ID' => $serviceId,
             'QUANTITY' => $qty,
-            'REQUIRED' => json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),
         ];
 
-        $raw = $client->placeServerOrder($params);
+        if (!empty($fields)) {
+            // doc: REQUIRED is json string
+            $params['REQUIRED'] = json_encode($fields, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
 
-        $rid = data_get($raw, 'SUCCESS.0.ID') ?? data_get($raw, 'SUCCESS.0.REFERENCEID') ?? data_get($raw, 'ID');
+        $raw = $client->placeServerOrder($params);
+        $rid = (string)(data_get($raw, 'SUCCESS.0.ID') ?? data_get($raw, 'SUCCESS.0.REFERENCEID') ?? data_get($raw, 'ID') ?? '');
 
         return [
             'ok' => true,
             'retryable' => false,
             'status' => 'inprogress',
-            'remote_id' => (string)$rid,
+            'remote_id' => $rid,
             'request' => ['endpoint' => $client->endpoint(), 'action' => 'placeserverorder', 'params' => $params],
             'response_raw' => $raw,
-            'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => (string)$rid],
+            'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $rid],
         ];
     }
 
@@ -92,8 +120,7 @@ class GsmhubOrderGateway
     {
         $client = GsmhubClient::fromProvider($p);
         $raw = $client->getServerOrder($id);
-
-        return $this->normalizeStatusResult($client->endpoint(), 'getserverorder', ['ID'=>$id], $raw, $id);
+        return $this->normalizeStatusResult($client->endpoint(), 'getserverorder', ['ID' => $id], $raw, $id);
     }
 
     public function placeFileOrder(ApiProvider $p, FileOrder $order): array
@@ -117,7 +144,6 @@ class GsmhubOrderGateway
         }
 
         if ($filename === '') $filename = basename($path);
-
         $content = Storage::get($path);
 
         $params = [
@@ -127,17 +153,16 @@ class GsmhubOrderGateway
         ];
 
         $raw = $client->placeFileOrder($params);
-
-        $rid = data_get($raw, 'SUCCESS.0.ID') ?? data_get($raw, 'SUCCESS.0.REFERENCEID') ?? data_get($raw, 'ID');
+        $rid = (string)(data_get($raw, 'SUCCESS.0.ID') ?? data_get($raw, 'SUCCESS.0.REFERENCEID') ?? data_get($raw, 'ID') ?? '');
 
         return [
             'ok' => true,
             'retryable' => false,
             'status' => 'inprogress',
-            'remote_id' => (string)$rid,
+            'remote_id' => $rid,
             'request' => ['endpoint' => $client->endpoint(), 'action' => 'placefileorder', 'params' => $params],
             'response_raw' => $raw,
-            'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => (string)$rid],
+            'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $rid],
         ];
     }
 
@@ -145,33 +170,7 @@ class GsmhubOrderGateway
     {
         $client = GsmhubClient::fromProvider($p);
         $raw = $client->getFileOrder($id);
-
-        return $this->normalizeStatusResult($client->endpoint(), 'getfileorder', ['ID'=>$id], $raw, $id);
-    }
-
-    private function mapImeiFields(array $fields): array
-    {
-        // per doc: MODELID PROVIDERID MEP PIN KBH PRD TYPE REFERENCE LOCKS
-        $map = [
-            'modelid' => 'MODELID',
-            'providerid' => 'PROVIDERID',
-            'mep' => 'MEP',
-            'pin' => 'PIN',
-            'kbh' => 'KBH',
-            'prd' => 'PRD',
-            'type' => 'TYPE',
-            'reference' => 'REFERENCE',
-            'locks' => 'LOCKS',
-        ];
-
-        $out = [];
-        foreach ($fields as $k => $v) {
-            $kk = strtolower(trim((string)$k));
-            $vv = trim((string)$v);
-            if ($vv === '') continue;
-            if (isset($map[$kk])) $out[$map[$kk]] = $vv;
-        }
-        return $out;
+        return $this->normalizeStatusResult($client->endpoint(), 'getfileorder', ['ID' => $id], $raw, $id);
     }
 
     private function normalizeStatusResult(string $endpoint, string $action, array $params, array $raw, string $refId): array
@@ -190,7 +189,7 @@ class GsmhubOrderGateway
         } elseif ($s === '3' || str_contains($s, 'reject') || str_contains($s, 'fail') || str_contains($s, 'error')) {
             $status = 'rejected';
         } else {
-            $status = 'inprogress'; // لا نرجعها waiting بعد remote_id
+            $status = 'inprogress'; // لا نرجع waiting بعد remote_id
         }
 
         $result =
