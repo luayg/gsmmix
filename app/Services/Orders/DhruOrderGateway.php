@@ -191,6 +191,29 @@ class DhruOrderGateway
     }
 
 
+    private function ensureEmailAliasFromValues(array $fields): array
+    {
+        if (array_key_exists('email', $fields) || array_key_exists('EMAIL', $fields)) {
+            return $fields;
+        }
+
+        foreach ($fields as $k => $v) {
+            $key = strtolower(trim((string)$k));
+            $val = trim((string)$v);
+
+            if ($val === '') continue;
+
+            if (str_contains($key, 'email') || filter_var($val, FILTER_VALIDATE_EMAIL)) {
+                $fields['email'] = $val;
+                $fields['EMAIL'] = $val;
+                break;
+            }
+        }
+
+        return $fields;
+    }
+
+
     private function appendWellKnownFieldTags(string $xml, array $fields): string
     {
         $map = [
@@ -367,6 +390,7 @@ class DhruOrderGateway
         }
         $fields = $this->normalizeRequiredFields($fields);
         $fields = $this->enrichRequiredFieldAliases($fields, $order->service);
+        $fields = $this->ensureEmailAliasFromValues($fields);
 
         $xml = '<PARAMETERS>'
             . '<IMEI>' . $this->xmlEscape($imei) . '</IMEI>'
@@ -375,6 +399,11 @@ class DhruOrderGateway
         $customfield = $this->buildCustomfieldParam($fields);
         if ($customfield !== null) {
             $xml .= '<CUSTOMFIELD>' . $this->xmlEscape($customfield) . '</CUSTOMFIELD>';
+        }
+
+        if (!empty($fields)) {
+            $requiredJson = json_encode($fields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+            $xml .= '<REQUIRED>' . $this->xmlEscape((string)$requiredJson) . '</REQUIRED>';
         }
 
         $xml = $this->appendWellKnownFieldTags($xml, $fields);
@@ -399,6 +428,7 @@ class DhruOrderGateway
         }
         $fields = $this->normalizeRequiredFields($fields);
         $fields = $this->enrichRequiredFieldAliases($fields, $order->service);
+        $fields = $this->ensureEmailAliasFromValues($fields);
 
         $comments = trim((string)($order->comments ?? ''));
 
@@ -488,6 +518,7 @@ class DhruOrderGateway
         }
         $fields = $this->normalizeRequiredFields($fields);
         $fields = $this->enrichRequiredFieldAliases($fields, $order->service);
+        $fields = $this->ensureEmailAliasFromValues($fields);
 
         $xml = '<PARAMETERS>'
             . '<ID>' . $this->xmlEscape($serviceId) . '</ID>'
