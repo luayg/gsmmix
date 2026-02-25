@@ -12,7 +12,8 @@ class OrderSender
     public function __construct(
         private DhruOrderGateway $dhru,
         private WebxOrderGateway $webx,
-        private UnlockbaseOrderGateway $unlockbase
+        private UnlockbaseOrderGateway $unlockbase,
+        private GsmhubOrderGateway $gsmhub
     ) {}
 
     public function sendImei(ApiProvider $provider, ImeiOrder $order): array
@@ -22,6 +23,7 @@ class OrderSender
         return match ($type) {
             'webx'       => $this->webx->placeImeiOrder($provider, $order),
             'unlockbase' => $this->unlockbase->placeImeiOrder($provider, $order),
+            'gsmhub'     => $this->gsmhub->placeImeiOrder($provider, $order),
             default      => $this->dhru->placeImeiOrder($provider, $order),
         };
     }
@@ -31,8 +33,9 @@ class OrderSender
         $type = strtolower(trim((string)($provider->type ?? 'dhru')));
 
         return match ($type) {
-            'webx'  => $this->webx->placeServerOrder($provider, $order),
-            default => $this->dhru->placeServerOrder($provider, $order),
+            'webx'   => $this->webx->placeServerOrder($provider, $order),
+            'gsmhub' => $this->gsmhub->placeServerOrder($provider, $order),
+            default  => $this->dhru->placeServerOrder($provider, $order),
         };
     }
 
@@ -41,8 +44,9 @@ class OrderSender
         $type = strtolower(trim((string)($provider->type ?? 'dhru')));
 
         return match ($type) {
-            'webx'  => $this->webx->placeFileOrder($provider, $order),
-            default => $this->dhru->placeFileOrder($provider, $order),
+            'webx'   => $this->webx->placeFileOrder($provider, $order),
+            'gsmhub' => $this->gsmhub->placeFileOrder($provider, $order),
+            default  => $this->dhru->placeFileOrder($provider, $order),
         };
     }
 }

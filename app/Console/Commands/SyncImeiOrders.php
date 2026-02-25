@@ -193,6 +193,7 @@ class SyncImeiOrders extends Command
                 // Call the correct provider gateway
                 $res = match ($ptype) {
                     'unlockbase' => $unlockbase->getImeiOrder($provider, $ref),
+                    'gsmhub'     => app(\App\Services\Orders\GsmhubOrderGateway::class)->getImeiOrder($provider, $ref),
                     'webx'       => $webx->getImeiOrder($provider, $ref),
                     default      => $dhru->getImeiOrder($provider, $ref),
                 };

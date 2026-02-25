@@ -83,9 +83,10 @@ class SyncServerOrders extends Command
 
                 // WebX supports server-orders; UnlockBase doesn't => default to DHRU
                 $res = match ($ptype) {
-                    'webx' => $webx->getServerOrder($provider, $ref),
-                    default => $dhru->getServerOrder($provider, $ref),
-                };
+                'webx'   => $webx->getServerOrder($provider, $ref),
+                'gsmhub' => app(\App\Services\Orders\GsmhubOrderGateway::class)->getServerOrder($provider, $ref),
+                 default  => $dhru->getServerOrder($provider, $ref),
+            };
 
                 // ✅ store last check + raw always
                 $req = $this->normalizeResponseArray($order->request);

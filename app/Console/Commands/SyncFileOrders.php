@@ -61,8 +61,9 @@ class SyncFileOrders extends Command
 
                 // WebX supports file-orders; UnlockBase doesn't => default to DHRU
                 $res = match ($ptype) {
-                    'webx' => $webx->getFileOrder($provider, $ref),
-                    default => $dhru->getFileOrder($provider, $ref),
+                'webx'   => $webx->getFileOrder($provider, $ref),
+                 'gsmhub' => app(\App\Services\Orders\GsmhubOrderGateway::class)->getFileOrder($provider, $ref),
+                 default  => $dhru->getFileOrder($provider, $ref),
                 };
 
                 // ✅ always store last check + raw
