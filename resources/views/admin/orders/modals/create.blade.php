@@ -147,7 +147,7 @@
           <label class="form-label">{{ $deviceLabel ?? 'Device' }}</label>
           <input type="text" class="form-control" name="device" placeholder="Enter value">
           <div class="form-text">
-            Depending on service type, this may be required (IMEI/SN) or optional (field-based service).
+            
           </div>
         @endif
       </div>
@@ -163,8 +163,7 @@
         <label class="form-label fw-semibold">Service fields</label>
         <div class="row g-2" id="serviceFieldsContainer"></div>
         <div class="form-text">
-          These fields are loaded from <code>custom_fields</code> table and will be sent as
-          <code>required[input]</code> to the provider (DHRU: <code>&lt;REQUIRED&gt;...&lt;/REQUIRED&gt;</code>).
+          
         </div>
       </div>
 
@@ -207,6 +206,7 @@
 
   const kind = @json($kind);
   const isServerKind = kind === 'server';
+  const isFileKind   = kind === 'file';
 
   const form = document.getElementById('createOrderForm');
   if (!form) return;
@@ -293,7 +293,14 @@
 
   // ✅ no checkbox: if service allow_bulk=1 show bulk textarea directly, else show single input
   function applyBulkModeByService(){
-      if (isServerKind) {
+       if (isFileKind) {
+      if (bulkHidden) bulkHidden.value = '0';
+      show(singleWrap);
+      hide(bulkWrap);
+      return;
+    }
+
+    if (isServerKind) {
       if (bulkHidden) bulkHidden.value = '0';
       hide(singleWrap);
       hide(bulkWrap);
@@ -336,13 +343,14 @@
     let cf = safeJsonParse(opt.getAttribute('data-custom-fields') || '[]');
     if (!Array.isArray(cf)) cf = [];
 
-    // show wrap always when service selected (even if empty -> show warning)
-    show(fieldsWrap);
+   
 
     if (cf.length === 0) {
-      fieldsBox.innerHTML = '<div class="col-12"><div class="alert alert-warning mb-0">No custom fields for this service.</div></div>';
+      hide(fieldsWrap);
       return;
     }
+
+     show(fieldsWrap);
 
     const splitOptions = (raw) => {
       if (!raw) return [];
