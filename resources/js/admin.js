@@ -194,12 +194,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
           const j = await res2.json().catch(async () => ({ ok: true, msg: await res2.text() }));
 
+          if (j?.redirect_url) {
+            window.location.href = j.redirect_url;
+            return;
+          }
+
           window.bootstrap.Modal.getInstance($modal[0])?.hide();
           $('.dataTable').each(function () {
             try { $(this).DataTable()?.ajax?.reload(null, false); } catch (_) {}
           });
 
-          showToast?.('success', j.msg || 'Saved successfully');
+           showToast?.('success', j.message || j.msg || 'Saved successfully');
         } catch (err) {
           console.error(err);
           showToast?.('danger', 'Network error', { title: 'Error' });

@@ -638,11 +638,25 @@ abstract class BaseOrdersController extends Controller
             });
         } catch (\RuntimeException $e) {
             if ($e->getMessage() === 'INSUFFICIENT_BALANCE') {
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'ok' => false,
+                        'message' => 'No enough balance for this order.',
+                    ], 422);
+                }
                 return redirect()->back()
                     ->withErrors(['user_id' => 'No enough balance for this order.'])
                     ->withInput();
             }
             throw $e;
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'message' => 'Order created.',
+                'redirect_url' => route("{$this->routePrefix}.index"),
+            ]);
         }
 
         return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order created.');
