@@ -116,7 +116,7 @@
               <input type="text"
                      class="form-control"
                      id="allowedExtensionsPreview"
-                           placeholder="sha,bcl,log,bat">
+                            placeholder="">
               <small class="text-muted">Comma separated allowed extensions, leave empty to accept any extension</small>
             </div>
 
@@ -764,7 +764,7 @@
       console.warn('file setFormat failed', e);
     }
   };
-
+  
   // ✅ الأهم: service-modal يستدعي أسماء server ... فنعمل alias لها هنا
   // حتى يعمل FILE بدون تعديل service-modal حالياً
   window.__serverServiceApplyRemoteFields__ = window.__fileServiceApplyRemoteFields__;

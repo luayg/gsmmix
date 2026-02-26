@@ -452,6 +452,24 @@ abstract class BaseOrdersController extends Controller
 
         $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
 
+        if ($this->kind === 'file') {
+            $uploadedFile = $request->file('file');
+            $allowedExtensions = $this->extractAllowedExtensionsFromServiceParams($service);
+
+            // Strict extension validation only when service has explicit allow-list.
+            // If allow-list is empty, all extensions are accepted.
+            if (!empty($allowedExtensions) && $uploadedFile) {
+                $uploadedExt = strtolower((string)$uploadedFile->getClientOriginalExtension());
+                if (!$this->isExtensionAllowed($uploadedExt, $allowedExtensions)) {
+                    return redirect()->back()
+                        ->withErrors([
+                            'file' => 'File extension is not allowed for this service. Allowed: ' . implode(', ', $allowedExtensions),
+                        ])
+                        ->withInput();
+                }
+            }
+        }
+
         $supplierId = (int)($service->supplier_id ?? 0);
         $provider   = $supplierId ? ApiProvider::find($supplierId) : null;
 
@@ -628,6 +646,47 @@ abstract class BaseOrdersController extends Controller
         }
 
         return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order created.');
+    }
+
+    private function extractAllowedExtensionsFromServiceParams($service): array
+    {
+        $params = $service->params ?? [];
+        if (is_string($params)) {
+            $decoded = json_decode($params, true);
+            $params = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($params)) return [];
+
+        $raw = trim((string)($params['allowed_extensions'] ?? ''));
+        if ($raw === '') return [];
+
+        $parts = preg_split('/[,\s]+/', $raw) ?: [];
+        $normalized = [];
+        foreach ($parts as $ext) {
+            $clean = strtolower(trim((string)$ext));
+            $clean = ltrim($clean, '.');
+            if ($clean === '') continue;
+            $normalized[$clean] = true;
+        }
+
+        return array_keys($normalized);
+    }
+
+    private function isExtensionAllowed(string $extension, array $allowedExtensions): bool
+    {
+        $ext = ltrim(strtolower(trim($extension)), '.');
+        if ($ext === '') {
+            return false;
+        }
+
+        foreach ($allowedExtensions as $allowed) {
+            $allowedNorm = ltrim(strtolower(trim((string)$allowed)), '.');
+            if ($allowedNorm !== '' && $allowedNorm === $ext) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function modalView(int $id)

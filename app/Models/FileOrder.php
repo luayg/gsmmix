@@ -21,7 +21,9 @@ class FileOrder extends Model
         'processing'   => 'boolean',
         'replied_at'   => 'datetime',
 
-        // ✅ نفس الإصلاح
+        // ✅ Cast JSON columns used by order pipeline
+        'request'      => 'array',
+        'response'     => 'array',
         'params'       => 'array',
     ];
 
