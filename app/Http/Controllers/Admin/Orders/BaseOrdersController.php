@@ -408,6 +408,19 @@ abstract class BaseOrdersController extends Controller
             $order->save();
         });
     }
+        
+        private function failValidation(Request $request, array $errors, int $status = 422)
+{
+    if ($request->expectsJson()) {
+        return response()->json([
+            'ok'     => false,
+            'message'=> 'Validation error',
+            'errors' => $errors,
+        ], $status);
+    }
+
+    return redirect()->back()->withErrors($errors)->withInput();
+}
 
     // =========================
     // STORE
@@ -447,7 +460,7 @@ abstract class BaseOrdersController extends Controller
         $userId = (int)($data['user_id'] ?? 0);
         $user = User::find($userId);
         if (!$user) {
-            return redirect()->back()->withErrors(['user_id' => 'User not found.'])->withInput();
+            return $this->failValidation($request, ['user_id' => 'User not found.'], 422);
         }
 
         $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
@@ -461,11 +474,9 @@ abstract class BaseOrdersController extends Controller
             if (!empty($allowedExtensions) && $uploadedFile) {
                 $uploadedExt = strtolower((string)$uploadedFile->getClientOriginalExtension());
                 if (!$this->isExtensionAllowed($uploadedExt, $allowedExtensions)) {
-                    return redirect()->back()
-                        ->withErrors([
-                            'file' => 'File extension is not allowed for this service. Allowed: ' . implode(', ', $allowedExtensions),
-                        ])
-                        ->withInput();
+                    return $this->failValidation($request, [
+    'file' => 'File extension is not allowed for this service. Allowed: ' . implode(', ', $allowedExtensions),
+], 422);
                 }
             }
         }
