@@ -192,7 +192,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
           }
 
-          const j = await res2.json().catch(async () => ({ ok: true, msg: await res2.text() }));
+          const bodyText = await res2.text();
+          let j = {};
+          if (bodyText) {
+            try {
+              j = JSON.parse(bodyText);
+            } catch (_) {
+              j = { ok: true, msg: bodyText };
+            }
+          }
 
           if (j?.redirect_url) {
             window.location.href = j.redirect_url;
