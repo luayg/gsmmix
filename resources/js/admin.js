@@ -180,26 +180,75 @@ document.addEventListener('DOMContentLoaded', () => {
             redirect: 'follow'
           });
 
+          // ✅ اقرأ الرد مرة واحدة فقط (لتجنب body stream already read)
+          const raw = await res2.text();
+
+          // ✅ 422 (validation)
           if (res2.status === 422) {
-            const j = await res2.json().catch(() => ({}));
+            let j = {};
+            try { j = JSON.parse(raw); } catch (_) {}
             const msgs = Object.values(j.errors || {}).flat().join('<br>');
             showToast?.('danger', msgs || 'Validation error', { title: 'Error', delay: 5000 });
             return;
           }
+
+          // ✅ أي خطأ آخر
           if (!res2.ok) {
-            const txt = await res2.text();
-            showToast?.('danger', txt || 'Failed to submit the form.', { title: 'Error', delay: 5000 });
+            // حاول استخراج رسالة مفهومة
+            let msg = raw || 'Failed to submit the form.';
+            try {
+              const jErr = JSON.parse(raw);
+              msg = jErr.message || jErr.msg || msg;
+            } catch (_) {}
+            showToast?.('danger', msg, { title: 'Error', delay: 6000 });
             return;
           }
 
-          const j = await res2.json().catch(async () => ({ ok: true, msg: await res2.text() }));
+          // ✅ نجاح (قد يكون JSON أو نص)
+          let j = { ok: true, msg: raw, message: raw };
+          try { j = JSON.parse(raw); } catch (_) {}
 
+          const successMsg = j.msg || j.message || 'Saved successfully';
+
+          // ✅ منع تحذير aria-hidden + تخبيص التصميم: blur قبل hide
+          if (document.activeElement) document.activeElement.blur();
+
+          // hide modal
           window.bootstrap.Modal.getInstance($modal[0])?.hide();
+
+          // ✅ cleanup احتياطي لو Bootstrap ترك backdrop/body styles
+          setTimeout(() => {
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+            document.querySelectorAll('.modal-backdrop').forEach(b => b.remove());
+          }, 150);
+
+          showToast?.('success', successMsg);
+
+          // ✅ لو السيرفر رجّع redirect_url (مثل Orders)، استخدمه
+          if (j.redirect_url) {
+            window.location.href = j.redirect_url;
+            return;
+          }
+
+          // ✅ لو الصفحة فيها DataTable اعمل reload
+          let reloaded = false;
           $('.dataTable').each(function () {
-            try { $(this).DataTable()?.ajax?.reload(null, false); } catch (_) {}
+            try {
+              const dt = $(this).DataTable();
+              if (dt?.ajax) {
+                dt.ajax.reload(null, false);
+                reloaded = true;
+              }
+            } catch (_) {}
           });
 
-          showToast?.('success', j.msg || 'Saved successfully');
+          // ✅ لو ما فيه DataTable، اعمل reload عادي عشان تظهر البيانات
+          if (!reloaded) {
+            window.location.reload();
+          }
+
         } catch (err) {
           console.error(err);
           showToast?.('danger', 'Network error', { title: 'Error' });
