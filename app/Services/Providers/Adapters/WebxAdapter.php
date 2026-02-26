@@ -111,7 +111,7 @@ class WebxAdapter implements ProviderAdapterInterface
                 $count++;
             }
 
-            // Cleanup removed services (نفس فكرة DhruStyle) :contentReference[oaicite:6]{index=6}
+            // Cleanup removed services
             if (!empty($seen)) {
                 if ($kind === 'imei') {
                     RemoteImeiService::where('api_provider_id', $provider->id)->whereNotIn('remote_id', $seen)->delete();
@@ -132,24 +132,47 @@ class WebxAdapter implements ProviderAdapterInterface
 
     private function apiBase(ApiProvider $provider): string
     {
-        // WebX library uses: $url.'/api/'.$route
-        return rtrim((string)$provider->url, '/') . '/api';
+        // يسمح بتحديد api_path من params إن رغبت (مثلاً: api أو api/v1)
+        $apiPath = trim((string) data_get($provider, 'params.api_path', 'api'), '/');
+
+        $base = rtrim((string) $provider->url, '/');
+
+        // لو الأدمن حاط URL ينتهي بـ /api أو /api/.. لا نكرر
+        if (preg_match('~/(api)(/.*)?$~i', $base)) {
+            return $base;
+        }
+
+        return $base . '/' . $apiPath;
     }
 
     private function call(ApiProvider $provider, string $route, array $params = [], string $method = 'GET'): mixed
     {
         $method = strtoupper($method);
-        $url = rtrim($this->apiBase($provider), '/') . '/' . ltrim($route, '/');
+
+        $base = rtrim($this->apiBase($provider), '/');
+        $route = trim((string)$route, '/');
+        $url = $route === '' ? ($base . '/') : ($base . '/' . $route);
 
         // The library sets username param always
         $params['username'] = (string)$provider->username;
 
-        // Auth-Key is bcrypt hash of username+key
-        $auth = password_hash((string)$provider->username . (string)$provider->api_key, PASSWORD_BCRYPT);
+        // Auth-Key modes: bcrypt (default), plain, md5, sha256
+        // ضعها في provider params: { "auth_mode": "plain" } مثلاً
+        $mode = strtolower((string) data_get($provider, 'params.auth_mode', 'bcrypt'));
+
+        $raw = (string)$provider->username . (string)$provider->api_key;
+
+        $auth = match ($mode) {
+            'plain'  => (string) $provider->api_key,          // بعض المزودين يريدون المفتاح كما هو
+            'md5'    => md5($raw),                            // شائع
+            'sha256' => hash('sha256', $raw),                 // شائع عند بعضهم
+            default  => password_hash($raw, PASSWORD_BCRYPT), // الحالي
+        };
 
         $req = Http::withHeaders([
             'Accept' => 'application/json',
             'Auth-Key' => $auth,
+            'User-Agent' => 'GsmMix/1.0 (+Laravel WebX Client)',
         ])->timeout(60)->retry(2, 500);
 
         $resp = match ($method) {
@@ -158,10 +181,20 @@ class WebxAdapter implements ProviderAdapterInterface
             default => $req->get($url, $params),
         };
 
+        // ✅ تشخيص واضح لأي 4xx/5xx (خصوصاً 503 HTML)
+        if (!$resp->successful()) {
+            $body = (string) $resp->body();
+            $snippet = trim(substr($body, 0, 600));
+            throw new \RuntimeException('WebX HTTP ' . $resp->status() . ': ' . ($snippet !== '' ? $snippet : 'empty_body'));
+        }
+
+        // جرّب JSON
         $data = $resp->json();
 
         if (!is_array($data)) {
-            throw new \RuntimeException('WebX: Invalid JSON response');
+            $body = (string) $resp->body();
+            $snippet = trim(substr($body, 0, 600));
+            throw new \RuntimeException('WebX: Invalid JSON. First bytes: ' . ($snippet !== '' ? $snippet : 'empty_body'));
         }
 
         if (!empty($data['errors'])) {
