@@ -192,7 +192,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
           }
 
-          const bodyText = await res2.text();
+                    const bodyText = await res2.text();
           let j = {};
           if (bodyText) {
             try {
@@ -212,7 +212,8 @@ document.addEventListener('DOMContentLoaded', () => {
             try { $(this).DataTable()?.ajax?.reload(null, false); } catch (_) {}
           });
 
-           showToast?.('success', j.message || j.msg || 'Saved successfully');
+          showToast?.('success', j.message || j.msg || 'Saved successfully');
+
         } catch (err) {
           console.error(err);
           showToast?.('danger', 'Network error', { title: 'Error' });

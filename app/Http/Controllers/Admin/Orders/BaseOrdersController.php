@@ -636,7 +636,7 @@ abstract class BaseOrdersController extends Controller
                     foreach ($devices as $dv) $createOne($dv);
                 }
             });
-        } catch (\RuntimeException $e) {
+                } catch (\RuntimeException $e) {
             if ($e->getMessage() === 'INSUFFICIENT_BALANCE') {
                 if ($request->expectsJson()) {
                     return response()->json([
@@ -644,6 +644,7 @@ abstract class BaseOrdersController extends Controller
                         'message' => 'No enough balance for this order.',
                     ], 422);
                 }
+
                 return redirect()->back()
                     ->withErrors(['user_id' => 'No enough balance for this order.'])
                     ->withInput();
@@ -660,6 +661,7 @@ abstract class BaseOrdersController extends Controller
         }
 
         return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order created.');
+
     }
 
     private function extractAllowedExtensionsFromServiceParams($service): array
