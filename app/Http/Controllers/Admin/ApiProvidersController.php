@@ -232,7 +232,7 @@ public function servicesFile(Request $request, ApiProvider $provider)
     'ADDITIONAL_FIELDS' => $afOut,
 
     // ✅ NEW: file extensions from API (ALLOW_EXTENSION)
-    'ALLOW_EXTENSION' => (string)($s->allow_extension ?? $s->allow_extensions ?? ''),
+    'ALLOW_EXTENSION' => (string)($s->allowed_extensions ?? ''),
 ];
 
     })->values()->all();

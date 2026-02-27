@@ -10,23 +10,17 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Services\Api\WebxClient;
 
 class WebxOrderGateway
 {
-    private function apiBase(ApiProvider $p): string
-    {
-        return rtrim((string)$p->url, '/') . '/api';
-    }
+    
 
-    private function client(ApiProvider $p): PendingRequest
-    {
-        $auth = password_hash((string)$p->username . (string)$p->api_key, PASSWORD_BCRYPT);
+    private function client(ApiProvider $p): WebxClient
+{
+    return WebxClient::fromProvider($p);
+}
 
-        return Http::withHeaders([
-            'Accept'   => 'application/json',
-            'Auth-Key' => $auth,
-        ])->timeout(60)->retry(2, 500);
-    }
 
     private function normalizeFields($order): array
     {
@@ -174,94 +168,65 @@ class WebxOrderGateway
     }
 
     private function post(ApiProvider $p, string $route, array $params): array
-    {
-        $url = rtrim($this->apiBase($p), '/') . '/' . ltrim($route, '/');
+{
+    $c = $this->client($p);
+    $url = $c->url($route);
 
-        $params['username'] = (string)$p->username;
+    $params['username'] = (string) $p->username;
 
-        $resp = $this->client($p)->asForm()->post($url, $params);
+    $resp = $c->client()->asForm()->post($url, $params);
 
-        $data = $resp->json();
-        if (!$resp->successful() || !is_array($data)) {
-            return $this->errorResult($p, $url, 'POST', $params, $resp->body(), $resp->status());
-        }
-
-        if (!empty($data['errors'])) {
-            return $this->errorResult($p, $url, 'POST', $params, $data, $resp->status(), $this->flattenErrors($data['errors']));
-        }
-
-        $remoteId = (string)($data['id'] ?? '');
-        if ($remoteId === '' || $remoteId === '0') {
-            return $this->errorResult($p, $url, 'POST', $params, $data, $resp->status(), 'WebX: missing order id, queued.');
-        }
-
-        return [
-            'ok' => true,
-            'retryable' => false,
-            'status' => 'inprogress',
-            'remote_id' => $remoteId,
-            'request' => [
-                'url' => $url,
-                'method' => 'POST',
-                'params' => $params,
-                'http_status' => $resp->status(),
-            ],
-            'response_raw' => $data,
-            'response_ui' => [
-                'type' => 'success',
-                'message' => 'Order submitted',
-                'reference_id' => $remoteId,
-            ],
-        ];
+    if (!$resp->successful()) {
+        $body = (string) $resp->body();
+        $snippet = trim(substr($body, 0, 600));
+        throw new \RuntimeException('WebX HTTP ' . $resp->status() . ': ' . ($snippet !== '' ? $snippet : 'empty_body'));
     }
+
+    $data = $resp->json();
+    if (!is_array($data)) {
+        $body = (string) $resp->body();
+        $snippet = trim(substr($body, 0, 600));
+        throw new \RuntimeException('WebX: Invalid JSON. First bytes: ' . ($snippet !== '' ? $snippet : 'empty_body'));
+    }
+
+    if (!empty($data['errors'])) {
+        $msg = $this->flattenErrors($data['errors'] ?? []);
+        throw new \RuntimeException($msg ?: 'WebX: API error');
+    }
+
+    return $data;
+}
+
 
     private function get(ApiProvider $p, string $route, array $params = []): array
-    {
-        $url = rtrim($this->apiBase($p), '/') . '/' . ltrim($route, '/');
+{
+    $c = $this->client($p);
+    $url = $c->url($route);
 
-        $params['username'] = (string)$p->username;
+    $params['username'] = (string) $p->username;
 
-        $resp = $this->client($p)->get($url, $params);
-        $data = $resp->json();
+    $resp = $c->client()->get($url, $params);
 
-        if (!$resp->successful() || !is_array($data)) {
-            return $this->errorResult($p, $url, 'GET', $params, $resp->body(), $resp->status());
-        }
-
-        if (!empty($data['errors'])) {
-            return $this->errorResult($p, $url, 'GET', $params, $data, $resp->status(), $this->flattenErrors($data['errors']));
-        }
-
-        $st = (int)($data['status'] ?? 1);
-        $mapped = match ($st) {
-            4 => 'success',
-            3 => 'rejected',
-            2 => 'cancelled',
-            0 => 'waiting',
-            default => 'inprogress',
-        };
-
-        return [
-            'ok' => true,
-            'retryable' => false,
-            'status' => $mapped,
-            'remote_id' => (string)($data['id'] ?? ''),
-            'request' => [
-                'url' => $url,
-                'method' => 'GET',
-                'params' => $params,
-                'http_status' => $resp->status(),
-            ],
-            'response_raw' => $data,
-            'response_ui' => [
-                'type' => $mapped === 'success' ? 'success' : ($mapped === 'rejected' ? 'error' : 'info'),
-                'message' => (string)($data['response'] ?? ($mapped === 'success' ? 'Result available' : 'In progress')),
-                'reference_id' => (string)($data['id'] ?? ''),
-                'webx_status' => $st,
-                'result_text' => (string)($data['response'] ?? ''),
-            ],
-        ];
+    if (!$resp->successful()) {
+        $body = (string) $resp->body();
+        $snippet = trim(substr($body, 0, 600));
+        throw new \RuntimeException('WebX HTTP ' . $resp->status() . ': ' . ($snippet !== '' ? $snippet : 'empty_body'));
     }
+
+    $data = $resp->json();
+    if (!is_array($data)) {
+        $body = (string) $resp->body();
+        $snippet = trim(substr($body, 0, 600));
+        throw new \RuntimeException('WebX: Invalid JSON. First bytes: ' . ($snippet !== '' ? $snippet : 'empty_body'));
+    }
+
+    if (!empty($data['errors'])) {
+        $msg = $this->flattenErrors($data['errors'] ?? []);
+        throw new \RuntimeException($msg ?: 'WebX: API error');
+    }
+
+    return $data;
+}
 
     // ===== PLACE =====
 

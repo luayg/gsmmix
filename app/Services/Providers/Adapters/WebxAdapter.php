@@ -9,6 +9,8 @@ use App\Models\RemoteServerService;
 use App\Services\Providers\ProviderAdapterInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use App\Services\Api\WebxClient;
+
 
 class WebxAdapter implements ProviderAdapterInterface
 {
@@ -23,11 +25,11 @@ class WebxAdapter implements ProviderAdapterInterface
     }
 
     public function fetchBalance(ApiProvider $provider): float
-    {
-        $info = $this->call($provider, ''); // GET {url}/api/
-        $balance = $info['balance'] ?? 0;
-        return $this->toFloat($balance);
-    }
+{
+    $info = WebxClient::fromProvider($provider)->request('GET', '', [], false);
+    $balance = $info['balance'] ?? 0;
+    return $this->toFloat($balance);
+}
 
     public function syncCatalog(ApiProvider $provider, string $kind): int
     {

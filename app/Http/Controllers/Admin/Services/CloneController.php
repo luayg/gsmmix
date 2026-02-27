@@ -104,7 +104,8 @@ class CloneController extends Controller
                 'price'             => (float)  ($s->price ?? 0),
                 'group_name'        => (string) ($s->group_name ?? ''),
                 'info'      => (string)($s->info ?? ''),         // ✅ ADDED
-                'allow_extensions'  => $allowExt,
+                'allowed_extensions' => $allowExt,
+                'allow_extensions'   => $allowExt, // legacy (اختياري)
                 'format'            => $formatHint,
                 'active'            => (int) ($s->active ?? 1),
                 'allow_bulk'        => (int) ($s->allow_bulk ?? 0),

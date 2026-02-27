@@ -48,4 +48,17 @@ class RemoteFileService extends Model
     {
         return $this->price;
     }
+    /**
+ * Unified: allowed_extensions (canonical)
+ * + legacy aliases for older UI code paths.
+ */
+public function getAllowExtensionsAttribute($value = null)
+{
+    return $this->allowed_extensions ?? null;
+}
+
+public function getAllowExtensionAttribute($value = null)
+{
+    return $this->allowed_extensions ?? null;
+}
 }
