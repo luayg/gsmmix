@@ -109,12 +109,12 @@ class WebxOrderGateway
 
     private function flattenErrors($errors): string
     {
-        if (!is_array($errors) || empty($errors)) return 'could_not_connect_to_api';
+        if (!is_array($errors) || empty($errors)) return 'provider_error';
         $messages = [];
         foreach ($errors as $err) {
             $messages[] = is_array($err) ? implode(', ', $err) : (string)$err;
         }
-        return trim(implode(', ', array_filter($messages)));
+        return trim(implode(' | ', array_filter($messages)));
     }
 
     private function errorResult(ApiProvider $p, string $url, string $method, array $params, $raw, int $httpStatus = 0, string $msg = 'Temporary provider error, queued.'): array
@@ -132,6 +132,24 @@ class WebxOrderGateway
             ],
             'response_raw' => is_array($raw) ? $raw : ['raw' => (string)$raw, 'http_status' => $httpStatus],
             'response_ui' => ['type' => 'queued', 'message' => $msg],
+        ];
+    }
+
+    private function rejectResult(ApiProvider $p, string $url, string $method, array $params, $raw, int $httpStatus = 0, string $msg = 'Rejected'): array
+    {
+        return [
+            'ok' => false,
+            'retryable' => false,
+            'status' => 'rejected',
+            'remote_id' => null,
+            'request' => [
+                'url' => $url,
+                'method' => $method,
+                'params' => $params,
+                'http_status' => $httpStatus,
+            ],
+            'response_raw' => is_array($raw) ? $raw : ['raw' => (string)$raw, 'http_status' => $httpStatus],
+            'response_ui' => ['type' => 'error', 'message' => $msg],
         ];
     }
 
@@ -202,10 +220,8 @@ class WebxOrderGateway
      */
     private function normalizeWebxStatus(array $data): array
     {
-        // 1) status (string token OR numeric string)
         $rawStatus = $data['status'] ?? $data['order_status'] ?? $data['state'] ?? $data['result_status'] ?? null;
 
-        // If numeric (even if string), map like DHRU: 4 success, 3 rejected, 0/1/2 inprogress
         if ($rawStatus !== null && is_numeric($rawStatus)) {
             $stInt = (int)$rawStatus;
             if ($stInt === 4) $status = 'success';
@@ -226,10 +242,9 @@ class WebxOrderGateway
             }
         }
 
-        // 2) result HTML/text: provider may use "response" (your case) or "result_text"
         $resultText = (string)(
             $data['result_text'] ??
-            $data['response'] ??       // ✅ your provider uses this
+            $data['response'] ??
             $data['result'] ??
             $data['reply'] ??
             $data['message'] ??
@@ -238,7 +253,6 @@ class WebxOrderGateway
 
         $items = $data['result_items'] ?? null;
 
-        // If we are still inprogress but result exists -> mark success
         if ($status === 'inprogress') {
             if (trim($resultText) !== '' || (is_array($items) && !empty($items))) {
                 $status = 'success';
@@ -250,12 +264,8 @@ class WebxOrderGateway
             'message' => ($status === 'success') ? 'Result available' : (($status === 'rejected') ? 'Rejected' : 'In progress'),
         ];
 
-        if (trim($resultText) !== '') {
-            $ui['result_text'] = $resultText;
-        }
-        if (is_array($items) && !empty($items)) {
-            $ui['result_items'] = $items;
-        }
+        if (trim($resultText) !== '') $ui['result_text'] = $resultText;
+        if (is_array($items) && !empty($items)) $ui['result_items'] = $items;
 
         return [$status, $ui];
     }
@@ -335,6 +345,13 @@ class WebxOrderGateway
         }
     }
 
+    /**
+     * ✅ FINAL FIX for file upload:
+     * - Try multiple candidate multipart field names until one works.
+     * - If provider returns 4xx validation ("field is required"), try next candidate.
+     * - If provider returns other 4xx => reject.
+     * - If 5xx/network => waiting.
+     */
     public function placeFileOrder(ApiProvider $p, FileOrder $order): array
     {
         $serviceId = trim((string)($order->service?->remote_id ?? ''));
@@ -363,68 +380,118 @@ class WebxOrderGateway
             'service_id' => $serviceId,
             'comments'   => (string)($order->comments ?? ''),
         ];
-
         $params = array_merge($params, $this->prepareFields($order));
 
-        $fieldName = trim((string) data_get($p, 'params.file_field', 'device'));
-        if ($fieldName === '') $fieldName = 'device';
+        $preferred = trim((string) data_get($p, 'params.file_field', 'device'));
+        if ($preferred === '') $preferred = 'device';
 
-        try {
-            $resp = $c->postMultipart('file-orders', array_merge(['username' => (string)$p->username], $params), $fieldName, $raw, $filename);
-            $data = $resp->json();
+        $candidates = array_values(array_unique(array_filter([
+            $preferred,
+            'device',
+            'Device',
+            'file',
+            'File',
+            'upload',
+            'attachment',
+        ])));
 
-            // fallback to "file"
-            if ((!$resp->successful() || !is_array($data)) && $fieldName !== 'file') {
-                $resp2 = $c->postMultipart('file-orders', array_merge(['username' => (string)$p->username], $params), 'file', $raw, $filename);
-                $data2 = $resp2->json();
-                if ($resp2->successful() && is_array($data2)) {
-                    $resp = $resp2;
-                    $data = $data2;
-                    $fieldName = 'file';
+        $lastStatus = 0;
+        $lastBody = '';
+        $lastJson = null;
+
+        foreach ($candidates as $fieldName) {
+            try {
+                $resp = $c->postMultipart(
+                    'file-orders',
+                    array_merge(['username' => (string)$p->username], $params),
+                    $fieldName,
+                    $raw,
+                    $filename
+                );
+
+                $lastStatus = (int)$resp->status();
+                $lastBody = (string)$resp->body();
+                $lastJson = $resp->json();
+
+                // Success with JSON
+                if ($resp->successful() && is_array($lastJson)) {
+                    if (!empty($lastJson['errors'])) {
+                        $msg = $this->flattenErrors($lastJson['errors']);
+                        return $this->rejectResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], $lastJson, $lastStatus, $msg ?: 'Rejected');
+                    }
+
+                    $remoteId = (string)($lastJson['id'] ?? $lastJson['order_id'] ?? '');
+                    if ($remoteId === '' || $remoteId === '0') {
+                        return $this->errorResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], $lastJson, $lastStatus, 'Temporary provider error, queued.');
+                    }
+
+                    return [
+                        'ok' => true,
+                        'retryable' => false,
+                        'status' => 'inprogress',
+                        'remote_id' => $remoteId,
+                        'request' => ['url' => $url, 'method' => 'POST', 'params' => $params + ['_file_field' => $fieldName], 'http_status' => $lastStatus],
+                        'response_raw' => $lastJson,
+                        'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
+                    ];
                 }
-            }
 
-            if (!$resp->successful() || !is_array($data)) {
-                return $this->errorResult(
-                    $p,
-                    $url,
-                    'POST',
-                    $params + ['_file_field' => $fieldName],
-                    ['raw' => (string)$resp->body()],
-                    $resp->status(),
-                    'Temporary provider error, queued.'
-                );
-            }
+                // 4xx: try next candidate ONLY if it's clearly "field required"
+                if ($lastStatus >= 400 && $lastStatus < 500) {
+                    $bodyL = strtolower($lastBody);
+                    if (str_contains($bodyL, 'field is required') || str_contains($bodyL, 'required')) {
+                        continue;
+                    }
 
-            if (!empty($data['errors'])) {
-                return $this->errorResult(
-                    $p,
-                    $url,
-                    'POST',
-                    $params + ['_file_field' => $fieldName],
-                    $data,
-                    $resp->status(),
-                    'Temporary provider error, queued.'
-                );
-            }
+                    // otherwise reject
+                    return $this->rejectResult(
+                        $p,
+                        $url,
+                        'POST',
+                        $params + ['_file_field' => $fieldName],
+                        is_array($lastJson) ? $lastJson : ['raw' => $lastBody],
+                        $lastStatus,
+                        'Rejected (file upload)'
+                    );
+                }
 
-            $remoteId = (string)($data['id'] ?? $data['order_id'] ?? '');
-            if ($remoteId === '' || $remoteId === '0') {
-                return $this->errorResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], $data, $resp->status(), 'Temporary provider error, queued.');
-            }
+                // 5xx => waiting
+                if ($lastStatus >= 500) {
+                    return $this->errorResult(
+                        $p,
+                        $url,
+                        'POST',
+                        $params + ['_file_field' => $fieldName],
+                        is_array($lastJson) ? $lastJson : ['raw' => $lastBody],
+                        $lastStatus,
+                        'Temporary provider error, queued.'
+                    );
+                }
 
-            return [
-                'ok' => true,
-                'retryable' => false,
-                'status' => 'inprogress',
-                'remote_id' => $remoteId,
-                'request' => ['url' => $url, 'method' => 'POST', 'params' => $params + ['_file_field' => $fieldName], 'http_status' => $resp->status()],
-                'response_raw' => $data,
-                'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
-            ];
-        } catch (\Throwable $e) {
-            return $this->errorResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], ['exception' => $e->getMessage()], 0);
+            } catch (\Throwable $e) {
+                // try next field name
+                $lastStatus = 0;
+                $lastBody = $e->getMessage();
+                $lastJson = ['exception' => $e->getMessage()];
+                continue;
+            }
         }
+
+        // All candidates failed -> reject with last known message
+        $msg = 'Rejected: file field mismatch';
+        if (stripos($lastBody, 'Device field is required') !== false) {
+            $msg = 'Rejected: provider did not accept file field name';
+        }
+
+        return $this->rejectResult(
+            $p,
+            $url,
+            'POST',
+            $params + ['_file_field_tried' => $candidates],
+            is_array($lastJson) ? $lastJson : ['raw' => $lastBody],
+            $lastStatus,
+            $msg
+        );
     }
 
     // ===== GET (NORMALIZED) =====
