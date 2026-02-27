@@ -40,8 +40,7 @@ class ProviderManager
             $provider->save();
             $result['balance'] = $balance;
         } catch (\Throwable $e) {
-            $short = $this->shortProviderError($e);
-            $result['errors'][] = 'Balance: ' . $short;
+            $result['errors'][] = 'Balance: ' . $this->shortProviderError($e);
 
             // keep detailed error in logs only
             Log::warning('Fetch balance failed', [
@@ -118,42 +117,33 @@ class ProviderManager
     private function shortProviderError(\Throwable $e): string
     {
         $msg = trim((string) $e->getMessage());
+        $m = strtolower($msg);
 
-        // If our WebxClient already produced the short messages, keep them.
-        if ($msg !== '' && (
-            str_contains($msg, 'IP BLOCKED')
-            || str_contains($msg, 'ACCESS DENIED')
-            || str_contains($msg, 'Provider unavailable')
-            || str_contains($msg, 'Connection failed')
-            || str_contains($msg, 'RATE LIMITED')
-        )) {
+        // If already our desired short msg
+        if ($msg === 'IP BLOCKED - Reset Provider IP') {
             return $msg;
         }
 
-        // Generic compression for ANY adapter that throws Laravel-like message:
-        // "HTTP request returned status code 503: <!DOCTYPE html>..."
-        $m = strtolower($msg);
-
-        if (str_contains($m, 'status code 503') || str_contains($m, 'http 503')) {
-            return 'IP BLOCKED (HTTP 503). Provider رفض اتصال السيرفر. اعمل Reset/Whitelist للـ IP.';
+        // Any typical "blocked" / 503 HTML / denied / timeout -> same short msg
+        if (
+            str_contains($m, 'status code 503') ||
+            str_contains($m, 'http 503') ||
+            str_contains($m, 'service unavailable') ||
+            str_contains($m, '<!doctype html') ||
+            str_contains($m, '<html') ||
+            str_contains($m, 'cloudflare') ||
+            str_contains($m, 'forbidden') ||
+            str_contains($m, 'unauthorized') ||
+            str_contains($m, 'connection refused') ||
+            str_contains($m, 'could not resolve') ||
+            str_contains($m, 'timed out') ||
+            str_contains($m, 'timeout')
+        ) {
+            return 'IP BLOCKED - Reset Provider IP';
         }
 
-        if (str_contains($m, 'status code 403') || str_contains($m, 'http 403') || str_contains($m, 'forbidden')) {
-            return 'ACCESS DENIED (HTTP 403). Provider رفض الطلب (ممكن IP غير مسموح).';
-        }
-
-        if (str_contains($m, 'status code 401') || str_contains($m, 'http 401') || str_contains($m, 'unauthorized')) {
-            return 'ACCESS DENIED (HTTP 401). تحقق من بيانات الدخول/IP.';
-        }
-
-        if (str_contains($m, 'connection refused') || str_contains($m, 'could not resolve') || str_contains($m, 'timeout')) {
-            return 'Connection failed. Provider may be blocking your server IP.';
-        }
-
-        // fallback: keep it short (max 160 chars)
-        if ($msg === '') return 'Provider error.';
-        if (mb_strlen($msg) > 160) return mb_substr($msg, 0, 160) . '...';
-        return $msg;
+        // fallback (still short)
+        return 'PROVIDER ERROR';
     }
 
     private function isNoFileServiceActive(string $msg): bool

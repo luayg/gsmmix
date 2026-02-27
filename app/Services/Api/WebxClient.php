@@ -49,7 +49,7 @@ class WebxClient
             'Accept'          => 'application/json,text/plain,*/*',
             'Auth-Key'        => $this->authKey(),
             'User-Agent'      => 'GsmMix/1.0 (+Laravel WebX Client)',
-            'Accept-Language' => 'en-US,en;q=0.9,ar;q=0.8',
+            'Accept-Language' => 'en-US,en;q=0.9',
         ])->timeout(60)->retry(2, 500);
     }
 
@@ -97,7 +97,8 @@ class WebxClient
             }
 
             if (!empty($data['errors'])) {
-                throw new \RuntimeException('Provider error: ' . $this->flattenErrors($data['errors']));
+                // Keep it short as well
+                throw new \RuntimeException('PROVIDER ERROR');
             }
 
             return $data;
@@ -116,12 +117,16 @@ class WebxClient
 
             throw new \RuntimeException($this->shortHttpMessage($status, $ct, $body));
         } catch (ConnectionException $e) {
-            // Network / refused / DNS / timeout
-            throw new \RuntimeException('Connection failed. Provider may be blocking your server IP.');
+            throw new \RuntimeException('IP BLOCKED - Reset Provider IP');
         } catch (\Throwable $e) {
-            // Any other
             $msg = trim((string) $e->getMessage());
-            throw new \RuntimeException($msg !== '' ? $msg : 'Unknown provider error.');
+            if ($msg === '') {
+                throw new \RuntimeException('PROVIDER ERROR');
+            }
+            if (stripos($msg, 'status code 503') !== false) {
+                throw new \RuntimeException('IP BLOCKED - Reset Provider IP');
+            }
+            throw new \RuntimeException('PROVIDER ERROR');
         }
     }
 
@@ -136,49 +141,31 @@ class WebxClient
             ->post($url, $params);
     }
 
-    private function flattenErrors($errors): string
-    {
-        if (!is_array($errors) || empty($errors)) return 'could_not_connect_to_api';
-        $messages = [];
-        foreach ($errors as $error) {
-            $messages[] = is_array($error) ? implode(', ', $error) : (string) $error;
-        }
-        return trim(implode(', ', array_filter($messages)));
-    }
-
     private function shortHttpMessage(int $status, string $contentType, string $body): string
     {
         $bodyL = strtolower($body);
         $isHtml = str_contains($contentType, 'text/html') || str_contains($bodyL, '<!doctype html') || str_contains($bodyL, '<html');
 
-        // This is your exact case: 503 HTML page (LiteSpeed/host/WAF/whitelist)
+        // Your exact IP whitelist case: 503 HTML page
         if ($status === 503 && $isHtml) {
-            return 'IP BLOCKED (HTTP 503). Provider رفض اتصال السيرفر. اعمل Reset/Whitelist للـ IP.';
+            return 'IP BLOCKED - Reset Provider IP';
         }
 
-        // Common "blocked/denied" cases
+        // Generic: treat access denied as IP blocked (short)
         if (in_array($status, [401, 403], true)) {
-            return 'ACCESS DENIED (HTTP ' . $status . '). Provider رفض الطلب (ممكن IP غير مسموح).';
+            return 'IP BLOCKED - Reset Provider IP';
         }
 
-        // Rate limit / WAF sometimes
+        // Rate limit sometimes behaves like a block
         if ($status === 429) {
-            return 'RATE LIMITED (HTTP 429). Provider قيّد الطلبات (قد يكون WAF/IP).';
+            return 'IP BLOCKED - Reset Provider IP';
         }
 
-        // If HTML returned for any 4xx/5xx, treat as blocked/unavailable (short)
-        if ($isHtml && $status >= 400) {
-            return 'Provider unavailable or blocking IP (HTTP ' . $status . ').';
+        // Any 5xx with HTML: block/unavailable -> same short msg
+        if ($status >= 500 && $isHtml) {
+            return 'IP BLOCKED - Reset Provider IP';
         }
 
-        if ($status >= 500) {
-            return 'Provider server error (HTTP ' . $status . ').';
-        }
-
-        if ($status >= 400) {
-            return 'Provider request failed (HTTP ' . $status . ').';
-        }
-
-        return 'Provider request failed.';
+        return 'PROVIDER ERROR';
     }
 }
