@@ -40,9 +40,10 @@ class ProviderManager
             $provider->save();
             $result['balance'] = $balance;
         } catch (\Throwable $e) {
-            $msg = '[' . get_class($e) . '] ' . $e->getMessage();
-            $result['errors'][] = 'Balance: ' . $msg;
+            $short = $this->shortProviderError($e);
+            $result['errors'][] = 'Balance: ' . $short;
 
+            // keep detailed error in logs only
             Log::warning('Fetch balance failed', [
                 'provider_id' => $provider->id,
                 'type' => $provider->type,
@@ -77,34 +78,32 @@ class ProviderManager
                 $result['catalog'][$kind] = ['ok' => true, 'count' => (int)$count];
                 $syncedAny = true;
             } catch (\Throwable $e) {
-                $msg = '[' . get_class($e) . '] ' . (string) $e->getMessage();
+                $short = $this->shortProviderError($e);
 
-                // ✅ FILE not active: warning only, do NOT stop sync
-                if ($kind === 'file' && $this->isNoFileServiceActive($msg)) {
-                    $result['warnings'][] = 'No File Service Active in your account (skipped).';
+                // FILE not active: warning only
+                if ($kind === 'file' && $this->isNoFileServiceActive($short)) {
+                    $result['warnings'][] = 'No File Service Active (skipped).';
                     $result['catalog'][$kind] = ['ok' => false, 'count' => 0, 'note' => 'skipped'];
-
-                    // optional: disable sync_file to avoid repeating
                     $provider->sync_file = 0;
                     $provider->save();
-
                     continue;
                 }
 
-                $result['errors'][] = strtoupper($kind) . ': ' . $msg;
-                $result['catalog'][$kind] = ['ok' => false, 'count' => 0, 'error' => $msg];
+                $result['errors'][] = strtoupper($kind) . ': ' . $short;
+                $result['catalog'][$kind] = ['ok' => false, 'count' => 0, 'error' => $short];
 
+                // detailed error in logs only
                 Log::error('Catalog sync failed', [
                     'provider_id' => $provider->id,
                     'type' => $provider->type,
                     'kind' => $kind,
                     'error_class' => get_class($e),
-                    'error' => (string)$e->getMessage(),
+                    'error' => $e->getMessage(),
                 ]);
             }
         }
 
-        // 3) synced = true if any catalog succeeded (IMEI or SERVER or FILE)
+        // 3) synced = true if any catalog succeeded
         $provider->synced = $syncedAny ? 1 : 0;
         $provider->save();
 
@@ -114,6 +113,47 @@ class ProviderManager
         $result['balance'] = (float) $provider->balance;
 
         return $result;
+    }
+
+    private function shortProviderError(\Throwable $e): string
+    {
+        $msg = trim((string) $e->getMessage());
+
+        // If our WebxClient already produced the short messages, keep them.
+        if ($msg !== '' && (
+            str_contains($msg, 'IP BLOCKED')
+            || str_contains($msg, 'ACCESS DENIED')
+            || str_contains($msg, 'Provider unavailable')
+            || str_contains($msg, 'Connection failed')
+            || str_contains($msg, 'RATE LIMITED')
+        )) {
+            return $msg;
+        }
+
+        // Generic compression for ANY adapter that throws Laravel-like message:
+        // "HTTP request returned status code 503: <!DOCTYPE html>..."
+        $m = strtolower($msg);
+
+        if (str_contains($m, 'status code 503') || str_contains($m, 'http 503')) {
+            return 'IP BLOCKED (HTTP 503). Provider رفض اتصال السيرفر. اعمل Reset/Whitelist للـ IP.';
+        }
+
+        if (str_contains($m, 'status code 403') || str_contains($m, 'http 403') || str_contains($m, 'forbidden')) {
+            return 'ACCESS DENIED (HTTP 403). Provider رفض الطلب (ممكن IP غير مسموح).';
+        }
+
+        if (str_contains($m, 'status code 401') || str_contains($m, 'http 401') || str_contains($m, 'unauthorized')) {
+            return 'ACCESS DENIED (HTTP 401). تحقق من بيانات الدخول/IP.';
+        }
+
+        if (str_contains($m, 'connection refused') || str_contains($m, 'could not resolve') || str_contains($m, 'timeout')) {
+            return 'Connection failed. Provider may be blocking your server IP.';
+        }
+
+        // fallback: keep it short (max 160 chars)
+        if ($msg === '') return 'Provider error.';
+        if (mb_strlen($msg) > 160) return mb_substr($msg, 0, 160) . '...';
+        return $msg;
     }
 
     private function isNoFileServiceActive(string $msg): bool

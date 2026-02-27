@@ -17,15 +17,9 @@ class WebxClient
         return new self($provider);
     }
 
-    /**
-     * Base URL:
-     * - supports params.api_path (default "api")
-     * - avoids double "api" if provider.url already ends with /api or /api/v1 ...
-     */
     public function apiBase(): string
     {
         $apiPath = trim((string) data_get($this->provider, 'params.api_path', 'api'), '/');
-
         $base = rtrim((string) $this->provider->url, '/');
 
         // If already ends with "/api" or "/api/..."
@@ -36,10 +30,6 @@ class WebxClient
         return $base . '/' . $apiPath;
     }
 
-    /**
-     * Auth-Key:
-     * - supports params.auth_mode: bcrypt(default)/plain/md5/sha256
-     */
     public function authKey(): string
     {
         $mode = strtolower((string) data_get($this->provider, 'params.auth_mode', 'bcrypt'));
@@ -55,29 +45,23 @@ class WebxClient
 
     public function client(): PendingRequest
     {
-        // ممكن تساعد ضد بعض WAF، لكنها لن تتجاوز Cloudflare challenge الحقيقي
         return Http::withHeaders([
             'Accept'          => 'application/json,text/plain,*/*',
             'Auth-Key'        => $this->authKey(),
             'User-Agent'      => 'GsmMix/1.0 (+Laravel WebX Client)',
             'Accept-Language' => 'en-US,en;q=0.9,ar;q=0.8',
-        ])
-            ->timeout(60)
-            ->retry(2, 500);
+        ])->timeout(60)->retry(2, 500);
     }
 
     public function url(string $route): string
     {
         $base = rtrim($this->apiBase(), '/');
         $route = trim($route, '/');
-
         return $route === '' ? ($base . '/') : ($base . '/' . $route);
     }
 
     /**
-     * Unified request returning decoded JSON array or throws RuntimeException.
-     * - never uses ->throw() (حتى لا ترجع رسالة Laravel الافتراضية بدون سياق)
-     * - includes rich debugging info when 5xx/HTML occurs
+     * Returns decoded JSON array or throws RuntimeException with SHORT message.
      */
     public function request(string $method, string $route, array $params = [], bool $asForm = false): array
     {
@@ -100,58 +84,50 @@ class WebxClient
             };
 
             if (!$resp->successful()) {
+                $ct = strtolower((string) ($resp->header('content-type') ?? ''));
                 $body = (string) $resp->body();
-                throw new \RuntimeException($this->formatHttpFailure($url, $method, $params, $resp->status(), $body, $resp->headers()));
+                throw new \RuntimeException($this->shortHttpMessage($resp->status(), $ct, $body));
             }
 
             $data = $resp->json();
             if (!is_array($data)) {
+                $ct = strtolower((string) ($resp->header('content-type') ?? ''));
                 $body = (string) $resp->body();
-                throw new \RuntimeException($this->formatInvalidJson($url, $method, $params, $resp->status(), $body, $resp->headers()));
+                throw new \RuntimeException($this->shortHttpMessage($resp->status(), $ct, $body));
             }
 
             if (!empty($data['errors'])) {
-                $msg = $this->flattenErrors($data['errors']);
-                throw new \RuntimeException($this->formatApiErrors($url, $method, $params, $msg, $data));
+                throw new \RuntimeException('Provider error: ' . $this->flattenErrors($data['errors']));
             }
 
             return $data;
         } catch (RequestException $e) {
-            // لو في مكان ما رمى RequestException، نرجع برسالة غنية
             $status = 0;
+            $ct = '';
             $body = '';
-            $headers = [];
 
             try {
                 if ($e->response) {
                     $status = (int) $e->response->status();
+                    $ct = strtolower((string) ($e->response->header('content-type') ?? ''));
                     $body = (string) $e->response->body();
-                    $headers = (array) $e->response->headers();
                 }
             } catch (\Throwable $ignored) {}
 
-            throw new \RuntimeException(
-                "WebX RequestException [" . get_class($e) . "]: " . $this->formatHttpFailure($url, $method, $params, $status, $body, $headers)
-            );
+            throw new \RuntimeException($this->shortHttpMessage($status, $ct, $body));
         } catch (ConnectionException $e) {
-            throw new \RuntimeException(
-                "WebX ConnectionException [" . get_class($e) . "]: {$e->getMessage()} | url={$url} | ctx=" . $this->ctx()
-            );
+            // Network / refused / DNS / timeout
+            throw new \RuntimeException('Connection failed. Provider may be blocking your server IP.');
         } catch (\Throwable $e) {
-            // أي شيء آخر
-            throw new \RuntimeException(
-                "WebX Throwable [" . get_class($e) . "]: {$e->getMessage()} | url={$url} | ctx=" . $this->ctx()
-            );
+            // Any other
+            $msg = trim((string) $e->getMessage());
+            throw new \RuntimeException($msg !== '' ? $msg : 'Unknown provider error.');
         }
     }
 
-    /**
-     * Multipart POST helper (File Orders).
-     */
     public function postMultipart(string $route, array $params, string $fieldName, string $rawBytes, string $filename)
     {
         $url = $this->url($route);
-
         $params['username'] = (string) $this->provider->username;
 
         return $this->client()
@@ -162,113 +138,47 @@ class WebxClient
 
     private function flattenErrors($errors): string
     {
-        if (!is_array($errors) || empty($errors)) {
-            return 'could_not_connect_to_api';
-        }
-
+        if (!is_array($errors) || empty($errors)) return 'could_not_connect_to_api';
         $messages = [];
         foreach ($errors as $error) {
             $messages[] = is_array($error) ? implode(', ', $error) : (string) $error;
         }
-
-        return implode(', ', $messages);
+        return trim(implode(', ', array_filter($messages)));
     }
 
-    private function ctx(): string
+    private function shortHttpMessage(int $status, string $contentType, string $body): string
     {
-        $apiPath = (string) data_get($this->provider, 'params.api_path', 'api');
-        $authMode = (string) data_get($this->provider, 'params.auth_mode', 'bcrypt');
+        $bodyL = strtolower($body);
+        $isHtml = str_contains($contentType, 'text/html') || str_contains($bodyL, '<!doctype html') || str_contains($bodyL, '<html');
 
-        return json_encode([
-            'provider_id' => (int) ($this->provider->id ?? 0),
-            'type' => (string) ($this->provider->type ?? ''),
-            'url' => (string) ($this->provider->url ?? ''),
-            'api_path' => $apiPath,
-            'auth_mode' => $authMode,
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    }
-
-    private function shortenHeaders(array $headers): array
-    {
-        // نختصر الهيدرز للعرض: بعض الهيدرز كبيرة
-        $keep = ['server', 'date', 'content-type', 'cf-ray', 'cf-cache-status', 'set-cookie', 'location'];
-        $out = [];
-        foreach ($headers as $k => $v) {
-            $kl = strtolower((string)$k);
-            if (in_array($kl, $keep, true)) {
-                $out[$k] = $v;
-            }
-        }
-        return $out;
-    }
-
-    private function sniffHtmlBlock(string $body): ?string
-    {
-        $b = strtolower($body);
-
-        // مؤشرات Cloudflare/WAF شائعة
-        if (str_contains($b, 'cloudflare') || str_contains($b, 'cf-ray') || str_contains($b, 'attention required') || str_contains($b, 'just a moment')) {
-            return 'Detected Cloudflare/WAF HTML challenge. Use provider API domain that does NOT sit behind Cloudflare challenge, or whitelist your server IP, or disable challenge for /api.';
+        // This is your exact case: 503 HTML page (LiteSpeed/host/WAF/whitelist)
+        if ($status === 503 && $isHtml) {
+            return 'IP BLOCKED (HTTP 503). Provider رفض اتصال السيرفر. اعمل Reset/Whitelist للـ IP.';
         }
 
-        // 503 من origin لكن HTML
-        if (str_contains($b, '<!doctype html') || str_contains($b, '<html')) {
-            return 'HTML response returned (not JSON). Likely provider is down, blocked, or URL/api_path points to a website page not API.';
+        // Common "blocked/denied" cases
+        if (in_array($status, [401, 403], true)) {
+            return 'ACCESS DENIED (HTTP ' . $status . '). Provider رفض الطلب (ممكن IP غير مسموح).';
         }
 
-        return null;
-    }
+        // Rate limit / WAF sometimes
+        if ($status === 429) {
+            return 'RATE LIMITED (HTTP 429). Provider قيّد الطلبات (قد يكون WAF/IP).';
+        }
 
-    private function formatHttpFailure(string $url, string $method, array $params, int $status, string $body, array $headers): string
-    {
-        $snippet = trim(substr($body, 0, 1200));
-        $hint = $this->sniffHtmlBlock($body);
+        // If HTML returned for any 4xx/5xx, treat as blocked/unavailable (short)
+        if ($isHtml && $status >= 400) {
+            return 'Provider unavailable or blocking IP (HTTP ' . $status . ').';
+        }
 
-        $payload = [
-            'url' => $url,
-            'method' => $method,
-            'status' => $status,
-            'ctx' => json_decode($this->ctx(), true),
-            'headers' => $this->shortenHeaders($headers),
-            'hint' => $hint,
-            'body_snippet' => $snippet,
-            // لا نطبع authKey ولا api_key لأسباب أمان
-            'params_keys' => array_keys($params),
-        ];
+        if ($status >= 500) {
+            return 'Provider server error (HTTP ' . $status . ').';
+        }
 
-        return 'WebX HTTP failure: ' . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    }
+        if ($status >= 400) {
+            return 'Provider request failed (HTTP ' . $status . ').';
+        }
 
-    private function formatInvalidJson(string $url, string $method, array $params, int $status, string $body, array $headers): string
-    {
-        $snippet = trim(substr($body, 0, 1200));
-        $hint = $this->sniffHtmlBlock($body);
-
-        $payload = [
-            'url' => $url,
-            'method' => $method,
-            'status' => $status,
-            'ctx' => json_decode($this->ctx(), true),
-            'headers' => $this->shortenHeaders($headers),
-            'hint' => $hint,
-            'body_snippet' => $snippet,
-            'params_keys' => array_keys($params),
-        ];
-
-        return 'WebX invalid JSON: ' . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-    }
-
-    private function formatApiErrors(string $url, string $method, array $params, string $msg, array $data): string
-    {
-        $payload = [
-            'url' => $url,
-            'method' => $method,
-            'ctx' => json_decode($this->ctx(), true),
-            'error' => $msg,
-            'api_errors' => $data['errors'] ?? null,
-            'params_keys' => array_keys($params),
-        ];
-
-        return 'WebX API errors: ' . json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return 'Provider request failed.';
     }
 }
