@@ -40,10 +40,13 @@ class ProviderManager
             $provider->save();
             $result['balance'] = $balance;
         } catch (\Throwable $e) {
-            $result['errors'][] = 'Balance: ' . $e->getMessage();
+            $msg = '[' . get_class($e) . '] ' . $e->getMessage();
+            $result['errors'][] = 'Balance: ' . $msg;
+
             Log::warning('Fetch balance failed', [
                 'provider_id' => $provider->id,
                 'type' => $provider->type,
+                'error_class' => get_class($e),
                 'error' => $e->getMessage(),
             ]);
         }
@@ -74,7 +77,7 @@ class ProviderManager
                 $result['catalog'][$kind] = ['ok' => true, 'count' => (int)$count];
                 $syncedAny = true;
             } catch (\Throwable $e) {
-                $msg = (string) $e->getMessage();
+                $msg = '[' . get_class($e) . '] ' . (string) $e->getMessage();
 
                 // ✅ FILE not active: warning only, do NOT stop sync
                 if ($kind === 'file' && $this->isNoFileServiceActive($msg)) {
@@ -95,7 +98,8 @@ class ProviderManager
                     'provider_id' => $provider->id,
                     'type' => $provider->type,
                     'kind' => $kind,
-                    'error' => $msg,
+                    'error_class' => get_class($e),
+                    'error' => (string)$e->getMessage(),
                 ]);
             }
         }
