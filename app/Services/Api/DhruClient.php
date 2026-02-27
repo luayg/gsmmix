@@ -12,7 +12,8 @@ class DhruClient
         private string $endpoint,
         private string $username,
         private string $apiKey,
-        private string $requestFormat = 'JSON'
+        private string $requestFormat = 'JSON',
+        private ?ApiProvider $provider = null
     ) {}
 
     public static function fromProvider(ApiProvider $provider): self
@@ -24,7 +25,35 @@ class DhruClient
             $url .= '/api/index.php';
         }
 
-        return new self($url, (string)$provider->username, (string)$provider->api_key, 'JSON');
+        return new self(
+            $url,
+            (string)$provider->username,
+            (string)$provider->api_key,
+            'JSON',
+            $provider
+        );
+    }
+
+    private function httpOptions(): array
+    {
+        $timeout = (int) data_get($this->provider, 'params.timeout', 10);
+        $connect = (int) data_get($this->provider, 'params.connect_timeout', 5);
+        $retries = (int) data_get($this->provider, 'params.retries', 0);
+        $sleepMs = (int) data_get($this->provider, 'params.retry_sleep_ms', 200);
+
+        if ($timeout < 3) $timeout = 3;
+        if ($timeout > 30) $timeout = 30;
+
+        if ($connect < 1) $connect = 1;
+        if ($connect > 20) $connect = 20;
+
+        if ($retries < 0) $retries = 0;
+        if ($retries > 2) $retries = 2;
+
+        if ($sleepMs < 0) $sleepMs = 0;
+        if ($sleepMs > 2000) $sleepMs = 2000;
+
+        return [$timeout, $connect, $retries, $sleepMs];
     }
 
     public function accountInfo(): array
@@ -34,6 +63,7 @@ class DhruClient
 
     public function getAllServicesAndGroups(): array
     {
+        // some installs use imeiservicelist; keep your original behavior
         return $this->call('imeiservicelist');
     }
 
@@ -55,10 +85,17 @@ class DhruClient
             $payload['requestxml'] = $this->buildRequestXml($params);
         }
 
-        $resp = Http::asForm()
-            ->timeout(60)
-            ->retry(2, 500)
-            ->post($this->endpoint, $payload);
+        [$timeout, $connect, $retries, $sleepMs] = $this->httpOptions();
+
+        $req = Http::asForm()
+            ->connectTimeout($connect)
+            ->timeout($timeout);
+
+        if ($retries > 0) {
+            $req = $req->retry($retries, $sleepMs);
+        }
+
+        $resp = $req->post($this->endpoint, $payload);
 
         if (!$resp->successful()) {
             throw new ProviderApiException('dhru', $action, [
@@ -68,11 +105,6 @@ class DhruClient
         }
 
         $body = trim((string)$resp->body());
-\Log::info('DHRU RAW RESPONSE', [
-    'action' => $action,
-    'endpoint' => $this->endpoint,
-    'body_first_500' => substr($body, 0, 500),
-]);
 
         // DHRU returns JSON when requestformat=JSON
         $data = json_decode($body, true);

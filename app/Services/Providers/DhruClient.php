@@ -47,6 +47,37 @@ class DhruClient
     }
 
     /**
+     * Fast HTTP settings to avoid PHP max_execution_time (60s) on web sync.
+     * You can override in provider.params:
+     *  - timeout (seconds)          default 10
+     *  - connect_timeout (seconds)  default 5
+     *  - retries (count)            default 0
+     *  - retry_sleep_ms (ms)        default 200
+     */
+    private function httpOptions(): array
+    {
+        $timeout = (int) data_get($this->provider, 'params.timeout', 10);
+        $connect = (int) data_get($this->provider, 'params.connect_timeout', 5);
+        $retries = (int) data_get($this->provider, 'params.retries', 0);
+        $sleepMs = (int) data_get($this->provider, 'params.retry_sleep_ms', 200);
+
+        // hard clamp to prevent crazy values
+        if ($timeout < 3) $timeout = 3;
+        if ($timeout > 30) $timeout = 30;
+
+        if ($connect < 1) $connect = 1;
+        if ($connect > 20) $connect = 20;
+
+        if ($retries < 0) $retries = 0;
+        if ($retries > 2) $retries = 2;
+
+        if ($sleepMs < 0) $sleepMs = 0;
+        if ($sleepMs > 2000) $sleepMs = 2000;
+
+        return [$timeout, $connect, $retries, $sleepMs];
+    }
+
+    /**
      * Common DHRU-style request:
      * - username
      * - apiaccesskey
@@ -67,14 +98,23 @@ class DhruClient
             $payload['parameters'] = base64_encode(json_encode($parameters, JSON_UNESCAPED_UNICODE));
         }
 
+        [$timeout, $connect, $retries, $sleepMs] = $this->httpOptions();
+
         try {
-            $res = Http::asForm()
-                ->timeout(60)
-                ->retry(2, 300) // 2 retries, 300ms backoff
-                ->post($this->endpoint(), $payload);
+            $req = Http::asForm()
+                ->connectTimeout($connect)
+                ->timeout($timeout);
+
+            if ($retries > 0) {
+                $req = $req->retry($retries, $sleepMs);
+            }
+
+            $res = $req->post($this->endpoint(), $payload);
 
             $json = $res->json();
-            return is_array($json) ? $json : ['ERROR' => [['MESSAGE' => 'Invalid JSON', 'RAW' => $res->body()]]];
+            return is_array($json)
+                ? $json
+                : ['ERROR' => [['MESSAGE' => 'Invalid JSON', 'RAW' => $res->body()]]];
         } catch (\Throwable $e) {
             return ['ERROR' => [['MESSAGE' => $e->getMessage()]]];
         }
