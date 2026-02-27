@@ -50,7 +50,6 @@ class WebxOrderGateway
             $name = trim((string)($def['name'] ?? ''));
             $validation = Str::lower(trim((string)($def['validation'] ?? '')));
 
-            // alias by label snake_case
             if ($name !== '') {
                 $slug = Str::snake(Str::of($name)->replaceMatches('/[^\pL\pN]+/u', ' ')->trim()->value());
                 if ($slug !== '' && !array_key_exists($slug, $fields)) {
@@ -58,7 +57,6 @@ class WebxOrderGateway
                 }
             }
 
-            // email aliases
             $nameLc = Str::lower($name);
             if (
                 $validation === 'email'
@@ -102,7 +100,6 @@ class WebxOrderGateway
         $fields = $this->enrichRequiredFieldAliases($fields, $order->service ?? null);
         $fields = $this->ensureEmailAliasFromValues($fields);
 
-        // unify email keys
         if (isset($fields['EMAIL']) && !isset($fields['email'])) $fields['email'] = (string)$fields['EMAIL'];
         if (isset($fields['email']) && !isset($fields['Email'])) $fields['Email'] = (string)$fields['email'];
         if (isset($fields['Email']) && !isset($fields['EMAIL'])) $fields['EMAIL'] = (string)$fields['Email'];
@@ -199,47 +196,40 @@ class WebxOrderGateway
     }
 
     /**
-     * Try to infer a normalized status/result from various WebX payload shapes.
-     * We keep this tolerant because WebX suppliers vary.
+     * ✅ FIXED:
+     * - supports numeric strings in "status" (e.g. "4" => success, "3" => rejected)
+     * - supports HTML in "response" field
      */
     private function normalizeWebxStatus(array $data): array
     {
-        $st = strtolower(trim((string)(
-            $data['status'] ??
-            $data['order_status'] ??
-            $data['state'] ??
-            $data['result_status'] ??
-            ''
-        )));
+        // 1) status (string token OR numeric string)
+        $rawStatus = $data['status'] ?? $data['order_status'] ?? $data['state'] ?? $data['result_status'] ?? null;
 
-        $status = 'inprogress';
-
-        $successTokens = ['success','successful','done','completed','complete','finished','delivered','approved'];
-        $rejectTokens  = ['rejected','reject','failed','fail','error','invalid','cancelled','canceled','cancel'];
-
-        if ($st !== '') {
-            if (in_array($st, $successTokens, true)) $status = 'success';
-            elseif (in_array($st, $rejectTokens, true)) $status = ($st === 'cancelled' || $st === 'canceled' || $st === 'cancel') ? 'cancelled' : 'rejected';
-        }
-
-        // Numeric style (common)
-        $stInt = null;
-        foreach (['status_code','status_id','STATUS','Status','code'] as $k) {
-            if (isset($data[$k]) && is_numeric($data[$k])) {
-                $stInt = (int)$data[$k];
-                break;
-            }
-        }
-        if ($stInt !== null) {
-            // align with DHRU-like meanings
+        // If numeric (even if string), map like DHRU: 4 success, 3 rejected, 0/1/2 inprogress
+        if ($rawStatus !== null && is_numeric($rawStatus)) {
+            $stInt = (int)$rawStatus;
             if ($stInt === 4) $status = 'success';
             elseif ($stInt === 3) $status = 'rejected';
-            elseif (in_array($stInt, [0,1,2], true)) $status = 'inprogress';
+            else $status = 'inprogress';
+        } else {
+            $st = strtolower(trim((string)$rawStatus));
+            $status = 'inprogress';
+
+            $successTokens = ['success','successful','done','completed','complete','finished','delivered','approved'];
+            $rejectTokens  = ['rejected','reject','failed','fail','error','invalid','cancelled','canceled','cancel'];
+
+            if ($st !== '') {
+                if (in_array($st, $successTokens, true)) $status = 'success';
+                elseif (in_array($st, $rejectTokens, true)) {
+                    $status = ($st === 'cancelled' || $st === 'canceled' || $st === 'cancel') ? 'cancelled' : 'rejected';
+                }
+            }
         }
 
-        // If provider included any “result” content, treat as success
+        // 2) result HTML/text: provider may use "response" (your case) or "result_text"
         $resultText = (string)(
             $data['result_text'] ??
+            $data['response'] ??       // ✅ your provider uses this
             $data['result'] ??
             $data['reply'] ??
             $data['message'] ??
@@ -247,14 +237,14 @@ class WebxOrderGateway
         );
 
         $items = $data['result_items'] ?? null;
+
+        // If we are still inprogress but result exists -> mark success
         if ($status === 'inprogress') {
             if (trim($resultText) !== '' || (is_array($items) && !empty($items))) {
-                // many suppliers return result without explicit status
                 $status = 'success';
             }
         }
 
-        // Build UI payload
         $ui = [
             'type' => ($status === 'success') ? 'success' : (($status === 'rejected') ? 'error' : 'info'),
             'message' => ($status === 'success') ? 'Result available' : (($status === 'rejected') ? 'Rejected' : 'In progress'),
@@ -376,17 +366,14 @@ class WebxOrderGateway
 
         $params = array_merge($params, $this->prepareFields($order));
 
-        // ✅ allow custom file field name per provider
         $fieldName = trim((string) data_get($p, 'params.file_field', 'device'));
         if ($fieldName === '') $fieldName = 'device';
 
         try {
-            // attempt #1
             $resp = $c->postMultipart('file-orders', array_merge(['username' => (string)$p->username], $params), $fieldName, $raw, $filename);
-
             $data = $resp->json();
 
-            // if failed, try fallback field name (common: "file")
+            // fallback to "file"
             if ((!$resp->successful() || !is_array($data)) && $fieldName !== 'file') {
                 $resp2 = $c->postMultipart('file-orders', array_merge(['username' => (string)$p->username], $params), 'file', $raw, $filename);
                 $data2 = $resp2->json();
@@ -398,11 +385,27 @@ class WebxOrderGateway
             }
 
             if (!$resp->successful() || !is_array($data)) {
-                return $this->errorResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], $resp->body(), $resp->status());
+                return $this->errorResult(
+                    $p,
+                    $url,
+                    'POST',
+                    $params + ['_file_field' => $fieldName],
+                    ['raw' => (string)$resp->body()],
+                    $resp->status(),
+                    'Temporary provider error, queued.'
+                );
             }
 
             if (!empty($data['errors'])) {
-                return $this->errorResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], $data, $resp->status(), 'Temporary provider error, queued.');
+                return $this->errorResult(
+                    $p,
+                    $url,
+                    'POST',
+                    $params + ['_file_field' => $fieldName],
+                    $data,
+                    $resp->status(),
+                    'Temporary provider error, queued.'
+                );
             }
 
             $remoteId = (string)($data['id'] ?? $data['order_id'] ?? '');
@@ -433,7 +436,6 @@ class WebxOrderGateway
 
         try {
             $data = $this->getRaw($p, 'imei-orders/' . $id);
-
             [$status, $ui] = $this->normalizeWebxStatus($data);
 
             return [
@@ -457,7 +459,6 @@ class WebxOrderGateway
 
         try {
             $data = $this->getRaw($p, 'server-orders/' . $id);
-
             [$status, $ui] = $this->normalizeWebxStatus($data);
 
             return [
@@ -481,7 +482,6 @@ class WebxOrderGateway
 
         try {
             $data = $this->getRaw($p, 'file-orders/' . $id);
-
             [$status, $ui] = $this->normalizeWebxStatus($data);
 
             return [
