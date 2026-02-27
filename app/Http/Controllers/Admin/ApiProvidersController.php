@@ -137,13 +137,24 @@ class ApiProvidersController extends Controller
         $result = $manager->sync($provider);
         $provider->refresh();
 
-        $msg = [];
-        if (!empty($result['errors'])) $msg[] = 'Sync finished with errors: ' . implode(' | ', $result['errors']);
-        else $msg[] = 'Sync done.';
-        if (!empty($result['warnings'])) $msg[] = implode(' | ', $result['warnings']);
-        $msg[] = 'Balance: $' . number_format((float)$provider->balance, 2);
+        // ✅ NEW: If errors exist, show ONLY the short error message and DO NOT show balance.
+        if (!empty($result['errors'])) {
+            // Prefer the IP blocked message if present
+            $msg = in_array('IP BLOCKED - Reset Provider IP', $result['errors'], true)
+                ? 'Sync finished with errors: IP BLOCKED - Reset Provider IP'
+                : ('Sync finished with errors: ' . implode(' | ', $result['errors']));
 
-        return redirect()->route('admin.apis.index')->with('ok', implode(' ', $msg));
+            return redirect()->route('admin.apis.index')->with('ok', $msg);
+        }
+
+        // ✅ Success path: keep balance display
+        $msg = 'Sync done.';
+        if (!empty($result['warnings'])) {
+            $msg .= ' ' . implode(' | ', $result['warnings']);
+        }
+        $msg .= ' Balance: $' . number_format((float)$provider->balance, 2);
+
+        return redirect()->route('admin.apis.index')->with('ok', $msg);
     }
 
     public function testBalance(ApiProvider $provider, ProviderManager $manager)

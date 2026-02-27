@@ -33,6 +33,9 @@ class ProviderManager
 
         $adapter = $this->factory->make($provider);
 
+        // Dedup flags
+        $ipBlockedSeen = false;
+
         // 1) Balance first — and ALWAYS try to save it
         try {
             $balance = (float) $adapter->fetchBalance($provider);
@@ -40,9 +43,18 @@ class ProviderManager
             $provider->save();
             $result['balance'] = $balance;
         } catch (\Throwable $e) {
-            $result['errors'][] = 'Balance: ' . $this->shortProviderError($e);
+            $short = $this->shortProviderError($e);
 
-            // keep detailed error in logs only
+            // Deduplicate IP blocked across balance + kinds
+            if ($short === 'IP BLOCKED - Reset Provider IP') {
+                if (!$ipBlockedSeen) {
+                    $result['errors'][] = $short;
+                    $ipBlockedSeen = true;
+                }
+            } else {
+                $this->addUniqueError($result['errors'], 'Balance: ' . $short);
+            }
+
             Log::warning('Fetch balance failed', [
                 'provider_id' => $provider->id,
                 'type' => $provider->type,
@@ -64,9 +76,9 @@ class ProviderManager
         if ($onlyKind) {
             $kinds[] = $onlyKind;
         } else {
-            if ($provider->sync_imei)  $kinds[] = 'imei';
+            if ($provider->sync_imei)   $kinds[] = 'imei';
             if ($provider->sync_server) $kinds[] = 'server';
-            if ($provider->sync_file)  $kinds[] = 'file';
+            if ($provider->sync_file)   $kinds[] = 'file';
         }
 
         $syncedAny = false;
@@ -88,10 +100,20 @@ class ProviderManager
                     continue;
                 }
 
-                $result['errors'][] = strtoupper($kind) . ': ' . $short;
+                // Always store per-kind catalog status (for UI if you use it)
                 $result['catalog'][$kind] = ['ok' => false, 'count' => 0, 'error' => $short];
 
-                // detailed error in logs only
+                // Deduplicate IP blocked across balance + kinds
+                if ($short === 'IP BLOCKED - Reset Provider IP') {
+                    if (!$ipBlockedSeen) {
+                        $result['errors'][] = $short;
+                        $ipBlockedSeen = true;
+                    }
+                } else {
+                    // Keep short and unique; don't spam many lines
+                    $this->addUniqueError($result['errors'], $short);
+                }
+
                 Log::error('Catalog sync failed', [
                     'provider_id' => $provider->id,
                     'type' => $provider->type,
@@ -114,17 +136,38 @@ class ProviderManager
         return $result;
     }
 
+    /**
+     * Add at most 2 unique errors (besides IP blocked).
+     */
+    private function addUniqueError(array &$errors, string $msg): void
+    {
+        $msg = trim($msg);
+        if ($msg === '') return;
+
+        // Do not duplicate
+        if (in_array($msg, $errors, true)) return;
+
+        // If IP blocked already present, don't add extra noise unless necessary.
+        if (in_array('IP BLOCKED - Reset Provider IP', $errors, true)) {
+            return;
+        }
+
+        // Limit noise: keep only first 2 messages
+        if (count($errors) >= 2) return;
+
+        $errors[] = $msg;
+    }
+
     private function shortProviderError(\Throwable $e): string
     {
         $msg = trim((string) $e->getMessage());
         $m = strtolower($msg);
 
-        // If already our desired short msg
         if ($msg === 'IP BLOCKED - Reset Provider IP') {
             return $msg;
         }
 
-        // Any typical "blocked" / 503 HTML / denied / timeout -> same short msg
+        // Treat typical block/unavailable as IP blocked (short)
         if (
             str_contains($m, 'status code 503') ||
             str_contains($m, 'http 503') ||
@@ -142,7 +185,6 @@ class ProviderManager
             return 'IP BLOCKED - Reset Provider IP';
         }
 
-        // fallback (still short)
         return 'PROVIDER ERROR';
     }
 
