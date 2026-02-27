@@ -27,9 +27,7 @@ class WebxOrderGateway
     }
 
     /**
-     * ✅ أهم خطوة: توليد aliases مثل DHRU:
-     * - يحوّل service_fields_1 إلى email إذا كان تعريف الحقل Email أو validation=email
-     * - ويضيف snake_case من اسم الحقل
+     * Generate aliases for required fields (email + snake_case based on label)
      */
     private function enrichRequiredFieldAliases(array $fields, $service): array
     {
@@ -55,7 +53,7 @@ class WebxOrderGateway
             $name = trim((string)($def['name'] ?? ''));
             $validation = Str::lower(trim((string)($def['validation'] ?? '')));
 
-            // alias باسم الحقل (snake_case)
+            // alias by label (snake_case)
             if ($name !== '') {
                 $slug = Str::snake(Str::of($name)->replaceMatches('/[^\pL\pN]+/u', ' ')->trim()->value());
                 if ($slug !== '' && !array_key_exists($slug, $fields)) {
@@ -63,28 +61,21 @@ class WebxOrderGateway
                 }
             }
 
-            // alias email
+            // email aliases
             $nameLc = Str::lower($name);
             if (
                 $validation === 'email'
                 || str_contains($nameLc, 'email')
                 || str_contains(Str::lower($input), 'email')
             ) {
-                if (!array_key_exists('email', $fields)) {
-                    $fields['email'] = $value;
-                }
-                if (!array_key_exists('EMAIL', $fields)) {
-                    $fields['EMAIL'] = $value;
-                }
+                if (!array_key_exists('email', $fields)) $fields['email'] = $value;
+                if (!array_key_exists('EMAIL', $fields)) $fields['EMAIL'] = $value;
             }
         }
 
         return $fields;
     }
 
-    /**
-     * ✅ fallback: لو ما عندنا custom_fields، اكتشف الإيميل من القيمة نفسها
-     */
     private function ensureEmailAliasFromValues(array $fields): array
     {
         if (array_key_exists('email', $fields) || array_key_exists('EMAIL', $fields) || array_key_exists('Email', $fields)) {
@@ -94,13 +85,12 @@ class WebxOrderGateway
         foreach ($fields as $k => $v) {
             $key = strtolower(trim((string)$k));
             $val = trim((string)$v);
-
             if ($val === '') continue;
 
             if (str_contains($key, 'email') || filter_var($val, FILTER_VALIDATE_EMAIL)) {
                 $fields['email'] = $val;
                 $fields['EMAIL'] = $val;
-                $fields['Email'] = $val; // ✅ بعض WebX يطلبها هكذا حرفيًا
+                $fields['Email'] = $val;
                 break;
             }
         }
@@ -108,34 +98,29 @@ class WebxOrderGateway
         return $fields;
     }
 
-    /**
-     * ✅ طبّق aliases على fields قبل الإرسال
-     */
     private function prepareFields($order): array
     {
         $fields = $this->normalizeFields($order);
         $fields = $this->enrichRequiredFieldAliases($fields, $order->service ?? null);
         $fields = $this->ensureEmailAliasFromValues($fields);
 
-        // ✅ توحيد email keys (email/EMAIL/Email)
-        if (isset($fields['EMAIL']) && !isset($fields['email'])) {
-            $fields['email'] = (string)$fields['EMAIL'];
-        }
-        if (isset($fields['email']) && !isset($fields['Email'])) {
-            $fields['Email'] = (string)$fields['email'];
-        }
-        if (isset($fields['Email']) && !isset($fields['email'])) {
-            $fields['email'] = (string)$fields['Email'];
-        }
-        if (isset($fields['Email']) && !isset($fields['EMAIL'])) {
-            $fields['EMAIL'] = (string)$fields['Email'];
-        }
+        // unify email keys (email/EMAIL/Email)
+        if (isset($fields['EMAIL']) && !isset($fields['email'])) $fields['email'] = (string)$fields['EMAIL'];
+        if (isset($fields['email']) && !isset($fields['Email'])) $fields['Email'] = (string)$fields['email'];
+        if (isset($fields['Email']) && !isset($fields['EMAIL'])) $fields['EMAIL'] = (string)$fields['Email'];
 
         return $fields;
     }
 
-    private function errorResult(ApiProvider $p, string $url, string $method, array $params, $raw, int $httpStatus = 0, string $msg = 'Temporary provider error, queued.'): array
-    {
+    private function errorResult(
+        ApiProvider $p,
+        string $url,
+        string $method,
+        array $params,
+        $raw,
+        int $httpStatus = 0,
+        string $msg = 'Temporary provider error, queued.'
+    ): array {
         return [
             'ok' => false,
             'retryable' => true,
@@ -162,7 +147,10 @@ class WebxOrderGateway
         return trim(implode(', ', array_filter($messages)));
     }
 
-    private function post(ApiProvider $p, string $route, array $params): array
+    /**
+     * Low-level POST that RETURNS RAW DATA OR THROWS.
+     */
+    private function postRaw(ApiProvider $p, string $route, array $params): array
     {
         $c = $this->client($p);
         $url = $c->url($route);
@@ -192,7 +180,10 @@ class WebxOrderGateway
         return $data;
     }
 
-    private function get(ApiProvider $p, string $route, array $params = []): array
+    /**
+     * Low-level GET that RETURNS RAW DATA OR THROWS.
+     */
+    private function getRaw(ApiProvider $p, string $route, array $params = []): array
     {
         $c = $this->client($p);
         $url = $c->url($route);
@@ -222,35 +213,86 @@ class WebxOrderGateway
         return $data;
     }
 
-    // ===== PLACE =====
+    // =========================
+    // PLACE (NOW RETURNS NORMALIZED RESULT)
+    // =========================
 
     public function placeImeiOrder(ApiProvider $p, ImeiOrder $order): array
     {
+        $c = $this->client($p);
+        $url = $c->url('imei-orders');
+
         $serviceId = trim((string)($order->service?->remote_id ?? ''));
         $imei = (string)($order->device ?? '');
 
-        $fields = $this->prepareFields($order);
-
-        return $this->post($p, 'imei-orders', array_merge([
+        $params = array_merge([
             'service_id' => $serviceId,
             'device'     => $imei,
             'comments'   => (string)($order->comments ?? ''),
-        ], $fields));
+        ], $this->prepareFields($order));
+
+        // ensure username is included (matches WebX requirements)
+        $params['username'] = (string)$p->username;
+
+        try {
+            $data = $this->postRaw($p, 'imei-orders', $params);
+
+            $remoteId = (string)($data['id'] ?? '');
+            if ($remoteId === '' || $remoteId === '0') {
+                return $this->errorResult($p, $url, 'POST', $params, $data, 200, 'WebX: missing order id, queued.');
+            }
+
+            return [
+                'ok' => true,
+                'retryable' => false,
+                'status' => 'inprogress',
+                'remote_id' => $remoteId,
+                'request' => ['url' => $url, 'method' => 'POST', 'params' => $params, 'http_status' => 200],
+                'response_raw' => $data,
+                'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
+            ];
+        } catch (\Throwable $e) {
+            return $this->errorResult($p, $url, 'POST', $params, ['exception' => $e->getMessage()], 0);
+        }
     }
 
     public function placeServerOrder(ApiProvider $p, ServerOrder $order): array
     {
+        $c = $this->client($p);
+        $url = $c->url('server-orders');
+
         $serviceId = trim((string)($order->service?->remote_id ?? ''));
         $qty = (int)($order->quantity ?? 1);
         if ($qty < 1) $qty = 1;
 
-        $fields = $this->prepareFields($order);
-
-        return $this->post($p, 'server-orders', array_merge([
+        $params = array_merge([
             'service_id' => $serviceId,
             'quantity'   => $qty,
             'comments'   => (string)($order->comments ?? ''),
-        ], $fields));
+        ], $this->prepareFields($order));
+
+        $params['username'] = (string)$p->username;
+
+        try {
+            $data = $this->postRaw($p, 'server-orders', $params);
+
+            $remoteId = (string)($data['id'] ?? '');
+            if ($remoteId === '' || $remoteId === '0') {
+                return $this->errorResult($p, $url, 'POST', $params, $data, 200, 'WebX: missing order id, queued.');
+            }
+
+            return [
+                'ok' => true,
+                'retryable' => false,
+                'status' => 'inprogress',
+                'remote_id' => $remoteId,
+                'request' => ['url' => $url, 'method' => 'POST', 'params' => $params, 'http_status' => 200],
+                'response_raw' => $data,
+                'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
+            ];
+        } catch (\Throwable $e) {
+            return $this->errorResult($p, $url, 'POST', $params, ['exception' => $e->getMessage()], 0);
+        }
     }
 
     public function placeFileOrder(ApiProvider $p, FileOrder $order): array
@@ -313,25 +355,107 @@ class WebxOrderGateway
                 'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
             ];
         } catch (\Throwable $e) {
-            // network/parsing/etc -> queue
             return $this->errorResult($p, $url, 'POST', $params, ['exception' => $e->getMessage()], 0);
         }
     }
 
-    // ===== GET =====
+    // =========================
+    // GET (normalized for sync commands)
+    // =========================
 
     public function getImeiOrder(ApiProvider $p, string $id): array
     {
-        return $this->get($p, 'imei-orders/' . $id);
+        $c = $this->client($p);
+        $url = $c->url('imei-orders/' . $id);
+
+        try {
+            $data = $this->getRaw($p, 'imei-orders/' . $id);
+
+            $st = strtolower(trim((string)($data['status'] ?? 'inprogress')));
+            if ($st === 'canceled') $st = 'cancelled';
+            if (!in_array($st, ['success','rejected','cancelled','inprogress','waiting'], true)) {
+                $st = 'inprogress';
+            }
+
+            return [
+                'ok' => true,
+                'retryable' => false,
+                'status' => $st,
+                'remote_id' => $id,
+                'request' => ['url' => $url, 'method' => 'GET', 'params' => ['username' => (string)$p->username], 'http_status' => 200],
+                'response_raw' => $data,
+                'response_ui' => [
+                    'type' => ($st === 'success') ? 'success' : (($st === 'rejected') ? 'error' : 'info'),
+                    'message' => (string)($data['message'] ?? 'Status fetched'),
+                    'reference_id' => $id,
+                ],
+            ];
+        } catch (\Throwable $e) {
+            return $this->errorResult($p, $url, 'GET', ['username' => (string)$p->username], ['exception' => $e->getMessage()], 0);
+        }
     }
 
     public function getServerOrder(ApiProvider $p, string $id): array
     {
-        return $this->get($p, 'server-orders/' . $id);
+        $c = $this->client($p);
+        $url = $c->url('server-orders/' . $id);
+
+        try {
+            $data = $this->getRaw($p, 'server-orders/' . $id);
+
+            $st = strtolower(trim((string)($data['status'] ?? 'inprogress')));
+            if ($st === 'canceled') $st = 'cancelled';
+            if (!in_array($st, ['success','rejected','cancelled','inprogress','waiting'], true)) {
+                $st = 'inprogress';
+            }
+
+            return [
+                'ok' => true,
+                'retryable' => false,
+                'status' => $st,
+                'remote_id' => $id,
+                'request' => ['url' => $url, 'method' => 'GET', 'params' => ['username' => (string)$p->username], 'http_status' => 200],
+                'response_raw' => $data,
+                'response_ui' => [
+                    'type' => ($st === 'success') ? 'success' : (($st === 'rejected') ? 'error' : 'info'),
+                    'message' => (string)($data['message'] ?? 'Status fetched'),
+                    'reference_id' => $id,
+                ],
+            ];
+        } catch (\Throwable $e) {
+            return $this->errorResult($p, $url, 'GET', ['username' => (string)$p->username], ['exception' => $e->getMessage()], 0);
+        }
     }
 
     public function getFileOrder(ApiProvider $p, string $id): array
     {
-        return $this->get($p, 'file-orders/' . $id);
+        $c = $this->client($p);
+        $url = $c->url('file-orders/' . $id);
+
+        try {
+            $data = $this->getRaw($p, 'file-orders/' . $id);
+
+            $st = strtolower(trim((string)($data['status'] ?? 'inprogress')));
+            if ($st === 'canceled') $st = 'cancelled';
+            if (!in_array($st, ['success','rejected','cancelled','inprogress','waiting'], true)) {
+                $st = 'inprogress';
+            }
+
+            return [
+                'ok' => true,
+                'retryable' => false,
+                'status' => $st,
+                'remote_id' => $id,
+                'request' => ['url' => $url, 'method' => 'GET', 'params' => ['username' => (string)$p->username], 'http_status' => 200],
+                'response_raw' => $data,
+                'response_ui' => [
+                    'type' => ($st === 'success') ? 'success' : (($st === 'rejected') ? 'error' : 'info'),
+                    'message' => (string)($data['message'] ?? 'Status fetched'),
+                    'reference_id' => $id,
+                ],
+            ];
+        } catch (\Throwable $e) {
+            return $this->errorResult($p, $url, 'GET', ['username' => (string)$p->username], ['exception' => $e->getMessage()], 0);
+        }
     }
 }
