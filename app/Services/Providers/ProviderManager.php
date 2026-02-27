@@ -28,6 +28,10 @@ class ProviderManager
 
         if ((int)$provider->active !== 1) {
             $result['errors'][] = 'Provider is inactive';
+            // ✅ must reflect disconnected state
+            $provider->synced = 0;
+            $provider->save();
+            $result['synced'] = false;
             return $result;
         }
 
@@ -36,7 +40,7 @@ class ProviderManager
         // Dedup flags
         $ipBlockedSeen = false;
 
-        // 1) Balance first — and ALWAYS try to save it
+        // 1) Balance first — and ALWAYS try to save it if available
         try {
             $balance = (float) $adapter->fetchBalance($provider);
             $provider->balance = $balance;
@@ -45,14 +49,11 @@ class ProviderManager
         } catch (\Throwable $e) {
             $short = $this->shortProviderError($e);
 
-            // Deduplicate IP blocked across balance + kinds
             if ($short === 'IP BLOCKED - Reset Provider IP') {
-                if (!$ipBlockedSeen) {
-                    $result['errors'][] = $short;
-                    $ipBlockedSeen = true;
-                }
+                $ipBlockedSeen = true;
+                $this->addUniqueError($result['errors'], $short);
             } else {
-                $this->addUniqueError($result['errors'], 'Balance: ' . $short);
+                $this->addUniqueError($result['errors'], 'PROVIDER ERROR');
             }
 
             Log::warning('Fetch balance failed', [
@@ -64,6 +65,7 @@ class ProviderManager
         }
 
         if ($balanceOnly) {
+            // ✅ NEW RULE: synced = YES only if NO errors at all
             $provider->synced = empty($result['errors']) ? 1 : 0;
             $provider->save();
             $this->refreshStats($provider);
@@ -81,37 +83,32 @@ class ProviderManager
             if ($provider->sync_file)   $kinds[] = 'file';
         }
 
-        $syncedAny = false;
-
         foreach ($kinds as $kind) {
             try {
                 $count = $adapter->syncCatalog($provider, $kind);
                 $result['catalog'][$kind] = ['ok' => true, 'count' => (int)$count];
-                $syncedAny = true;
             } catch (\Throwable $e) {
                 $short = $this->shortProviderError($e);
 
-                // FILE not active: warning only
+                // FILE not active: warning only (does not mean disconnected)
                 if ($kind === 'file' && $this->isNoFileServiceActive($short)) {
                     $result['warnings'][] = 'No File Service Active (skipped).';
                     $result['catalog'][$kind] = ['ok' => false, 'count' => 0, 'note' => 'skipped'];
+
+                    // optional: disable sync_file to avoid repeating
                     $provider->sync_file = 0;
                     $provider->save();
+
                     continue;
                 }
 
-                // Always store per-kind catalog status (for UI if you use it)
                 $result['catalog'][$kind] = ['ok' => false, 'count' => 0, 'error' => $short];
 
-                // Deduplicate IP blocked across balance + kinds
                 if ($short === 'IP BLOCKED - Reset Provider IP') {
-                    if (!$ipBlockedSeen) {
-                        $result['errors'][] = $short;
-                        $ipBlockedSeen = true;
-                    }
-                } else {
-                    // Keep short and unique; don't spam many lines
+                    $ipBlockedSeen = true;
                     $this->addUniqueError($result['errors'], $short);
+                } else {
+                    $this->addUniqueError($result['errors'], 'PROVIDER ERROR');
                 }
 
                 Log::error('Catalog sync failed', [
@@ -124,8 +121,10 @@ class ProviderManager
             }
         }
 
-        // 3) synced = true if any catalog succeeded
-        $provider->synced = $syncedAny ? 1 : 0;
+        // ✅ FINAL RULE YOU REQUESTED:
+        // Synced = YES only when CONNECTED and NO ERRORS.
+        // If IP blocked or any provider error happened -> Synced = NO.
+        $provider->synced = empty($result['errors']) ? 1 : 0;
         $provider->save();
 
         $this->refreshStats($provider);
@@ -137,23 +136,28 @@ class ProviderManager
     }
 
     /**
-     * Add at most 2 unique errors (besides IP blocked).
+     * Keep errors list minimal:
+     * - Prefer "IP BLOCKED - Reset Provider IP"
+     * - Otherwise show only "PROVIDER ERROR"
      */
     private function addUniqueError(array &$errors, string $msg): void
     {
         $msg = trim($msg);
         if ($msg === '') return;
 
-        // Do not duplicate
-        if (in_array($msg, $errors, true)) return;
-
-        // If IP blocked already present, don't add extra noise unless necessary.
+        // if IP blocked already there, don't add anything else
         if (in_array('IP BLOCKED - Reset Provider IP', $errors, true)) {
             return;
         }
 
-        // Limit noise: keep only first 2 messages
-        if (count($errors) >= 2) return;
+        // if adding IP blocked, replace others
+        if ($msg === 'IP BLOCKED - Reset Provider IP') {
+            $errors = [$msg];
+            return;
+        }
+
+        // only keep one generic error
+        if (!empty($errors)) return;
 
         $errors[] = $msg;
     }
