@@ -117,7 +117,6 @@ class WebxClient
 
     /**
      * Multipart POST helper (File Orders).
-     * Returns the raw HTTP Response (caller may parse json / handle errors).
      */
     public function postMultipart(string $route, array $params, string $fieldName, string $rawBytes, string $filename)
     {

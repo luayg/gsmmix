@@ -144,6 +144,15 @@
     'server' => 'Device',
     default  => 'Device',
   };
+
+  // ✅ NEW: Provider Debug (last request/response)
+  $reqMeta = $params['request'] ?? null;
+  $rawMeta = $params['response_raw'] ?? null;
+
+  if ($reqMeta === null && is_array($row->request ?? null)) {
+    $reqMeta = ($row->request['request'] ?? null);
+    $rawMeta = ($row->request['response_raw'] ?? null);
+  }
 @endphp
 
 <div class="modal-header">
@@ -218,6 +227,29 @@
         </table>
       </div>
     </div>
+
+    {{-- ✅ NEW: Provider Debug (request/response_raw/status) --}}
+    @if(!empty($reqMeta) || !empty($rawMeta))
+      <div class="col-12">
+        <details>
+          <summary><strong>Provider Debug (last request/response)</strong></summary>
+
+          @if(!empty($reqMeta))
+            <div class="mt-2">
+              <div class="fw-bold mb-1">Request</div>
+              <pre class="border rounded p-3 bg-light mb-0" style="white-space:pre-wrap;">{{ json_encode($reqMeta, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) }}</pre>
+            </div>
+          @endif
+
+          @if(!empty($rawMeta))
+            <div class="mt-3">
+              <div class="fw-bold mb-1">Response Raw</div>
+              <pre class="border rounded p-3 bg-light mb-0" style="white-space:pre-wrap;">{{ is_string($rawMeta) ? $rawMeta : json_encode($rawMeta, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES) }}</pre>
+            </div>
+          @endif
+        </details>
+      </div>
+    @endif
 
     <div class="col-12">
       <label class="form-label">Result</label>

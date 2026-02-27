@@ -833,7 +833,8 @@ private function saveGroupPricesForService(string $kind, int $serviceId, array $
             'gsmhub' => 'gsmhub',
             'webx' => 'webx',
             'unlockbase' => 'unlockbase',
-            'simple link', 'simple_link', 'simplelink' => 'simple_link',
+            'simple_link' => 'simple_link',
+            'simple link', 'simplelink' => 'simple_link',
             default => null,
         };
     }

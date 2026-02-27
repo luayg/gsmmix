@@ -6,21 +6,16 @@ use App\Models\ApiProvider;
 use App\Models\FileOrder;
 use App\Models\ImeiOrder;
 use App\Models\ServerOrder;
-use Illuminate\Http\Client\PendingRequest;
-use Illuminate\Support\Facades\Http;
+use App\Services\Api\WebxClient;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use App\Services\Api\WebxClient;
 
 class WebxOrderGateway
 {
-    
-
     private function client(ApiProvider $p): WebxClient
-{
-    return WebxClient::fromProvider($p);
-}
-
+    {
+        return WebxClient::fromProvider($p);
+    }
 
     private function normalizeFields($order): array
     {
@@ -105,7 +100,7 @@ class WebxOrderGateway
             if (str_contains($key, 'email') || filter_var($val, FILTER_VALIDATE_EMAIL)) {
                 $fields['email'] = $val;
                 $fields['EMAIL'] = $val;
-                $fields['Email'] = $val; // ✅ NEW: بعض WebX يطلبها هكذا حرفيًا
+                $fields['Email'] = $val; // ✅ بعض WebX يطلبها هكذا حرفيًا
                 break;
             }
         }
@@ -122,7 +117,7 @@ class WebxOrderGateway
         $fields = $this->enrichRequiredFieldAliases($fields, $order->service ?? null);
         $fields = $this->ensureEmailAliasFromValues($fields);
 
-        // ✅ NEW: توحيد email keys (email/EMAIL/Email)
+        // ✅ توحيد email keys (email/EMAIL/Email)
         if (isset($fields['EMAIL']) && !isset($fields['email'])) {
             $fields['email'] = (string)$fields['EMAIL'];
         }
@@ -168,65 +163,64 @@ class WebxOrderGateway
     }
 
     private function post(ApiProvider $p, string $route, array $params): array
-{
-    $c = $this->client($p);
-    $url = $c->url($route);
+    {
+        $c = $this->client($p);
+        $url = $c->url($route);
 
-    $params['username'] = (string) $p->username;
+        $params['username'] = (string) $p->username;
 
-    $resp = $c->client()->asForm()->post($url, $params);
+        $resp = $c->client()->asForm()->post($url, $params);
 
-    if (!$resp->successful()) {
-        $body = (string) $resp->body();
-        $snippet = trim(substr($body, 0, 600));
-        throw new \RuntimeException('WebX HTTP ' . $resp->status() . ': ' . ($snippet !== '' ? $snippet : 'empty_body'));
+        if (!$resp->successful()) {
+            $body = (string) $resp->body();
+            $snippet = trim(substr($body, 0, 600));
+            throw new \RuntimeException('WebX HTTP ' . $resp->status() . ': ' . ($snippet !== '' ? $snippet : 'empty_body'));
+        }
+
+        $data = $resp->json();
+        if (!is_array($data)) {
+            $body = (string) $resp->body();
+            $snippet = trim(substr($body, 0, 600));
+            throw new \RuntimeException('WebX: Invalid JSON. First bytes: ' . ($snippet !== '' ? $snippet : 'empty_body'));
+        }
+
+        if (!empty($data['errors'])) {
+            $msg = $this->flattenErrors($data['errors'] ?? []);
+            throw new \RuntimeException($msg ?: 'WebX: API error');
+        }
+
+        return $data;
     }
-
-    $data = $resp->json();
-    if (!is_array($data)) {
-        $body = (string) $resp->body();
-        $snippet = trim(substr($body, 0, 600));
-        throw new \RuntimeException('WebX: Invalid JSON. First bytes: ' . ($snippet !== '' ? $snippet : 'empty_body'));
-    }
-
-    if (!empty($data['errors'])) {
-        $msg = $this->flattenErrors($data['errors'] ?? []);
-        throw new \RuntimeException($msg ?: 'WebX: API error');
-    }
-
-    return $data;
-}
-
 
     private function get(ApiProvider $p, string $route, array $params = []): array
-{
-    $c = $this->client($p);
-    $url = $c->url($route);
+    {
+        $c = $this->client($p);
+        $url = $c->url($route);
 
-    $params['username'] = (string) $p->username;
+        $params['username'] = (string) $p->username;
 
-    $resp = $c->client()->get($url, $params);
+        $resp = $c->client()->get($url, $params);
 
-    if (!$resp->successful()) {
-        $body = (string) $resp->body();
-        $snippet = trim(substr($body, 0, 600));
-        throw new \RuntimeException('WebX HTTP ' . $resp->status() . ': ' . ($snippet !== '' ? $snippet : 'empty_body'));
+        if (!$resp->successful()) {
+            $body = (string) $resp->body();
+            $snippet = trim(substr($body, 0, 600));
+            throw new \RuntimeException('WebX HTTP ' . $resp->status() . ': ' . ($snippet !== '' ? $snippet : 'empty_body'));
+        }
+
+        $data = $resp->json();
+        if (!is_array($data)) {
+            $body = (string) $resp->body();
+            $snippet = trim(substr($body, 0, 600));
+            throw new \RuntimeException('WebX: Invalid JSON. First bytes: ' . ($snippet !== '' ? $snippet : 'empty_body'));
+        }
+
+        if (!empty($data['errors'])) {
+            $msg = $this->flattenErrors($data['errors'] ?? []);
+            throw new \RuntimeException($msg ?: 'WebX: API error');
+        }
+
+        return $data;
     }
-
-    $data = $resp->json();
-    if (!is_array($data)) {
-        $body = (string) $resp->body();
-        $snippet = trim(substr($body, 0, 600));
-        throw new \RuntimeException('WebX: Invalid JSON. First bytes: ' . ($snippet !== '' ? $snippet : 'empty_body'));
-    }
-
-    if (!empty($data['errors'])) {
-        $msg = $this->flattenErrors($data['errors'] ?? []);
-        throw new \RuntimeException($msg ?: 'WebX: API error');
-    }
-
-    return $data;
-}
 
     // ===== PLACE =====
 
@@ -280,7 +274,8 @@ class WebxOrderGateway
         $raw = Storage::get($path);
         if ($filename === '') $filename = basename($path);
 
-        $url = rtrim($this->apiBase($p), '/') . '/file-orders';
+        $c = $this->client($p);
+        $url = $c->url('file-orders');
 
         $params = [
             'username'   => (string)$p->username,
@@ -291,33 +286,36 @@ class WebxOrderGateway
         $fields = $this->prepareFields($order);
         $params = array_merge($params, $fields);
 
-        $resp = $this->client($p)
-            ->asMultipart()
-            ->attach('device', $raw, $filename)
-            ->post($url, $params);
+        try {
+            $resp = $c->postMultipart('file-orders', $params, 'device', $raw, $filename);
 
-        $data = $resp->json();
-        if (!$resp->successful() || !is_array($data)) {
-            return $this->errorResult($p, $url, 'POST', $params, $resp->body(), $resp->status());
-        }
-        if (!empty($data['errors'])) {
-            return $this->errorResult($p, $url, 'POST', $params, $data, $resp->status(), $this->flattenErrors($data['errors']));
-        }
+            $data = $resp->json();
+            if (!$resp->successful() || !is_array($data)) {
+                return $this->errorResult($p, $url, 'POST', $params, $resp->body(), $resp->status());
+            }
 
-        $remoteId = (string)($data['id'] ?? '');
-        if ($remoteId === '' || $remoteId === '0') {
-            return $this->errorResult($p, $url, 'POST', $params, $data, $resp->status(), 'WebX: missing order id, queued.');
-        }
+            if (!empty($data['errors'])) {
+                return $this->errorResult($p, $url, 'POST', $params, $data, $resp->status(), $this->flattenErrors($data['errors']));
+            }
 
-        return [
-            'ok' => true,
-            'retryable' => false,
-            'status' => 'inprogress',
-            'remote_id' => $remoteId,
-            'request' => ['url' => $url, 'method' => 'POST', 'params' => $params, 'http_status' => $resp->status()],
-            'response_raw' => $data,
-            'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
-        ];
+            $remoteId = (string)($data['id'] ?? '');
+            if ($remoteId === '' || $remoteId === '0') {
+                return $this->errorResult($p, $url, 'POST', $params, $data, $resp->status(), 'WebX: missing order id, queued.');
+            }
+
+            return [
+                'ok' => true,
+                'retryable' => false,
+                'status' => 'inprogress',
+                'remote_id' => $remoteId,
+                'request' => ['url' => $url, 'method' => 'POST', 'params' => $params, 'http_status' => $resp->status()],
+                'response_raw' => $data,
+                'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
+            ];
+        } catch (\Throwable $e) {
+            // network/parsing/etc -> queue
+            return $this->errorResult($p, $url, 'POST', $params, ['exception' => $e->getMessage()], 0);
+        }
     }
 
     // ===== GET =====
