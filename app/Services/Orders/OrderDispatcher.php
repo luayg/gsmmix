@@ -108,13 +108,25 @@ class OrderDispatcher
 
     private function saveGatewayResult($order, array $result): void
     {
-        $order->request = array_merge((array)($order->request ?? []), [
-            'request'      => $result['request'] ?? null,
-            'response_raw' => $result['response_raw'] ?? null,
-        ]);
+        $req = (array)($order->request ?? []);
+        $req['request'] = $result['request'] ?? null;
+        $req['response_raw'] = $result['response_raw'] ?? null;
+        $req['last_gateway_result_at'] = now()->toDateTimeString();
 
-        // keep ui but we may override message later
-        $order->response = $result['response_ui'] ?? $order->response;
+        $order->request = $req;
+
+        $ui = $result['response_ui'] ?? null;
+        if (is_array($ui)) {
+            $existing = $order->response;
+            if (is_string($existing)) {
+                $decoded = json_decode($existing, true);
+                $existing = is_array($decoded) ? $decoded : ['raw' => $existing];
+            } elseif (!is_array($existing)) {
+                $existing = [];
+            }
+
+            $order->response = array_merge($existing, $ui);
+        }
     }
 
     /**
@@ -189,36 +201,52 @@ class OrderDispatcher
         return ['waiting', 'PROVIDER ERROR', false];
     }
 
+    private function isTerminalStatus(string $status): bool
+    {
+        return in_array($status, ['success', 'rejected', 'cancelled'], true);
+    }
+
+    private function normalizeStatus(?string $status): string
+    {
+        $status = strtolower(trim((string)$status));
+        if ($status === 'canceled') {
+            $status = 'cancelled';
+        }
+
+        if (!in_array($status, ['waiting', 'inprogress', 'success', 'rejected', 'cancelled'], true)) {
+            return 'rejected';
+        }
+
+        return $status;
+    }
+
     private function applyResult($order, array $result): void
     {
         $this->saveGatewayResult($order, $result);
 
-        // derive http status/content-type if present
         $httpStatus = (int) data_get($result, 'request.http_status', 0);
         $contentType = null;
         $raw = $result['response_raw'] ?? null;
         if (is_array($raw)) {
-            // sometimes gateways store headers
             $ct = data_get($raw, 'headers.content-type.0');
-            if (is_string($ct)) $contentType = $ct;
+            if (is_string($ct)) {
+                $contentType = $ct;
+            }
         }
 
-        // If gateway already provided a short ui message, keep it; otherwise classify
-        $uiMsg = (string) data_get($result, 'response_ui.message', '');
-        $fallbackMsg = (string)($result['error'] ?? $result['message'] ?? '');
-        $baseMsg = trim($uiMsg !== '' ? $uiMsg : ($fallbackMsg !== '' ? $fallbackMsg : 'PROVIDER ERROR'));
+        $gatewayUiMessage = trim((string) data_get($result, 'response_ui.message', ''));
+        $fallbackMsg = trim((string)($result['error'] ?? $result['message'] ?? ''));
+        $baseMsg = $gatewayUiMessage !== '' ? $gatewayUiMessage : ($fallbackMsg !== '' ? $fallbackMsg : 'PROVIDER ERROR');
 
-        [$classStatus, $shortMsg] = ['waiting', 'PROVIDER ERROR'];
-        $strictReject = false;
+        [$classStatus, $shortMsg, $strictReject] = ['waiting', 'PROVIDER ERROR', false];
 
-        // Only classify when not ok OR retryable
         if (($result['ok'] ?? false) !== true) {
             [$classStatus, $shortMsg, $strictReject] = $this->classifyFailure($baseMsg, $httpStatus, $contentType);
         }
 
         $retryable = (bool)($result['retryable'] ?? false);
 
-        // ✅ Retryable but strictReject => reject (IP/URL/AUTH)
+        // Retryable but definitely invalid configuration/request
         if ($retryable && $strictReject) {
             $order->status = 'rejected';
             $order->processing = false;
@@ -234,7 +262,7 @@ class OrderDispatcher
             return;
         }
 
-        // ✅ Retryable => waiting (short msg)
+        // Retryable => keep waiting with short classified message
         if ($retryable) {
             $order->status = 'waiting';
             $order->processing = false;
@@ -248,43 +276,62 @@ class OrderDispatcher
             return;
         }
 
-        // ✅ Success
+        // Success path from gateway
         if (($result['ok'] ?? false) === true) {
+            $finalStatus = $this->normalizeStatus((string)($result['status'] ?? 'inprogress'));
+
             $order->remote_id = $result['remote_id'] ?? $order->remote_id;
-            $order->status = $result['status'] ?? 'inprogress';
+            $order->status = $finalStatus;
             $order->processing = false;
 
-            // Keep success message short if exists
-            $resp = is_array($order->response) ? $order->response : [];
-            if (!empty($resp)) {
-                if (!isset($resp['message']) || trim((string)$resp['message']) === '') {
-                    $resp['message'] = 'OK';
-                }
-                $order->response = $resp;
+            if ($this->isTerminalStatus($finalStatus)) {
+                $order->replied_at = now();
             }
 
+            $resp = is_array($order->response) ? $order->response : [];
+            if (!isset($resp['message']) || trim((string)$resp['message']) === '') {
+                $resp['message'] = $finalStatus === 'success' ? 'OK' : ucfirst($finalStatus);
+            }
+            $resp['type'] = $finalStatus === 'success'
+                ? 'success'
+                : ($finalStatus === 'inprogress' || $finalStatus === 'waiting' ? 'info' : 'error');
+
+            $order->response = $resp;
             $order->save();
+
+            if (in_array($finalStatus, ['rejected', 'cancelled'], true)) {
+                $this->refundIfNeeded($order, 'dispatch_' . $finalStatus);
+            }
+
             return;
         }
 
-        // ❌ Not ok and not retryable => rejected/cancelled
-        $finalStatus = $result['status'] ?? $classStatus ?? 'rejected';
-        $finalStatus = strtolower(trim((string)$finalStatus));
-        if ($finalStatus === 'canceled') $finalStatus = 'cancelled';
-
-        if (!in_array($finalStatus, ['rejected','cancelled','waiting','inprogress','success'], true)) {
-            $finalStatus = 'rejected';
-        }
+        // Not ok and not retryable => keep explicit gateway reject message if provided
+        $finalStatus = $this->normalizeStatus((string)($result['status'] ?? $classStatus ?? 'rejected'));
 
         $order->status = $finalStatus;
         $order->processing = false;
-        $order->replied_at = now();
+
+        if ($this->isTerminalStatus($finalStatus)) {
+            $order->replied_at = now();
+        }
 
         $resp = is_array($order->response) ? $order->response : [];
-        $resp['type'] = ($finalStatus === 'waiting') ? 'queued' : (($finalStatus === 'success') ? 'success' : 'error');
-        $resp['message'] = ($finalStatus === 'waiting') ? $shortMsg : ($finalStatus === 'success' ? 'OK' : $shortMsg);
-        $order->response = $resp;
+        $resp['type'] = $finalStatus === 'waiting'
+            ? 'queued'
+            : ($finalStatus === 'success' ? 'success' : 'error');
 
+        if ($finalStatus === 'waiting') {
+            $resp['message'] = $shortMsg;
+        } elseif ($gatewayUiMessage !== '') {
+            $resp['message'] = $gatewayUiMessage;
+        } elseif ($finalStatus === 'success') {
+            $resp['message'] = 'OK';
+        } else {
+            $resp['message'] = $shortMsg;
+        }
+
+        $order->response = $resp;
         $order->save();
 
         if (in_array($finalStatus, ['rejected', 'cancelled'], true)) {
@@ -311,7 +358,6 @@ class OrderDispatcher
             return;
         }
 
-        // waiting
         $order->status = 'waiting';
         $order->processing = false;
         $order->response = ['type' => 'queued', 'message' => $shortMsg];
