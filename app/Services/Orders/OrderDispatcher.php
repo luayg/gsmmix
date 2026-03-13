@@ -137,6 +137,7 @@ class OrderDispatcher
         $m = strtolower(trim($message));
         $ct = strtolower((string)$contentType);
 
+        // invalid URL / DNS
         if (
             str_contains($m, 'could not resolve') ||
             str_contains($m, 'name or service not known') ||
@@ -149,17 +150,57 @@ class OrderDispatcher
             return ['rejected', 'INVALID URL - Check provider URL/api_path', true];
         }
 
+        // provider auth failed
         if (
             $httpStatus === 401 || $httpStatus === 403 ||
             str_contains($m, 'unauthorized') ||
             str_contains($m, 'forbidden') ||
             (str_contains($m, 'auth') && str_contains($m, 'fail')) ||
             str_contains($m, 'invalid key') ||
-            (str_contains($m, 'api key') && str_contains($m, 'invalid'))
+            str_contains($m, 'invalid api key') ||
+            str_contains($m, 'api key invalid') ||
+            str_contains($m, 'wrong api key') ||
+            str_contains($m, 'access key invalid') ||
+            str_contains($m, 'invalid username') ||
+            str_contains($m, 'login failed') ||
+            str_contains($m, 'authentication failed')
         ) {
             return ['rejected', 'AUTH FAILED - Check username/api_key/auth_mode', true];
         }
 
+        // provider balance low
+        if (
+            str_contains($m, 'no enough balance') ||
+            str_contains($m, 'not enough balance') ||
+            str_contains($m, 'insufficient balance') ||
+            str_contains($m, 'insufficient funds') ||
+            str_contains($m, 'low balance') ||
+            str_contains($m, 'provider balance') ||
+            (str_contains($m, 'balance') && str_contains($m, 'not enough')) ||
+            (str_contains($m, 'credit') && str_contains($m, 'not enough')) ||
+            (str_contains($m, 'insufficient') && str_contains($m, 'credit')) ||
+            str_contains($m, 'your balance is low') ||
+            str_contains($m, 'not enough credit') ||
+            str_contains($m, 'insufficient credits') ||
+            str_contains($m, 'wallet balance low')
+        ) {
+            return ['waiting', 'NO ENOUGH BALANCE AT PROVIDER', false];
+        }
+
+        // provider maintenance/down
+        if (
+            str_contains($m, 'maintenance') ||
+            str_contains($m, 'under maintenance') ||
+            str_contains($m, 'service unavailable') ||
+            str_contains($m, 'temporarily unavailable') ||
+            str_contains($m, 'provider down') ||
+            str_contains($m, 'server busy') ||
+            str_contains($m, 'try again later')
+        ) {
+            return ['waiting', 'PROVIDER MAINTENANCE / DOWN', false];
+        }
+
+        // IP blocked / WAF / HTML 503
         if (
             str_contains($m, 'ip blocked') ||
             str_contains($m, 'whitelist') ||
@@ -172,21 +213,61 @@ class OrderDispatcher
             return ['rejected', 'IP BLOCKED - Reset Provider IP', true];
         }
 
-        // ✅ provider credit/balance issue => keep waiting but show exact useful reason
+        // service disabled / invalid service id
         if (
-            str_contains($m, 'no enough balance') ||
-            str_contains($m, 'not enough balance') ||
-            str_contains($m, 'insufficient balance') ||
-            str_contains($m, 'insufficient funds') ||
-            str_contains($m, 'low balance') ||
-            str_contains($m, 'provider balance') ||
-            (str_contains($m, 'balance') && str_contains($m, 'not enough')) ||
-            (str_contains($m, 'credit') && str_contains($m, 'not enough')) ||
-            (str_contains($m, 'insufficient') && str_contains($m, 'credit'))
+            str_contains($m, 'service disabled') ||
+            str_contains($m, 'service is disabled') ||
+            str_contains($m, 'service not active') ||
+            str_contains($m, 'disabled service') ||
+            str_contains($m, 'invalid service') ||
+            str_contains($m, 'invalid service id') ||
+            str_contains($m, 'service id invalid') ||
+            str_contains($m, 'service not found') ||
+            str_contains($m, 'unknown service') ||
+            str_contains($m, 'tool not found') ||
+            str_contains($m, 'invalid tool')
         ) {
-            return ['waiting', 'NO ENOUGH BALANCE AT PROVIDER', false];
+            return ['rejected', 'INVALID / DISABLED SERVICE', true];
         }
 
+        // invalid imei / serial
+        if (
+            str_contains($m, 'invalid imei') ||
+            str_contains($m, 'invalid serial') ||
+            str_contains($m, 'invalid imei/serial') ||
+            str_contains($m, 'imei/serial number') ||
+            str_contains($m, 'imei number is invalid') ||
+            str_contains($m, 'serial number is invalid') ||
+            str_contains($m, 'wrong imei') ||
+            str_contains($m, 'bad imei')
+        ) {
+            return ['rejected', 'INVALID IMEI / SERIAL NUMBER', true];
+        }
+
+        // required field missing
+        if (
+            str_contains($m, 'field is required') ||
+            str_contains($m, 'required field') ||
+            str_contains($m, 'is required') ||
+            (str_contains($m, 'parameter') && str_contains($m, 'required')) ||
+            (str_contains($m, 'missing') && str_contains($m, 'field'))
+        ) {
+            return ['rejected', 'REQUIRED FIELD MISSING', true];
+        }
+
+        // file extension not allowed
+        if (
+            str_contains($m, 'extension not allowed') ||
+            str_contains($m, 'file extension not allowed') ||
+            str_contains($m, 'invalid file extension') ||
+            str_contains($m, 'unsupported file extension') ||
+            str_contains($m, 'invalid file type') ||
+            str_contains($m, 'unsupported file type')
+        ) {
+            return ['rejected', 'FILE EXTENSION / TYPE NOT ALLOWED', true];
+        }
+
+        // timeout / connection => waiting
         if (
             str_contains($m, 'timed out') ||
             str_contains($m, 'timeout') ||
@@ -198,10 +279,12 @@ class OrderDispatcher
             return ['waiting', 'TIMEOUT - Provider not responding', false];
         }
 
+        // provider down generic 5xx
         if ($httpStatus >= 500) {
             return ['waiting', 'PROVIDER DOWN - Try again later', false];
         }
 
+        // other 4xx
         if ($httpStatus >= 400 && $httpStatus < 500) {
             return ['rejected', 'REQUEST REJECTED - Check request fields', true];
         }

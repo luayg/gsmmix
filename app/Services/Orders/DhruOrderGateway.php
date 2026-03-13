@@ -61,25 +61,51 @@ class DhruOrderGateway
         if ($msg === null) return false;
         $m = mb_strtolower(trim($msg));
 
+        // retryable / temporary / infra / provider-wallet cases only
         $needles = [
-            'ip', 'not allowed', 'whitelist', 'blocked', 'forbidden',
-            'timeout', 'timed out',
-            'connection', 'connect', 'refused', 'reset',
-            'temporarily', 'temporary', 'try again',
-            'maintenance', 'unavailable', 'service unavailable',
-            'server busy', 'busy',
-            'too many requests', 'rate limit', 'limit exceeded',
-            'bad gateway', 'gateway', 'cloudflare',
-            'dns', 'resolve', 'host',
+            'whitelist',
+            'blocked',
+            'forbidden',
+            'timeout',
+            'timed out',
+            'connection',
+            'connect',
+            'refused',
+            'reset',
+            'temporarily',
+            'temporary',
+            'try again',
+            'maintenance',
+            'unavailable',
+            'service unavailable',
+            'server busy',
+            'busy',
+            'too many requests',
+            'rate limit',
+            'limit exceeded',
+            'bad gateway',
+            'gateway',
+            'cloudflare',
+            'dns',
+            'resolve',
+            'host',
 
-            // Provider wallet/credits errors (wait + retry later)
-            'insufficient', 'insufficent', 'not enough',
-            'low balance', 'no balance', 'insufficient balance', 'balance low',
-            'credit', 'credits', 'insufficient credits',
-            'fund', 'funds', 'wallet',
+            // Provider wallet / credits
+            'insufficient balance',
+            'not enough balance',
+            'no enough balance',
+            'balance low',
+            'low balance',
+            'insufficient credits',
+            'not enough credit',
+            'wallet',
+            'funds',
+            'insufficient funds',
 
-            // Common API action mismatch responses
-            'command not found', 'invalid action', 'unknown action',
+            // DHRU action mismatch can be temporary from integration mapping PoV
+            'command not found',
+            'invalid action',
+            'unknown action',
         ];
 
         foreach ($needles as $n) {
@@ -110,12 +136,6 @@ class DhruOrderGateway
             || str_contains($m, 'unknown action');
     }
 
-    /**
-     * Normalize custom/required input fields:
-     * - ensure array
-     * - values => strings only (array/object => json)
-     * - drop empty keys
-     */
     private function normalizeRequiredFields($fields): array
     {
         if (!is_array($fields)) return [];
@@ -136,12 +156,6 @@ class DhruOrderGateway
         return $out;
     }
 
-    /**
-     * Add compatibility aliases for custom field keys from service custom_fields definitions.
-     *
-     * Example: if local key is service_fields_1 but field name/validation says email,
-     * we also send an email alias with the same value.
-     */
     private function enrichRequiredFieldAliases(array $fields, $service): array
     {
         if (empty($fields) || !$service) return $fields;
@@ -166,7 +180,6 @@ class DhruOrderGateway
             $name = trim((string)($def['name'] ?? ''));
             $validation = Str::lower(trim((string)($def['validation'] ?? '')));
 
-            // Alias from field label/name
             if ($name !== '') {
                 $slug = Str::snake(Str::of($name)->replaceMatches('/[^\pL\pN]+/u', ' ')->trim()->value());
                 if ($slug !== '' && !array_key_exists($slug, $fields)) {
@@ -174,7 +187,6 @@ class DhruOrderGateway
                 }
             }
 
-            // Explicit email alias for providers expecting email/email-like key
             $nameLc = Str::lower($name);
             if (
                 $validation === 'email'
@@ -189,7 +201,6 @@ class DhruOrderGateway
 
         return $fields;
     }
-
 
     private function ensureEmailAliasFromValues(array $fields): array
     {
@@ -213,7 +224,6 @@ class DhruOrderGateway
         return $fields;
     }
 
-
     private function appendWellKnownFieldTags(string $xml, array $fields): string
     {
         $map = [
@@ -231,7 +241,6 @@ class DhruOrderGateway
             $val = trim((string)$fields[$key]);
             if ($val === '') continue;
 
-            // avoid duplicate tag append
             if (str_contains($xml, '<' . $tag . '>')) continue;
 
             $xml .= '<' . $tag . '>' . $this->xmlEscape($val) . '</' . $tag . '>';
@@ -239,7 +248,6 @@ class DhruOrderGateway
 
         return $xml;
     }
-
 
     private function buildCustomfieldParam(array $fields): ?string
     {
@@ -350,7 +358,9 @@ class DhruOrderGateway
                 'response_raw' => $json,
                 'response_ui' => [
                     'type' => 'queued',
-                    'message' => $errMsg ? ('Temporary provider issue: ' . $errMsg) : 'Temporary provider issue, queued.',
+                    'message' => $errMsg !== null && trim($errMsg) !== ''
+                        ? $errMsg
+                        : 'Temporary provider issue, queued.',
                 ],
             ];
         }
@@ -375,10 +385,6 @@ class DhruOrderGateway
     // PLACE ORDERS
     // =========================
 
-    /**
-     * placeImeiOrder supports custom fields:
-     * fields source: order->params['fields'] OR order->params['required']
-     */
     public function placeImeiOrder(ApiProvider $p, ImeiOrder $order): array
     {
         $serviceId = trim((string)($order->service?->remote_id ?? ''));
@@ -412,10 +418,6 @@ class DhruOrderGateway
         return $this->send($p, 'placeimeiorder', $xml);
     }
 
-
-    /**
-     * Submit server order using DHRU-compatible XML parameters.
-     */
     public function placeServerOrder(ApiProvider $p, ServerOrder $order): array
     {
         $serviceId = trim((string)($order->service?->remote_id ?? ''));
@@ -467,13 +469,11 @@ class DhruOrderGateway
 
         $xml .= '</PARAMETERS>';
 
-        // Most DHRU providers accept server submit via placeimeiorder.
         $res = $this->send($p, 'placeimeiorder', $xml);
         if (($res['ok'] ?? false) === true) {
             return $res;
         }
 
-        // Fallback for providers implementing placeserverorder only.
         if ($this->isCommandNotFoundResult($res)) {
             $fallback = $this->send($p, 'placeserverorder', $xml);
             if (($fallback['ok'] ?? false) === true) {
@@ -488,9 +488,6 @@ class DhruOrderGateway
         return $res;
     }
 
-    /**
-     * placeFileOrder supports REQUIRED if exists
-     */
     public function placeFileOrder(ApiProvider $p, FileOrder $order): array
     {
         $serviceId = (string)($order->service?->remote_id ?? '');
