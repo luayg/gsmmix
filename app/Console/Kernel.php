@@ -34,21 +34,39 @@ class Kernel extends ConsoleKernel
             ->runInBackground();
 
         /**
-         * ✅ Sync results/status from providers
+         * ✅ Sync IMEI results/status from providers
          */
         $schedule->command('orders:sync-imei --limit=50')
             ->everyMinute()
             ->withoutOverlapping();
 
-            $schedule->command('orders:dispatch-pending-server --limit=50')
+        /**
+         * ✅ Dispatch pending Server orders
+         */
+        $schedule->command('orders:dispatch-pending-server --limit=50')
             ->everyMinute()
             ->withoutOverlapping()
             ->runInBackground();
 
+        /**
+         * ✅ Sync Server results/status from providers
+         */
         $schedule->command('orders:sync-server --limit=50')
             ->everyMinute()
             ->withoutOverlapping();
 
+        /**
+         * ✅ Dispatch pending File orders
+         * مهم جدًا حتى لا تبقى الطلبات waiting بدون remote_id
+         */
+        $schedule->command('orders:dispatch-pending-file --limit=50')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
+
+        /**
+         * ✅ Sync File results/status from providers
+         */
         $schedule->command('orders:sync-file --limit=50')
             ->everyMinute()
             ->withoutOverlapping();
@@ -63,6 +81,7 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\RetryImeiApiOrders::class,
         \App\Console\Commands\DispatchPendingImeiOrders::class,
         \App\Console\Commands\DispatchPendingServerOrders::class,
+        \App\Console\Commands\DispatchPendingFileOrders::class,
 
         \App\Console\Commands\SyncImeiOrders::class,
         \App\Console\Commands\SyncServerOrders::class,
