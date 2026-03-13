@@ -347,10 +347,10 @@ class WebxOrderGateway
 
     /**
      * ✅ FINAL FIX for file upload:
-     * - Try multiple candidate multipart field names until one works.
-     * - If provider returns 4xx validation ("field is required"), try next candidate.
-     * - If provider returns other 4xx => reject.
-     * - If 5xx/network => waiting.
+     * - Builds real multipart body explicitly instead of mixing attach()+post(params)
+     * - Tries multiple candidate field names until one works
+     * - Stores clearer request metadata for debugging
+     * - Rejects only after exhausting all likely field names
      */
     public function placeFileOrder(ApiProvider $p, FileOrder $order): array
     {
@@ -371,7 +371,22 @@ class WebxOrderGateway
         }
 
         $raw = Storage::get($path);
-        if ($filename === '') $filename = basename($path);
+        if ($filename === '') {
+            $filename = basename($path);
+        }
+
+        $mimeType = null;
+        try {
+            $fullPath = Storage::path($path);
+            if (is_file($fullPath)) {
+                $detected = @mime_content_type($fullPath);
+                if (is_string($detected) && trim($detected) !== '') {
+                    $mimeType = $detected;
+                }
+            }
+        } catch (\Throwable $e) {
+            // ignore mime detection failure
+        }
 
         $c = $this->client($p);
         $url = $c->url('file-orders');
@@ -398,31 +413,66 @@ class WebxOrderGateway
         $lastStatus = 0;
         $lastBody = '';
         $lastJson = null;
+        $tried = [];
 
         foreach ($candidates as $fieldName) {
+            $tried[] = $fieldName;
+
             try {
                 $resp = $c->postMultipart(
                     'file-orders',
-                    array_merge(['username' => (string)$p->username], $params),
+                    $params,
                     $fieldName,
                     $raw,
-                    $filename
+                    $filename,
+                    $mimeType
                 );
 
                 $lastStatus = (int)$resp->status();
                 $lastBody = (string)$resp->body();
                 $lastJson = $resp->json();
 
-                // Success with JSON
                 if ($resp->successful() && is_array($lastJson)) {
                     if (!empty($lastJson['errors'])) {
                         $msg = $this->flattenErrors($lastJson['errors']);
-                        return $this->rejectResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], $lastJson, $lastStatus, $msg ?: 'Rejected');
+
+                        $bodyL = strtolower(json_encode($lastJson, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '');
+                        if (str_contains($bodyL, 'field is required') || str_contains($bodyL, 'required')) {
+                            continue;
+                        }
+
+                        return $this->rejectResult(
+                            $p,
+                            $url,
+                            'POST',
+                            $params + [
+                                '_file_field' => $fieldName,
+                                '_file_name' => $filename,
+                                '_mime_type' => $mimeType,
+                                '_multipart' => true,
+                            ],
+                            $lastJson,
+                            $lastStatus,
+                            $msg ?: 'Rejected'
+                        );
                     }
 
                     $remoteId = (string)($lastJson['id'] ?? $lastJson['order_id'] ?? '');
                     if ($remoteId === '' || $remoteId === '0') {
-                        return $this->errorResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], $lastJson, $lastStatus, 'Temporary provider error, queued.');
+                        return $this->errorResult(
+                            $p,
+                            $url,
+                            'POST',
+                            $params + [
+                                '_file_field' => $fieldName,
+                                '_file_name' => $filename,
+                                '_mime_type' => $mimeType,
+                                '_multipart' => true,
+                            ],
+                            $lastJson,
+                            $lastStatus,
+                            'Temporary provider error, queued.'
+                        );
                     }
 
                     return [
@@ -430,46 +480,62 @@ class WebxOrderGateway
                         'retryable' => false,
                         'status' => 'inprogress',
                         'remote_id' => $remoteId,
-                        'request' => ['url' => $url, 'method' => 'POST', 'params' => $params + ['_file_field' => $fieldName], 'http_status' => $lastStatus],
+                        'request' => [
+                            'url' => $url,
+                            'method' => 'POST',
+                            'params' => $params + [
+                                '_file_field' => $fieldName,
+                                '_file_name' => $filename,
+                                '_mime_type' => $mimeType,
+                                '_multipart' => true,
+                            ],
+                            'http_status' => $lastStatus
+                        ],
                         'response_raw' => $lastJson,
                         'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
                     ];
                 }
 
-                // 4xx: try next candidate ONLY if it's clearly "field required"
                 if ($lastStatus >= 400 && $lastStatus < 500) {
                     $bodyL = strtolower($lastBody);
+
                     if (str_contains($bodyL, 'field is required') || str_contains($bodyL, 'required')) {
                         continue;
                     }
 
-                    // otherwise reject
                     return $this->rejectResult(
                         $p,
                         $url,
                         'POST',
-                        $params + ['_file_field' => $fieldName],
+                        $params + [
+                            '_file_field' => $fieldName,
+                            '_file_name' => $filename,
+                            '_mime_type' => $mimeType,
+                            '_multipart' => true,
+                        ],
                         is_array($lastJson) ? $lastJson : ['raw' => $lastBody],
                         $lastStatus,
                         'Rejected (file upload)'
                     );
                 }
 
-                // 5xx => waiting
                 if ($lastStatus >= 500) {
                     return $this->errorResult(
                         $p,
                         $url,
                         'POST',
-                        $params + ['_file_field' => $fieldName],
+                        $params + [
+                            '_file_field' => $fieldName,
+                            '_file_name' => $filename,
+                            '_mime_type' => $mimeType,
+                            '_multipart' => true,
+                        ],
                         is_array($lastJson) ? $lastJson : ['raw' => $lastBody],
                         $lastStatus,
                         'Temporary provider error, queued.'
                     );
                 }
-
             } catch (\Throwable $e) {
-                // try next field name
                 $lastStatus = 0;
                 $lastBody = $e->getMessage();
                 $lastJson = ['exception' => $e->getMessage()];
@@ -477,7 +543,6 @@ class WebxOrderGateway
             }
         }
 
-        // All candidates failed -> reject with last known message
         $msg = 'Rejected: file field mismatch';
         if (stripos($lastBody, 'Device field is required') !== false) {
             $msg = 'Rejected: provider did not accept file field name';
@@ -487,7 +552,12 @@ class WebxOrderGateway
             $p,
             $url,
             'POST',
-            $params + ['_file_field_tried' => $candidates],
+            $params + [
+                '_file_field_tried' => $tried,
+                '_file_name' => $filename,
+                '_mime_type' => $mimeType,
+                '_multipart' => true,
+            ],
             is_array($lastJson) ? $lastJson : ['raw' => $lastBody],
             $lastStatus,
             $msg

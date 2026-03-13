@@ -130,15 +130,47 @@ class WebxClient
         }
     }
 
-    public function postMultipart(string $route, array $params, string $fieldName, string $rawBytes, string $filename)
-    {
+    public function postMultipart(
+        string $route,
+        array $params,
+        string $fieldName,
+        string $rawBytes,
+        string $filename,
+        ?string $mimeType = null
+    ) {
         $url = $this->url($route);
         $params['username'] = (string) $this->provider->username;
 
-        return $this->client()
-            ->asMultipart()
-            ->attach($fieldName, $rawBytes, $filename)
-            ->post($url, $params);
+        $multipart = [];
+
+        foreach ($params as $key => $value) {
+            if (is_array($value) || is_object($value)) {
+                $value = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            }
+
+            $multipart[] = [
+                'name'     => (string) $key,
+                'contents' => (string) ($value ?? ''),
+            ];
+        }
+
+        $filePart = [
+            'name'     => $fieldName,
+            'contents' => $rawBytes,
+            'filename' => $filename,
+        ];
+
+        if ($mimeType && trim($mimeType) !== '') {
+            $filePart['headers'] = [
+                'Content-Type' => $mimeType,
+            ];
+        }
+
+        $multipart[] = $filePart;
+
+        return $this->client()->send('POST', $url, [
+            'multipart' => $multipart,
+        ]);
     }
 
     private function shortHttpMessage(int $status, string $contentType, string $body): string
