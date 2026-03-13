@@ -1,543 +1,401 @@
 <?php
 
-namespace App\Services\Orders;
+namespace App\Console\Commands;
 
 use App\Models\ApiProvider;
 use App\Models\FileOrder;
-use App\Models\ImeiOrder;
-use App\Models\ServerOrder;
-use App\Services\Api\WebxClient;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
+use App\Models\User;
+use App\Services\Orders\DhruOrderGateway;
+use App\Services\Orders\OrderDispatcher;
+use App\Services\Orders\WebxOrderGateway;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
-class WebxOrderGateway
+class SyncFileOrders extends Command
 {
-    private function client(ApiProvider $p): WebxClient
+    protected $signature = 'orders:sync-file {--limit=50} {--only-id=}';
+    protected $description = 'Sync File Orders status/result from providers (DHRU/WebX/GSMHub/others)';
+
+    public function handle(DhruOrderGateway $dhru, WebxOrderGateway $webx): int
     {
-        return WebxClient::fromProvider($p);
-    }
+        $limit = (int)$this->option('limit');
+        if ($limit < 1) $limit = 50;
+        if ($limit > 500) $limit = 500;
 
-    private function normalizeFields($order): array
-    {
-        $fields = [];
-        if (is_array($order->params ?? null)) {
-            $fields = $order->params['fields'] ?? $order->params['required'] ?? [];
-        }
-        return is_array($fields) ? $fields : [];
-    }
+        $onlyId = $this->option('only-id');
 
-    private function enrichRequiredFieldAliases(array $fields, $service): array
-    {
-        if (empty($fields) || !$service) return $fields;
-
-        $params = $service->params ?? [];
-        if (is_string($params)) {
-            $decoded = json_decode($params, true);
-            $params = is_array($decoded) ? $decoded : [];
-        }
-        if (!is_array($params)) return $fields;
-
-        $customFields = $params['custom_fields'] ?? [];
-        if (!is_array($customFields) || empty($customFields)) return $fields;
-
-        foreach ($customFields as $def) {
-            if (!is_array($def)) continue;
-
-            $input = trim((string)($def['input'] ?? ''));
-            if ($input === '' || !array_key_exists($input, $fields)) continue;
-
-            $value = (string)$fields[$input];
-            $name = trim((string)($def['name'] ?? ''));
-            $validation = Str::lower(trim((string)($def['validation'] ?? '')));
-
-            if ($name !== '') {
-                $slug = Str::snake(Str::of($name)->replaceMatches('/[^\pL\pN]+/u', ' ')->trim()->value());
-                if ($slug !== '' && !array_key_exists($slug, $fields)) {
-                    $fields[$slug] = $value;
-                }
-            }
-
-            $nameLc = Str::lower($name);
-            if (
-                $validation === 'email'
-                || str_contains($nameLc, 'email')
-                || str_contains(Str::lower($input), 'email')
-            ) {
-                if (!array_key_exists('email', $fields)) $fields['email'] = $value;
-                if (!array_key_exists('EMAIL', $fields)) $fields['EMAIL'] = $value;
+        // أولًا: أرسل الطلبات المعلقة التي لم تحصل على remote_id بعد
+        if (empty($onlyId)) {
+            $dispatched = $this->dispatchPendingFileWithoutRemoteId($limit);
+            if ($dispatched > 0) {
+                $this->info("Dispatched {$dispatched} pending file orders before sync.");
             }
         }
 
-        return $fields;
-    }
+        $q = FileOrder::query()
+            ->with(['service', 'provider'])
+            ->where('api_order', 1)
+            ->whereNotNull('remote_id')
+            ->whereIn('status', ['waiting', 'inprogress']);
 
-    private function ensureEmailAliasFromValues(array $fields): array
-    {
-        if (array_key_exists('email', $fields) || array_key_exists('EMAIL', $fields) || array_key_exists('Email', $fields)) {
-            return $fields;
+        if (!empty($onlyId)) {
+            $q->where('id', (int)$onlyId);
         }
 
-        foreach ($fields as $k => $v) {
-            $key = strtolower(trim((string)$k));
-            $val = trim((string)$v);
-            if ($val === '') continue;
+        $orders = $q->orderBy('id', 'asc')->limit($limit)->get();
 
-            if (str_contains($key, 'email') || filter_var($val, FILTER_VALIDATE_EMAIL)) {
-                $fields['email'] = $val;
-                $fields['EMAIL'] = $val;
-                $fields['Email'] = $val;
-                break;
-            }
-        }
+        if ($orders->isEmpty()) {
+            $pendingDispatch = FileOrder::query()
+                ->where('api_order', 1)
+                ->where('status', 'waiting')
+                ->where(function ($q) {
+                    $q->whereNull('remote_id')->orWhere('remote_id', '');
+                })
+                ->count();
 
-        return $fields;
-    }
-
-    private function prepareFields($order): array
-    {
-        $fields = $this->normalizeFields($order);
-        $fields = $this->enrichRequiredFieldAliases($fields, $order->service ?? null);
-        $fields = $this->ensureEmailAliasFromValues($fields);
-
-        if (isset($fields['EMAIL']) && !isset($fields['email'])) $fields['email'] = (string)$fields['EMAIL'];
-        if (isset($fields['email']) && !isset($fields['Email'])) $fields['Email'] = (string)$fields['email'];
-        if (isset($fields['Email']) && !isset($fields['EMAIL'])) $fields['EMAIL'] = (string)$fields['Email'];
-
-        return $fields;
-    }
-
-    private function flattenErrors($errors): string
-    {
-        if (!is_array($errors) || empty($errors)) return 'provider_error';
-        $messages = [];
-        foreach ($errors as $err) {
-            $messages[] = is_array($err) ? implode(', ', $err) : (string)$err;
-        }
-        return trim(implode(' | ', array_filter($messages)));
-    }
-
-    private function errorResult(ApiProvider $p, string $url, string $method, array $params, $raw, int $httpStatus = 0, string $msg = 'Temporary provider error, queued.'): array
-    {
-        return [
-            'ok' => false,
-            'retryable' => true,
-            'status' => 'waiting',
-            'remote_id' => null,
-            'request' => [
-                'url' => $url,
-                'method' => $method,
-                'params' => $params,
-                'http_status' => $httpStatus,
-            ],
-            'response_raw' => is_array($raw) ? $raw : ['raw' => (string)$raw, 'http_status' => $httpStatus],
-            'response_ui' => ['type' => 'queued', 'message' => $msg],
-        ];
-    }
-
-    private function rejectResult(ApiProvider $p, string $url, string $method, array $params, $raw, int $httpStatus = 0, string $msg = 'Rejected'): array
-    {
-        return [
-            'ok' => false,
-            'retryable' => false,
-            'status' => 'rejected',
-            'remote_id' => null,
-            'request' => [
-                'url' => $url,
-                'method' => $method,
-                'params' => $params,
-                'http_status' => $httpStatus,
-            ],
-            'response_raw' => is_array($raw) ? $raw : ['raw' => (string)$raw, 'http_status' => $httpStatus],
-            'response_ui' => ['type' => 'error', 'message' => $msg],
-        ];
-    }
-
-    private function postRaw(ApiProvider $p, string $route, array $params): array
-    {
-        $c = $this->client($p);
-        $url = $c->url($route);
-
-        $params['username'] = (string) $p->username;
-
-        $resp = $c->client()->asForm()->post($url, $params);
-
-        if (!$resp->successful()) {
-            $body = (string) $resp->body();
-            $snippet = trim(substr($body, 0, 600));
-            throw new \RuntimeException('WebX HTTP ' . $resp->status() . ': ' . ($snippet !== '' ? $snippet : 'empty_body'));
-        }
-
-        $data = $resp->json();
-        if (!is_array($data)) {
-            $body = (string) $resp->body();
-            $snippet = trim(substr($body, 0, 600));
-            throw new \RuntimeException('WebX: Invalid JSON. First bytes: ' . ($snippet !== '' ? $snippet : 'empty_body'));
-        }
-
-        if (!empty($data['errors'])) {
-            $msg = $this->flattenErrors($data['errors'] ?? []);
-            throw new \RuntimeException($msg ?: 'WebX: API error');
-        }
-
-        return $data;
-    }
-
-    private function getRaw(ApiProvider $p, string $route, array $params = []): array
-    {
-        $c = $this->client($p);
-        $url = $c->url($route);
-
-        $params['username'] = (string) $p->username;
-
-        $resp = $c->client()->get($url, $params);
-
-        if (!$resp->successful()) {
-            $body = (string) $resp->body();
-            $snippet = trim(substr($body, 0, 600));
-            throw new \RuntimeException('WebX HTTP ' . $resp->status() . ': ' . ($snippet !== '' ? $snippet : 'empty_body'));
-        }
-
-        $data = $resp->json();
-        if (!is_array($data)) {
-            $body = (string) $resp->body();
-            $snippet = trim(substr($body, 0, 600));
-            throw new \RuntimeException('WebX: Invalid JSON. First bytes: ' . ($snippet !== '' ? $snippet : 'empty_body'));
-        }
-
-        if (!empty($data['errors'])) {
-            $msg = $this->flattenErrors($data['errors'] ?? []);
-            throw new \RuntimeException($msg ?: 'WebX: API error');
-        }
-
-        return $data;
-    }
-
-    private function normalizeWebxStatus(array $data): array
-    {
-        $rawStatus = $data['status'] ?? $data['order_status'] ?? $data['state'] ?? $data['result_status'] ?? null;
-
-        if ($rawStatus !== null && is_numeric($rawStatus)) {
-            $stInt = (int)$rawStatus;
-            if ($stInt === 4) $status = 'success';
-            elseif ($stInt === 3) $status = 'rejected';
-            else $status = 'inprogress';
-        } else {
-            $st = strtolower(trim((string)$rawStatus));
-            $status = 'inprogress';
-
-            $successTokens = ['success','successful','done','completed','complete','finished','delivered','approved'];
-            $rejectTokens  = ['rejected','reject','failed','fail','error','invalid','cancelled','canceled','cancel'];
-
-            if ($st !== '') {
-                if (in_array($st, $successTokens, true)) $status = 'success';
-                elseif (in_array($st, $rejectTokens, true)) {
-                    $status = ($st === 'cancelled' || $st === 'canceled' || $st === 'cancel') ? 'cancelled' : 'rejected';
-                }
-            }
-        }
-
-        $resultText = (string)(
-            $data['result_text'] ??
-            $data['response'] ??
-            $data['result'] ??
-            $data['reply'] ??
-            $data['message'] ??
-            ''
-        );
-
-        $items = $data['result_items'] ?? null;
-
-        if ($status === 'inprogress') {
-            if (trim($resultText) !== '' || (is_array($items) && !empty($items))) {
-                $status = 'success';
-            }
-        }
-
-        $ui = [
-            'type' => ($status === 'success') ? 'success' : (($status === 'rejected') ? 'error' : 'info'),
-            'message' => ($status === 'success') ? 'Result available' : (($status === 'rejected') ? 'Rejected' : 'In progress'),
-        ];
-
-        if (trim($resultText) !== '') $ui['result_text'] = $resultText;
-        if (is_array($items) && !empty($items)) $ui['result_items'] = $items;
-
-        return [$status, $ui];
-    }
-
-    // ===== PLACE =====
-
-    public function placeImeiOrder(ApiProvider $p, ImeiOrder $order): array
-    {
-        $c = $this->client($p);
-        $url = $c->url('imei-orders');
-
-        $serviceId = trim((string)($order->service?->remote_id ?? ''));
-        $imei = (string)($order->device ?? '');
-
-        $params = array_merge([
-            'service_id' => $serviceId,
-            'device'     => $imei,
-            'comments'   => (string)($order->comments ?? ''),
-        ], $this->prepareFields($order));
-
-        try {
-            $data = $this->postRaw($p, 'imei-orders', $params);
-
-            $remoteId = (string)($data['id'] ?? $data['order_id'] ?? '');
-            if ($remoteId === '' || $remoteId === '0') {
-                return $this->errorResult($p, $url, 'POST', $params, $data, 200, 'Temporary provider error, queued.');
+            if ($pendingDispatch > 0) {
+                $this->info("No file orders to sync yet. {$pendingDispatch} order(s) are still waiting without remote_id after dispatch attempt.");
+                $this->info('This usually means provider/API validation/upload/connection issue. Check each order response/request payload.');
+            } else {
+                $this->info('No file orders to sync.');
             }
 
-            return [
-                'ok' => true,
-                'retryable' => false,
-                'status' => 'inprogress',
-                'remote_id' => $remoteId,
-                'request' => ['url' => $url, 'method' => 'POST', 'params' => $params, 'http_status' => 200],
-                'response_raw' => $data,
-                'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
-            ];
-        } catch (\Throwable $e) {
-            return $this->errorResult($p, $url, 'POST', $params, ['exception' => $e->getMessage()], 0);
-        }
-    }
-
-    public function placeServerOrder(ApiProvider $p, ServerOrder $order): array
-    {
-        $c = $this->client($p);
-        $url = $c->url('server-orders');
-
-        $serviceId = trim((string)($order->service?->remote_id ?? ''));
-        $qty = (int)($order->quantity ?? 1);
-        if ($qty < 1) $qty = 1;
-
-        $params = array_merge([
-            'service_id' => $serviceId,
-            'quantity'   => $qty,
-            'comments'   => (string)($order->comments ?? ''),
-        ], $this->prepareFields($order));
-
-        try {
-            $data = $this->postRaw($p, 'server-orders', $params);
-
-            $remoteId = (string)($data['id'] ?? $data['order_id'] ?? '');
-            if ($remoteId === '' || $remoteId === '0') {
-                return $this->errorResult($p, $url, 'POST', $params, $data, 200, 'Temporary provider error, queued.');
-            }
-
-            return [
-                'ok' => true,
-                'retryable' => false,
-                'status' => 'inprogress',
-                'remote_id' => $remoteId,
-                'request' => ['url' => $url, 'method' => 'POST', 'params' => $params, 'http_status' => 200],
-                'response_raw' => $data,
-                'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
-            ];
-        } catch (\Throwable $e) {
-            return $this->errorResult($p, $url, 'POST', $params, ['exception' => $e->getMessage()], 0);
-        }
-    }
-
-    /**
-     * ✅ FIXED File sending:
-     * - local allowed_extensions validation (reject immediately if extension not allowed)
-     * - if provider returns validation errors or 4xx => REJECT (not waiting)
-     * - waiting only for network/5xx
-     * - supports provider.params.file_field, fallback to "file"
-     */
-    public function placeFileOrder(ApiProvider $p, FileOrder $order): array
-    {
-        $serviceId = trim((string)($order->service?->remote_id ?? ''));
-        $path = (string)($order->storage_path ?? '');
-        $filename = (string)($order->device ?? '');
-
-        if ($path === '' || !Storage::exists($path)) {
-            return $this->rejectResult($p, '', 'POST', ['storage_path' => $path], ['error' => 'file_not_found'], 0, 'File not found');
+            return 0;
         }
 
-        $raw = Storage::get($path);
-        if ($filename === '') $filename = basename($path);
+        $synced = 0;
 
-        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-
-        // ✅ local allowed_extensions check from service params if present
-        $allowedStr = (string) data_get($order, 'service.params.allowed_extensions', '');
-        $allowedStr = trim($allowedStr);
-        if ($allowedStr !== '' && $ext !== '') {
-            $list = array_values(array_filter(array_map(function ($x) {
-                $x = strtolower(trim((string)$x));
-                $x = ltrim($x, '.');
-                return $x;
-            }, preg_split('/[,\s]+/', $allowedStr))));
-            if (!empty($list) && !in_array($ext, $list, true)) {
-                return $this->rejectResult(
-                    $p,
-                    '',
-                    'POST',
-                    ['service_id' => $serviceId, 'file' => $filename, 'ext' => $ext, 'allowed' => $allowedStr],
-                    ['error' => 'extension_not_allowed', 'ext' => $ext, 'allowed' => $list],
-                    0,
-                    'File extension not allowed'
-                );
-            }
-        }
-
-        $c = $this->client($p);
-        $url = $c->url('file-orders');
-
-        $params = [
-            'service_id' => $serviceId,
-            'comments'   => (string)($order->comments ?? ''),
-        ];
-
-        $params = array_merge($params, $this->prepareFields($order));
-
-        $fieldName = trim((string) data_get($p, 'params.file_field', 'device'));
-        if ($fieldName === '') $fieldName = 'device';
-
-        try {
-            $resp = $c->postMultipart('file-orders', array_merge(['username' => (string)$p->username], $params), $fieldName, $raw, $filename);
-            $data = $resp->json();
-
-            // fallback to "file"
-            if ((!$resp->successful() || !is_array($data)) && $fieldName !== 'file') {
-                $resp2 = $c->postMultipart('file-orders', array_merge(['username' => (string)$p->username], $params), 'file', $raw, $filename);
-                $data2 = $resp2->json();
-                if ($resp2->successful() && is_array($data2)) {
-                    $resp = $resp2;
-                    $data = $data2;
-                    $fieldName = 'file';
-                }
-            }
-
-            // If non-successful response: 4xx => reject, 5xx => waiting
-            if (!$resp->successful() || !is_array($data)) {
-                $status = (int)$resp->status();
-                if ($status >= 400 && $status < 500) {
-                    return $this->rejectResult(
-                        $p,
-                        $url,
-                        'POST',
-                        $params + ['_file_field' => $fieldName],
-                        ['raw' => (string)$resp->body()],
-                        $status,
-                        'Rejected (file validation)'
-                    );
+        foreach ($orders as $order) {
+            try {
+                $provider = $order->provider ?: ($order->supplier_id ? ApiProvider::find($order->supplier_id) : null);
+                if (!$provider || !(int)$provider->active) {
+                    $this->warn("Order #{$order->id}: provider missing/inactive.");
+                    continue;
                 }
 
-                return $this->errorResult(
-                    $p,
-                    $url,
-                    'POST',
-                    $params + ['_file_field' => $fieldName],
-                    ['raw' => (string)$resp->body()],
-                    $status,
-                    'Temporary provider error, queued.'
-                );
-            }
+                $ref = trim((string)$order->remote_id);
+                if ($ref === '') {
+                    $this->warn("Order #{$order->id}: remote_id empty.");
+                    continue;
+                }
 
-            // Provider-side validation errors => reject (not waiting)
-            if (!empty($data['errors'])) {
-                $msg = $this->flattenErrors($data['errors']);
-                return $this->rejectResult(
-                    $p,
-                    $url,
-                    'POST',
-                    $params + ['_file_field' => $fieldName],
-                    $data,
-                    (int)$resp->status(),
-                    ($msg !== '' ? $msg : 'Rejected (file validation)')
-                );
-            }
+                $ptype = strtolower(trim((string)($provider->type ?? 'dhru')));
 
-            $remoteId = (string)($data['id'] ?? $data['order_id'] ?? '');
-            if ($remoteId === '' || $remoteId === '0') {
-                return $this->errorResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], $data, (int)$resp->status(), 'Temporary provider error, queued.');
-            }
+                $res = match ($ptype) {
+                    'webx'   => $webx->getFileOrder($provider, $ref),
+                    'gsmhub' => app(\App\Services\Orders\GsmhubOrderGateway::class)->getFileOrder($provider, $ref),
+                    default  => $dhru->getFileOrder($provider, $ref),
+                };
 
-            return [
-                'ok' => true,
-                'retryable' => false,
-                'status' => 'inprogress',
-                'remote_id' => $remoteId,
-                'request' => ['url' => $url, 'method' => 'POST', 'params' => $params + ['_file_field' => $fieldName], 'http_status' => (int)$resp->status()],
-                'response_raw' => $data,
-                'response_ui' => ['type' => 'success', 'message' => 'Order submitted', 'reference_id' => $remoteId],
-            ];
-        } catch (\Throwable $e) {
-            return $this->errorResult($p, $url, 'POST', $params + ['_file_field' => $fieldName], ['exception' => $e->getMessage()], 0);
+                // خزّن آخر فحص دائمًا
+                $req = $this->normalizeResponseArray($order->request);
+                $req['last_status_check'] = now()->toDateTimeString();
+                $req['status_check_raw']  = $res['response_raw'] ?? null;
+                $order->request = $req;
+
+                if (!is_array($res)) {
+                    $order->status = 'waiting';
+                    $order->processing = 0;
+                    $order->save();
+                    continue;
+                }
+
+                /**
+                 * المسار الموحّد لأي مزود non-dhru
+                 */
+                if ($ptype !== 'dhru') {
+                    $newStatus = strtolower(trim((string)($res['status'] ?? 'inprogress')));
+                    if ($newStatus === 'canceled') $newStatus = 'cancelled';
+
+                    if (!in_array($newStatus, ['success', 'rejected', 'cancelled', 'inprogress', 'waiting'], true)) {
+                        $newStatus = 'inprogress';
+                    }
+
+                    // لا نرجع إلى waiting بعد وجود remote_id
+                    if ($newStatus === 'waiting' && !empty($order->remote_id)) {
+                        $newStatus = 'inprogress';
+                    }
+
+                    $respArr = $this->normalizeResponseArray($order->response);
+                    $ui = is_array($res['response_ui'] ?? null) ? $res['response_ui'] : [];
+                    $respArr = array_merge($respArr, $ui, [
+                        'provider_type' => $ptype,
+                        'reference_id'  => $order->remote_id,
+                    ]);
+
+                    $final = in_array($newStatus, ['success', 'rejected', 'cancelled'], true);
+                    $order->status = $newStatus;
+                    $order->processing = $final ? 0 : 1;
+                    if ($final) {
+                        $order->replied_at = $order->replied_at ?: now();
+                    }
+
+                    $req = $this->normalizeResponseArray($order->request);
+                    $req['sync_last_at'] = now()->toDateTimeString();
+                    $req['sync_raw'] = $res['response_raw'] ?? null;
+                    $order->request = $req;
+
+                    $order->response = $respArr;
+                    $order->save();
+
+                    if (in_array($newStatus, ['rejected', 'cancelled'], true)) {
+                        $this->refundIfNeeded($order, 'api_' . $newStatus);
+                    }
+
+                    $synced++;
+                    $this->info("Order #{$order->id} synced => {$newStatus} ({$ptype})");
+                    continue;
+                }
+
+                // ===== DHRU parsing =====
+                $raw = $res['response_raw'] ?? $res;
+
+                [$statusInt, $code, $comments] = $this->extractDhruStatusCodeComments($raw);
+
+                // إذا status 3/4 لكن الكود فاضي اعتبره ما زال in progress
+                if (in_array($statusInt, [3, 4], true) && trim($code) === '') {
+                    $statusInt = 1;
+                }
+
+                $newStatus = $this->mapDhruStatusToLocal($statusInt);
+
+                $respArr = $this->normalizeResponseArray($order->response);
+                $respArr['dhru_status']   = $statusInt;
+                $respArr['dhru_comments'] = $comments;
+                $respArr['result_text']   = $code;
+
+                $providerHtml = $this->asProviderReplyHtml($code, $comments);
+                if ($providerHtml !== '') {
+                    $respArr['provider_reply_html'] = $providerHtml;
+                    $respArr['provider_reply_updated_at'] = now()->toDateTimeString();
+                } else {
+                    $respArr['message'] = trim($comments) !== ''
+                        ? trim($comments)
+                        : (trim($code) !== '' ? trim($code) : '—');
+                }
+
+                $final = in_array($newStatus, ['success', 'rejected', 'cancelled'], true);
+
+                $order->status = $newStatus;
+                $order->processing = $final ? 0 : 1;
+                if ($final) {
+                    $order->replied_at = $order->replied_at ?: now();
+                }
+
+                $req = $this->normalizeResponseArray($order->request);
+                $req['sync_last_at'] = now()->toDateTimeString();
+                $req['sync_raw'] = $raw;
+                $order->request = $req;
+
+                $order->response = $respArr;
+                $order->save();
+
+                if (in_array($newStatus, ['rejected', 'cancelled'], true)) {
+                    $this->refundIfNeeded($order, 'api_' . $newStatus);
+                }
+
+                $synced++;
+                $this->info("Order #{$order->id} synced => {$newStatus} (DHRU {$statusInt})");
+            } catch (\Throwable $e) {
+                Log::error('SyncFileOrders error', [
+                    'order_id' => $order->id ?? null,
+                    'err' => $e->getMessage(),
+                ]);
+
+                $this->warn("Order #{$order->id}: error => " . $e->getMessage());
+
+                // لا ترفض الطلب بسبب فشل المزامنة نفسها
+                $order->status = 'waiting';
+                $order->processing = 0;
+                $order->response = ['type' => 'queued', 'message' => 'Sync error, will retry: ' . $e->getMessage()];
+                $order->save();
+            }
         }
+
+        $this->info("Done. Synced: {$synced} orders.");
+        return 0;
     }
 
-    // ===== GET (NORMALIZED) =====
-
-    public function getImeiOrder(ApiProvider $p, string $id): array
+    private function dispatchPendingFileWithoutRemoteId(int $limit): int
     {
-        $c = $this->client($p);
-        $url = $c->url('imei-orders/' . $id);
+        /** @var OrderDispatcher $dispatcher */
+        $dispatcher = app(OrderDispatcher::class);
 
-        try {
-            $data = $this->getRaw($p, 'imei-orders/' . $id);
-            [$status, $ui] = $this->normalizeWebxStatus($data);
+        $pending = FileOrder::query()
+            ->where('api_order', 1)
+            ->where('status', 'waiting')
+            ->where(function ($q) {
+                $q->whereNull('remote_id')->orWhere('remote_id', '');
+            })
+            ->where(function ($q) {
+                $q->whereNull('processing')->orWhere('processing', 0)->orWhere('processing', false);
+            })
+            ->orderBy('id', 'asc')
+            ->limit($limit)
+            ->get();
 
-            return [
-                'ok' => true,
-                'retryable' => false,
-                'status' => $status,
-                'remote_id' => $id,
-                'request' => ['url' => $url, 'method' => 'GET', 'params' => ['username' => (string)$p->username], 'http_status' => 200],
-                'response_raw' => $data,
-                'response_ui' => array_merge($ui, ['reference_id' => $id]),
-            ];
-        } catch (\Throwable $e) {
-            return $this->errorResult($p, $url, 'GET', ['username' => (string)$p->username], ['exception' => $e->getMessage()], 0);
+        $attempted = $pending->count();
+        $sent = 0;
+        $failed = 0;
+
+        foreach ($pending as $order) {
+            try {
+                $dispatcher->send('file', (int)$order->id);
+            } catch (\Throwable $e) {
+                Log::warning('SyncFileOrders pre-dispatch failed', [
+                    'order_id' => $order->id,
+                    'err' => $e->getMessage(),
+                ]);
+            }
+
+            $order->refresh();
+
+            if (trim((string)$order->remote_id) !== '') {
+                $sent++;
+                continue;
+            }
+
+            $failed++;
+            $reason = $this->extractDispatchFailureReason($order);
+
+            $this->warn("Pre-dispatch failed for order #{$order->id}: {$reason}");
+
+            Log::warning('SyncFileOrders pre-dispatch no remote_id after dispatch', [
+                'order_id' => $order->id,
+                'status' => $order->status,
+                'reason' => $reason,
+                'response' => $order->response,
+                'request' => $order->request,
+            ]);
         }
+
+        if ($attempted > 0) {
+            $this->info("Pre-dispatch file queue: attempted={$attempted} sent={$sent} failed={$failed}.");
+        }
+
+        return $sent;
     }
 
-    public function getServerOrder(ApiProvider $p, string $id): array
+    private function extractDispatchFailureReason(FileOrder $order): string
     {
-        $c = $this->client($p);
-        $url = $c->url('server-orders/' . $id);
+        $response = $this->normalizeResponseArray($order->response);
+        $request = $this->normalizeResponseArray($order->request);
 
-        try {
-            $data = $this->getRaw($p, 'server-orders/' . $id);
-            [$status, $ui] = $this->normalizeWebxStatus($data);
+        $candidates = [
+            data_get($response, 'message'),
+            data_get($response, 'dhru_comments'),
+            data_get($response, 'result_text'),
+            data_get($request, 'dispatch_error'),
+            data_get($request, 'response_raw.ERROR.0.MESSAGE'),
+            data_get($request, 'response_raw.message'),
+            data_get($request, 'response_raw.raw'),
+        ];
 
-            return [
-                'ok' => true,
-                'retryable' => false,
-                'status' => $status,
-                'remote_id' => $id,
-                'request' => ['url' => $url, 'method' => 'GET', 'params' => ['username' => (string)$p->username], 'http_status' => 200],
-                'response_raw' => $data,
-                'response_ui' => array_merge($ui, ['reference_id' => $id]),
-            ];
-        } catch (\Throwable $e) {
-            return $this->errorResult($p, $url, 'GET', ['username' => (string)$p->username], ['exception' => $e->getMessage()], 0);
+        foreach ($candidates as $msg) {
+            $msg = trim((string)$msg);
+            if ($msg !== '') return $msg;
         }
+
+        return 'Unknown reason (remote_id still empty after dispatch).';
     }
 
-    public function getFileOrder(ApiProvider $p, string $id): array
+    private function mapDhruStatusToLocal(int $statusInt): string
     {
-        $c = $this->client($p);
-        $url = $c->url('file-orders/' . $id);
+        if ($statusInt === 4) return 'success';
+        if ($statusInt === 3) return 'rejected';
+        if (in_array($statusInt, [0, 1, 2], true)) return 'inprogress';
+        return 'inprogress';
+    }
 
-        try {
-            $data = $this->getRaw($p, 'file-orders/' . $id);
-            [$status, $ui] = $this->normalizeWebxStatus($data);
-
-            return [
-                'ok' => true,
-                'retryable' => false,
-                'status' => $status,
-                'remote_id' => $id,
-                'request' => ['url' => $url, 'method' => 'GET', 'params' => ['username' => (string)$p->username], 'http_status' => 200],
-                'response_raw' => $data,
-                'response_ui' => array_merge($ui, ['reference_id' => $id]),
-            ];
-        } catch (\Throwable $e) {
-            return $this->errorResult($p, $url, 'GET', ['username' => (string)$p->username], ['exception' => $e->getMessage()], 0);
+    private function extractDhruStatusCodeComments($raw): array
+    {
+        if (is_string($raw)) {
+            $j = json_decode($raw, true);
+            if (is_array($j)) $raw = $j;
         }
+
+        if (!is_array($raw)) return [1, '', ''];
+
+        $status = 1;
+        $code = '';
+        $comments = '';
+
+        if (isset($raw['SUCCESS'][0]) && is_array($raw['SUCCESS'][0])) {
+            $s0 = $raw['SUCCESS'][0];
+            if (isset($s0['STATUS'])) $status = (int)$s0['STATUS'];
+            if (isset($s0['CODE'])) $code = (string)$s0['CODE'];
+            if (isset($s0['COMMENTS'])) $comments = (string)$s0['COMMENTS'];
+            return [$status, $code, $comments];
+        }
+
+        if (isset($raw['ERROR'][0]) && is_array($raw['ERROR'][0])) {
+            $e0 = $raw['ERROR'][0];
+            $comments = (string)($e0['MESSAGE'] ?? 'Provider error');
+            return [1, '', $comments];
+        }
+
+        return [$status, $code, $comments];
+    }
+
+    private function normalizeResponseArray($value): array
+    {
+        if (is_array($value)) return $value;
+
+        if (is_string($value)) {
+            $s = trim($value);
+            if ($s !== '') {
+                $j = json_decode($s, true);
+                if (is_array($j)) return $j;
+                return ['raw' => $value];
+            }
+        }
+
+        return [];
+    }
+
+    private function asProviderReplyHtml(string $code, string $comments): string
+    {
+        $code = trim((string)$code);
+        $comments = trim((string)$comments);
+
+        if ($code !== '' && (stripos($code, '<table') !== false || stripos($code, '<br') !== false || stripos($code, '<p') !== false)) {
+            return $code;
+        }
+
+        $text = $code !== '' ? $code : $comments;
+        $text = trim($text);
+        if ($text === '') return '';
+
+        $safe = e($text);
+        return '<div style="white-space:pre-wrap;">' . $safe . '</div>';
+    }
+
+    private function refundIfNeeded(FileOrder $order, string $reason): void
+    {
+        $req = $this->normalizeResponseArray($order->request);
+
+        if (!empty($req['refunded_at'])) return;
+
+        $uid = (int)($order->user_id ?? 0);
+        if ($uid <= 0) return;
+
+        $amount = (float)($req['charged_amount'] ?? 0);
+        if ($amount <= 0) return;
+
+        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
+            $u = User::query()->lockForUpdate()->find($uid);
+            if (!$u) return;
+
+            $u->balance = (float)($u->balance ?? 0) + $amount;
+            $u->save();
+
+            $req['refunded_at'] = now()->toDateTimeString();
+            $req['refunded_amount'] = $amount;
+            $req['refunded_reason'] = $reason;
+
+            $order->request = $req;
+            $order->save();
+        });
     }
 }
