@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 
 abstract class BaseOrdersController extends Controller
 {
@@ -34,7 +35,6 @@ abstract class BaseOrdersController extends Controller
         $status = trim((string)$request->get('status', ''));
         $prov   = trim((string)$request->get('provider', ''));
 
-        // ✅ Per-page selector (10..1000)
         $perPage = (int)$request->get('per_page', 20);
         if ($perPage < 10) $perPage = 10;
         if ($perPage > 1000) $perPage = 1000;
@@ -78,18 +78,12 @@ abstract class BaseOrdersController extends Controller
     public function modalCreate()
     {
         $users = User::query()->orderByDesc('id')->limit(500)->get();
-
-        // ✅ load services
         $services = ($this->serviceModel)::query()->orderByDesc('id')->limit(1000)->get();
 
-        // ✅ attach custom fields from DB (custom_fields table) into service->params['custom_fields']
-        // so that resources/views/admin/orders/modals/create.blade.php keeps working without edits.
         if (in_array($this->kind, ['imei','server','file'], true) && $services->count() > 0) {
             $this->injectCustomFieldsIntoServices($services, $this->kind);
         }
 
-        // ✅ Build group pricing map for UI:
-        // [service_id => [group_id => final_price]]
         $servicePriceMap = $this->buildServicePriceMap($services);
 
         return view('admin.orders.modals.create', [
@@ -104,14 +98,6 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
-    /**
-     * Inject DB custom_fields into $service->params['custom_fields']
-     * Output format matches what your Blade expects:
-     * [
-     *   ['active'=>1,'name'=>'','input'=>'service_fields_1','type'=>'text','description'=>'','minimum'=>0,'maximum'=>0,'validation'=>null,'required'=>0,'options'=>'...'],
-     *   ...
-     * ]
-     */
     private function injectCustomFieldsIntoServices($services, string $kind): void
     {
         $serviceIds = $services->pluck('id')->map(fn($x)=>(int)$x)->filter()->values()->all();
@@ -139,7 +125,6 @@ abstract class BaseOrdersController extends Controller
                 'ordering',
             ]);
 
-        // Group rows by service_id
         $byService = [];
         foreach ($rows as $r) {
             $sid = (int)($r->service_id ?? 0);
@@ -153,7 +138,6 @@ abstract class BaseOrdersController extends Controller
             $sid = (int)($svc->id ?? 0);
             if ($sid <= 0) continue;
 
-            // decode current params
             $params = $svc->params ?? [];
             if (is_string($params)) {
                 $decoded = json_decode($params, true);
@@ -172,7 +156,6 @@ abstract class BaseOrdersController extends Controller
                 $type = strtolower(trim((string)($r->field_type ?? 'text')));
                 if ($type === '') $type = 'text';
 
-                // options: keep as string (Blade will split/parse it)
                 $opts = $r->field_options ?? '';
                 $opts = $this->normalizeOptionsForBlade($opts);
 
@@ -186,19 +169,15 @@ abstract class BaseOrdersController extends Controller
                     'maximum'     => (int)($r->maximum ?? 0),
                     'validation'  => ($r->validation ?? null) !== '' ? (string)$r->validation : null,
                     'required'    => (int)($r->required ?? 0),
-                    'options'     => $opts, // string or json string
+                    'options'     => $opts,
                 ];
             }
 
             $params['custom_fields'] = $fields;
-            $svc->params = $params; // Eloquent will cast to JSON in Blade (you already handle string/array there)
+            $svc->params = $params;
         }
     }
 
-    /**
-     * Build servicePriceMap for the create order modal.
-     * Map: [service_id => [group_id => finalPrice]]
-     */
     private function buildServicePriceMap($services): array
     {
         if (!class_exists(\App\Models\ServiceGroupPrice::class)) return [];
@@ -206,9 +185,6 @@ abstract class BaseOrdersController extends Controller
         $ids = $services->pluck('id')->map(fn($x)=>(int)$x)->filter()->values()->all();
         if (empty($ids)) return [];
 
-        // service_type in service_group_prices table appears as:
-        // - your Blade uses it as "imei" pricing map; the model uses $this->kind in other places.
-        // We'll keep it aligned with existing usage:
         $serviceType = $this->kind;
 
         $rows = \App\Models\ServiceGroupPrice::query()
@@ -226,7 +202,7 @@ abstract class BaseOrdersController extends Controller
             if ($price <= 0) continue;
 
             $discount = (float)($gp->discount ?? 0);
-            $dtype = (int)($gp->discount_type ?? 1); // 1 fixed, 2 percent
+            $dtype = (int)($gp->discount_type ?? 1);
 
             if ($discount > 0) {
                 if ($dtype === 2) $price = $price - ($price * ($discount / 100));
@@ -242,10 +218,6 @@ abstract class BaseOrdersController extends Controller
         return $out;
     }
 
-    /**
-     * If a DB column contains JSON like {"en":"..","fallback":".."} return en/fallback.
-     * Otherwise return as plain string.
-     */
     private function pickTranslatableText($value): string
     {
         if (is_array($value)) {
@@ -265,12 +237,6 @@ abstract class BaseOrdersController extends Controller
         return $s;
     }
 
-    /**
-     * Normalize field_options for Blade splitOptions():
-     * - if it's JSON translatable => pick en/fallback
-     * - if it's JSON array => keep JSON string (Blade parses JSON arrays)
-     * - else => return string as is
-     */
     private function normalizeOptionsForBlade($opts): string
     {
         if (is_array($opts)) {
@@ -280,16 +246,13 @@ abstract class BaseOrdersController extends Controller
         $s = trim((string)$opts);
         if ($s === '') return '';
 
-        // JSON?
         if (isset($s[0]) && ($s[0] === '{' || $s[0] === '[')) {
             $j = json_decode($s, true);
 
-            // JSON array => keep json string
             if (is_array($j) && array_is_list($j)) {
                 return json_encode($j, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
             }
 
-            // JSON object (maybe translations) => pick text
             if (is_array($j)) {
                 $picked = (string)($j['en'] ?? $j['fallback'] ?? '');
                 return $picked !== '' ? $picked : $s;
@@ -317,7 +280,7 @@ abstract class BaseOrdersController extends Controller
                 if ($gp && (float)($gp->price ?? 0) > 0) {
                     $price = (float)$gp->price;
                     $discount = (float)($gp->discount ?? 0);
-                    $dtype = (int)($gp->discount_type ?? 1); // 1 fixed, 2 percent
+                    $dtype = (int)($gp->discount_type ?? 1);
 
                     if ($discount > 0) {
                         if ($dtype === 2) $price = $price - ($price * ($discount / 100));
@@ -340,7 +303,7 @@ abstract class BaseOrdersController extends Controller
 
         $cost = (float)($service->cost ?? 0);
         $profit = (float)($service->profit ?? 0);
-        $profitType = (int)($service->profit_type ?? 1); // 1 fixed, 2 percent
+        $profitType = (int)($service->profit_type ?? 1);
         if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit/100)));
         return max(0.0, $cost + $profit);
     }
@@ -408,19 +371,32 @@ abstract class BaseOrdersController extends Controller
             $order->save();
         });
     }
-        
-        private function failValidation(Request $request, array $errors, int $status = 422)
-{
-    if ($request->expectsJson()) {
-        return response()->json([
-            'ok'     => false,
-            'message'=> 'Validation error',
-            'errors' => $errors,
-        ], $status);
+
+    private function failValidation(Request $request, array $errors, int $status = 422)
+    {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok'     => false,
+                'message'=> 'Validation error',
+                'errors' => $errors,
+            ], $status);
+        }
+
+        return redirect()->back()->withErrors($errors)->withInput();
     }
 
-    return redirect()->back()->withErrors($errors)->withInput();
-}
+    private function duplicateSubmitResponse(Request $request)
+    {
+        if ($request->expectsJson()) {
+            return response()->json([
+                'ok' => true,
+                'message' => 'Order already submitted.',
+                'redirect_url' => route("{$this->routePrefix}.index"),
+            ]);
+        }
+
+        return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order already submitted.');
+    }
 
     // =========================
     // STORE
@@ -428,17 +404,17 @@ abstract class BaseOrdersController extends Controller
     public function store(Request $request)
     {
         $rules = [
-            'user_id'    => ['required','integer'],
-            'service_id' => ['required','integer'],
-            'comments'   => ['nullable','string'],
-            'bulk'       => ['nullable','boolean'],
-            'devices'    => ['nullable','string'],
+            'user_id'     => ['required','integer'],
+            'service_id'  => ['required','integer'],
+            'comments'    => ['nullable','string'],
+            'bulk'        => ['nullable','boolean'],
+            'devices'     => ['nullable','string'],
+            'request_uid' => ['required','string','max:100'],
         ];
 
         if ($this->kind === 'file') {
             $rules['file'] = ['required','file','max:51200'];
         } else {
-            // ✅ device optional for server (fields-based)
             $rules['device'] = ['nullable','string','max:255'];
         }
 
@@ -446,103 +422,103 @@ abstract class BaseOrdersController extends Controller
             $rules['quantity'] = ['nullable','integer','min:1','max:999'];
         }
 
-        /**
-         * ✅ IMPORTANT:
-         * UI sends required[...] for all kinds (imei/server/file) based on custom fields
-         * so accept it and store in params.fields
-         */
         if ($this->kind !== 'product') {
-            $rules['required'] = ['nullable','array']; // required[field_input]=...
+            $rules['required'] = ['nullable','array'];
         }
 
         $data = $request->validate($rules);
 
-        $userId = (int)($data['user_id'] ?? 0);
-        $user = User::find($userId);
-        if (!$user) {
-            return $this->failValidation($request, ['user_id' => 'User not found.'], 422);
+        $requestUid = trim((string)($data['request_uid'] ?? ''));
+        $sessionId = (string)$request->session()->getId();
+        $submitLockKey = 'order_submit_lock:' . sha1($this->kind . '|' . $sessionId . '|' . $requestUid);
+
+        if (!Cache::add($submitLockKey, now()->toDateTimeString(), now()->addMinutes(10))) {
+            return $this->duplicateSubmitResponse($request);
         }
-
-        $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
-
-        if ($this->kind === 'file') {
-            $uploadedFile = $request->file('file');
-            $allowedExtensions = $this->extractAllowedExtensionsFromServiceParams($service);
-
-            // Strict extension validation only when service has explicit allow-list.
-            // If allow-list is empty, all extensions are accepted.
-            if (!empty($allowedExtensions) && $uploadedFile) {
-                $uploadedExt = strtolower((string)$uploadedFile->getClientOriginalExtension());
-                if (!$this->isExtensionAllowed($uploadedExt, $allowedExtensions)) {
-                    return $this->failValidation($request, [
-    'file' => 'File extension is not allowed for this service. Allowed: ' . implode(', ', $allowedExtensions),
-], 422);
-                }
-            }
-        }
-
-        $supplierId = (int)($service->supplier_id ?? 0);
-        $provider   = $supplierId ? ApiProvider::find($supplierId) : null;
-
-        $hasRemote = !empty($service->remote_id);
-        $isApi = $provider && (int)$provider->active === 1 && $hasRemote;
-
-        $sellPrice = (float)$this->calcServiceSellPriceForUser($service, $user);
-        $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
-        $profitOne = $sellPrice - $costPrice;
-
-        // ✅ params unified
-        $params = ['kind' => $this->kind];
-
-        // Quantity: store in params for server like ready site
-        if ($this->supportsQuantity()) {
-            $params['quantity'] = (int)($data['quantity'] ?? 1);
-        }
-
-        // ✅ store fields for ALL kinds (imei/server/file)
-        $params['fields'] = (isset($data['required']) && is_array($data['required'])) ? $data['required'] : [];
-
-        $bulk = (bool)($data['bulk'] ?? false);
-        $devices = [];
-
-        // ✅ IMEI/File: same logic
-        // ✅ Server: device optional unless service->device_based = 1
-        if ($this->kind !== 'file') {
-            $deviceBased = (bool)($service->device_based ?? false);
-
-            if ($deviceBased) {
-                if ($bulk) {
-                    $raw = (string)($data['devices'] ?? '');
-                    $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
-                    $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
-                    if (count($lines) < 1) {
-                        return redirect()->back()->withErrors(['devices' => 'Bulk list is empty.'])->withInput();
-                    }
-                    if (count($lines) > 200) {
-                        return redirect()->back()->withErrors(['devices' => 'Too many lines (max 200).'])->withInput();
-                    }
-                    $devices = $lines;
-                } else {
-                    $one = trim((string)($data['device'] ?? ''));
-                    if ($one === '') {
-                        return redirect()->back()->withErrors(['device' => 'Device is required.'])->withInput();
-                    }
-                    $devices = [$one];
-                }
-            } else {
-                // ✅ fields-based service: create single order even if device empty
-                $one = trim((string)($data['device'] ?? ''));
-                $devices = [$one]; // can be empty string
-            }
-        }
-
-        $countOrders = ($this->kind === 'file') ? 1 : max(1, count($devices));
-        $totalCharge = $sellPrice * $countOrders;
 
         try {
+            $userId = (int)($data['user_id'] ?? 0);
+            $user = User::find($userId);
+            if (!$user) {
+                Cache::forget($submitLockKey);
+                return $this->failValidation($request, ['user_id' => 'User not found.'], 422);
+            }
+
+            $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
+
+            if ($this->kind === 'file') {
+                $uploadedFile = $request->file('file');
+                $allowedExtensions = $this->extractAllowedExtensionsFromServiceParams($service);
+
+                if (!empty($allowedExtensions) && $uploadedFile) {
+                    $uploadedExt = strtolower((string)$uploadedFile->getClientOriginalExtension());
+                    if (!$this->isExtensionAllowed($uploadedExt, $allowedExtensions)) {
+                        Cache::forget($submitLockKey);
+                        return $this->failValidation($request, [
+                            'file' => 'File extension is not allowed for this service. Allowed: ' . implode(', ', $allowedExtensions),
+                        ], 422);
+                    }
+                }
+            }
+
+            $supplierId = (int)($service->supplier_id ?? 0);
+            $provider   = $supplierId ? ApiProvider::find($supplierId) : null;
+
+            $hasRemote = !empty($service->remote_id);
+            $isApi = $provider && (int)$provider->active === 1 && $hasRemote;
+
+            $sellPrice = (float)$this->calcServiceSellPriceForUser($service, $user);
+            $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
+            $profitOne = $sellPrice - $costPrice;
+
+            $params = ['kind' => $this->kind];
+
+            if ($this->supportsQuantity()) {
+                $params['quantity'] = (int)($data['quantity'] ?? 1);
+            }
+
+            $params['fields'] = (isset($data['required']) && is_array($data['required'])) ? $data['required'] : [];
+
+            $bulk = (bool)($data['bulk'] ?? false);
+            $devices = [];
+
+            if ($this->kind !== 'file') {
+                $deviceBased = (bool)($service->device_based ?? false);
+
+                if ($deviceBased) {
+                    if ($bulk) {
+                        $raw = (string)($data['devices'] ?? '');
+                        $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
+                        $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
+                        if (count($lines) < 1) {
+                            Cache::forget($submitLockKey);
+                            return redirect()->back()->withErrors(['devices' => 'Bulk list is empty.'])->withInput();
+                        }
+                        if (count($lines) > 200) {
+                            Cache::forget($submitLockKey);
+                            return redirect()->back()->withErrors(['devices' => 'Too many lines (max 200).'])->withInput();
+                        }
+                        $devices = $lines;
+                    } else {
+                        $one = trim((string)($data['device'] ?? ''));
+                        if ($one === '') {
+                            Cache::forget($submitLockKey);
+                            return redirect()->back()->withErrors(['device' => 'Device is required.'])->withInput();
+                        }
+                        $devices = [$one];
+                    }
+                } else {
+                    $one = trim((string)($data['device'] ?? ''));
+                    $devices = [$one];
+                }
+            }
+
+            $countOrders = ($this->kind === 'file') ? 1 : max(1, count($devices));
+            $totalCharge = $sellPrice * $countOrders;
+
             DB::transaction(function () use (
                 $request, $data, $userId, $service, $provider, $isApi,
-                $sellPrice, $costPrice, $profitOne, $params, $devices, $countOrders, $totalCharge
+                $sellPrice, $costPrice, $profitOne, $params, $devices, $countOrders, $totalCharge, $requestUid
             ) {
                 $u = User::query()->lockForUpdate()->findOrFail($userId);
                 $balance = (float)($u->balance ?? 0);
@@ -558,7 +534,7 @@ abstract class BaseOrdersController extends Controller
 
                 $createOne = function (string $deviceValue = '') use (
                     $request, $data, $u, $service, $provider, $isApi,
-                    $sellPrice, $costPrice, $profitOne, $params
+                    $sellPrice, $costPrice, $profitOne, $params, $requestUid
                 ) {
                     /** @var Model $order */
                     $order = new ($this->orderModel);
@@ -588,6 +564,7 @@ abstract class BaseOrdersController extends Controller
                     $order->request = array_merge((array)($order->request ?? []), [
                         'charged_amount' => (float)$sellPrice,
                         'charged_at'     => now()->toDateTimeString(),
+                        'request_uid'    => $requestUid,
                     ]);
 
                     if ($this->kind === 'file') {
@@ -647,7 +624,9 @@ abstract class BaseOrdersController extends Controller
                     foreach ($devices as $dv) $createOne($dv);
                 }
             });
-                } catch (\RuntimeException $e) {
+        } catch (\RuntimeException $e) {
+            Cache::forget($submitLockKey);
+
             if ($e->getMessage() === 'INSUFFICIENT_BALANCE') {
                 if ($request->expectsJson()) {
                     return response()->json([
@@ -660,6 +639,10 @@ abstract class BaseOrdersController extends Controller
                     ->withErrors(['user_id' => 'No enough balance for this order.'])
                     ->withInput();
             }
+
+            throw $e;
+        } catch (\Throwable $e) {
+            Cache::forget($submitLockKey);
             throw $e;
         }
 
@@ -672,7 +655,6 @@ abstract class BaseOrdersController extends Controller
         }
 
         return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order created.');
-
     }
 
     private function extractAllowedExtensionsFromServiceParams($service): array
@@ -790,7 +772,6 @@ abstract class BaseOrdersController extends Controller
         $row->response = $currentResp;
         $row->save();
 
-        // Refund on transition to rejected/cancelled
         if (in_array($newStatus, ['rejected','cancelled'], true) && $oldStatus !== $newStatus) {
             $this->refundOrderIfNeeded($row, 'manual_'.$newStatus);
 
@@ -800,7 +781,6 @@ abstract class BaseOrdersController extends Controller
             $row->save();
         }
 
-        // Recharge only if rejected/cancelled => success
         if ($newStatus === 'success' && in_array($oldStatus, ['rejected','cancelled'], true)) {
             try {
                 $this->rechargeOrderIfNeeded($row, 'manual_success');

@@ -130,7 +130,6 @@ class OrderDispatcher
     }
 
     /**
-     * Strict short English classifier.
      * Returns: [finalStatus, uiMessage, strictReject]
      */
     private function classifyFailure(string $message, int $httpStatus = 0, ?string $contentType = null): array
@@ -138,7 +137,6 @@ class OrderDispatcher
         $m = strtolower(trim($message));
         $ct = strtolower((string)$contentType);
 
-        // detect invalid URL / DNS
         if (
             str_contains($m, 'could not resolve') ||
             str_contains($m, 'name or service not known') ||
@@ -151,7 +149,6 @@ class OrderDispatcher
             return ['rejected', 'INVALID URL - Check provider URL/api_path', true];
         }
 
-        // auth
         if (
             $httpStatus === 401 || $httpStatus === 403 ||
             str_contains($m, 'unauthorized') ||
@@ -163,7 +160,6 @@ class OrderDispatcher
             return ['rejected', 'AUTH FAILED - Check username/api_key/auth_mode', true];
         }
 
-        // IP blocked / WAF / HTML 503
         if (
             str_contains($m, 'ip blocked') ||
             str_contains($m, 'whitelist') ||
@@ -176,7 +172,21 @@ class OrderDispatcher
             return ['rejected', 'IP BLOCKED - Reset Provider IP', true];
         }
 
-        // timeout / connect => waiting
+        // ✅ provider credit/balance issue => keep waiting but show exact useful reason
+        if (
+            str_contains($m, 'no enough balance') ||
+            str_contains($m, 'not enough balance') ||
+            str_contains($m, 'insufficient balance') ||
+            str_contains($m, 'insufficient funds') ||
+            str_contains($m, 'low balance') ||
+            str_contains($m, 'provider balance') ||
+            (str_contains($m, 'balance') && str_contains($m, 'not enough')) ||
+            (str_contains($m, 'credit') && str_contains($m, 'not enough')) ||
+            (str_contains($m, 'insufficient') && str_contains($m, 'credit'))
+        ) {
+            return ['waiting', 'NO ENOUGH BALANCE AT PROVIDER', false];
+        }
+
         if (
             str_contains($m, 'timed out') ||
             str_contains($m, 'timeout') ||
@@ -188,12 +198,10 @@ class OrderDispatcher
             return ['waiting', 'TIMEOUT - Provider not responding', false];
         }
 
-        // provider down => waiting
         if ($httpStatus >= 500) {
             return ['waiting', 'PROVIDER DOWN - Try again later', false];
         }
 
-        // other 4xx => reject
         if ($httpStatus >= 400 && $httpStatus < 500) {
             return ['rejected', 'REQUEST REJECTED - Check request fields', true];
         }
@@ -235,8 +243,22 @@ class OrderDispatcher
         }
 
         $gatewayUiMessage = trim((string) data_get($result, 'response_ui.message', ''));
+        $rawException = trim((string) data_get($result, 'response_raw.exception', ''));
         $fallbackMsg = trim((string)($result['error'] ?? $result['message'] ?? ''));
-        $baseMsg = $gatewayUiMessage !== '' ? $gatewayUiMessage : ($fallbackMsg !== '' ? $fallbackMsg : 'PROVIDER ERROR');
+
+        $baseMsg = $gatewayUiMessage;
+
+        if ($baseMsg === '' || in_array(strtolower($baseMsg), ['temporary provider error, queued.', 'provider error'], true)) {
+            if ($rawException !== '') {
+                $baseMsg = $rawException;
+            } elseif ($fallbackMsg !== '') {
+                $baseMsg = $fallbackMsg;
+            }
+        }
+
+        if ($baseMsg === '') {
+            $baseMsg = 'PROVIDER ERROR';
+        }
 
         [$classStatus, $shortMsg, $strictReject] = ['waiting', 'PROVIDER ERROR', false];
 
@@ -246,7 +268,6 @@ class OrderDispatcher
 
         $retryable = (bool)($result['retryable'] ?? false);
 
-        // Retryable but definitely invalid configuration/request
         if ($retryable && $strictReject) {
             $order->status = 'rejected';
             $order->processing = false;
@@ -262,7 +283,6 @@ class OrderDispatcher
             return;
         }
 
-        // Retryable => keep waiting with short classified message
         if ($retryable) {
             $order->status = 'waiting';
             $order->processing = false;
@@ -276,7 +296,6 @@ class OrderDispatcher
             return;
         }
 
-        // Success path from gateway
         if (($result['ok'] ?? false) === true) {
             $finalStatus = $this->normalizeStatus((string)($result['status'] ?? 'inprogress'));
 
@@ -306,7 +325,6 @@ class OrderDispatcher
             return;
         }
 
-        // Not ok and not retryable => keep explicit gateway reject message if provided
         $finalStatus = $this->normalizeStatus((string)($result['status'] ?? $classStatus ?? 'rejected'));
 
         $order->status = $finalStatus;

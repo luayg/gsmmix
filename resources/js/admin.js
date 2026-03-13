@@ -25,16 +25,13 @@ import 'datatables.net-buttons/js/buttons.html5';
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 
-// جرّب الاستيراد المعتاد أولاً (side-effect)
 import 'select2/dist/js/select2.full.min.js';
 
-// ✅ Fallback: لو ما تركّب select2 على $.fn لأي سبب، ركّبه يدويًا
 (async () => {
   try {
     if (!$.fn || typeof $.fn.select2 !== 'function') {
       const mod = await import('select2');
       const attach = mod?.default || mod;
-      // بعض نسخ select2 تُصدّر دالة factory تحتاج تمرير jQuery
       if (typeof attach === 'function') {
         attach(window.jQuery);
       }
@@ -53,10 +50,8 @@ window.destroySummernoteIn = destroySummernoteIn;
  * Helpers
  * ================================================================= */
 
-/** هل Select2 محمَّل على jQuery الحالي؟ */
 const hasSelect2 = () => !!$.fn && typeof $.fn.select2 === 'function';
 
-/** تهيئة Select2 بأمان داخل جذر معيّن (مثل المودال) */
 function initSelect2Safe($root, $dropdownParent = null) {
   if (!hasSelect2()) {
     console.warn('Select2 is not loaded on current jQuery instance.');
@@ -77,7 +72,6 @@ function initSelect2Safe($root, $dropdownParent = null) {
   });
 }
 
-/** Toast helper (يظهر أعلى يمين الشاشة) */
 window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
   const bg = {
     success: 'bg-success text-white',
@@ -107,20 +101,17 @@ window.showToast = function (variant = 'success', message = 'Done', opts = {}) {
 };
 
 
-
 /* =================================================================
  * Ajax Modal Loader (مرة واحدة للموقع) - FIX double-binding
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
-  // امنع إعادة الربط لو سبق الربط
   if (window.__bindOpenModalOnce__) return;
   window.__bindOpenModalOnce__ = true;
 
   const token = document.querySelector('meta[name="csrf-token"]')?.content || '';
-  let MODAL_REQ_ID = 0; // يزيد مع كل نقره
+  let MODAL_REQ_ID = 0;
 
   $(document).on('click', '.js-open-modal', async function (e) {
-    // امنع أي مستمعين/تصرّفات أخرى
     e.preventDefault();
     e.stopPropagation();
     e.stopImmediatePropagation();
@@ -128,13 +119,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const url = $(this).data('url') || $(this).attr('href');
     if (!url || url === '#') return;
 
-    // عرّف رقم الطلب الحالي
     const myReq = ++MODAL_REQ_ID;
 
     const $modal   = $('#ajaxModal');
     const $content = $modal.find('.modal-content');
 
-    // شاشة انتظار
     $content.html(`
       <div class="modal-body py-5 text-center text-muted">
         <div class="spinner-border" role="status" aria-hidden="true"></div>
@@ -150,21 +139,35 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('Failed to load modal');
       const html = await res.text();
 
-      // لو جاء ردّ قديم، تجاهله
       if (myReq !== MODAL_REQ_ID) return;
 
       $content.html(html);
 
-      // init select2 داخل المودال لو موجود
       if (typeof initSelect2Safe === 'function') initSelect2Safe($content, $modal);
 
-      // إرسال Ajax للنماذج داخل المودال
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
         ev.stopImmediatePropagation();
 
-        const form   = ev.currentTarget;
+        const form = ev.currentTarget;
+
+        if (form.dataset.submitting === '1') {
+          return;
+        }
+
+        form.dataset.submitting = '1';
+
+        const submitButtons = form.querySelectorAll('button[type="submit"], input[type="submit"]');
+        submitButtons.forEach(btn => {
+          btn.disabled = true;
+          btn.setAttribute('aria-disabled', 'true');
+          if (btn.tagName === 'BUTTON' && !btn.dataset.originalText) {
+            btn.dataset.originalText = btn.textContent;
+            btn.textContent = 'Creating...';
+          }
+        });
+
         const fd     = new FormData(form);
         const method = (form.method || 'POST').toUpperCase();
 
@@ -180,43 +183,53 @@ document.addEventListener('DOMContentLoaded', () => {
             redirect: 'follow'
           });
 
-          // ✅ اقرأ الرد مرة واحدة فقط (لتجنب body stream already read)
           const raw = await res2.text();
 
-          // ✅ 422 (validation)
           if (res2.status === 422) {
             let j = {};
             try { j = JSON.parse(raw); } catch (_) {}
             const msgs = Object.values(j.errors || {}).flat().join('<br>');
             showToast?.('danger', msgs || 'Validation error', { title: 'Error', delay: 5000 });
+
+            form.dataset.submitting = '';
+            submitButtons.forEach(btn => {
+              btn.disabled = false;
+              btn.removeAttribute('aria-disabled');
+              if (btn.tagName === 'BUTTON' && btn.dataset.originalText) {
+                btn.textContent = btn.dataset.originalText;
+              }
+            });
             return;
           }
 
-          // ✅ أي خطأ آخر
           if (!res2.ok) {
-            // حاول استخراج رسالة مفهومة
             let msg = raw || 'Failed to submit the form.';
             try {
               const jErr = JSON.parse(raw);
               msg = jErr.message || jErr.msg || msg;
             } catch (_) {}
             showToast?.('danger', msg, { title: 'Error', delay: 6000 });
+
+            form.dataset.submitting = '';
+            submitButtons.forEach(btn => {
+              btn.disabled = false;
+              btn.removeAttribute('aria-disabled');
+              if (btn.tagName === 'BUTTON' && btn.dataset.originalText) {
+                btn.textContent = btn.dataset.originalText;
+              }
+            });
             return;
           }
 
-          // ✅ نجاح (قد يكون JSON أو نص)
           let j = { ok: true, msg: raw, message: raw };
           try { j = JSON.parse(raw); } catch (_) {}
 
           const successMsg = j.msg || j.message || 'Saved successfully';
 
-          // ✅ منع تحذير aria-hidden + تخبيص التصميم: blur قبل hide
           if (document.activeElement) document.activeElement.blur();
 
-          // hide modal
           window.bootstrap.Modal.getInstance($modal[0])?.hide();
 
-          // ✅ cleanup احتياطي لو Bootstrap ترك backdrop/body styles
           setTimeout(() => {
             document.body.classList.remove('modal-open');
             document.body.style.removeProperty('overflow');
@@ -226,13 +239,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
           showToast?.('success', successMsg);
 
-          // ✅ لو السيرفر رجّع redirect_url (مثل Orders)، استخدمه
           if (j.redirect_url) {
             window.location.href = j.redirect_url;
             return;
           }
 
-          // ✅ لو الصفحة فيها DataTable اعمل reload
           let reloaded = false;
           $('.dataTable').each(function () {
             try {
@@ -244,7 +255,6 @@ document.addEventListener('DOMContentLoaded', () => {
             } catch (_) {}
           });
 
-          // ✅ لو ما فيه DataTable، اعمل reload عادي عشان تظهر البيانات
           if (!reloaded) {
             window.location.reload();
           }
@@ -252,12 +262,20 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (err) {
           console.error(err);
           showToast?.('danger', 'Network error', { title: 'Error' });
+
+          form.dataset.submitting = '';
+          submitButtons.forEach(btn => {
+            btn.disabled = false;
+            btn.removeAttribute('aria-disabled');
+            if (btn.tagName === 'BUTTON' && btn.dataset.originalText) {
+              btn.textContent = btn.dataset.originalText;
+            }
+          });
         }
       });
 
     } catch (err) {
       console.error(err);
-      // لو ردّ قديم تجاهله
       if (myReq !== MODAL_REQ_ID) return;
       $content.html(`<div class="modal-body text-danger">Failed to load modal content.</div>`);
       showToast?.('danger', 'Failed to load modal content', { title: 'Error' });
@@ -270,7 +288,6 @@ document.addEventListener('DOMContentLoaded', () => {
  * Lazy-load لسكربتات الصفحات
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', async () => {
-  // Users
   if (document.getElementById('usersPage')) {
     await import('./pages/users-index.js');
     return;
@@ -283,11 +300,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     await import('./pages/roles.js');
     return;
   }
-  if (document.getElementById('permsPage')) { // permissions
+  if (document.getElementById('permsPage')) {
     await import('./pages/permissions.js');
     return;
   }
-  // Service create / edit
   if (document.querySelector('.service-create-form')) {
     import('./pages/service-custom-fields.js');
   }
@@ -295,7 +311,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 
 /* =================================================================
- * سلوك السايدبار على الموبايل (زر الفتح/الإغلاق + الخلفية)
+ * سلوك السايدبار على الموبايل
  * ================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
   const sidebar  = document.querySelector('.admin-sidebar');
@@ -343,7 +359,7 @@ function positionToastStack() {
   const wrap  = document.querySelector('.content-wrapper');
   if (!stack || !wrap) return;
 
-  const gap = 16; // px
+  const gap = 16;
   const rect  = wrap.getBoundingClientRect();
   const extra = Math.max(window.innerWidth - rect.right + gap, gap);
 
@@ -354,13 +370,11 @@ function positionToastStack() {
 document.addEventListener('DOMContentLoaded', positionToastStack);
 window.addEventListener('resize', positionToastStack);
 
-// لو عندك زر إظهار/إخفاء السايدبار، أعد التموضع بعد الأنيميشن
 const btnRepos = document.getElementById('btnToggleSidebar');
 if (btnRepos) {
   btnRepos.addEventListener('click', () => {
-    setTimeout(positionToastStack, 250); // زمن انتقال الـsidebar في CSS
+    setTimeout(positionToastStack, 250);
   });
 }
 
-// في حال تشغيل التوستر من الدالة العامة، أعد التموضع قبل إظهاره
 window.addEventListener('show-toast-reposition', positionToastStack);

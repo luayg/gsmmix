@@ -58,6 +58,7 @@
 
 <form class="js-ajax-form" method="post" action="{{ route($routePrefix.'.store') }}" enctype="multipart/form-data" id="createOrderForm">
   @csrf
+  <input type="hidden" name="request_uid" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
 
   <div class="modal-body">
 
@@ -139,16 +140,14 @@
         @if($isFileKind)
           <label class="form-label">Upload file</label>
           <input type="file" class="form-control" name="file" required>
-           @elseif($isServerKind)
+        @elseif($isServerKind)
           <div class="alert alert-info mb-0">
             Server Orders use <strong>Service fields</strong> only. The standard device/email input is disabled for this order type.
           </div>
         @else
           <label class="form-label">{{ $deviceLabel ?? 'Device' }}</label>
           <input type="text" class="form-control" name="device" placeholder="Enter value">
-          <div class="form-text">
-            
-          </div>
+          <div class="form-text"></div>
         @endif
       </div>
 
@@ -162,9 +161,7 @@
       <div class="col-12 js-step-fields d-none" id="serviceFieldsWrap">
         <label class="form-label fw-semibold">Service fields</label>
         <div class="row g-2" id="serviceFieldsContainer"></div>
-        <div class="form-text">
-          
-        </div>
+        <div class="form-text"></div>
       </div>
 
       @if(!empty($supportsQty))
@@ -293,7 +290,7 @@
 
   // ✅ no checkbox: if service allow_bulk=1 show bulk textarea directly, else show single input
   function applyBulkModeByService(){
-       if (isFileKind) {
+    if (isFileKind) {
       if (bulkHidden) bulkHidden.value = '0';
       show(singleWrap);
       hide(bulkWrap);
@@ -306,7 +303,7 @@
       hide(bulkWrap);
       return;
     }
-    
+
     const allowBulk = serviceAllowBulk();
 
     if (allowBulk) {
@@ -314,7 +311,6 @@
       hide(singleWrap);
       show(bulkWrap);
 
-      // clear single device
       const deviceInput = singleWrap ? singleWrap.querySelector('input[name="device"]') : null;
       if (deviceInput) deviceInput.value = '';
     } else {
@@ -322,13 +318,11 @@
       show(singleWrap);
       hide(bulkWrap);
 
-      // clear bulk textarea
       const bulkTa = bulkWrap ? bulkWrap.querySelector('textarea[name="devices"]') : null;
       if (bulkTa) bulkTa.value = '';
     }
   }
 
-  // ✅ CUSTOM FIELDS: render dynamic custom fields -> required[input]
   function renderCustomFields(){
     if (!fieldsWrap || !fieldsBox) return;
 
@@ -343,14 +337,12 @@
     let cf = safeJsonParse(opt.getAttribute('data-custom-fields') || '[]');
     if (!Array.isArray(cf)) cf = [];
 
-   
-
     if (cf.length === 0) {
       hide(fieldsWrap);
       return;
     }
 
-     show(fieldsWrap);
+    show(fieldsWrap);
 
     const splitOptions = (raw) => {
       if (!raw) return [];
@@ -415,7 +407,6 @@
       control.name = 'required[' + input + ']';
       if (req) control.required = true;
 
-      // min/max (optional)
       const min = parseInt(f.minimum ?? 0, 10);
       const max = parseInt(f.maximum ?? 0, 10);
       if (control.type === 'number') {
@@ -446,7 +437,7 @@
 
     const ok = (userSel.value && serviceSel.value && price > 0 && balance >= price);
 
-    if (ok) {
+    if (ok && !form.dataset.submitting) {
       hide(balanceErrorEl);
       btnCreate.disabled = false;
     } else {
@@ -454,6 +445,13 @@
       else hide(balanceErrorEl);
       btnCreate.disabled = true;
     }
+  }
+
+  function lockSubmit(){
+    form.dataset.submitting = '1';
+    btnCreate.disabled = true;
+    btnCreate.setAttribute('aria-disabled', 'true');
+    btnCreate.textContent = 'Creating...';
   }
 
   // Initial state
@@ -493,11 +491,19 @@
 
   form.addEventListener('submit', function(e){
     updateSummary();
-    // HTML required fields will validate automatically.
+
+    if (form.dataset.submitting === '1') {
+      e.preventDefault();
+      return false;
+    }
+
     if (btnCreate.disabled) {
       e.preventDefault();
       show(balanceErrorEl);
+      return false;
     }
+
+    lockSubmit();
   });
 
 })();
