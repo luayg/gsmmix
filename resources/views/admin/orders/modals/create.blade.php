@@ -106,13 +106,11 @@
               $name = $pickName($s->name);
               $allowBulk = (int)($s->allow_bulk ?? 0);
 
-              // group prices map: [group_id => final_price]
               $gp = $servicePriceMap[$s->id] ?? [];
               $gpJson = json_encode($gp, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 
               $fallback = $basePrice($s);
 
-              // ✅ Custom fields (now should come from DB injected into params.custom_fields)
               $params = $s->params ?? [];
               if (is_string($params)) $params = json_decode($params, true) ?: [];
               if (!is_array($params)) $params = [];
@@ -132,7 +130,6 @@
         </select>
       </div>
 
-      {{-- ✅ bulk hidden input (we set it automatically based on service allow_bulk) --}}
       <input type="hidden" name="bulk" id="bulkHidden" value="0">
 
       {{-- SINGLE device / upload --}}
@@ -157,7 +154,7 @@
         <textarea class="form-control" name="devices" rows="6" placeholder="Enter one per line"></textarea>
       </div>
 
-      {{-- ✅ CUSTOM FIELDS (for ALL kinds: imei/server/file) --}}
+      {{-- CUSTOM FIELDS --}}
       <div class="col-12 js-step-fields d-none" id="serviceFieldsWrap">
         <label class="form-label fw-semibold">Service fields</label>
         <div class="row g-2" id="serviceFieldsContainer"></div>
@@ -217,7 +214,6 @@
   const bulkWrap   = document.getElementById('bulkDevicesWrap');
   const bulkHidden = document.getElementById('bulkHidden');
 
-  // ✅ custom fields (all kinds)
   const fieldsWrap = document.getElementById('serviceFieldsWrap');
   const fieldsBox  = document.getElementById('serviceFieldsContainer');
 
@@ -288,7 +284,6 @@
     });
   }
 
-  // ✅ no checkbox: if service allow_bulk=1 show bulk textarea directly, else show single input
   function applyBulkModeByService(){
     if (isFileKind) {
       if (bulkHidden) bulkHidden.value = '0';
@@ -437,7 +432,7 @@
 
     const ok = (userSel.value && serviceSel.value && price > 0 && balance >= price);
 
-    if (ok && !form.dataset.submitting) {
+    if (ok) {
       hide(balanceErrorEl);
       btnCreate.disabled = false;
     } else {
@@ -447,14 +442,12 @@
     }
   }
 
-  function lockSubmit(){
-    form.dataset.submitting = '1';
+  function lockVisualOnly(){
     btnCreate.disabled = true;
     btnCreate.setAttribute('aria-disabled', 'true');
     btnCreate.textContent = 'Creating...';
   }
 
-  // Initial state
   hide(serviceWrap);
   hideAllFields();
   if (bulkHidden) bulkHidden.value = '0';
@@ -492,18 +485,14 @@
   form.addEventListener('submit', function(e){
     updateSummary();
 
-    if (form.dataset.submitting === '1') {
-      e.preventDefault();
-      return false;
-    }
-
     if (btnCreate.disabled) {
       e.preventDefault();
       show(balanceErrorEl);
       return false;
     }
 
-    lockSubmit();
+    // مهم: قفل بصري فقط، بدون dataset.submitting
+    lockVisualOnly();
   });
 
 })();
