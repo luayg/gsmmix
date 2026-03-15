@@ -55,30 +55,29 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
 
     public function syncCatalog(ApiProvider $provider, string $kind): int
     {
-        $params = $this->params($provider);
-
-        $servicesUrl = trim((string)($params['services_url'] ?? ''));
-        if ($servicesUrl === '') {
-            $servicesUrl = $this->deriveServicesUrl((string)$provider->url);
-        }
-
-        if ($servicesUrl === '') {
-            throw new \RuntimeException('SIMPLE LINK SERVICES URL IS EMPTY');
+        $url = trim((string)$provider->url);
+        if ($url === '') {
+            throw new \RuntimeException('SIMPLE LINK URL IS EMPTY');
         }
 
         $method = $this->method($provider);
 
+        $payload = [
+            'action' => 'services',
+            'kind'   => $kind,
+        ];
+
         $response = $method === 'GET'
-            ? Http::timeout(60)->get($servicesUrl, ['kind' => $kind])
-            : Http::timeout(60)->asForm()->post($servicesUrl, ['kind' => $kind]);
+            ? Http::timeout(60)->get($url, $payload)
+            : Http::timeout(60)->asForm()->post($url, $payload);
 
         if (!$response->successful()) {
-            throw new \RuntimeException('Simple Link services endpoint returned HTTP ' . $response->status());
+            throw new \RuntimeException('Simple Link endpoint returned HTTP ' . $response->status());
         }
 
         $json = $response->json();
         if (!is_array($json)) {
-            throw new \RuntimeException('Simple Link services endpoint did not return valid JSON');
+            throw new \RuntimeException('Simple Link endpoint did not return valid JSON');
         }
 
         if (array_key_exists('success', $json) && !$json['success']) {
@@ -127,12 +126,12 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
             }
 
             $insert = [
-                'api_provider_id' => $provider->id,
-                'group_name' => $group,
-                'remote_id' => $remoteId,
-                'name' => $name,
-                'price' => $price,
-                'time' => $time,
+                'api_provider_id'   => $provider->id,
+                'group_name'        => $group,
+                'remote_id'         => $remoteId,
+                'name'              => $name,
+                'price'             => $price,
+                'time'              => $time,
                 'additional_fields' => is_array($additionalFields) ? $additionalFields : [],
             ];
 
@@ -162,35 +161,7 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
     {
         $params = $this->params($provider);
         $method = strtoupper(trim((string)($params['method'] ?? 'POST')));
+
         return in_array($method, ['GET', 'POST'], true) ? $method : 'POST';
-    }
-
-    private function deriveServicesUrl(string $url): string
-    {
-        $url = trim($url);
-        if ($url === '') {
-            return '';
-        }
-
-        $parts = parse_url($url);
-        if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
-            return '';
-        }
-
-        $path = $parts['path'] ?? '';
-        $dir = rtrim(str_replace('\\', '/', dirname($path)), '/.');
-        $servicesPath = ($dir === '' || $dir === '/') ? '/services.php' : $dir . '/services.php';
-
-        $out = $parts['scheme'] . '://' . $parts['host'];
-        if (!empty($parts['port'])) {
-            $out .= ':' . $parts['port'];
-        }
-        $out .= $servicesPath;
-
-        if (!empty($parts['query'])) {
-            $out .= '?' . $parts['query'];
-        }
-
-        return $out;
     }
 }
