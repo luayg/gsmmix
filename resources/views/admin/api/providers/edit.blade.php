@@ -1,4 +1,3 @@
-{{-- Modal: Edit API --}}
 <div class="modal-header bg-warning text-dark">
   <h5 class="modal-title">{{ $provider->name }} | Edit</h5>
   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -6,13 +5,14 @@
 
 @php
   $types=['dhru'=>'DHRU API','webx'=>'WebX API','gsmhub'=>'GSM Hub API','unlockbase'=>'Unlock Base API (v3.x)','simple_link'=>'Simple link'];
-  $p = $provider->params_json;
-  $simpleMain = $p['main_field'] ?? 'imei';
-  $simpleMethod = strtoupper($p['method'] ?? 'POST');
+  $p = is_array($provider->params) ? $provider->params : [];
+  $simpleMain = old('main_field_name', $p['main_field'] ?? 'imei');
+  $simpleMethod = strtoupper(old('method', $p['method'] ?? 'POST'));
 @endphp
 
 <form method="POST" action="{{ route('admin.apis.update', $provider) }}">
-  @csrf @method('PUT')
+  @csrf
+  @method('PUT')
 
   <div class="modal-body">
     @if (session('ok'))
@@ -39,17 +39,17 @@
         </select>
       </div>
 
-      <div class="col-md-6">
-        <label class="form-label">URL</label>
+      <div class="col-md-12">
+        <label class="form-label">Link</label>
         <input type="text" name="url" class="form-control" required value="{{ old('url',$provider->url) }}">
       </div>
 
-      <div class="col-md-3" id="username_wrap">
+      <div class="col-md-6" id="username_wrap">
         <label class="form-label">Username</label>
         <input type="text" name="username" class="form-control" value="{{ old('username',$provider->username) }}">
       </div>
 
-      <div class="col-md-3" id="key_wrap">
+      <div class="col-md-6" id="key_wrap">
         <label class="form-label">Key</label>
         <input type="text" name="api_key" class="form-control" value="{{ old('api_key',$provider->api_key) }}">
       </div>
@@ -60,22 +60,26 @@
         <div class="col-md-6">
           <label class="form-label">Main field name</label>
           <input type="text" name="main_field_name" id="main_field_name" class="form-control"
-                 value="{{ old('main_field_name', $simpleMain) }}">
+                 value="{{ $simpleMain }}">
           <small class="text-muted">
-            مثال: إذا رابطك يحتوي <code>?imei=123...</code> إذًا main field = <code>imei</code> (حساس لحالة الأحرف)
+            For example if your link looks like this:
+            <code>https://example.com?key=XXXXXXXX&imei=123456789012345</code>,
+            then your Main field name is <code>imei</code>.
+            Please note that it is case sensitive.
           </small>
         </div>
 
         <div class="col-md-6">
           <label class="form-label">Method</label>
           <select name="method" id="simple_method" class="form-select">
-            <option value="GET"  @selected(old('method', $simpleMethod)==='GET')>GET</option>
-            <option value="POST" @selected(old('method', $simpleMethod)==='POST')>POST</option>
+            <option value="GET"  @selected($simpleMethod==='GET')>GET</option>
+            <option value="POST" @selected($simpleMethod==='POST')>POST</option>
           </select>
           <div class="alert alert-warning mt-2 mb-0">
             <b>Warning!!!</b>
-            إذا المزود يرجّع HTTP 200 دائمًا، النظام سيعتبر الطلب <b>Success</b>.
-            لتعامل الرفض، المزود لازم يرجّع HTTP غير 200 عند الأخطاء.
+            If your link returns HTTP status 200 OK, orders will be replied as success,
+            and the content will be the reply. To handle rejects, your link provider has to
+            return HTTP status other than 200 OK on bad responses.
           </div>
         </div>
       </div>
@@ -137,7 +141,7 @@
 
   <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-    <button class="btn btn-primary"><i class="fas fa-save me-1"></i> Save</button>
+    <button class="btn btn-primary">Save</button>
   </div>
 </form>
 
@@ -153,7 +157,7 @@
 
     if (box) box.style.display = isSimple ? 'block' : 'none';
     if (usernameWrap) usernameWrap.style.display = isSimple ? 'none' : 'block';
-    if (keyWrap) keyWrap.style.display = 'block';
+    if (keyWrap) keyWrap.style.display = isSimple ? 'none' : 'block';
   }
 
   document.getElementById('api_type').addEventListener('change', toggleSimpleLink);

@@ -20,9 +20,6 @@ use App\Models\ServiceGroupPrice;
 
 class ApiProvidersController extends Controller
 {
-    /**
-     * صفحة القائمة الرئيسية
-     */
     public function index(Request $request)
     {
         $q       = trim((string) $request->get('q', ''));
@@ -44,21 +41,23 @@ class ApiProvidersController extends Controller
 
         if ($type !== '') {
             $normalized = $this->normalizeType($type);
-            if ($normalized) $query->where('type', $normalized);
+            if ($normalized) {
+                $query->where('type', $normalized);
+            }
         }
 
         if ($status !== '') {
-            if (strcasecmp($status, 'Active') === 0) $query->where('active', 1);
-            elseif (strcasecmp($status, 'Inactive') === 0) $query->where('active', 0);
+            if (strcasecmp($status, 'Active') === 0) {
+                $query->where('active', 1);
+            } elseif (strcasecmp($status, 'Inactive') === 0) {
+                $query->where('active', 0);
+            }
         }
 
         $rows = $query->paginate($perPage)->withQueryString();
         return view('admin.api.providers.index', compact('rows'));
     }
 
-    /**
-     * API options endpoint
-     */
     public function options(Request $request)
     {
         $onlyActive = $request->boolean('active', false);
@@ -67,7 +66,9 @@ class ApiProvidersController extends Controller
             ->select(['id', 'name', 'type', 'active'])
             ->orderBy('name');
 
-        if ($onlyActive) $q->where('active', 1);
+        if ($onlyActive) {
+            $q->where('active', 1);
+        }
 
         return response()->json($q->get()->toArray());
     }
@@ -100,6 +101,7 @@ class ApiProvidersController extends Controller
         if (($data['type'] ?? '') === 'simple_link') {
             $data['url'] = trim((string)$data['url']);
             $data['username'] = null;
+            $data['api_key'] = null;
         } else {
             $data['url'] = rtrim((string)$data['url'], '/') . '/';
         }
@@ -116,6 +118,7 @@ class ApiProvidersController extends Controller
         if (($data['type'] ?? '') === 'simple_link') {
             $data['url'] = trim((string)$data['url']);
             $data['username'] = null;
+            $data['api_key'] = null;
         } else {
             $data['url'] = rtrim((string)$data['url'], '/') . '/';
         }
@@ -125,10 +128,6 @@ class ApiProvidersController extends Controller
         return redirect()->route('admin.apis.index')->with('ok', 'API Provider updated.');
     }
 
-    /**
-     * ✅ FIX:
-     * عند حذف Provider لازم نحذف كل خدماته من جداول remote_* حتى لا يحصل تضخم/ازدواجية
-     */
     public function destroy(Request $request, ApiProvider $provider)
     {
         DB::transaction(function () use ($provider) {
@@ -266,8 +265,12 @@ class ApiProvidersController extends Controller
         $applyAll = (bool)$request->boolean('apply_all', false);
 
         $ids = $request->input('service_ids', null);
-        if ($ids === null) $ids = $request->input('imported', null);
-        if (is_string($ids)) $ids = array_filter(array_map('trim', explode(',', $ids)));
+        if ($ids === null) {
+            $ids = $request->input('imported', null);
+        }
+        if (is_string($ids)) {
+            $ids = array_filter(array_map('trim', explode(',', $ids)));
+        }
 
         if (!$applyAll) {
             if (!is_array($ids) || count($ids) === 0) {
@@ -275,18 +278,24 @@ class ApiProvidersController extends Controller
             }
         }
 
-        $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
-        $mode  = strtolower(trim($mode));
-        if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
+        $mode = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
+        $mode = strtolower(trim($mode));
+        if (!in_array($mode, ['fixed', 'percent'], true)) {
+            $mode = 'fixed';
+        }
 
         $value = (float)($request->input('profit_value') ?? $request->input('pricing_value') ?? 0);
 
         $groupPrices = $request->input('group_prices', []);
         if (is_string($groupPrices) && trim($groupPrices) !== '') {
             $decoded = json_decode($groupPrices, true);
-            if (is_array($decoded)) $groupPrices = $decoded;
+            if (is_array($decoded)) {
+                $groupPrices = $decoded;
+            }
         }
-        if (!is_array($groupPrices)) $groupPrices = [];
+        if (!is_array($groupPrices)) {
+            $groupPrices = [];
+        }
 
         try {
             $result = $this->doBulkImport(
@@ -395,18 +404,14 @@ class ApiProvidersController extends Controller
     private function extractRemoteAdditionalFields($r): array
     {
         $primary = $this->normalizeAdditionalFieldsPayload($r->additional_fields ?? null);
-        if (!empty($primary)) {
-            return $primary;
-        }
+        if (!empty($primary)) return $primary;
 
         $ad = $r->additional_data ?? null;
         if (is_string($ad)) {
             $ad = json_decode($ad, true);
         }
 
-        if (!is_array($ad)) {
-            return [];
-        }
+        if (!is_array($ad)) return [];
 
         $candidates = [
             $ad['Requires.Custom'] ?? null,
@@ -423,9 +428,7 @@ class ApiProvidersController extends Controller
 
         foreach ($candidates as $candidate) {
             $normalized = $this->normalizeAdditionalFieldsPayload($candidate);
-            if (!empty($normalized)) {
-                return $normalized;
-            }
+            if (!empty($normalized)) return $normalized;
         }
 
         return [];
@@ -437,9 +440,7 @@ class ApiProvidersController extends Controller
             $raw = json_decode($raw, true);
         }
 
-        if (!is_array($raw) || $raw === []) {
-            return [];
-        }
+        if (!is_array($raw) || $raw === []) return [];
 
         if ($this->isAssociativeArray($raw)) {
             $isDirectFieldShape = array_key_exists('fieldname', $raw)
@@ -464,13 +465,11 @@ class ApiProvidersController extends Controller
 
         $out = [];
         foreach (($flattened ?: $raw) as $item) {
-            if (!is_array($item) || !$this->isAssociativeArray($item)) {
-                continue;
-            }
+            if (!is_array($item) || !$this->isAssociativeArray($item)) continue;
+
             $label = trim((string)($item['fieldname'] ?? $item['name'] ?? $item['label'] ?? ''));
-            if ($label === '') {
-                continue;
-            }
+            if ($label === '') continue;
+
             $out[] = $item;
         }
 
@@ -513,10 +512,7 @@ class ApiProvidersController extends Controller
 
     private function isAssociativeArray(array $arr): bool
     {
-        if ($arr === []) {
-            return false;
-        }
-
+        if ($arr === []) return false;
         return array_keys($arr) !== range(0, count($arr) - 1);
     }
 
@@ -527,14 +523,10 @@ class ApiProvidersController extends Controller
         $maxFields = 20;
 
         foreach ($remoteFields as $rf) {
-            if (!is_array($rf) || !$this->isAssociativeArray($rf)) {
-                continue;
-            }
+            if (!is_array($rf) || !$this->isAssociativeArray($rf)) continue;
 
             $label = trim((string)($rf['fieldname'] ?? $rf['name'] ?? $rf['label'] ?? ''));
-            if ($label === '') {
-                continue;
-            }
+            if ($label === '') continue;
 
             $providedInput = trim((string)($rf['input'] ?? ''));
             $input = $providedInput !== ''
@@ -542,9 +534,7 @@ class ApiProvidersController extends Controller
                 : 'service_fields_' . (count($out) + 1);
 
             $dedupeKey = Str::lower($label) . '|' . Str::lower($input);
-            if (isset($seen[$dedupeKey])) {
-                continue;
-            }
+            if (isset($seen[$dedupeKey])) continue;
 
             $required = $this->parseStrictRequiredFlag($rf['required'] ?? null);
             $type = $this->mapRemoteFieldType($rf['fieldtype'] ?? $rf['type'] ?? 'text');
@@ -571,9 +561,7 @@ class ApiProvidersController extends Controller
             ];
 
             $seen[$dedupeKey] = true;
-            if (count($out) >= $maxFields) {
-                break;
-            }
+            if (count($out) >= $maxFields) break;
         }
 
         return $out;
@@ -581,9 +569,7 @@ class ApiProvidersController extends Controller
 
     private function parseStrictRequiredFlag($required): int
     {
-        if (is_bool($required)) {
-            return $required ? 1 : 0;
-        }
+        if (is_bool($required)) return $required ? 1 : 0;
 
         $value = Str::lower(trim((string)$required));
         return in_array($value, ['on', '1', 'true', 'yes'], true) ? 1 : 0;
@@ -659,22 +645,10 @@ class ApiProvidersController extends Controller
                 $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
 
                 $remoteFields = $this->extractRemoteAdditionalFields($r);
-                $remoteFieldsCount = count($remoteFields);
-                $localFields = !empty($remoteFields)
-                    ? $this->normalizeRemoteFieldsToLocal($remoteFields)
-                    : [];
-
-                $droppedCount = max(0, $remoteFieldsCount - count($localFields));
-                if ($droppedCount > 0) {
-                    Log::info('Dropped malformed provider custom fields during bulk import.', [
-                        'provider_id' => (int)$provider->id,
-                        'remote_id' => $remoteId,
-                        'dropped_count' => $droppedCount,
-                    ]);
-                }
+                $localFields = !empty($remoteFields) ? $this->normalizeRemoteFieldsToLocal($remoteFields) : [];
 
                 $params = [];
-                if (is_array($localFields) && !empty($localFields)) {
+                if (!empty($localFields)) {
                     $params['custom_fields'] = $localFields;
                 }
                 if ($kind === 'file') {
@@ -691,18 +665,14 @@ class ApiProvidersController extends Controller
                     'name' => $nameJson,
                     'time' => $timeJson,
                     'info' => $infoJson,
-
                     'cost' => $cost,
                     'profit' => $profitValue,
                     'profit_type' => $profitType,
-
                     'source' => 2,
                     'supplier_id' => $provider->id,
                     'remote_id' => $remoteId,
-
                     'main_field' => $mainField,
                     'params' => $params ?: null,
-
                     'active' => 1,
                     'allow_bulk' => 0,
                     'allow_duplicates' => 0,
@@ -826,15 +796,12 @@ class ApiProvidersController extends Controller
             'url' => ['required', 'string', 'max:255'],
             'username' => ['nullable', 'string', 'max:255'],
             'api_key' => ['nullable', 'string', 'max:255'],
-
             'sync_imei' => ['nullable'],
             'sync_server' => ['nullable'],
             'sync_file' => ['nullable'],
-
             'ignore_low_balance' => ['nullable'],
             'auto_sync' => ['nullable'],
             'active' => ['nullable'],
-
             'params' => ['nullable'],
             'main_field_name' => ['nullable', 'string', 'max:100'],
             'method' => ['nullable', 'string', 'in:GET,POST'],
@@ -843,7 +810,6 @@ class ApiProvidersController extends Controller
         $data['sync_imei'] = $request->boolean('sync_imei');
         $data['sync_server'] = $request->boolean('sync_server');
         $data['sync_file'] = $request->boolean('sync_file');
-
         $data['ignore_low_balance'] = $request->boolean('ignore_low_balance');
         $data['auto_sync'] = $request->boolean('auto_sync');
         $data['active'] = $request->boolean('active');
@@ -851,11 +817,11 @@ class ApiProvidersController extends Controller
         $params = $request->input('params');
         if (is_string($params)) {
             $decoded = json_decode($params, true);
-            $data['params'] = is_array($decoded) ? $decoded : null;
+            $data['params'] = is_array($decoded) ? $decoded : [];
         } elseif (is_array($params)) {
             $data['params'] = $params;
         } else {
-            $data['params'] = null;
+            $data['params'] = [];
         }
 
         if (($data['type'] ?? '') === 'simple_link') {
@@ -871,12 +837,47 @@ class ApiProvidersController extends Controller
                 $method = 'POST';
             }
 
+            $servicesUrl = trim((string)($simpleParams['services_url'] ?? ''));
+            if ($servicesUrl === '') {
+                $servicesUrl = $this->deriveSimpleLinkServicesUrl((string)$request->input('url', ''));
+            }
+
             $simpleParams['main_field'] = $mainField;
             $simpleParams['method'] = $method;
+            $simpleParams['services_url'] = $servicesUrl;
 
             $data['params'] = $simpleParams;
+        } else {
+            $data['params'] = $data['params'] ?: null;
         }
 
         return $data;
+    }
+
+    private function deriveSimpleLinkServicesUrl(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '') return '';
+
+        $parts = parse_url($url);
+        if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
+            return '';
+        }
+
+        $path = $parts['path'] ?? '';
+        $dir = rtrim(str_replace('\\', '/', dirname($path)), '/.');
+        $servicesPath = ($dir === '' || $dir === '/') ? '/services.php' : $dir . '/services.php';
+
+        $out = $parts['scheme'] . '://' . $parts['host'];
+        if (!empty($parts['port'])) {
+            $out .= ':' . $parts['port'];
+        }
+        $out .= $servicesPath;
+
+        if (!empty($parts['query'])) {
+            $out .= '?' . $parts['query'];
+        }
+
+        return $out;
     }
 }

@@ -23,37 +23,20 @@ class SimpleLinkOrderGateway
 
     private function endpoint(ApiProvider $provider): string
     {
-        $url = trim((string)($provider->url ?? ''));
-        if ($url === '') {
-            return '';
-        }
-
-        $parts = explode('?', $url, 2);
-        $base = rtrim($parts[0], '/');
-        if ($base === '') {
-            $base = $parts[0];
-        }
-
-        if (isset($parts[1]) && trim($parts[1]) !== '') {
-            return $base . '?' . $parts[1];
-        }
-
-        return $base;
+        return trim((string)($provider->url ?? ''));
     }
 
     private function method(ApiProvider $provider): string
     {
         $params = $this->providerParams($provider);
         $method = strtoupper(trim((string)($params['method'] ?? 'POST')));
-
         return in_array($method, ['GET', 'POST'], true) ? $method : 'POST';
     }
 
     private function mainFieldName(ApiProvider $provider): string
     {
         $params = $this->providerParams($provider);
-
-        $main = trim((string)($params['main_field'] ?? $params['main_field_name'] ?? 'imei'));
+        $main = trim((string)($params['main_field'] ?? 'imei'));
         return $main !== '' ? $main : 'imei';
     }
 
@@ -97,21 +80,9 @@ class SimpleLinkOrderGateway
         $mainField = $this->mainFieldName($provider);
         $value = $this->resolvePrimaryValue($order, $mainField);
 
-        $payload = [
+        return [
             $mainField => $value,
         ];
-
-        $apiKey = trim((string)($provider->api_key ?? ''));
-        if ($apiKey !== '') {
-            $payload['api_key'] = $apiKey;
-        }
-
-        $username = trim((string)($provider->username ?? ''));
-        if ($username !== '') {
-            $payload['username'] = $username;
-        }
-
-        return $payload;
     }
 
     private function shortMessageFromBody(string $body): string
@@ -152,8 +123,7 @@ class SimpleLinkOrderGateway
             return $trimmed;
         }
 
-        $safe = e($trimmed);
-        return '<div style="white-space:pre-wrap;">' . $safe . '</div>';
+        return '<div style="white-space:pre-wrap;">' . e($trimmed) . '</div>';
     }
 
     private function successResult(string $url, string $method, array $payload, int $httpStatus, string $body): array
@@ -255,23 +225,11 @@ class SimpleLinkOrderGateway
         $payload = $this->buildPayload($provider, $order);
 
         if ($url === '') {
-            return $this->rejectResult(
-                $url,
-                $method,
-                $payload,
-                0,
-                'SIMPLE LINK URL IS EMPTY'
-            );
+            return $this->rejectResult($url, $method, $payload, 0, 'SIMPLE LINK URL IS EMPTY');
         }
 
         if (trim((string)($payload[$mainField] ?? '')) === '') {
-            return $this->rejectResult(
-                $url,
-                $method,
-                $payload,
-                400,
-                'MISSING MAIN FIELD VALUE'
-            );
+            return $this->rejectResult($url, $method, $payload, 400, 'MISSING MAIN FIELD VALUE');
         }
 
         try {
@@ -294,14 +252,7 @@ class SimpleLinkOrderGateway
 
             return $this->rejectResult($url, $method, $payload, $status, $body);
         } catch (\Throwable $e) {
-            return $this->waitingResult(
-                $url,
-                $method,
-                $payload,
-                0,
-                $e->getMessage(),
-                'SIMPLE LINK CONNECTION ERROR'
-            );
+            return $this->waitingResult($url, $method, $payload, 0, $e->getMessage(), 'SIMPLE LINK CONNECTION ERROR');
         }
     }
 
