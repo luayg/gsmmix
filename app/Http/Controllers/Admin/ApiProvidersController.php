@@ -99,6 +99,7 @@ class ApiProvidersController extends Controller
 
         if (($data['type'] ?? '') === 'simple_link') {
             $data['url'] = trim((string)$data['url']);
+            $data['username'] = null;
         } else {
             $data['url'] = rtrim((string)$data['url'], '/') . '/';
         }
@@ -114,6 +115,7 @@ class ApiProvidersController extends Controller
 
         if (($data['type'] ?? '') === 'simple_link') {
             $data['url'] = trim((string)$data['url']);
+            $data['username'] = null;
         } else {
             $data['url'] = rtrim((string)$data['url'], '/') . '/';
         }
@@ -132,12 +134,10 @@ class ApiProvidersController extends Controller
         DB::transaction(function () use ($provider) {
             $pid = (int)$provider->id;
 
-            // ✅ احذف خدمات الريموت أولاً
             RemoteImeiService::query()->where('api_provider_id', $pid)->delete();
             RemoteServerService::query()->where('api_provider_id', $pid)->delete();
             RemoteFileService::query()->where('api_provider_id', $pid)->delete();
 
-            // ✅ ثم احذف المزود نفسه
             $provider->delete();
         });
 
@@ -149,9 +149,7 @@ class ApiProvidersController extends Controller
         $result = $manager->sync($provider);
         $provider->refresh();
 
-        // ✅ NEW: If errors exist, show ONLY the short error message and DO NOT show balance.
         if (!empty($result['errors'])) {
-            // Prefer the IP blocked message if present
             $msg = in_array('IP BLOCKED - Reset Provider IP', $result['errors'], true)
                 ? 'Sync finished with errors: IP BLOCKED - Reset Provider IP'
                 : ('Sync finished with errors: ' . implode(' | ', $result['errors']));
@@ -159,7 +157,6 @@ class ApiProvidersController extends Controller
             return redirect()->route('admin.apis.index')->with('ok', $msg);
         }
 
-        // ✅ Success path: keep balance display
         $msg = 'Sync done.';
         if (!empty($result['warnings'])) {
             $msg .= ' ' . implode(' | ', $result['warnings']);
@@ -180,9 +177,6 @@ class ApiProvidersController extends Controller
         ]);
     }
 
-    /**
-     * Services modals
-     */
     public function servicesImei(Request $request, ApiProvider $provider)
     {
         $rows = RemoteImeiService::where('api_provider_id', $provider->id)
@@ -190,7 +184,6 @@ class ApiProvidersController extends Controller
 
         $services = $rows->map(function ($s) {
             $af = $s->additional_fields ?? [];
-            // نخليه array أو json string حسب الحاجة (services.blade.php يتعامل مع الاثنين)
             $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
 
             return [
@@ -199,7 +192,6 @@ class ApiProvidersController extends Controller
                 'NAME'      => (string)($s->name ?? ''),
                 'CREDIT'    => (float)($s->price ?? 0),
                 'TIME'      => (string)($s->time ?? ''),
-                // ✅ هذا هو المهم
                 'ADDITIONAL_FIELDS' => $afOut,
             ];
         })->values()->all();
@@ -264,9 +256,6 @@ class ApiProvidersController extends Controller
         ]);
     }
 
-    /**
-     * IMPORT endpoint
-     */
     public function importServices(Request $request, ApiProvider $provider)
     {
         $kind = strtolower((string)$request->input('kind', ''));
@@ -324,12 +313,6 @@ class ApiProvidersController extends Controller
     {
         return $this->importServices($request, $provider);
     }
-
-    /**
-     * =========================
-     * Internal helpers
-     * =========================
-     */
 
     private function buildMainFieldJson(string $type = 'serial', string $label = 'Serial', string $allowed = 'any', int $min = 1, int $max = 50): string
     {
@@ -564,7 +547,6 @@ class ApiProvidersController extends Controller
             }
 
             $required = $this->parseStrictRequiredFlag($rf['required'] ?? null);
-
             $type = $this->mapRemoteFieldType($rf['fieldtype'] ?? $rf['type'] ?? 'text');
 
             $optionsRaw = $rf['fieldoptions'] ?? $rf['options'] ?? [];

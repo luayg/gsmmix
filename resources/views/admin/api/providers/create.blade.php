@@ -35,18 +35,17 @@
         <input type="text" name="url" class="form-control" required value="{{ old('url') }}">
       </div>
 
-      <div class="col-md-3">
+      <div class="col-md-3" id="username_wrap">
         <label class="form-label">Username</label>
         <input type="text" name="username" class="form-control" value="{{ old('username') }}">
       </div>
 
-      <div class="col-md-3">
+      <div class="col-md-3" id="key_wrap">
         <label class="form-label">Key</label>
         <input type="text" name="api_key" class="form-control" value="{{ old('api_key') }}">
       </div>
     </div>
 
-    {{-- ✅ Simple Link Options --}}
     <div id="simple_link_box" class="mt-3 p-3 border rounded" style="display:none;">
       <div class="row g-3">
         <div class="col-md-6">
@@ -75,9 +74,7 @@
 
     <hr class="my-3">
 
-    {{-- toggles --}}
     <div class="row gy-3">
-      {{-- hidden=0 لضمان وصول false عند الإطفاء --}}
       <input type="hidden" name="sync_imei" value="0">
       <input type="hidden" name="sync_server" value="0">
       <input type="hidden" name="sync_file" value="0">
@@ -141,9 +138,17 @@
 (function(){
   function toggleSimpleLink(){
     var t = document.getElementById('api_type').value;
+    var isSimple = (t === 'simple_link');
+
     var box = document.getElementById('simple_link_box');
-    box.style.display = (t === 'simple_link') ? 'block' : 'none';
+    var usernameWrap = document.getElementById('username_wrap');
+    var keyWrap = document.getElementById('key_wrap');
+
+    if (box) box.style.display = isSimple ? 'block' : 'none';
+    if (usernameWrap) usernameWrap.style.display = isSimple ? 'none' : 'block';
+    if (keyWrap) keyWrap.style.display = 'block';
   }
+
   document.getElementById('api_type').addEventListener('change', toggleSimpleLink);
   toggleSimpleLink();
 })();
