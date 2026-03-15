@@ -1,10 +1,18 @@
+{{-- Modal: Edit API --}}
 <div class="modal-header bg-warning text-dark">
   <h5 class="modal-title">{{ $provider->name }} | Edit</h5>
   <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
 </div>
 
 @php
-  $types=['dhru'=>'DHRU API','webx'=>'WebX API','gsmhub'=>'GSM Hub API','unlockbase'=>'Unlock Base API (v3.x)','simple_link'=>'Simple link'];
+  $types = [
+    'dhru' => 'DHRU API',
+    'webx' => 'WebX API',
+    'gsmhub' => 'GSM Hub API',
+    'unlockbase' => 'Unlock Base API (v3.x)',
+    'simple_link' => 'Simple link'
+  ];
+
   $p = is_array($provider->params) ? $provider->params : [];
   $simpleMain = old('main_field_name', $p['main_field'] ?? 'imei');
   $simpleMethod = strtoupper(old('method', $p['method'] ?? 'POST'));
@@ -18,6 +26,7 @@
     @if (session('ok'))
       <div class="alert alert-success">{{ session('ok') }}</div>
     @endif
+
     @if ($errors->any())
       <div class="alert alert-danger">
         <ul class="mb-0">@foreach($errors->all() as $e)<li>{{ $e }}</li>@endforeach</ul>
@@ -27,31 +36,31 @@
     <div class="row g-3">
       <div class="col-md-6">
         <label class="form-label">Name</label>
-        <input type="text" name="name" class="form-control" required value="{{ old('name',$provider->name) }}">
+        <input type="text" name="name" class="form-control" required value="{{ old('name', $provider->name) }}">
       </div>
 
       <div class="col-md-6">
         <label class="form-label">Type</label>
         <select name="type" id="api_type" class="form-select" required>
-          @foreach($types as $k=>$v)
-            <option value="{{ $k }}" @selected(old('type',$provider->type)===$k)>{{ $v }}</option>
+          @foreach($types as $k => $v)
+            <option value="{{ $k }}" @selected(old('type', $provider->type) === $k)>{{ $v }}</option>
           @endforeach
         </select>
       </div>
 
       <div class="col-md-12">
         <label class="form-label">Link</label>
-        <input type="text" name="url" class="form-control" required value="{{ old('url',$provider->url) }}">
+        <input type="text" name="url" class="form-control" required value="{{ old('url', $provider->url) }}">
       </div>
 
       <div class="col-md-6" id="username_wrap">
         <label class="form-label">Username</label>
-        <input type="text" name="username" class="form-control" value="{{ old('username',$provider->username) }}">
+        <input type="text" name="username" class="form-control" value="{{ old('username', $provider->username) }}">
       </div>
 
       <div class="col-md-6" id="key_wrap">
         <label class="form-label">Key</label>
-        <input type="text" name="api_key" class="form-control" value="{{ old('api_key',$provider->api_key) }}">
+        <input type="text" name="api_key" class="form-control" value="{{ old('api_key', $provider->api_key) }}">
       </div>
     </div>
 
@@ -59,8 +68,7 @@
       <div class="row g-3">
         <div class="col-md-6">
           <label class="form-label">Main field name</label>
-          <input type="text" name="main_field_name" id="main_field_name" class="form-control"
-                 value="{{ $simpleMain }}">
+          <input type="text" name="main_field_name" id="main_field_name" class="form-control" value="{{ $simpleMain }}">
           <small class="text-muted">
             For example if your link looks like this:
             <code>https://example.com?key=XXXXXXXX&imei=123456789012345</code>,
@@ -72,14 +80,13 @@
         <div class="col-md-6">
           <label class="form-label">Method</label>
           <select name="method" id="simple_method" class="form-select">
-            <option value="GET"  @selected($simpleMethod==='GET')>GET</option>
-            <option value="POST" @selected($simpleMethod==='POST')>POST</option>
+            <option value="GET" @selected($simpleMethod === 'GET')>GET</option>
+            <option value="POST" @selected($simpleMethod === 'POST')>POST</option>
           </select>
           <div class="alert alert-warning mt-2 mb-0">
             <b>Warning!!!</b>
-            If your link returns HTTP status 200 OK, orders will be replied as success,
-            and the content will be the reply. To handle rejects, your link provider has to
-            return HTTP status other than 200 OK on bad responses.
+            If your link returns HTTP status 200 OK, orders will be replied as success, and the content will be the reply.
+            To be able to handle rejects, your link provider has to return HTTP status other than 200 OK on bad responses.
           </div>
         </div>
       </div>
@@ -97,42 +104,42 @@
     <div class="row gy-3">
       <div class="col-md-4">
         <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="sync_imei" id="sync_imei" value="1" @checked(old('sync_imei',$provider->sync_imei))>
+          <input class="form-check-input" type="checkbox" name="sync_imei" id="sync_imei" value="1" @checked(old('sync_imei', $provider->sync_imei))>
           <label class="form-check-label" for="sync_imei">Sync IMEI services</label>
         </div>
       </div>
 
       <div class="col-md-4">
         <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="sync_server" id="sync_server" value="1" @checked(old('sync_server',$provider->sync_server))>
+          <input class="form-check-input" type="checkbox" name="sync_server" id="sync_server" value="1" @checked(old('sync_server', $provider->sync_server))>
           <label class="form-check-label" for="sync_server">Sync server services</label>
         </div>
       </div>
 
       <div class="col-md-4">
         <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="sync_file" id="sync_file" value="1" @checked(old('sync_file',$provider->sync_file))>
+          <input class="form-check-input" type="checkbox" name="sync_file" id="sync_file" value="1" @checked(old('sync_file', $provider->sync_file))>
           <label class="form-check-label" for="sync_file">Sync file services</label>
         </div>
       </div>
 
       <div class="col-md-4">
         <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="ignore_low_balance" id="ignore_low_balance" value="1" @checked(old('ignore_low_balance',$provider->ignore_low_balance))>
+          <input class="form-check-input" type="checkbox" name="ignore_low_balance" id="ignore_low_balance" value="1" @checked(old('ignore_low_balance', $provider->ignore_low_balance))>
           <label class="form-check-label" for="ignore_low_balance">Ignore low balance</label>
         </div>
       </div>
 
       <div class="col-md-4">
         <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="auto_sync" id="auto_sync" value="1" @checked(old('auto_sync',$provider->auto_sync))>
+          <input class="form-check-input" type="checkbox" name="auto_sync" id="auto_sync" value="1" @checked(old('auto_sync', $provider->auto_sync))>
           <label class="form-check-label" for="auto_sync">Auto sync</label>
         </div>
       </div>
 
       <div class="col-md-4">
         <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="active" id="active" value="1" @checked(old('active',$provider->active))>
+          <input class="form-check-input" type="checkbox" name="active" id="active" value="1" @checked(old('active', $provider->active))>
           <label class="form-check-label" for="active">Active</label>
         </div>
       </div>
@@ -141,7 +148,7 @@
 
   <div class="modal-footer">
     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-    <button class="btn btn-primary">Save</button>
+    <button class="btn btn-primary"><i class="fas fa-save me-1"></i> Save</button>
   </div>
 </form>
 

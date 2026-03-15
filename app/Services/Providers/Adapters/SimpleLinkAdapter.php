@@ -41,14 +41,13 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
                 return 0.0;
             }
 
-            $data = $response->json();
-
-            if (is_array($data)) {
-                $balance = $data['balance'] ?? $data['credit'] ?? $data['amount'] ?? 0;
-                return is_numeric($balance) ? (float)$balance : 0.0;
+            $json = $response->json();
+            if (!is_array($json)) {
+                return 0.0;
             }
 
-            return 0.0;
+            $balance = $json['balance'] ?? $json['credit'] ?? $json['amount'] ?? 0;
+            return is_numeric($balance) ? (float)$balance : 0.0;
         } catch (\Throwable $e) {
             return 0.0;
         }
@@ -57,14 +56,14 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
     public function syncCatalog(ApiProvider $provider, string $kind): int
     {
         $params = $this->params($provider);
-        $servicesUrl = trim((string)($params['services_url'] ?? ''));
 
+        $servicesUrl = trim((string)($params['services_url'] ?? ''));
         if ($servicesUrl === '') {
             $servicesUrl = $this->deriveServicesUrl((string)$provider->url);
         }
 
         if ($servicesUrl === '') {
-            return 0;
+            throw new \RuntimeException('SIMPLE LINK SERVICES URL IS EMPTY');
         }
 
         $method = $this->method($provider);
@@ -78,16 +77,19 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
         }
 
         $json = $response->json();
+        if (!is_array($json)) {
+            throw new \RuntimeException('Simple Link services endpoint did not return valid JSON');
+        }
 
-        if (is_array($json) && array_key_exists('success', $json) && !$json['success']) {
+        if (array_key_exists('success', $json) && !$json['success']) {
             $err = trim((string)($json['error'] ?? 'Simple Link service list failed'));
             throw new \RuntimeException($err !== '' ? $err : 'Simple Link service list failed');
         }
 
         $services = [];
-        if (is_array($json) && isset($json['services']) && is_array($json['services'])) {
+        if (isset($json['services']) && is_array($json['services'])) {
             $services = $json['services'];
-        } elseif (is_array($json) && array_is_list($json)) {
+        } elseif (array_is_list($json)) {
             $services = $json;
         }
 
@@ -103,10 +105,14 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
         $count = 0;
 
         foreach ($services as $row) {
-            if (!is_array($row)) continue;
+            if (!is_array($row)) {
+                continue;
+            }
 
             $rowKind = strtolower(trim((string)($row['kind'] ?? $kind)));
-            if ($rowKind !== $kind) continue;
+            if ($rowKind !== $kind) {
+                continue;
+            }
 
             $remoteId = trim((string)($row['id'] ?? $row['remote_id'] ?? $row['service'] ?? $row['service_id'] ?? ''));
             $name = trim((string)($row['name'] ?? $row['title'] ?? ''));
@@ -116,7 +122,9 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
             $allowedExtensions = trim((string)($row['allowed_extensions'] ?? ''));
             $additionalFields = $row['additional_fields'] ?? [];
 
-            if ($remoteId === '' || $name === '') continue;
+            if ($remoteId === '' || $name === '') {
+                continue;
+            }
 
             $insert = [
                 'api_provider_id' => $provider->id,
@@ -160,7 +168,9 @@ class SimpleLinkAdapter implements ProviderAdapterInterface
     private function deriveServicesUrl(string $url): string
     {
         $url = trim($url);
-        if ($url === '') return '';
+        if ($url === '') {
+            return '';
+        }
 
         $parts = parse_url($url);
         if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
