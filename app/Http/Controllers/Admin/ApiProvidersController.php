@@ -317,6 +317,7 @@ class ApiProvidersController extends Controller
                 'label'   => ['en' => $label, 'fallback' => $label],
             ],
         ];
+
         return json_encode($cfg, JSON_UNESCAPED_UNICODE);
     }
 
@@ -328,6 +329,7 @@ class ApiProvidersController extends Controller
         if ($x === 'password') return 'password';
         if ($x === 'email') return 'email';
         if (in_array($x, ['number', 'numeric', 'int', 'integer'], true)) return 'number';
+
         return 'text';
     }
 
@@ -832,7 +834,6 @@ class ApiProvidersController extends Controller
         $data['sync_imei'] = $request->boolean('sync_imei');
         $data['sync_server'] = $request->boolean('sync_server');
         $data['sync_file'] = $request->boolean('sync_file');
-
         $data['ignore_low_balance'] = $request->boolean('ignore_low_balance');
         $data['auto_sync'] = $request->boolean('auto_sync');
         $data['active'] = $request->boolean('active');
@@ -860,14 +861,10 @@ class ApiProvidersController extends Controller
                 $method = 'POST';
             }
 
-            $servicesUrl = trim((string)($simpleParams['services_url'] ?? ''));
-            if ($servicesUrl === '') {
-                $servicesUrl = $this->deriveSimpleLinkServicesUrl((string)$request->input('url', ''));
-            }
+            unset($simpleParams['services_url']);
 
             $simpleParams['main_field'] = $mainField;
             $simpleParams['method'] = $method;
-            $simpleParams['services_url'] = $servicesUrl;
 
             $data['params'] = $simpleParams;
         } else {
@@ -875,32 +872,5 @@ class ApiProvidersController extends Controller
         }
 
         return $data;
-    }
-
-    private function deriveSimpleLinkServicesUrl(string $url): string
-    {
-        $url = trim($url);
-        if ($url === '') return '';
-
-        $parts = parse_url($url);
-        if (!is_array($parts) || empty($parts['scheme']) || empty($parts['host'])) {
-            return '';
-        }
-
-        $path = $parts['path'] ?? '';
-        $dir = rtrim(str_replace('\\', '/', dirname($path)), '/.');
-        $servicesPath = ($dir === '' || $dir === '/') ? '/services.php' : $dir . '/services.php';
-
-        $out = $parts['scheme'] . '://' . $parts['host'];
-        if (!empty($parts['port'])) {
-            $out .= ':' . $parts['port'];
-        }
-        $out .= $servicesPath;
-
-        if (!empty($parts['query'])) {
-            $out .= '?' . $parts['query'];
-        }
-
-        return $out;
     }
 }
