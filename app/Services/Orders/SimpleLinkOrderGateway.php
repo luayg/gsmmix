@@ -30,6 +30,7 @@ class SimpleLinkOrderGateway
     {
         $params = $this->providerParams($provider);
         $method = strtoupper(trim((string)($params['method'] ?? 'POST')));
+
         return in_array($method, ['GET', 'POST'], true) ? $method : 'POST';
     }
 
@@ -37,6 +38,7 @@ class SimpleLinkOrderGateway
     {
         $params = $this->providerParams($provider);
         $main = trim((string)($params['main_field'] ?? 'imei'));
+
         return $main !== '' ? $main : 'imei';
     }
 
@@ -75,14 +77,60 @@ class SimpleLinkOrderGateway
         return '';
     }
 
+    private function splitUrlAndQuery(string $url): array
+    {
+        $url = trim($url);
+
+        if ($url === '') {
+            return ['', []];
+        }
+
+        $parts = parse_url($url);
+        if (!is_array($parts)) {
+            return [$url, []];
+        }
+
+        $base = '';
+        if (!empty($parts['scheme'])) {
+            $base .= $parts['scheme'] . '://';
+        }
+        if (!empty($parts['user'])) {
+            $base .= $parts['user'];
+            if (!empty($parts['pass'])) {
+                $base .= ':' . $parts['pass'];
+            }
+            $base .= '@';
+        }
+        if (!empty($parts['host'])) {
+            $base .= $parts['host'];
+        }
+        if (!empty($parts['port'])) {
+            $base .= ':' . $parts['port'];
+        }
+        $base .= $parts['path'] ?? '';
+
+        $queryParams = [];
+        if (!empty($parts['query'])) {
+            parse_str($parts['query'], $queryParams);
+            if (!is_array($queryParams)) {
+                $queryParams = [];
+            }
+        }
+
+        return [$base !== '' ? $base : $url, $queryParams];
+    }
+
     private function buildPayload(ApiProvider $provider, ImeiOrder $order): array
     {
         $mainField = $this->mainFieldName($provider);
         $value = $this->resolvePrimaryValue($order, $mainField);
 
-        return [
-            $mainField => $value,
-        ];
+        [, $queryParams] = $this->splitUrlAndQuery($this->endpoint($provider));
+
+        $payload = is_array($queryParams) ? $queryParams : [];
+        $payload[$mainField] = $value;
+
+        return $payload;
     }
 
     private function shortMessageFromBody(string $body): string
@@ -219,40 +267,41 @@ class SimpleLinkOrderGateway
 
     public function placeImeiOrder(ApiProvider $provider, ImeiOrder $order): array
     {
-        $url = $this->endpoint($provider);
+        $rawUrl = $this->endpoint($provider);
         $method = $this->method($provider);
         $mainField = $this->mainFieldName($provider);
+        [$baseUrl] = $this->splitUrlAndQuery($rawUrl);
         $payload = $this->buildPayload($provider, $order);
 
-        if ($url === '') {
-            return $this->rejectResult($url, $method, $payload, 0, 'SIMPLE LINK URL IS EMPTY');
+        if ($baseUrl === '') {
+            return $this->rejectResult($baseUrl, $method, $payload, 0, 'SIMPLE LINK URL IS EMPTY');
         }
 
         if (trim((string)($payload[$mainField] ?? '')) === '') {
-            return $this->rejectResult($url, $method, $payload, 400, 'MISSING MAIN FIELD VALUE');
+            return $this->rejectResult($baseUrl, $method, $payload, 400, 'MISSING MAIN FIELD VALUE');
         }
 
         try {
             $client = Http::timeout(60)->retry(1, 500);
 
             $response = $method === 'GET'
-                ? $client->get($url, $payload)
-                : $client->asForm()->post($url, $payload);
+                ? $client->get($baseUrl, $payload)
+                : $client->asForm()->post($baseUrl, $payload);
 
             $status = (int)$response->status();
             $body = (string)$response->body();
 
             if ($response->successful()) {
-                return $this->successResult($url, $method, $payload, $status, $body);
+                return $this->successResult($baseUrl, $method, $payload, $status, $body);
             }
 
             if ($status >= 500 || $status === 0) {
-                return $this->waitingResult($url, $method, $payload, $status, $body, 'SIMPLE LINK PROVIDER DOWN');
+                return $this->waitingResult($baseUrl, $method, $payload, $status, $body, 'SIMPLE LINK PROVIDER DOWN');
             }
 
-            return $this->rejectResult($url, $method, $payload, $status, $body);
+            return $this->rejectResult($baseUrl, $method, $payload, $status, $body);
         } catch (\Throwable $e) {
-            return $this->waitingResult($url, $method, $payload, 0, $e->getMessage(), 'SIMPLE LINK CONNECTION ERROR');
+            return $this->waitingResult($baseUrl, $method, $payload, 0, $e->getMessage(), 'SIMPLE LINK CONNECTION ERROR');
         }
     }
 
