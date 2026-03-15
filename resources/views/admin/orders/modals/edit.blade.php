@@ -22,7 +22,6 @@
     return $cleanText($v);
   };
 
-  // -------- params (fields/required) --------
   $params = $row?->params ?? null;
   if (is_string($params)) {
     $decoded = json_decode($params, true);
@@ -30,11 +29,9 @@
   }
   if (!is_array($params)) $params = [];
 
-  // Server fields can be stored as params.fields or params.required (legacy)
   $sentFields = $params['fields'] ?? $params['required'] ?? [];
   if (!is_array($sentFields)) $sentFields = [];
 
-  // Map inputs -> nice labels from service.params.custom_fields
   $serviceParams = $row?->service?->params ?? null;
   if (is_string($serviceParams)) {
     $decoded = json_decode($serviceParams, true);
@@ -56,7 +53,6 @@
     $cfOrder[] = $input;
   }
 
-  // Build ordered fields: follow custom_fields order, then remaining
   $orderedFields = [];
   foreach ($cfOrder as $input) {
     if (array_key_exists($input, $sentFields)) $orderedFields[$input] = $sentFields[$input];
@@ -65,7 +61,6 @@
     if (!array_key_exists($k, $orderedFields)) $orderedFields[$k] = $v;
   }
 
-  // response -> array
   $resp = $row?->response ?? null;
   if (is_string($resp)) {
     $decoded = json_decode($resp, true);
@@ -75,6 +70,8 @@
 
   $items = (isset($resp['result_items']) && is_array($resp['result_items'])) ? $resp['result_items'] : [];
   $img   = $resp['result_image'] ?? null;
+  $resultText = (string)($resp['result_text'] ?? '');
+  $resultMessage = (string)($resp['message'] ?? '');
 
   $isSafeImg = function ($url) {
     if (!is_string($url)) return false;
@@ -82,7 +79,6 @@
     return str_starts_with($u, 'http://') || str_starts_with($u, 'https://') || str_starts_with($u, 'data:image/');
   };
 
-  // ✅ Badge rendering (INLINE STYLES) حتى Quill ما يضيع الألوان
   $renderValue = function ($label, $value) use ($cleanText) {
     $label = strtolower($cleanText($label));
     $val   = $cleanText($value);
@@ -93,13 +89,13 @@
       return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:700;background:'.$bg.';color:'.$fg.';">'.$text.'</span>';
     };
 
-    if ($valL === 'on')  return $pill('ON',  '#dc3545'); // red
-    if ($valL === 'off') return $pill('OFF', '#198754'); // green
+    if ($valL === 'on')  return $pill('ON',  '#dc3545');
+    if ($valL === 'off') return $pill('OFF', '#198754');
 
     if (strpos($label, 'icloud') !== false) {
       if (strpos($valL, 'lost') !== false)  return $pill($val, '#dc3545');
       if (strpos($valL, 'clean') !== false) return $pill($val, '#198754');
-      return $pill($val, '#6c757d'); // gray
+      return $pill($val, '#6c757d');
     }
 
     if (in_array($valL, ['activated','unlocked','clean'], true)) return $pill($val, '#198754');
@@ -109,35 +105,42 @@
     return e($val);
   };
 
-  // Names
   $serviceName  = $pickName($row?->service?->name ?? ($row->service_name ?? '—'));
   $providerName = $cleanText($row?->provider?->name ?? ($row->provider_name ?? '—'));
 
-  // Reply HTML build (table + image)
   $providerReplyHtml = (string)($resp['provider_reply_html'] ?? '');
 
   if (trim($providerReplyHtml) === '') {
+    $html = '';
+
+    if ($img && $isSafeImg($img)) {
+      $html .= '<div style="text-align:center;margin-bottom:12px;">'
+            .  '<img src="'.e($img).'" style="max-width:280px;height:auto;border-radius:8px;" />'
+            .  '</div>';
+    }
+
     if (!empty($items)) {
-      $html = '';
-      if ($img && $isSafeImg($img)) {
-        $html .= '<div style="text-align:center;margin-bottom:10px;">'
-              .  '<img src="'.e($img).'" style="max-width:260px;height:auto;" />'
-              .  '</div>';
-      }
       $html .= '<table class="table table-sm table-striped table-bordered"><tbody>';
       foreach ($items as $it) {
         $label = is_array($it) ? ($it['label'] ?? '') : '';
         $value = is_array($it) ? ($it['value'] ?? '') : '';
-        $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.$renderValue($label, $value).'</td></tr>';
+
+        if (trim((string)$label) === '') {
+          $html .= '<tr><td colspan="2">'.$renderValue('', $value).'</td></tr>';
+        } else {
+          $html .= '<tr><th style="width:220px;">'.e($cleanText($label)).'</th><td>'.$renderValue($label, $value).'</td></tr>';
+        }
       }
       $html .= '</tbody></table>';
-      $providerReplyHtml = $html;
+    } elseif ($resultText !== '') {
+      $html .= '<div style="white-space:pre-wrap;">'.e($resultText).'</div>';
     } else {
-      $providerReplyHtml = e($cleanText($resp['message'] ?? ''));
+      $html .= '<div style="white-space:pre-wrap;">'.e($cleanText($resultMessage !== '' ? $resultMessage : '—')).'</div>';
     }
+
+    $providerReplyHtml = $html;
   }
 
-  // other fields
   $userEmail = $cleanText($row?->email ?? ($row->user_email ?? '—'));
   $device    = $cleanText($row?->device ?? ($row->imei ?? '—'));
   $remoteId  = $cleanText($row?->remote_id ?? '—');
@@ -148,7 +151,6 @@
 
   $apiOrder  = ($row?->api_order ?? false) ? 'Yes' : 'No';
 
-  // prices
   $customerPrice = $row?->price;
   $apiCost       = $row?->order_price;
   $finalPrice    = $row?->final_price ?? $customerPrice;
@@ -164,18 +166,21 @@
 
   $curStatus = $row?->status ?? 'waiting';
 
-  // Dynamic label for device row
   $deviceLabel = match($kind) {
-    'imei'   => 'IMEI/Serial number',
+    'imei'   => 'IMEI / Serial number',
     'file'   => 'File',
     'server' => 'Device',
     default  => 'Device',
   };
 
   $hasServerFields = ($kind === 'server' && count($orderedFields) > 0);
+
+  $requestMeta = is_array($row?->request ?? null) ? $row->request : [];
+  $requestUid = $requestMeta['request_uid'] ?? null;
+  $dispatchError = $requestMeta['dispatch_error'] ?? null;
 @endphp
 
-<div class="modal-header" style="background:#f39c12; color:#fff;">
+<div class="modal-header border-0" style="background:#f39c12; color:#fff;">
   <div class="d-flex align-items-center gap-2">
     <strong>Order #{{ $row?->id ?? '' }}</strong>
     <span class="opacity-75">|</span>
@@ -186,99 +191,163 @@
 
 <form class="js-ajax-form" method="POST" action="{{ route($routePrefix.'.update', $row?->id ?? 0) }}">
   @csrf
-  {{-- ✅ لا تضع @method('PUT') لأن الراوت عندك يقبل POST فقط --}}
 
   <div class="modal-body" style="max-height: calc(100vh - 210px); overflow: auto;">
+    <style>
+      .order-edit-card {
+        border: 1px solid #e9ecef;
+        border-radius: 14px;
+        background: #fff;
+        box-shadow: 0 4px 16px rgba(0,0,0,.04);
+        overflow: hidden;
+      }
+      .order-edit-card-header {
+        padding: 12px 16px;
+        background: #f8f9fa;
+        border-bottom: 1px solid #e9ecef;
+        font-weight: 700;
+      }
+      .order-edit-card-body {
+        padding: 16px;
+      }
+      .order-edit-preview {
+        border: 1px solid #e9ecef;
+        border-radius: 12px;
+        background: #fff;
+        padding: 14px;
+        min-height: 120px;
+      }
+      .order-edit-preview img {
+        max-width: 100%;
+        max-height: 280px;
+        border-radius: 8px;
+      }
+      .order-edit-meta {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #f8f9fa;
+        border: 1px solid #e9ecef;
+        font-size: 12px;
+        margin: 0 8px 8px 0;
+      }
+    </style>
+
     <div class="row g-3">
 
-      {{-- LEFT INFO --}}
-      <div class="col-lg-6">
-        <div class="table-responsive">
-          <table class="table table-bordered align-middle mb-0">
-            <tbody>
-              <tr><th style="width:180px;">Service</th><td>{{ $serviceName }}</td></tr>
-              <tr><th>User</th><td>{{ $userEmail }}</td></tr>
+      <div class="col-lg-5">
+        <div class="order-edit-card h-100">
+          <div class="order-edit-card-header">Order Info</div>
+          <div class="order-edit-card-body p-0">
+            <div class="table-responsive">
+              <table class="table table-bordered align-middle mb-0">
+                <tbody>
+                  <tr><th style="width:180px;">Service</th><td>{{ $serviceName }}</td></tr>
+                  <tr><th>User</th><td>{{ $userEmail }}</td></tr>
+                  <tr><th>{{ $deviceLabel }}</th><td>{{ $device !== '' ? $device : '—' }}</td></tr>
 
-              {{-- ✅ Device row (dynamic) --}}
-              <tr>
-                <th>{{ $deviceLabel }}</th>
-                <td>{{ $device !== '' ? $device : '—' }}</td>
-              </tr>
+                  @if($hasServerFields)
+                    <tr>
+                      <th>Service Fields</th>
+                      <td>
+                        <div class="table-responsive">
+                          <table class="table table-sm table-striped table-bordered mb-0">
+                            <tbody>
+                              @foreach($orderedFields as $input => $val)
+                                @php
+                                  $label = $cfLabelByInput[$input] ?? $input;
+                                  $valClean = $cleanText($val);
+                                @endphp
+                                <tr>
+                                  <th style="width:220px;">{{ $label }}</th>
+                                  <td>{{ $valClean !== '' ? $valClean : '—' }}</td>
+                                </tr>
+                              @endforeach
+                            </tbody>
+                          </table>
+                        </div>
+                      </td>
+                    </tr>
+                  @endif
 
-              {{-- ✅ Server: show sent service fields --}}
-              @if($hasServerFields)
-                <tr>
-                  <th>Service Fields</th>
-                  <td>
-                    <div class="table-responsive">
-                      <table class="table table-sm table-striped table-bordered mb-0">
-                        <tbody>
-                          @foreach($orderedFields as $input => $val)
-                            @php
-                              $label = $cfLabelByInput[$input] ?? $input;
-                              $valClean = $cleanText($val);
-                            @endphp
-                            <tr>
-                              <th style="width:220px;">{{ $label }}</th>
-                              <td>{{ $valClean !== '' ? $valClean : '—' }}</td>
-                            </tr>
-                          @endforeach
-                        </tbody>
-                      </table>
-                    </div>
-                  </td>
-                </tr>
-              @endif
-
-              <tr><th>Order date</th><td>{{ $createdAt }}</td></tr>
-              <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
-              <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>
-              <tr><th>Order price</th><td>{{ $fmt($customerPrice) }}</td></tr>
-              <tr><th>Final price</th><td>{{ $fmt($finalPrice) }}</td></tr>
-              <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
-              <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
-              <tr><th>API order ID</th><td>{{ $remoteId }}</td></tr>
-              <tr><th>API name</th><td>{{ $providerName }}</td></tr>
-              <tr><th>API processing price</th><td>{{ $fmt($apiCost) }}</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {{-- RIGHT: Reply + Status --}}
-      <div class="col-lg-6">
-        <div class="mb-3">
-          <label class="form-label">Reply</label>
-
-          <textarea
-            name="provider_reply_html"
-            class="form-control js-editor"
-            rows="12"
-            data-editor="quill"
-            data-editor-height="320"
-          >{!! $providerReplyHtml !!}</textarea>
-
-          <div class="form-text">
-            يمكنك تعديل الرد بتنسيق كامل (مثل صورة 77).
+                  <tr><th>Order date</th><td>{{ $createdAt }}</td></tr>
+                  <tr><th>Order IP</th><td>{{ $ip }}</td></tr>
+                  <tr><th>Ordered via API</th><td>{{ $apiOrder }}</td></tr>
+                  <tr><th>Order price</th><td>{{ $fmt($customerPrice) }}</td></tr>
+                  <tr><th>Final price</th><td>{{ $fmt($finalPrice) }}</td></tr>
+                  <tr><th>Profit</th><td>{{ $fmt($profit) }}</td></tr>
+                  <tr><th>Reply date</th><td>{{ $repliedAt }}</td></tr>
+                  <tr><th>API order ID</th><td>{{ $remoteId }}</td></tr>
+                  <tr><th>API name</th><td>{{ $providerName }}</td></tr>
+                  <tr><th>API processing price</th><td>{{ $fmt($apiCost) }}</td></tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
-        <div class="mt-3">
-          <label class="form-label fw-semibold">Status</label>
-          <select name="status" class="form-select" required>
-            <option value="waiting"    @selected($curStatus==='waiting')>Waiting</option>
-            <option value="inprogress" @selected($curStatus==='inprogress')>In progress</option>
-            <option value="success"    @selected($curStatus==='success')>Success</option>
-            <option value="rejected"   @selected($curStatus==='rejected')>Rejected</option>
-            <option value="cancelled"  @selected($curStatus==='cancelled')>Cancelled</option>
-          </select>
+        @if($requestUid || $dispatchError)
+          <div class="mt-3">
+            @if($requestUid)
+              <span class="order-edit-meta"><strong>Request UID:</strong> {{ $requestUid }}</span>
+            @endif
+            @if($dispatchError)
+              <span class="order-edit-meta"><strong>Dispatch Error:</strong> {{ $dispatchError }}</span>
+            @endif
+          </div>
+        @endif
+      </div>
+
+      <div class="col-lg-7">
+        <div class="order-edit-card">
+          <div class="order-edit-card-header">Reply Preview</div>
+          <div class="order-edit-card-body">
+            <div class="order-edit-preview mb-3">
+              {!! $providerReplyHtml !!}
+            </div>
+
+            @if($resultText !== '')
+              <details class="mb-3">
+                <summary>Raw text (debug)</summary>
+                <pre class="border rounded p-3 bg-light mb-0" style="white-space:pre-wrap;">{{ $resultText }}</pre>
+              </details>
+            @endif
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Reply HTML</label>
+
+              <textarea
+                name="provider_reply_html"
+                class="form-control"
+                rows="12"
+                data-editor="summernote"
+                data-summernote-height="320"
+              >{!! $providerReplyHtml !!}</textarea>
+
+              <div class="form-text">
+                الآن الرد يفتح داخل Summernote بدل Quill حتى تظهر الصورة والـ HTML كما وصلا من المزود ويمكن تعديلهما بسهولة.
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <label class="form-label fw-semibold">Status</label>
+              <select name="status" class="form-select" required>
+                <option value="waiting"    @selected($curStatus==='waiting')>Waiting</option>
+                <option value="inprogress" @selected($curStatus==='inprogress')>In progress</option>
+                <option value="success"    @selected($curStatus==='success')>Success</option>
+                <option value="rejected"   @selected($curStatus==='rejected')>Rejected</option>
+                <option value="cancelled"  @selected($curStatus==='cancelled')>Cancelled</option>
+              </select>
+            </div>
+
+          </div>
         </div>
       </div>
 
     </div>
   </div>
 
-  <div class="modal-footer">
+  <div class="modal-footer border-0">
     <button type="button" class="btn btn-light" data-bs-dismiss="modal">Close</button>
     <button type="submit" class="btn btn-success">Save</button>
   </div>
