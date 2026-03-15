@@ -96,7 +96,13 @@ class ApiProvidersController extends Controller
     public function store(Request $request)
     {
         $data = $this->validateProvider($request);
-        $data['url'] = rtrim((string)$data['url'], '/') . '/';
+
+        if (($data['type'] ?? '') === 'simple_link') {
+            $data['url'] = trim((string)$data['url']);
+        } else {
+            $data['url'] = rtrim((string)$data['url'], '/') . '/';
+        }
+
         ApiProvider::create($data);
 
         return redirect()->route('admin.apis.index')->with('ok', 'API Provider created.');
@@ -105,7 +111,13 @@ class ApiProvidersController extends Controller
     public function update(Request $request, ApiProvider $provider)
     {
         $data = $this->validateProvider($request, $provider->id);
-        $data['url'] = rtrim((string)$data['url'], '/') . '/';
+
+        if (($data['type'] ?? '') === 'simple_link') {
+            $data['url'] = trim((string)$data['url']);
+        } else {
+            $data['url'] = rtrim((string)$data['url'], '/') . '/';
+        }
+
         $provider->update($data);
 
         return redirect()->route('admin.apis.index')->with('ok', 'API Provider updated.');
@@ -172,148 +184,141 @@ class ApiProvidersController extends Controller
      * Services modals
      */
     public function servicesImei(Request $request, ApiProvider $provider)
-{
-    $rows = RemoteImeiService::where('api_provider_id', $provider->id)
-        ->orderBy('group_name')->orderBy('name')->get();
+    {
+        $rows = RemoteImeiService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')->orderBy('name')->get();
 
-    $services = $rows->map(function ($s) {
-        $af = $s->additional_fields ?? [];
-        // نخليه array أو json string حسب الحاجة (services.blade.php يتعامل مع الاثنين)
-        $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
+        $services = $rows->map(function ($s) {
+            $af = $s->additional_fields ?? [];
+            // نخليه array أو json string حسب الحاجة (services.blade.php يتعامل مع الاثنين)
+            $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
 
-        return [
-            'GROUPNAME' => (string)($s->group_name ?? ''),
-            'REMOTEID'  => (string)($s->remote_id ?? ''),
-            'NAME'      => (string)($s->name ?? ''),
-            'CREDIT'    => (float)($s->price ?? 0),
-            'TIME'      => (string)($s->time ?? ''),
-            // ✅ هذا هو المهم
-            'ADDITIONAL_FIELDS' => $afOut,
-        ];
-    })->values()->all();
+            return [
+                'GROUPNAME' => (string)($s->group_name ?? ''),
+                'REMOTEID'  => (string)($s->remote_id ?? ''),
+                'NAME'      => (string)($s->name ?? ''),
+                'CREDIT'    => (float)($s->price ?? 0),
+                'TIME'      => (string)($s->time ?? ''),
+                // ✅ هذا هو المهم
+                'ADDITIONAL_FIELDS' => $afOut,
+            ];
+        })->values()->all();
 
-    return view('admin.api.providers.modals.services', [
-        'provider' => $provider,
-        'kind' => 'imei',
-        'services' => $services,
-    ]);
-}
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'imei',
+            'services' => $services,
+        ]);
+    }
 
-public function servicesServer(Request $request, ApiProvider $provider)
-{
-    $rows = RemoteServerService::where('api_provider_id', $provider->id)
-        ->orderBy('group_name')->orderBy('name')->get();
+    public function servicesServer(Request $request, ApiProvider $provider)
+    {
+        $rows = RemoteServerService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')->orderBy('name')->get();
 
-    $services = $rows->map(function ($s) {
-        $af = $s->additional_fields ?? [];
-        $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
+        $services = $rows->map(function ($s) {
+            $af = $s->additional_fields ?? [];
+            $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
 
-        return [
-            'GROUPNAME' => (string)($s->group_name ?? ''),
-            'REMOTEID'  => (string)($s->remote_id ?? ''),
-            'NAME'      => (string)($s->name ?? ''),
-            'CREDIT'    => (float)($s->price ?? 0),
-            'TIME'      => (string)($s->time ?? ''),
-            'ADDITIONAL_FIELDS' => $afOut,
-        ];
-    })->values()->all();
+            return [
+                'GROUPNAME' => (string)($s->group_name ?? ''),
+                'REMOTEID'  => (string)($s->remote_id ?? ''),
+                'NAME'      => (string)($s->name ?? ''),
+                'CREDIT'    => (float)($s->price ?? 0),
+                'TIME'      => (string)($s->time ?? ''),
+                'ADDITIONAL_FIELDS' => $afOut,
+            ];
+        })->values()->all();
 
-    return view('admin.api.providers.modals.services', [
-        'provider' => $provider,
-        'kind' => 'server',
-        'services' => $services,
-    ]);
-}
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'server',
+            'services' => $services,
+        ]);
+    }
 
-public function servicesFile(Request $request, ApiProvider $provider)
-{
-    $rows = RemoteFileService::where('api_provider_id', $provider->id)
-        ->orderBy('group_name')->orderBy('name')->get();
+    public function servicesFile(Request $request, ApiProvider $provider)
+    {
+        $rows = RemoteFileService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')->orderBy('name')->get();
 
-    $services = $rows->map(function ($s) {
-        $af = $s->additional_fields ?? [];
-        $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
+        $services = $rows->map(function ($s) {
+            $af = $s->additional_fields ?? [];
+            $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
 
-        return [
-    'GROUPNAME' => (string)($s->group_name ?? ''),
-    'REMOTEID'  => (string)($s->remote_id ?? ''),
-    'NAME'      => (string)($s->name ?? ''),
-    'CREDIT'    => (float)($s->price ?? 0),
-    'TIME'      => (string)($s->time ?? ''),
-    'ADDITIONAL_FIELDS' => $afOut,
+            return [
+                'GROUPNAME' => (string)($s->group_name ?? ''),
+                'REMOTEID'  => (string)($s->remote_id ?? ''),
+                'NAME'      => (string)($s->name ?? ''),
+                'CREDIT'    => (float)($s->price ?? 0),
+                'TIME'      => (string)($s->time ?? ''),
+                'ADDITIONAL_FIELDS' => $afOut,
+                'ALLOW_EXTENSION' => (string)($s->allowed_extensions ?? ''),
+            ];
+        })->values()->all();
 
-    // ✅ NEW: file extensions from API (ALLOW_EXTENSION)
-    'ALLOW_EXTENSION' => (string)($s->allowed_extensions ?? ''),
-];
-
-    })->values()->all();
-
-    return view('admin.api.providers.modals.services', [
-        'provider' => $provider,
-        'kind' => 'file',
-        'services' => $services,
-    ]);
-}
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'file',
+            'services' => $services,
+        ]);
+    }
 
     /**
      * IMPORT endpoint
      */
     public function importServices(Request $request, ApiProvider $provider)
-{
-    $kind = strtolower((string)$request->input('kind', ''));
-    if (!in_array($kind, ['imei', 'server', 'file'], true)) {
-        return response()->json(['ok' => false, 'msg' => 'Invalid kind'], 422);
-    }
+    {
+        $kind = strtolower((string)$request->input('kind', ''));
+        if (!in_array($kind, ['imei', 'server', 'file'], true)) {
+            return response()->json(['ok' => false, 'msg' => 'Invalid kind'], 422);
+        }
 
-    $applyAll = (bool)$request->boolean('apply_all', false);
+        $applyAll = (bool)$request->boolean('apply_all', false);
 
-    $ids = $request->input('service_ids', null);
-    if ($ids === null) $ids = $request->input('imported', null);
-    if (is_string($ids)) $ids = array_filter(array_map('trim', explode(',', $ids)));
+        $ids = $request->input('service_ids', null);
+        if ($ids === null) $ids = $request->input('imported', null);
+        if (is_string($ids)) $ids = array_filter(array_map('trim', explode(',', $ids)));
 
-    if (!$applyAll) {
-        if (!is_array($ids) || count($ids) === 0) {
-            return response()->json(['ok' => false, 'msg' => 'service_ids is required'], 422);
+        if (!$applyAll) {
+            if (!is_array($ids) || count($ids) === 0) {
+                return response()->json(['ok' => false, 'msg' => 'service_ids is required'], 422);
+            }
+        }
+
+        $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
+        $mode  = strtolower(trim($mode));
+        if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
+
+        $value = (float)($request->input('profit_value') ?? $request->input('pricing_value') ?? 0);
+
+        $groupPrices = $request->input('group_prices', []);
+        if (is_string($groupPrices) && trim($groupPrices) !== '') {
+            $decoded = json_decode($groupPrices, true);
+            if (is_array($decoded)) $groupPrices = $decoded;
+        }
+        if (!is_array($groupPrices)) $groupPrices = [];
+
+        try {
+            $result = $this->doBulkImport(
+                $provider,
+                $kind,
+                $applyAll,
+                $ids ?: [],
+                $mode,
+                $value,
+                $groupPrices
+            );
+
+            return response()->json([
+                'ok' => true,
+                'count' => $result['count'],
+                'added_remote_ids' => $result['added_remote_ids'],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'msg' => $e->getMessage()], 500);
         }
     }
-
-    // ✅ pricing mode/value (عرّفهم قبل أي استعمال)
-    $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
-    $mode  = strtolower(trim($mode));
-    if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
-
-    $value = (float)($request->input('profit_value') ?? $request->input('pricing_value') ?? 0);
-
-    // ✅ group prices (قد تصل array أو JSON string)
-    $groupPrices = $request->input('group_prices', []);
-    if (is_string($groupPrices) && trim($groupPrices) !== '') {
-        $decoded = json_decode($groupPrices, true);
-        if (is_array($decoded)) $groupPrices = $decoded;
-    }
-    if (!is_array($groupPrices)) $groupPrices = [];
-
-    try {
-        $result = $this->doBulkImport(
-            $provider,
-            $kind,
-            $applyAll,
-            $ids ?: [],
-            $mode,
-            $value,
-            $groupPrices
-        );
-
-        return response()->json([
-            'ok' => true,
-            'count' => $result['count'],
-            'added_remote_ids' => $result['added_remote_ids'],
-        ]);
-    } catch (\Throwable $e) {
-        return response()->json(['ok' => false, 'msg' => $e->getMessage()], 500);
-    }
-}
-
-
 
     public function importServicesWizard(Request $request, ApiProvider $provider)
     {
@@ -406,13 +411,11 @@ public function servicesFile(Request $request, ApiProvider $provider)
 
     private function extractRemoteAdditionalFields($r): array
     {
-        // 1) Prefer normalized additional_fields column when present
         $primary = $this->normalizeAdditionalFieldsPayload($r->additional_fields ?? null);
         if (!empty($primary)) {
             return $primary;
         }
 
-        // 2) Fallback to additional_data and well-known keys used by providers
         $ad = $r->additional_data ?? null;
         if (is_string($ad)) {
             $ad = json_decode($ad, true);
@@ -455,8 +458,6 @@ public function servicesFile(Request $request, ApiProvider $provider)
             return [];
         }
 
-        // Guard: only associative arrays can represent a field-definition object.
-        // If this is a direct field object, require one of fieldname|name|label and keep it.
         if ($this->isAssociativeArray($raw)) {
             $isDirectFieldShape = array_key_exists('fieldname', $raw)
                 || array_key_exists('name', $raw)
@@ -468,7 +469,6 @@ public function servicesFile(Request $request, ApiProvider $provider)
             }
         }
 
-        // If payload is keyed object that contains nested field arrays, flatten those.
         $flattened = [];
         foreach ($raw as $value) {
             if (is_array($value)) {
@@ -479,7 +479,6 @@ public function servicesFile(Request $request, ApiProvider $provider)
             }
         }
 
-        // Keep only field-like entries.
         $out = [];
         foreach (($flattened ?: $raw) as $item) {
             if (!is_array($item) || !$this->isAssociativeArray($item)) {
@@ -496,42 +495,38 @@ public function servicesFile(Request $request, ApiProvider $provider)
     }
 
     private function extractRemoteInfoText($r): string
-{
-    // 1) المصدر الأساسي: عمود info
-    $text = trim(strip_tags((string)($r->info ?? '')));
-    if ($text !== '') return $text;
+    {
+        $text = trim(strip_tags((string)($r->info ?? '')));
+        if ($text !== '') return $text;
 
-    // 2) fallback: additional_data (قد يكون array بسبب casts أو string JSON)
-    $ad = $r->additional_data ?? null;
-    if ($ad === null) return '';
+        $ad = $r->additional_data ?? null;
+        if ($ad === null) return '';
 
-    if (is_string($ad)) {
-        $ad = json_decode($ad, true);
-    }
+        if (is_string($ad)) {
+            $ad = json_decode($ad, true);
+        }
 
-    if (!is_array($ad)) return '';
+        if (!is_array($ad)) return '';
 
-    // مفاتيح شائعة (DHru غالبًا INFO)
-    $text = trim(strip_tags((string)(
-        $ad['INFO'] ?? $ad['info'] ??
-        $ad['DESCRIPTION'] ?? $ad['description'] ??
-        $ad['SERVICEINFO'] ?? $ad['serviceinfo'] ??
-        $ad['SERVICE_INFO'] ?? $ad['service_info'] ??
-        ''
-    )));
-    if ($text !== '') return $text;
-
-    // 3) بعض المزودين يضعونها داخل CUSTOM
-    $custom = $ad['CUSTOM'] ?? $ad['custom'] ?? null;
-    if (is_array($custom)) {
         $text = trim(strip_tags((string)(
-            $custom['custominfo'] ?? $custom['info'] ?? ''
+            $ad['INFO'] ?? $ad['info'] ??
+            $ad['DESCRIPTION'] ?? $ad['description'] ??
+            $ad['SERVICEINFO'] ?? $ad['serviceinfo'] ??
+            $ad['SERVICE_INFO'] ?? $ad['service_info'] ??
+            ''
         )));
         if ($text !== '') return $text;
-    }
 
-    return '';
-}
+        $custom = $ad['CUSTOM'] ?? $ad['custom'] ?? null;
+        if (is_array($custom)) {
+            $text = trim(strip_tags((string)(
+                $custom['custominfo'] ?? $custom['info'] ?? ''
+            )));
+            if ($text !== '') return $text;
+        }
+
+        return '';
+    }
 
     private function isAssociativeArray(array $arr): bool
     {
@@ -613,218 +608,207 @@ public function servicesFile(Request $request, ApiProvider $provider)
     }
 
     private function doBulkImport(
-    ApiProvider $provider,
-    string $kind,
-    bool $applyAll,
-    array $remoteIds,
-    string $profitMode,
-    float $profitValue,
-    array $groupPrices = []
-): array
-{
-    [$remoteModel, $localModel] = match ($kind) {
-        'imei'   => [RemoteImeiService::class, ImeiService::class],
-        'server' => [RemoteServerService::class, ServerService::class],
-        'file'   => [RemoteFileService::class, FileService::class],
-    };
+        ApiProvider $provider,
+        string $kind,
+        bool $applyAll,
+        array $remoteIds,
+        string $profitMode,
+        float $profitValue,
+        array $groupPrices = []
+    ): array {
+        [$remoteModel, $localModel] = match ($kind) {
+            'imei'   => [RemoteImeiService::class, ImeiService::class],
+            'server' => [RemoteServerService::class, ServerService::class],
+            'file'   => [RemoteFileService::class, FileService::class],
+        };
 
-    $remoteQ = $remoteModel::query()->where('api_provider_id', $provider->id);
-    if (!$applyAll) {
-        $remoteIds = array_values(array_unique(array_map('strval', $remoteIds)));
-        $remoteQ->whereIn('remote_id', $remoteIds);
-    }
-    $remoteRows = $remoteQ->get();
-
-    $added = [];
-    $count = 0;
-
-    $groupPrices = $this->normalizeGroupPrices($groupPrices);
-
-    DB::transaction(function () use ($provider, $kind, $remoteRows, $localModel, $profitMode, $profitValue, $groupPrices, &$added, &$count) {
-
-        foreach ($remoteRows as $r) {
-            $remoteId = (string)($r->remote_id ?? '');
-            if ($remoteId === '') continue;
-
-            $exists = $localModel::query()
-                ->where('supplier_id', $provider->id)
-                ->where('remote_id', $remoteId)
-                ->exists();
-            if ($exists) continue;
-
-            $groupName = trim((string)($r->group_name ?? ''));
-            $groupId = null;
-
-            if ($groupName !== '') {
-                $groupType = $this->serviceGroupType($kind);
-                $group = ServiceGroup::firstOrCreate(
-                    ['type' => $groupType, 'name' => $groupName],
-                    ['ordering' => 0]
-                );
-                $groupId = $group->id;
-            }
-
-            $nameText = trim(strip_tags((string)($r->name ?? '')));
-            if ($nameText === '') $nameText = "{$kind}-{$provider->id}-{$remoteId}";
-
-            $timeText = trim(strip_tags((string)($r->time ?? '')));
-            $infoText = trim(strip_tags((string)($r->info ?? '')));
-
-            $nameJson = json_encode(['en' => $nameText, 'fallback' => $nameText], JSON_UNESCAPED_UNICODE);
-            $timeJson = json_encode(['en' => $timeText, 'fallback' => $timeText], JSON_UNESCAPED_UNICODE);
-            $infoJson = json_encode(['en' => $infoText, 'fallback' => $infoText], JSON_UNESCAPED_UNICODE);
-
-            $cost = (float)($r->price ?? 0);
-            $profitType = ($profitMode === 'percent') ? 2 : 1;
-
-            $aliasBase = Str::slug(Str::limit($nameText, 160, ''), '-');
-            if ($aliasBase === '') $aliasBase = 'service';
-            $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
-
-            $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
-
-            $remoteFields = $this->extractRemoteAdditionalFields($r);
-            $remoteFieldsCount = count($remoteFields);
-            $localFields = !empty($remoteFields)
-                ? $this->normalizeRemoteFieldsToLocal($remoteFields)
-                : [];
-
-            $droppedCount = max(0, $remoteFieldsCount - count($localFields));
-            if ($droppedCount > 0) {
-                // Guard log for malformed/duplicate remote payload fields.
-                Log::info('Dropped malformed provider custom fields during bulk import.', [
-                    'provider_id' => (int)$provider->id,
-                    'remote_id' => $remoteId,
-                    'dropped_count' => $droppedCount,
-                ]);
-            }
-
-            $params = [];
-            // Guard: persist custom_fields only when normalized entries survived all filters.
-            if (is_array($localFields) && !empty($localFields)) {
-                $params['custom_fields'] = $localFields;
-            }
-            if ($kind === 'file') {
-                $allowExtensions = (string)($r->allowed_extensions ?? $r->allow_extensions ?? $r->allow_extension ?? '');
-                if (trim($allowExtensions) !== '') {
-                    $params['allowed_extensions'] = $allowExtensions;
-                }
-            }
-
-            $data = [
-                'alias' => $alias,
-                'group_id' => $groupId,
-                'type' => $kind,
-                'name' => $nameJson,
-                'time' => $timeJson,
-                'info' => $infoJson,
-
-                'cost' => $cost,
-                'profit' => $profitValue,
-                'profit_type' => $profitType,
-
-                'source' => 2,
-                'supplier_id' => $provider->id,
-                'remote_id' => $remoteId,
-
-                'main_field' => $mainField,
-                'params' => $params ?: null,
-
-                'active' => 1,
-                'allow_bulk' => 0,
-                'allow_duplicates' => 0,
-                'reply_with_latest' => 0,
-                'allow_report' => 0,
-                'allow_cancel' => 0,
-                'reply_expiration' => 0,
-            ];
-
-            $created = $localModel::query()->create($data);
-
-            // ✅ save custom fields
-            if (!empty($localFields) && $created?->id) {
-                $serviceType = $this->serviceGroupType($kind);
-                $this->saveCustomFieldsToTable($serviceType, (int)$created->id, $localFields);
-            }
-
-            // ✅ NEW: save group prices template for this service
-            if ($created?->id && !empty($groupPrices)) {
-                $finalServicePrice = $this->calcFinalPrice($cost, $profitType, $profitValue);
-                $this->saveGroupPricesForService($kind, (int)$created->id, $groupPrices, $finalServicePrice);
-            }
-
-            $added[] = $remoteId;
-            $count++;
+        $remoteQ = $remoteModel::query()->where('api_provider_id', $provider->id);
+        if (!$applyAll) {
+            $remoteIds = array_values(array_unique(array_map('strval', $remoteIds)));
+            $remoteQ->whereIn('remote_id', $remoteIds);
         }
-    });
+        $remoteRows = $remoteQ->get();
 
-    return ['count' => $count, 'added_remote_ids' => $added];
-}
+        $added = [];
+        $count = 0;
 
+        $groupPrices = $this->normalizeGroupPrices($groupPrices);
+
+        DB::transaction(function () use ($provider, $kind, $remoteRows, $localModel, $profitMode, $profitValue, $groupPrices, &$added, &$count) {
+            foreach ($remoteRows as $r) {
+                $remoteId = (string)($r->remote_id ?? '');
+                if ($remoteId === '') continue;
+
+                $exists = $localModel::query()
+                    ->where('supplier_id', $provider->id)
+                    ->where('remote_id', $remoteId)
+                    ->exists();
+                if ($exists) continue;
+
+                $groupName = trim((string)($r->group_name ?? ''));
+                $groupId = null;
+
+                if ($groupName !== '') {
+                    $groupType = $this->serviceGroupType($kind);
+                    $group = ServiceGroup::firstOrCreate(
+                        ['type' => $groupType, 'name' => $groupName],
+                        ['ordering' => 0]
+                    );
+                    $groupId = $group->id;
+                }
+
+                $nameText = trim(strip_tags((string)($r->name ?? '')));
+                if ($nameText === '') $nameText = "{$kind}-{$provider->id}-{$remoteId}";
+
+                $timeText = trim(strip_tags((string)($r->time ?? '')));
+                $infoText = trim(strip_tags((string)($r->info ?? '')));
+
+                $nameJson = json_encode(['en' => $nameText, 'fallback' => $nameText], JSON_UNESCAPED_UNICODE);
+                $timeJson = json_encode(['en' => $timeText, 'fallback' => $timeText], JSON_UNESCAPED_UNICODE);
+                $infoJson = json_encode(['en' => $infoText, 'fallback' => $infoText], JSON_UNESCAPED_UNICODE);
+
+                $cost = (float)($r->price ?? 0);
+                $profitType = ($profitMode === 'percent') ? 2 : 1;
+
+                $aliasBase = Str::slug(Str::limit($nameText, 160, ''), '-');
+                if ($aliasBase === '') $aliasBase = 'service';
+                $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
+
+                $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
+
+                $remoteFields = $this->extractRemoteAdditionalFields($r);
+                $remoteFieldsCount = count($remoteFields);
+                $localFields = !empty($remoteFields)
+                    ? $this->normalizeRemoteFieldsToLocal($remoteFields)
+                    : [];
+
+                $droppedCount = max(0, $remoteFieldsCount - count($localFields));
+                if ($droppedCount > 0) {
+                    Log::info('Dropped malformed provider custom fields during bulk import.', [
+                        'provider_id' => (int)$provider->id,
+                        'remote_id' => $remoteId,
+                        'dropped_count' => $droppedCount,
+                    ]);
+                }
+
+                $params = [];
+                if (is_array($localFields) && !empty($localFields)) {
+                    $params['custom_fields'] = $localFields;
+                }
+                if ($kind === 'file') {
+                    $allowExtensions = (string)($r->allowed_extensions ?? $r->allow_extensions ?? $r->allow_extension ?? '');
+                    if (trim($allowExtensions) !== '') {
+                        $params['allowed_extensions'] = $allowExtensions;
+                    }
+                }
+
+                $data = [
+                    'alias' => $alias,
+                    'group_id' => $groupId,
+                    'type' => $kind,
+                    'name' => $nameJson,
+                    'time' => $timeJson,
+                    'info' => $infoJson,
+
+                    'cost' => $cost,
+                    'profit' => $profitValue,
+                    'profit_type' => $profitType,
+
+                    'source' => 2,
+                    'supplier_id' => $provider->id,
+                    'remote_id' => $remoteId,
+
+                    'main_field' => $mainField,
+                    'params' => $params ?: null,
+
+                    'active' => 1,
+                    'allow_bulk' => 0,
+                    'allow_duplicates' => 0,
+                    'reply_with_latest' => 0,
+                    'allow_report' => 0,
+                    'allow_cancel' => 0,
+                    'reply_expiration' => 0,
+                ];
+
+                $created = $localModel::query()->create($data);
+
+                if (!empty($localFields) && $created?->id) {
+                    $serviceType = $this->serviceGroupType($kind);
+                    $this->saveCustomFieldsToTable($serviceType, (int)$created->id, $localFields);
+                }
+
+                if ($created?->id && !empty($groupPrices)) {
+                    $finalServicePrice = $this->calcFinalPrice($cost, $profitType, $profitValue);
+                    $this->saveGroupPricesForService($kind, (int)$created->id, $groupPrices, $finalServicePrice);
+                }
+
+                $added[] = $remoteId;
+                $count++;
+            }
+        });
+
+        return ['count' => $count, 'added_remote_ids' => $added];
+    }
 
     private function calcFinalPrice(float $cost, int $profitType, float $profitValue): float
-{
-    // profitType: 1 = fixed, 2 = percent
-    $price = ($profitType === 2) ? ($cost + ($cost * $profitValue / 100)) : ($cost + $profitValue);
-    if (!is_finite($price) || $price < 0) $price = 0;
-    return (float)$price;
-}
-
-private function normalizeGroupPrices($raw): array
-{
-    if (!is_array($raw)) return [];
-
-    $out = [];
-    foreach ($raw as $row) {
-        if (!is_array($row)) continue;
-
-        $gid = (int)($row['group_id'] ?? 0);
-        if ($gid <= 0) continue;
-
-        $out[] = [
-            'group_id' => $gid,
-            'auto_price' => !empty($row['auto_price']) ? 1 : 0,
-            'price' => (float)($row['price'] ?? 0),
-            'discount' => (float)($row['discount'] ?? 0),
-            'discount_type' => ((int)($row['discount_type'] ?? 1) === 2) ? 2 : 1,
-        ];
-    }
-
-    return $out;
-}
-
-private function saveGroupPricesForService(string $kind, int $serviceId, array $groupPrices, float $finalServicePrice): void
-{
-    // نفس values المستخدمة في BaseServiceController (service_type = imei/server/file)
-    foreach ($groupPrices as $row) {
-        $groupId = (int)($row['group_id'] ?? 0);
-        if ($groupId <= 0) continue;
-
-        $auto = !empty($row['auto_price']) ? 1 : 0;
-        $price = $auto ? $finalServicePrice : (float)($row['price'] ?? 0);
+    {
+        $price = ($profitType === 2) ? ($cost + ($cost * $profitValue / 100)) : ($cost + $profitValue);
         if (!is_finite($price) || $price < 0) $price = 0;
-
-        $discount = (float)($row['discount'] ?? 0);
-        if (!is_finite($discount) || $discount < 0) $discount = 0;
-
-        $dtype = ((int)($row['discount_type'] ?? 1) === 2) ? 2 : 1;
-
-        ServiceGroupPrice::updateOrCreate(
-            [
-                'service_id' => $serviceId,
-                'service_type' => $kind,
-                'group_id' => $groupId,
-            ],
-            [
-                'price' => $price,
-                'discount' => $discount,
-                'discount_type' => $dtype,
-            ]
-        );
+        return (float)$price;
     }
-}
 
+    private function normalizeGroupPrices($raw): array
+    {
+        if (!is_array($raw)) return [];
 
+        $out = [];
+        foreach ($raw as $row) {
+            if (!is_array($row)) continue;
+
+            $gid = (int)($row['group_id'] ?? 0);
+            if ($gid <= 0) continue;
+
+            $out[] = [
+                'group_id' => $gid,
+                'auto_price' => !empty($row['auto_price']) ? 1 : 0,
+                'price' => (float)($row['price'] ?? 0),
+                'discount' => (float)($row['discount'] ?? 0),
+                'discount_type' => ((int)($row['discount_type'] ?? 1) === 2) ? 2 : 1,
+            ];
+        }
+
+        return $out;
+    }
+
+    private function saveGroupPricesForService(string $kind, int $serviceId, array $groupPrices, float $finalServicePrice): void
+    {
+        foreach ($groupPrices as $row) {
+            $groupId = (int)($row['group_id'] ?? 0);
+            if ($groupId <= 0) continue;
+
+            $auto = !empty($row['auto_price']) ? 1 : 0;
+            $price = $auto ? $finalServicePrice : (float)($row['price'] ?? 0);
+            if (!is_finite($price) || $price < 0) $price = 0;
+
+            $discount = (float)($row['discount'] ?? 0);
+            if (!is_finite($discount) || $discount < 0) $discount = 0;
+
+            $dtype = ((int)($row['discount_type'] ?? 1) === 2) ? 2 : 1;
+
+            ServiceGroupPrice::updateOrCreate(
+                [
+                    'service_id' => $serviceId,
+                    'service_type' => $kind,
+                    'group_id' => $groupId,
+                ],
+                [
+                    'price' => $price,
+                    'discount' => $discount,
+                    'discount_type' => $dtype,
+                ]
+            );
+        }
+    }
 
     private function serviceGroupType(string $kind): string
     {
@@ -870,6 +854,8 @@ private function saveGroupPricesForService(string $kind, int $serviceId, array $
             'active' => ['nullable'],
 
             'params' => ['nullable'],
+            'main_field_name' => ['nullable', 'string', 'max:100'],
+            'method' => ['nullable', 'string', 'in:GET,POST'],
         ]);
 
         $data['sync_imei'] = $request->boolean('sync_imei');
@@ -888,6 +874,25 @@ private function saveGroupPricesForService(string $kind, int $serviceId, array $
             $data['params'] = $params;
         } else {
             $data['params'] = null;
+        }
+
+        if (($data['type'] ?? '') === 'simple_link') {
+            $simpleParams = is_array($data['params']) ? $data['params'] : [];
+
+            $mainField = trim((string)$request->input('main_field_name', $simpleParams['main_field'] ?? 'imei'));
+            if ($mainField === '') {
+                $mainField = 'imei';
+            }
+
+            $method = strtoupper(trim((string)$request->input('method', $simpleParams['method'] ?? 'POST')));
+            if (!in_array($method, ['GET', 'POST'], true)) {
+                $method = 'POST';
+            }
+
+            $simpleParams['main_field'] = $mainField;
+            $simpleParams['method'] = $method;
+
+            $data['params'] = $simpleParams;
         }
 
         return $data;

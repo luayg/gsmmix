@@ -13,7 +13,8 @@ class OrderSender
         private DhruOrderGateway $dhru,
         private WebxOrderGateway $webx,
         private UnlockbaseOrderGateway $unlockbase,
-        private GsmhubOrderGateway $gsmhub
+        private GsmhubOrderGateway $gsmhub,
+        private SimpleLinkOrderGateway $simpleLink
     ) {}
 
     public function sendImei(ApiProvider $provider, ImeiOrder $order): array
@@ -24,6 +25,7 @@ class OrderSender
             'webx'       => $this->webx->placeImeiOrder($provider, $order),
             'unlockbase' => $this->unlockbase->placeImeiOrder($provider, $order),
             'gsmhub'     => $this->gsmhub->placeImeiOrder($provider, $order),
+            'simple_link' => $this->simpleLink->placeImeiOrder($provider, $order),
             default      => $this->dhru->placeImeiOrder($provider, $order),
         };
     }
@@ -33,9 +35,10 @@ class OrderSender
         $type = strtolower(trim((string)($provider->type ?? 'dhru')));
 
         return match ($type) {
-            'webx'   => $this->webx->placeServerOrder($provider, $order),
-            'gsmhub' => $this->gsmhub->placeServerOrder($provider, $order),
-            default  => $this->dhru->placeServerOrder($provider, $order),
+            'webx'       => $this->webx->placeServerOrder($provider, $order),
+            'gsmhub'     => $this->gsmhub->placeServerOrder($provider, $order),
+            'simple_link' => $this->simpleLink->placeServerOrder($provider, $order),
+            default      => $this->dhru->placeServerOrder($provider, $order),
         };
     }
 
@@ -44,9 +47,10 @@ class OrderSender
         $type = strtolower(trim((string)($provider->type ?? 'dhru')));
 
         return match ($type) {
-            'webx'   => $this->webx->placeFileOrder($provider, $order),
-            'gsmhub' => $this->gsmhub->placeFileOrder($provider, $order),
-            default  => $this->dhru->placeFileOrder($provider, $order),
+            'webx'       => $this->webx->placeFileOrder($provider, $order),
+            'gsmhub'     => $this->gsmhub->placeFileOrder($provider, $order),
+            'simple_link' => $this->simpleLink->placeFileOrder($provider, $order),
+            default      => $this->dhru->placeFileOrder($provider, $order),
         };
     }
 }
