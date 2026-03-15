@@ -4,18 +4,22 @@ namespace App\Console\Commands;
 
 use App\Models\ApiProvider;
 use App\Models\ServerOrder;
-use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
 use App\Services\Orders\OrderDispatcher;
+use App\Services\Orders\OrderFinanceService;
 use App\Services\Orders\WebxOrderGateway;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class SyncServerOrders extends Command
 {
     protected $signature = 'orders:sync-server {--limit=50} {--only-id=}';
     protected $description = 'Sync Server Orders status/result from providers (DHRU/WebX/GSMHub/others)';
+
+    private function finance(): OrderFinanceService
+    {
+        return app(OrderFinanceService::class);
+    }
 
     public function handle(DhruOrderGateway $dhru, WebxOrderGateway $webx): int
     {
@@ -25,7 +29,6 @@ class SyncServerOrders extends Command
 
         $onlyId = $this->option('only-id');
 
-        // ✅ First: auto-dispatch waiting server orders that were never sent (no remote_id)
         if (empty($onlyId)) {
             $dispatched = $this->dispatchPendingServerWithoutRemoteId($limit);
             if ($dispatched > 0) {
@@ -87,7 +90,6 @@ class SyncServerOrders extends Command
                     default  => $dhru->getServerOrder($provider, $ref),
                 };
 
-                // ✅ store last check + raw always
                 $req = $this->normalizeResponseArray($order->request);
                 $req['last_status_check'] = now()->toDateTimeString();
                 $req['status_check_raw']  = $res['response_raw'] ?? null;
@@ -100,10 +102,6 @@ class SyncServerOrders extends Command
                     continue;
                 }
 
-                /**
-                 * ✅ GLOBAL normalized path for ANY non-dhru provider
-                 * (WebX / GSMHub / any future provider)
-                 */
                 if ($ptype !== 'dhru') {
                     $newStatus = strtolower(trim((string)($res['status'] ?? 'inprogress')));
                     if ($newStatus === 'canceled') $newStatus = 'cancelled';
@@ -112,7 +110,6 @@ class SyncServerOrders extends Command
                         $newStatus = 'inprogress';
                     }
 
-                    // ✅ GLOBAL FIX: never go back to waiting after remote_id exists
                     if ($newStatus === 'waiting' && !empty($order->remote_id)) {
                         $newStatus = 'inprogress';
                     }
@@ -138,7 +135,7 @@ class SyncServerOrders extends Command
                     $order->save();
 
                     if ($newStatus === 'rejected') {
-                        $this->refundIfNeeded($order, 'api_rejected');
+                        $this->finance()->refundOrderIfNeeded($order, 'api_rejected');
                     }
 
                     $synced++;
@@ -146,12 +143,10 @@ class SyncServerOrders extends Command
                     continue;
                 }
 
-                // ===== DHRU parsing (existing behavior) =====
                 $raw = $res['response_raw'] ?? $res;
 
                 [$statusInt, $code, $comments] = $this->extractDhruStatusCodeComments($raw);
 
-                // إذا status 3/4 لكن code فاضي => اعتبره 1 (in progress)
                 if (in_array($statusInt, [3, 4], true) && trim($code) === '') {
                     $statusInt = 1;
                 }
@@ -179,7 +174,6 @@ class SyncServerOrders extends Command
                     $order->replied_at = $order->replied_at ?: now();
                 }
 
-                // keep raw in request for debugging
                 $req = $this->normalizeResponseArray($order->request);
                 $req['sync_last_at'] = now()->toDateTimeString();
                 $req['sync_raw'] = $raw;
@@ -189,7 +183,7 @@ class SyncServerOrders extends Command
                 $order->save();
 
                 if ($newStatus === 'rejected') {
-                    $this->refundIfNeeded($order, 'api_rejected');
+                    $this->finance()->refundOrderIfNeeded($order, 'api_rejected');
                 }
 
                 $synced++;
@@ -202,7 +196,6 @@ class SyncServerOrders extends Command
                 ]);
                 $this->warn("Order #{$order->id}: error => " . $e->getMessage());
 
-                // do not reject on sync crash
                 $order->status = 'waiting';
                 $order->processing = 0;
                 $order->response = ['type'=>'queued','message'=>'Sync error, will retry: '.$e->getMessage()];
@@ -364,33 +357,5 @@ class SyncServerOrders extends Command
 
         $safe = e($text);
         return '<div style="white-space:pre-wrap;">' . $safe . '</div>';
-    }
-
-    private function refundIfNeeded(ServerOrder $order, string $reason): void
-    {
-        $req = $this->normalizeResponseArray($order->request);
-
-        if (!empty($req['refunded_at'])) return;
-
-        $uid = (int)($order->user_id ?? 0);
-        if ($uid <= 0) return;
-
-        $amount = (float)($req['charged_amount'] ?? 0);
-        if ($amount <= 0) return;
-
-        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
-            $u = User::query()->lockForUpdate()->find($uid);
-            if (!$u) return;
-
-            $u->balance = (float)($u->balance ?? 0) + $amount;
-            $u->save();
-
-            $req['refunded_at'] = now()->toDateTimeString();
-            $req['refunded_amount'] = $amount;
-            $req['refunded_reason'] = $reason;
-
-            $order->request = $req;
-            $order->save();
-        });
     }
 }

@@ -4,18 +4,22 @@ namespace App\Console\Commands;
 
 use App\Models\ApiProvider;
 use App\Models\ImeiOrder;
-use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
+use App\Services\Orders\OrderFinanceService;
 use App\Services\Orders\UnlockbaseOrderGateway;
 use App\Services\Orders\WebxOrderGateway;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class SyncImeiOrders extends Command
 {
     protected $signature = 'orders:sync-imei {--limit=50} {--only-id=}';
     protected $description = 'Sync IMEI orders status/result from providers (DHRU/WebX/UnlockBase/GSMHub)';
+
+    private function finance(): OrderFinanceService
+    {
+        return app(OrderFinanceService::class);
+    }
 
     private function providerBaseUrl(ApiProvider $p): string
     {
@@ -93,37 +97,8 @@ class SyncImeiOrders extends Command
         return [];
     }
 
-    private function refundIfNeeded(ImeiOrder $order, string $reason): void
-    {
-        $req = $this->normalizeArr($order->request ?? []);
-
-        if (!empty($req['refunded_at'])) return;
-
-        $uid = (int)($order->user_id ?? 0);
-        if ($uid <= 0) return;
-
-        $amount = (float)($req['charged_amount'] ?? 0);
-        if ($amount <= 0) return;
-
-        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
-            $u = User::query()->lockForUpdate()->find($uid);
-            if (!$u) return;
-
-            $u->balance = (float)($u->balance ?? 0) + $amount;
-            $u->save();
-
-            $req['refunded_at'] = now()->toDateTimeString();
-            $req['refunded_amount'] = $amount;
-            $req['refunded_reason'] = $reason;
-
-            $order->request = $req;
-            $order->save();
-        });
-    }
-
     private function mapDhruStatusToLocal(int $statusInt): string
     {
-        // DHRU: 0 pending, 1 inprogress, 3 rejected, 4 success
         if ($statusInt === 4) return 'success';
         if ($statusInt === 3) return 'rejected';
         if (in_array($statusInt, [0, 1, 2], true)) return 'inprogress';
@@ -190,7 +165,6 @@ class SyncImeiOrders extends Command
 
                 $ptype = $this->pickGatewayType($provider);
 
-                // Call the correct provider gateway
                 $res = match ($ptype) {
                     'unlockbase' => $unlockbase->getImeiOrder($provider, $ref),
                     'gsmhub'     => app(\App\Services\Orders\GsmhubOrderGateway::class)->getImeiOrder($provider, $ref),
@@ -198,13 +172,11 @@ class SyncImeiOrders extends Command
                     default      => $dhru->getImeiOrder($provider, $ref),
                 };
 
-                // ✅ always store last check + raw
                 $req = $this->normalizeArr($order->request ?? []);
                 $req['last_status_check'] = now()->toDateTimeString();
                 $req['status_check_raw']  = $res['response_raw'] ?? null;
                 $order->request = $req;
 
-                // If gateway did not return an array => keep waiting (network/parse issue)
                 if (!is_array($res)) {
                     $order->status = 'waiting';
                     $order->processing = 0;
@@ -212,15 +184,9 @@ class SyncImeiOrders extends Command
                     continue;
                 }
 
-                /**
-                 * ✅ GLOBAL RULE:
-                 * Any NON-DHRU provider returns normalized statuses.
-                 * (WebX / UnlockBase / GSMHub / any future provider)
-                 */
                 if ($ptype !== 'dhru') {
                     $newStatus = $this->normalizeGatewayStatus((string)($res['status'] ?? 'inprogress'));
 
-                    // ✅ GLOBAL FIX (ALL PROVIDERS): never go back to waiting after remote_id exists
                     if ($newStatus === 'waiting' && !empty($order->remote_id)) {
                         $newStatus = 'inprogress';
                     }
@@ -236,7 +202,6 @@ class SyncImeiOrders extends Command
                     $ui['reference_id']  = $order->remote_id;
                     $ui['provider_type'] = $ptype;
 
-                    // If provider returns HTML/text, try to extract image + items (same UX as DHRU)
                     $rt = (string)($ui['result_text'] ?? '');
                     if ($rt !== '') {
                         $imgSrc = $this->extractFirstImgSrc($rt);
@@ -252,17 +217,15 @@ class SyncImeiOrders extends Command
                     $order->save();
 
                     if ($newStatus === 'rejected') {
-                        $this->refundIfNeeded($order, 'sync_rejected_non_dhru');
+                        $this->finance()->refundOrderIfNeeded($order, 'sync_rejected_non_dhru');
                     }
 
                     $synced++;
                     continue;
                 }
 
-                // ===== DHRU logic (existing behavior) =====
                 $raw = $res['response_raw'] ?? null;
 
-                // queued/connection failure => waiting
                 if (!is_array($raw)) {
                     $order->status = 'waiting';
                     $order->processing = 0;
@@ -270,12 +233,10 @@ class SyncImeiOrders extends Command
                     continue;
                 }
 
-                // ERROR
                 if (isset($raw['ERROR'][0]['MESSAGE'])) {
                     $msg = (string)$raw['ERROR'][0]['MESSAGE'];
                     $m = strtolower($msg);
 
-                    // errors that should NOT reject the order
                     if (
                         str_contains($m, 'command not found') ||
                         str_contains($m, 'invalid action') ||
@@ -292,7 +253,6 @@ class SyncImeiOrders extends Command
                         continue;
                     }
 
-                    // real error => reject + refund
                     $order->status = 'rejected';
                     $order->processing = 0;
                     $order->replied_at = now();
@@ -303,12 +263,11 @@ class SyncImeiOrders extends Command
                     ];
                     $order->save();
 
-                    $this->refundIfNeeded($order, 'sync_rejected_error');
+                    $this->finance()->refundOrderIfNeeded($order, 'sync_rejected_error');
                     $synced++;
                     continue;
                 }
 
-                // SUCCESS
                 if (isset($raw['SUCCESS'][0]) && is_array($raw['SUCCESS'][0])) {
                     $s0 = $raw['SUCCESS'][0];
 
@@ -317,7 +276,6 @@ class SyncImeiOrders extends Command
 
                     $newStatus = $this->mapDhruStatusToLocal($statusInt);
 
-                    // ✅ extra safety: if any path ever yields waiting while remote_id exists -> inprogress
                     if ($newStatus === 'waiting' && !empty($order->remote_id)) {
                         $newStatus = 'inprogress';
                     }
@@ -360,14 +318,13 @@ class SyncImeiOrders extends Command
                     $order->save();
 
                     if ($newStatus === 'rejected') {
-                        $this->refundIfNeeded($order, 'sync_rejected_status3');
+                        $this->finance()->refundOrderIfNeeded($order, 'sync_rejected_status3');
                     }
 
                     $synced++;
                     continue;
                 }
 
-                // fallback unknown
                 $order->status = 'inprogress';
                 $order->processing = 1;
                 $order->save();
@@ -378,7 +335,6 @@ class SyncImeiOrders extends Command
                     'err' => $e->getMessage(),
                 ]);
 
-                // do not reject on sync crash
                 $order->status = 'waiting';
                 $order->processing = 0;
                 $order->response = ['type' => 'queued', 'message' => 'Sync error, will retry: ' . $e->getMessage()];

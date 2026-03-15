@@ -4,18 +4,22 @@ namespace App\Console\Commands;
 
 use App\Models\ApiProvider;
 use App\Models\FileOrder;
-use App\Models\User;
 use App\Services\Orders\DhruOrderGateway;
 use App\Services\Orders\OrderDispatcher;
+use App\Services\Orders\OrderFinanceService;
 use App\Services\Orders\WebxOrderGateway;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class SyncFileOrders extends Command
 {
     protected $signature = 'orders:sync-file {--limit=50} {--only-id=}';
     protected $description = 'Sync File Orders status/result from providers (DHRU/WebX/GSMHub/others)';
+
+    private function finance(): OrderFinanceService
+    {
+        return app(OrderFinanceService::class);
+    }
 
     public function handle(DhruOrderGateway $dhru, WebxOrderGateway $webx): int
     {
@@ -25,7 +29,6 @@ class SyncFileOrders extends Command
 
         $onlyId = $this->option('only-id');
 
-        // أولًا: أرسل الطلبات المعلقة التي لم تحصل على remote_id بعد
         if (empty($onlyId)) {
             $dispatched = $this->dispatchPendingFileWithoutRemoteId($limit);
             if ($dispatched > 0) {
@@ -88,7 +91,6 @@ class SyncFileOrders extends Command
                     default  => $dhru->getFileOrder($provider, $ref),
                 };
 
-                // خزّن آخر فحص دائمًا
                 $req = $this->normalizeResponseArray($order->request);
                 $req['last_status_check'] = now()->toDateTimeString();
                 $req['status_check_raw']  = $res['response_raw'] ?? null;
@@ -101,9 +103,6 @@ class SyncFileOrders extends Command
                     continue;
                 }
 
-                /**
-                 * المسار الموحّد لأي مزود non-dhru
-                 */
                 if ($ptype !== 'dhru') {
                     $newStatus = strtolower(trim((string)($res['status'] ?? 'inprogress')));
                     if ($newStatus === 'canceled') $newStatus = 'cancelled';
@@ -112,7 +111,6 @@ class SyncFileOrders extends Command
                         $newStatus = 'inprogress';
                     }
 
-                    // لا نرجع إلى waiting بعد وجود remote_id
                     if ($newStatus === 'waiting' && !empty($order->remote_id)) {
                         $newStatus = 'inprogress';
                     }
@@ -140,7 +138,7 @@ class SyncFileOrders extends Command
                     $order->save();
 
                     if (in_array($newStatus, ['rejected', 'cancelled'], true)) {
-                        $this->refundIfNeeded($order, 'api_' . $newStatus);
+                        $this->finance()->refundOrderIfNeeded($order, 'api_' . $newStatus);
                     }
 
                     $synced++;
@@ -148,12 +146,10 @@ class SyncFileOrders extends Command
                     continue;
                 }
 
-                // ===== DHRU parsing =====
                 $raw = $res['response_raw'] ?? $res;
 
                 [$statusInt, $code, $comments] = $this->extractDhruStatusCodeComments($raw);
 
-                // إذا status 3/4 لكن الكود فاضي اعتبره ما زال in progress
                 if (in_array($statusInt, [3, 4], true) && trim($code) === '') {
                     $statusInt = 1;
                 }
@@ -192,7 +188,7 @@ class SyncFileOrders extends Command
                 $order->save();
 
                 if (in_array($newStatus, ['rejected', 'cancelled'], true)) {
-                    $this->refundIfNeeded($order, 'api_' . $newStatus);
+                    $this->finance()->refundOrderIfNeeded($order, 'api_' . $newStatus);
                 }
 
                 $synced++;
@@ -205,7 +201,6 @@ class SyncFileOrders extends Command
 
                 $this->warn("Order #{$order->id}: error => " . $e->getMessage());
 
-                // لا ترفض الطلب بسبب فشل المزامنة نفسها
                 $order->status = 'waiting';
                 $order->processing = 0;
                 $order->response = ['type' => 'queued', 'message' => 'Sync error, will retry: ' . $e->getMessage()];
@@ -369,33 +364,5 @@ class SyncFileOrders extends Command
 
         $safe = e($text);
         return '<div style="white-space:pre-wrap;">' . $safe . '</div>';
-    }
-
-    private function refundIfNeeded(FileOrder $order, string $reason): void
-    {
-        $req = $this->normalizeResponseArray($order->request);
-
-        if (!empty($req['refunded_at'])) return;
-
-        $uid = (int)($order->user_id ?? 0);
-        if ($uid <= 0) return;
-
-        $amount = (float)($req['charged_amount'] ?? 0);
-        if ($amount <= 0) return;
-
-        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
-            $u = User::query()->lockForUpdate()->find($uid);
-            if (!$u) return;
-
-            $u->balance = (float)($u->balance ?? 0) + $amount;
-            $u->save();
-
-            $req['refunded_at'] = now()->toDateTimeString();
-            $req['refunded_amount'] = $amount;
-            $req['refunded_reason'] = $reason;
-
-            $order->request = $req;
-            $order->save();
-        });
     }
 }

@@ -6,14 +6,13 @@ use App\Models\ApiProvider;
 use App\Models\FileOrder;
 use App\Models\ImeiOrder;
 use App\Models\ServerOrder;
-use App\Models\User;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
 
 class OrderDispatcher
 {
     public function __construct(
-        private OrderSender $sender
+        private OrderSender $sender,
+        private OrderFinanceService $finance
     ) {}
 
     public function send(string $kind, int $orderId): void
@@ -38,33 +37,6 @@ class OrderDispatcher
         }
     }
 
-    private function refundIfNeeded($order, string $reason): void
-    {
-        $req = (array)($order->request ?? []);
-        if (!empty($req['refunded_at'])) return;
-
-        $uid = (int)($order->user_id ?? 0);
-        if ($uid <= 0) return;
-
-        $amount = (float)($req['charged_amount'] ?? 0);
-        if ($amount <= 0) return;
-
-        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
-            $u = User::query()->lockForUpdate()->find($uid);
-            if (!$u) return;
-
-            $u->balance = (float)($u->balance ?? 0) + $amount;
-            $u->save();
-
-            $req['refunded_at'] = now()->toDateTimeString();
-            $req['refunded_amount'] = $amount;
-            $req['refunded_reason'] = $reason;
-
-            $order->request = $req;
-            $order->save();
-        });
-    }
-
     private function resolveProvider($order): ?ApiProvider
     {
         $order->load(['service', 'provider']);
@@ -76,7 +48,7 @@ class OrderDispatcher
             $order->processing = false;
             $order->save();
 
-            $this->refundIfNeeded($order, 'dispatch_rejected_service_not_linked');
+            $this->finance->refundOrderIfNeeded($order, 'dispatch_rejected_service_not_linked');
             return null;
         }
 
@@ -88,7 +60,7 @@ class OrderDispatcher
             $order->processing = false;
             $order->save();
 
-            $this->refundIfNeeded($order, 'dispatch_rejected_provider_missing');
+            $this->finance->refundOrderIfNeeded($order, 'dispatch_rejected_provider_missing');
             return null;
         }
 
@@ -362,7 +334,7 @@ class OrderDispatcher
             $order->response = $resp;
 
             $order->save();
-            $this->refundIfNeeded($order, 'dispatch_rejected');
+            $this->finance->refundOrderIfNeeded($order, 'dispatch_rejected');
             return;
         }
 
@@ -402,7 +374,7 @@ class OrderDispatcher
             $order->save();
 
             if (in_array($finalStatus, ['rejected', 'cancelled'], true)) {
-                $this->refundIfNeeded($order, 'dispatch_' . $finalStatus);
+                $this->finance->refundOrderIfNeeded($order, 'dispatch_' . $finalStatus);
             }
 
             return;
@@ -436,7 +408,7 @@ class OrderDispatcher
         $order->save();
 
         if (in_array($finalStatus, ['rejected', 'cancelled'], true)) {
-            $this->refundIfNeeded($order, 'dispatch_' . $finalStatus);
+            $this->finance->refundOrderIfNeeded($order, 'dispatch_' . $finalStatus);
         }
     }
 
@@ -455,7 +427,7 @@ class OrderDispatcher
             $order->replied_at = now();
             $order->response = ['type' => 'error', 'message' => $shortMsg];
             $order->save();
-            $this->refundIfNeeded($order, 'dispatch_rejected');
+            $this->finance->refundOrderIfNeeded($order, 'dispatch_rejected');
             return;
         }
 
