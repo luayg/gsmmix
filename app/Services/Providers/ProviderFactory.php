@@ -6,6 +6,7 @@ use App\Models\ApiProvider;
 use App\Services\Providers\Adapters\DhruAdapter;
 use App\Services\Providers\Adapters\GsmhubAdapter;
 use App\Services\Providers\Adapters\SimpleLinkAdapter;
+use App\Services\Providers\Adapters\SmmAdapter;
 use App\Services\Providers\Adapters\UnlockbaseAdapter;
 use App\Services\Providers\Adapters\WebxAdapter;
 use InvalidArgumentException;
@@ -18,6 +19,7 @@ class ProviderFactory
             'dhru' => app(DhruAdapter::class),
             'gsmhub' => app(GsmhubAdapter::class),
             'simple_link' => app(SimpleLinkAdapter::class),
+            'smm' => app(SmmAdapter::class),
             'webx' => app(WebxAdapter::class),
             'unlockbase' => app(UnlockbaseAdapter::class),
             default => throw new InvalidArgumentException("Unsupported provider type: {$provider->type}"),
