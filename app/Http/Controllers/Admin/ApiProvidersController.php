@@ -7,9 +7,11 @@ use App\Models\ApiProvider;
 use App\Models\RemoteImeiService;
 use App\Models\RemoteServerService;
 use App\Models\RemoteFileService;
+use App\Models\RemoteSmmService;
 use App\Models\ImeiService;
 use App\Models\ServerService;
 use App\Models\FileService;
+use App\Models\SmmService;
 use App\Models\ServiceGroup;
 use App\Services\Providers\ProviderManager;
 use Illuminate\Http\Request;
@@ -129,6 +131,7 @@ class ApiProvidersController extends Controller
             RemoteImeiService::query()->where('api_provider_id', $pid)->delete();
             RemoteServerService::query()->where('api_provider_id', $pid)->delete();
             RemoteFileService::query()->where('api_provider_id', $pid)->delete();
+            RemoteSmmService::query()->where('api_provider_id', $pid)->delete();
 
             $provider->delete();
         });
@@ -248,10 +251,43 @@ class ApiProvidersController extends Controller
         ]);
     }
 
+    public function servicesSmm(Request $request, ApiProvider $provider)
+    {
+        $rows = RemoteSmmService::where('api_provider_id', $provider->id)
+            ->orderBy('group_name')->orderBy('name')->get();
+
+        $services = $rows->map(function ($s) {
+            $af = $s->additional_fields ?? [];
+            $afOut = is_array($af) ? $af : (json_decode((string)$af, true) ?: []);
+
+            return [
+                'GROUPNAME' => (string)($s->group_name ?? $s->category ?? ''),
+                'REMOTEID'  => (string)($s->remote_id ?? ''),
+                'NAME'      => (string)($s->name ?? ''),
+                'CREDIT'    => (float)($s->price ?? 0),
+                'TIME'      => (string)($s->time ?? ''),
+                'ADDITIONAL_FIELDS' => array_merge($afOut, [
+                    'type' => (string)($s->type ?? ''),
+                    'category' => (string)($s->category ?? ''),
+                    'min' => (int)($s->min ?? 0),
+                    'max' => (int)($s->max ?? 0),
+                    'refill' => (bool)($s->refill ?? false),
+                    'cancel' => (bool)($s->cancel ?? false),
+                ]),
+            ];
+        })->values()->all();
+
+        return view('admin.api.providers.modals.services', [
+            'provider' => $provider,
+            'kind' => 'smm',
+            'services' => $services,
+        ]);
+    }
+
     public function importServices(Request $request, ApiProvider $provider)
     {
         $kind = strtolower((string)$request->input('kind', ''));
-        if (!in_array($kind, ['imei', 'server', 'file'], true)) {
+        if (!in_array($kind, ['imei', 'server', 'file', 'smm'], true)) {
             return response()->json(['ok' => false, 'msg' => 'Invalid kind'], 422);
         }
 
@@ -315,6 +351,21 @@ class ApiProvidersController extends Controller
                 'minimum' => (string)$min,
                 'maximum' => (string)$max,
                 'label'   => ['en' => $label, 'fallback' => $label],
+            ],
+        ];
+
+        return json_encode($cfg, JSON_UNESCAPED_UNICODE);
+    }
+
+    private function buildSmmMainFieldJson(): string
+    {
+        $cfg = [
+            'type'  => 'text',
+            'rules' => [
+                'allowed' => 'any',
+                'minimum' => 1,
+                'maximum' => 500,
+                'label'   => ['en' => 'Target', 'fallback' => 'Target'],
             ],
         ];
 
@@ -583,6 +634,161 @@ class ApiProvidersController extends Controller
         return in_array($value, ['on', '1', 'true', 'yes'], true) ? 1 : 0;
     }
 
+    private function smmCustomFieldsFromRemote($r): array
+    {
+        $type = strtolower(trim((string)($r->type ?? 'default')));
+        $fields = [
+            [
+                'active' => 1,
+                'required' => 1,
+                'name' => 'Target',
+                'input' => 'link',
+                'type' => 'text',
+                'description' => 'Link / username / target',
+                'minimum' => 0,
+                'maximum' => 0,
+                'validation' => null,
+                'options' => [],
+            ],
+        ];
+
+        if (in_array($type, ['default', 'package', 'drip-feed', 'comment likes'], true)) {
+            $fields[] = [
+                'active' => 1,
+                'required' => 0,
+                'name' => 'Quantity',
+                'input' => 'quantity',
+                'type' => 'number',
+                'description' => 'Requested quantity',
+                'minimum' => (int)($r->min ?? 0),
+                'maximum' => (int)($r->max ?? 0),
+                'validation' => null,
+                'options' => [],
+            ];
+        }
+
+        if ($type === 'custom comments') {
+            $fields[] = [
+                'active' => 1,
+                'required' => 1,
+                'name' => 'Comments',
+                'input' => 'comments',
+                'type' => 'textarea',
+                'description' => 'One comment per line',
+                'minimum' => 0,
+                'maximum' => 0,
+                'validation' => null,
+                'options' => [],
+            ];
+        }
+
+        if ($type === 'drip-feed') {
+            $fields[] = [
+                'active' => 1,
+                'required' => 0,
+                'name' => 'Runs',
+                'input' => 'runs',
+                'type' => 'number',
+                'description' => 'How many runs',
+                'minimum' => 0,
+                'maximum' => 0,
+                'validation' => null,
+                'options' => [],
+            ];
+            $fields[] = [
+                'active' => 1,
+                'required' => 0,
+                'name' => 'Interval',
+                'input' => 'interval',
+                'type' => 'number',
+                'description' => 'Interval in minutes',
+                'minimum' => 0,
+                'maximum' => 0,
+                'validation' => null,
+                'options' => [],
+            ];
+        }
+
+        if ($type === 'subscriptions') {
+            $fields = [
+                [
+                    'active' => 1,
+                    'required' => 1,
+                    'name' => 'Username',
+                    'input' => 'username',
+                    'type' => 'text',
+                    'description' => 'Target username',
+                    'minimum' => 0,
+                    'maximum' => 0,
+                    'validation' => null,
+                    'options' => [],
+                ],
+                [
+                    'active' => 1,
+                    'required' => 0,
+                    'name' => 'Min',
+                    'input' => 'min',
+                    'type' => 'number',
+                    'description' => 'Minimum quantity',
+                    'minimum' => 0,
+                    'maximum' => 0,
+                    'validation' => null,
+                    'options' => [],
+                ],
+                [
+                    'active' => 1,
+                    'required' => 0,
+                    'name' => 'Max',
+                    'input' => 'max',
+                    'type' => 'number',
+                    'description' => 'Maximum quantity',
+                    'minimum' => 0,
+                    'maximum' => 0,
+                    'validation' => null,
+                    'options' => [],
+                ],
+                [
+                    'active' => 1,
+                    'required' => 0,
+                    'name' => 'Posts',
+                    'input' => 'posts',
+                    'type' => 'number',
+                    'description' => 'Posts count',
+                    'minimum' => 0,
+                    'maximum' => 0,
+                    'validation' => null,
+                    'options' => [],
+                ],
+                [
+                    'active' => 1,
+                    'required' => 0,
+                    'name' => 'Delay',
+                    'input' => 'delay',
+                    'type' => 'number',
+                    'description' => 'Delay in minutes',
+                    'minimum' => 0,
+                    'maximum' => 0,
+                    'validation' => null,
+                    'options' => [],
+                ],
+                [
+                    'active' => 1,
+                    'required' => 0,
+                    'name' => 'Expiry',
+                    'input' => 'expiry',
+                    'type' => 'text',
+                    'description' => 'Expiry date',
+                    'minimum' => 0,
+                    'maximum' => 0,
+                    'validation' => null,
+                    'options' => [],
+                ],
+            ];
+        }
+
+        return $fields;
+    }
+
     private function doBulkImport(
         ApiProvider $provider,
         string $kind,
@@ -596,6 +802,7 @@ class ApiProvidersController extends Controller
             'imei'   => [RemoteImeiService::class, ImeiService::class],
             'server' => [RemoteServerService::class, ServerService::class],
             'file'   => [RemoteFileService::class, FileService::class],
+            'smm'    => [RemoteSmmService::class, SmmService::class],
         };
 
         $remoteQ = $remoteModel::query()->where('api_provider_id', $provider->id);
@@ -621,7 +828,7 @@ class ApiProvidersController extends Controller
                     ->exists();
                 if ($exists) continue;
 
-                $groupName = trim((string)($r->group_name ?? ''));
+                $groupName = trim((string)($r->group_name ?? $r->category ?? ''));
                 $groupId = null;
 
                 if ($groupName !== '') {
@@ -650,31 +857,48 @@ class ApiProvidersController extends Controller
                 if ($aliasBase === '') $aliasBase = 'service';
                 $alias = $aliasBase . '-' . $provider->id . '-' . $remoteId;
 
-                $mainField = $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
-
-                $remoteFields = $this->extractRemoteAdditionalFields($r);
-                $remoteFieldsCount = count($remoteFields);
-                $localFields = !empty($remoteFields)
-                    ? $this->normalizeRemoteFieldsToLocal($remoteFields)
-                    : [];
-
-                $droppedCount = max(0, $remoteFieldsCount - count($localFields));
-                if ($droppedCount > 0) {
-                    Log::info('Dropped malformed provider custom fields during bulk import.', [
-                        'provider_id' => (int)$provider->id,
-                        'remote_id' => $remoteId,
-                        'dropped_count' => $droppedCount,
-                    ]);
-                }
+                $mainField = $kind === 'smm'
+                    ? $this->buildSmmMainFieldJson()
+                    : $this->buildMainFieldJson('serial', 'Serial', 'any', 1, 50);
 
                 $params = [];
-                if (is_array($localFields) && !empty($localFields)) {
+                $localFields = [];
+
+                if ($kind === 'smm') {
+                    $localFields = $this->smmCustomFieldsFromRemote($r);
                     $params['custom_fields'] = $localFields;
-                }
-                if ($kind === 'file') {
-                    $allowExtensions = (string)($r->allowed_extensions ?? $r->allow_extensions ?? $r->allow_extension ?? '');
-                    if (trim($allowExtensions) !== '') {
-                        $params['allowed_extensions'] = $allowExtensions;
+                    $params['smm_type'] = (string)($r->type ?? '');
+                    $params['smm_category'] = (string)($r->category ?? '');
+                    $params['smm_limits'] = [
+                        'min' => (int)($r->min ?? 0),
+                        'max' => (int)($r->max ?? 0),
+                    ];
+                    $params['supports_refill'] = (bool)($r->refill ?? false);
+                    $params['supports_cancel'] = (bool)($r->cancel ?? false);
+                } else {
+                    $remoteFields = $this->extractRemoteAdditionalFields($r);
+                    $remoteFieldsCount = count($remoteFields);
+                    $localFields = !empty($remoteFields)
+                        ? $this->normalizeRemoteFieldsToLocal($remoteFields)
+                        : [];
+
+                    $droppedCount = max(0, $remoteFieldsCount - count($localFields));
+                    if ($droppedCount > 0) {
+                        Log::info('Dropped malformed provider custom fields during bulk import.', [
+                            'provider_id' => (int)$provider->id,
+                            'remote_id' => $remoteId,
+                            'dropped_count' => $droppedCount,
+                        ]);
+                    }
+
+                    if (is_array($localFields) && !empty($localFields)) {
+                        $params['custom_fields'] = $localFields;
+                    }
+                    if ($kind === 'file') {
+                        $allowExtensions = (string)($r->allowed_extensions ?? $r->allow_extensions ?? $r->allow_extension ?? '');
+                        if (trim($allowExtensions) !== '') {
+                            $params['allowed_extensions'] = $allowExtensions;
+                        }
                     }
                 }
 
@@ -702,7 +926,7 @@ class ApiProvidersController extends Controller
                     'allow_duplicates' => 0,
                     'reply_with_latest' => 0,
                     'allow_report' => 0,
-                    'allow_cancel' => 0,
+                    'allow_cancel' => $kind === 'smm' ? (int)((bool)($r->cancel ?? false)) : 0,
                     'reply_expiration' => 0,
                 ];
 
@@ -792,6 +1016,7 @@ class ApiProvidersController extends Controller
             'imei'   => 'imei_service',
             'server' => 'server_service',
             'file'   => 'file_service',
+            'smm'    => 'smm_service',
             default  => 'imei_service',
         };
     }
@@ -806,13 +1031,14 @@ class ApiProvidersController extends Controller
             'unlockbase' => 'unlockbase',
             'simple_link' => 'simple_link',
             'simple link', 'simplelink' => 'simple_link',
+            'smm' => 'smm',
             default => null,
         };
     }
 
     private function validateProvider(Request $request, ?int $providerId = null): array
     {
-        $types = ['dhru', 'webx', 'gsmhub', 'unlockbase', 'simple_link'];
+        $types = ['dhru', 'webx', 'gsmhub', 'unlockbase', 'simple_link', 'smm'];
 
         $data = $request->validate([
             'name' => ['required', 'string', 'max:255'],
