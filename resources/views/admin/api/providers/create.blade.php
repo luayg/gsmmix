@@ -21,7 +21,16 @@
 
       <div class="col-md-6">
         <label class="form-label">Type</label>
-        @php $types=['dhru'=>'DHRU API','webx'=>'WebX API','gsmhub'=>'GSM Hub API','unlockbase'=>'Unlock Base API (v3.x)','simple_link'=>'Simple link']; @endphp
+        @php
+          $types = [
+            'dhru' => 'DHRU API',
+            'webx' => 'WebX API',
+            'gsmhub' => 'GSM Hub API',
+            'unlockbase' => 'Unlock Base API (v3.x)',
+            'simple_link' => 'Simple link',
+            'smm' => 'SMM API',
+          ];
+        @endphp
         <select name="type" id="api_type" class="form-select" required>
           @foreach($types as $k=>$v)
             <option value="{{ $k }}" @selected(old('type')===$k)>{{ $v }}</option>

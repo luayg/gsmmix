@@ -37,10 +37,20 @@
       ? route('admin.services.file.index')
       : url('/admin/service-management/file-services');
 
+  $smmHref = R::has('admin.services.smm.index')
+      ? route('admin.services.smm.index')
+      : url('/admin/service-management/smm-services');
+
   // افتح مجموعة الخدمات إذا كنا على أي صفحة ضمن service-management أو الخدمات بأسمائها القديمة
   $servicesOpen =
         request()->is('admin/service-management/*')
-     || route_is_any(['admin.services.groups.*','admin.services.imei.*','admin.services.server.*','admin.services.file.*']);
+     || route_is_any([
+          'admin.services.groups.*',
+          'admin.services.imei.*',
+          'admin.services.server.*',
+          'admin.services.file.*',
+          'admin.services.smm.*'
+        ]);
 @endphp
 
 <nav id="adminSidebar" class="admin-sidebar sidebar bg-dark">
@@ -77,7 +87,15 @@
     </li>
 
     {{-- Order Management --}}
-    @php $open = route_is_any(['admin.orders.imei.*','admin.orders.server.*','admin.orders.file.*','admin.orders.product.*']); @endphp
+    @php
+      $open = route_is_any([
+        'admin.orders.imei.*',
+        'admin.orders.server.*',
+        'admin.orders.file.*',
+        'admin.orders.smm.*',
+        'admin.orders.product.*'
+      ]);
+    @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -91,6 +109,7 @@
           <li><a class="nav-link {{ request()->routeIs('admin.orders.imei.*') ? 'active' : '' }}" href="{{ route('admin.orders.imei.index') }}"><i class="fas fa-mobile-alt"></i> IMEI Orders</a></li>
           <li><a class="nav-link {{ request()->routeIs('admin.orders.server.*') ? 'active' : '' }}" href="{{ route('admin.orders.server.index') }}"><i class="fas fa-server"></i> Server Orders</a></li>
           <li><a class="nav-link {{ request()->routeIs('admin.orders.file.*') ? 'active' : '' }}" href="{{ route('admin.orders.file.index') }}"><i class="fas fa-file"></i> File Orders</a></li>
+          <li><a class="nav-link {{ request()->routeIs('admin.orders.smm.*') ? 'active' : '' }}" href="{{ route('admin.orders.smm.index') }}"><i class="fas fa-share-alt"></i> SMM Orders</a></li>
           <li><a class="nav-link {{ request()->routeIs('admin.orders.product.*') ? 'active' : '' }}" href="{{ route('admin.orders.product.index') }}"><i class="fas fa-box-open"></i> Product orders</a></li>
         </ul>
       </div>
@@ -134,6 +153,13 @@
             <a class="nav-link {{ nav_active(['admin/service-management/file-services*','admin.services.file.*']) }}"
                href="{{ $fileHref }}">
               <i class="fas fa-file-alt"></i> File Service
+            </a>
+          </li>
+
+          <li>
+            <a class="nav-link {{ nav_active(['admin/service-management/smm-services*','admin.services.smm.*']) }}"
+               href="{{ $smmHref }}">
+              <i class="fas fa-share-alt"></i> SMM Service
             </a>
           </li>
         </ul>

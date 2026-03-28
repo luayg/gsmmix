@@ -10,7 +10,8 @@
     'webx' => 'WebX API',
     'gsmhub' => 'GSM Hub API',
     'unlockbase' => 'Unlock Base API (v3.x)',
-    'simple_link' => 'Simple link'
+    'simple_link' => 'Simple link',
+    'smm' => 'SMM API',
   ];
 
   $p = is_array($provider->params) ? $provider->params : [];
