@@ -260,4 +260,92 @@ class SmmOrderGateway
 
         return $this->request($provider, $payload);
     }
+
+    public function getSmmOrderStatus(ApiProvider $provider, string $remoteId): array
+    {
+        $payload = [
+            'key' => $this->providerKey($provider),
+            'action' => 'status',
+            'order' => $remoteId,
+        ];
+
+        $url = $this->providerUrl($provider);
+        if ($url === '') {
+            throw new \RuntimeException('INVALID URL');
+        }
+
+        if (trim((string)$payload['key']) === '') {
+            throw new \RuntimeException('AUTH FAILED');
+        }
+
+        $response = Http::asForm()
+            ->timeout(60)
+            ->retry(1, 500)
+            ->post($url, $payload);
+
+        $statusCode = (int)$response->status();
+        $body = (string)$response->body();
+        $json = $response->json();
+
+        if (!$response->successful()) {
+            throw new \RuntimeException($body !== '' ? $body : ('HTTP ' . $statusCode));
+        }
+
+        if (!is_array($json)) {
+            throw new \RuntimeException($body !== '' ? $body : 'Invalid JSON response');
+        }
+
+        if (!empty($json['error'])) {
+            return [
+                'ok' => false,
+                'status' => 'waiting',
+                'request' => [
+                    'url' => $url,
+                    'method' => 'POST',
+                    'params' => $payload,
+                    'http_status' => $statusCode,
+                ],
+                'response_raw' => [
+                    'raw' => $json,
+                    'http_status' => $statusCode,
+                ],
+                'response_ui' => [
+                    'type' => 'error',
+                    'message' => (string)$json['error'],
+                    'result_text' => json_encode($json, JSON_UNESCAPED_UNICODE),
+                ],
+            ];
+        }
+
+        $providerStatus = strtolower(trim((string)($json['status'] ?? 'in progress')));
+
+        $localStatus = match ($providerStatus) {
+            'completed', 'complete', 'success', 'partial' => 'success',
+            'canceled', 'cancelled' => 'cancelled',
+            'failed', 'fail', 'rejected', 'error' => 'rejected',
+            'processing', 'in progress', 'inprogress', 'pending' => 'inprogress',
+            default => 'inprogress',
+        };
+
+        return [
+            'ok' => true,
+            'status' => $localStatus,
+            'provider_status' => $providerStatus,
+            'request' => [
+                'url' => $url,
+                'method' => 'POST',
+                'params' => $payload,
+                'http_status' => $statusCode,
+            ],
+            'response_raw' => [
+                'raw' => $json,
+                'http_status' => $statusCode,
+            ],
+            'response_ui' => [
+                'type' => $localStatus === 'success' ? 'success' : ($localStatus === 'inprogress' ? 'info' : 'error'),
+                'message' => (string)($json['status'] ?? strtoupper($localStatus)),
+                'result_text' => json_encode($json, JSON_UNESCAPED_UNICODE),
+            ],
+        ];
+    }
 }

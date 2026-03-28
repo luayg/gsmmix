@@ -25,8 +25,7 @@ class Kernel extends ConsoleKernel
             ->withoutOverlapping();
 
         /**
-         * ✅ Dispatch pending IMEI orders (also waiting + no remote_id)
-         * ملاحظة: هذا قريب جدًا من retry-imei (ممكن تكتفي بواحد لاحقًا)
+         * ✅ Dispatch pending IMEI orders
          */
         $schedule->command('orders:dispatch-pending-imei --limit=50')
             ->everyMinute()
@@ -57,7 +56,6 @@ class Kernel extends ConsoleKernel
 
         /**
          * ✅ Dispatch pending File orders
-         * مهم جدًا حتى لا تبقى الطلبات waiting بدون remote_id
          */
         $schedule->command('orders:dispatch-pending-file --limit=50')
             ->everyMinute()
@@ -70,10 +68,25 @@ class Kernel extends ConsoleKernel
         $schedule->command('orders:sync-file --limit=50')
             ->everyMinute()
             ->withoutOverlapping();
+
+        /**
+         * ✅ Dispatch pending SMM orders
+         */
+        $schedule->command('orders:dispatch-pending-smm --limit=50')
+            ->everyMinute()
+            ->withoutOverlapping()
+            ->runInBackground();
+
+        /**
+         * ✅ Sync SMM results/status from providers
+         */
+        $schedule->command('orders:sync-smm --limit=50')
+            ->everyMinute()
+            ->withoutOverlapping();
     }
 
     /**
-     * ✅ Register commands explicitly (matches your Commands folder)
+     * ✅ Register commands explicitly
      */
     protected $commands = [
         \App\Console\Commands\ProvidersSyncCommand::class,
@@ -82,10 +95,12 @@ class Kernel extends ConsoleKernel
         \App\Console\Commands\DispatchPendingImeiOrders::class,
         \App\Console\Commands\DispatchPendingServerOrders::class,
         \App\Console\Commands\DispatchPendingFileOrders::class,
+        \App\Console\Commands\DispatchPendingSmmOrders::class,
 
         \App\Console\Commands\SyncImeiOrders::class,
         \App\Console\Commands\SyncServerOrders::class,
         \App\Console\Commands\SyncFileOrders::class,
+        \App\Console\Commands\SyncSmmOrders::class,
 
         \App\Console\Commands\UserResetPasswordCommand::class,
     ];
