@@ -71,7 +71,7 @@ class ProviderManager
             if ($provider->sync_imei)   $kinds[] = 'imei';
             if ($provider->sync_server) $kinds[] = 'server';
             if ($provider->sync_file)   $kinds[] = 'file';
-            if ((string)$provider->type === 'smm') $kinds[] = 'smm';
+            if ($provider->sync_smm || (string)$provider->type === 'smm') $kinds[] = 'smm';
         }
 
         foreach ($kinds as $kind) {

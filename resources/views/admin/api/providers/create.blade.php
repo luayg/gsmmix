@@ -89,6 +89,7 @@
     <input type="hidden" name="sync_imei" value="0">
     <input type="hidden" name="sync_server" value="0">
     <input type="hidden" name="sync_file" value="0">
+    <input type="hidden" name="sync_smm" value="0">
     <input type="hidden" name="ignore_low_balance" value="0">
     <input type="hidden" name="auto_sync" value="0">
     <input type="hidden" name="active" value="0">
@@ -112,6 +113,13 @@
         <div class="form-check form-switch">
           <input class="form-check-input" type="checkbox" id="sync_file" name="sync_file" value="1" @checked(old('sync_file'))>
           <label class="form-check-label" for="sync_file">Sync file services</label>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" id="sync_smm" name="sync_smm" value="1" @checked(old('sync_smm',1))>
+          <label class="form-check-label" for="sync_smm">Sync SMM service</label>
         </div>
       </div>
 
@@ -149,13 +157,14 @@
   function toggleSimpleLink(){
     var t = document.getElementById('api_type').value;
     var isSimple = (t === 'simple_link');
+    var isSmm = (t === 'smm');
 
     var box = document.getElementById('simple_link_box');
     var usernameWrap = document.getElementById('username_wrap');
     var keyWrap = document.getElementById('key_wrap');
 
     if (box) box.style.display = isSimple ? 'block' : 'none';
-    if (usernameWrap) usernameWrap.style.display = isSimple ? 'none' : 'block';
+    if (usernameWrap) usernameWrap.style.display = (isSimple || isSmm) ? 'none' : 'block';
     if (keyWrap) keyWrap.style.display = isSimple ? 'none' : 'block';
   }
 

@@ -1,7 +1,7 @@
 {{-- resources/views/admin/api/providers/modals/services.blade.php --}}
 
 @php
-  // kind: imei | server | file
+   // kind: imei | server | file | smm
   $kindLabel = strtoupper($kind);
   $importUrl = route('admin.apis.services.import_wizard', $provider);
 
@@ -10,6 +10,7 @@
     'imei'   => \App\Models\ImeiService::where('supplier_id',$provider->id)->pluck('remote_id')->map(fn($v)=>(string)$v)->flip()->all(),
     'server' => \App\Models\ServerService::where('supplier_id',$provider->id)->pluck('remote_id')->map(fn($v)=>(string)$v)->flip()->all(),
     'file'   => \App\Models\FileService::where('supplier_id',$provider->id)->pluck('remote_id')->map(fn($v)=>(string)$v)->flip()->all(),
+    'smm'    => \App\Models\SmmService::where('supplier_id',$provider->id)->pluck('remote_id')->map(fn($v)=>(string)$v)->flip()->all(),
     default  => [],
   };
 @endphp

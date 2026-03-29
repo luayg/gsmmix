@@ -93,10 +93,12 @@ class ApiProvidersController extends Controller
     {
         $data = $this->validateProvider($request);
 
-        if (($data['type'] ?? '') === 'simple_link') {
+          if (in_array(($data['type'] ?? ''), ['simple_link', 'smm'], true)) {
             $data['url'] = trim((string)$data['url']);
             $data['username'] = null;
-            $data['api_key'] = null;
+            if (($data['type'] ?? '') === 'simple_link') {
+                $data['api_key'] = null;
+            }
         } else {
             $data['url'] = rtrim((string)$data['url'], '/') . '/';
         }
@@ -110,10 +112,12 @@ class ApiProvidersController extends Controller
     {
         $data = $this->validateProvider($request, $provider->id);
 
-        if (($data['type'] ?? '') === 'simple_link') {
+        if (in_array(($data['type'] ?? ''), ['simple_link', 'smm'], true)) {
             $data['url'] = trim((string)$data['url']);
             $data['username'] = null;
-            $data['api_key'] = null;
+            if (($data['type'] ?? '') === 'simple_link') {
+                $data['api_key'] = null;
+            }
         } else {
             $data['url'] = rtrim((string)$data['url'], '/') . '/';
         }
@@ -1049,6 +1053,7 @@ class ApiProvidersController extends Controller
             'sync_imei' => ['nullable'],
             'sync_server' => ['nullable'],
             'sync_file' => ['nullable'],
+            'sync_smm' => ['nullable'],
             'ignore_low_balance' => ['nullable'],
             'auto_sync' => ['nullable'],
             'active' => ['nullable'],
@@ -1060,6 +1065,7 @@ class ApiProvidersController extends Controller
         $data['sync_imei'] = $request->boolean('sync_imei');
         $data['sync_server'] = $request->boolean('sync_server');
         $data['sync_file'] = $request->boolean('sync_file');
+        $data['sync_smm'] = $request->boolean('sync_smm');
         $data['ignore_low_balance'] = $request->boolean('ignore_low_balance');
         $data['auto_sync'] = $request->boolean('auto_sync');
         $data['active'] = $request->boolean('active');

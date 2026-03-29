@@ -44,6 +44,7 @@
                 <option value="">DHRU / Simple link</option>
                 <option value="DHRU"        {{ $type==='DHRU' ? 'selected' : '' }}>DHRU</option>
                 <option value="Simple link" {{ $type==='Simple link' ? 'selected' : '' }}>Simple link</option>
+                <option value="SMM"         {{ $type==='SMM' ? 'selected' : '' }}>SMM</option>
               </select>
               <select name="status" class="form-select form-select-sm" style="min-width:150px" onchange="this.form.submit()">
                 <option value="">Status</option>
@@ -146,6 +147,11 @@
                           <a class="dropdown-item js-api-modal js-close-dropdown"
                              href="#"
                              data-url="{{ route('admin.apis.services.file', $p) }}">File</a>
+                        </li>
+                         <li>
+                          <a class="dropdown-item js-api-modal js-close-dropdown"
+                             href="#"
+                             data-url="{{ route('admin.apis.services.smm', $p) }}">SMM</a>
                         </li>
                       </ul>
                     </div>

@@ -19,6 +19,7 @@ class ApiProvider extends Model
         'sync_imei',
         'sync_server',
         'sync_file',
+        'sync_smm',
 
         'ignore_low_balance',
         'auto_sync',
@@ -41,6 +42,7 @@ class ApiProvider extends Model
         'sync_imei' => 'boolean',
         'sync_server' => 'boolean',
         'sync_file' => 'boolean',
+        'sync_smm' => 'boolean',
 
         'ignore_low_balance' => 'boolean',
         'auto_sync' => 'boolean',
