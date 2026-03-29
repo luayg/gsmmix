@@ -84,7 +84,11 @@ abstract class BaseOrdersController extends Controller
     public function modalCreate()
     {
         $users = User::query()->orderByDesc('id')->limit(500)->get();
-        $services = ($this->serviceModel)::query()->orderByDesc('id')->limit(1000)->get();
+        $services = ($this->serviceModel)::query()
+            ->where('active', 1)
+            ->orderByDesc('id')
+            ->limit(1000)
+            ->get();
 
         if (in_array($this->kind, ['imei','server','file'], true) && $services->count() > 0) {
             $this->injectCustomFieldsIntoServices($services, $this->kind);
@@ -386,7 +390,14 @@ abstract class BaseOrdersController extends Controller
                 return $this->failValidation($request, ['user_id' => 'User not found.'], 422);
             }
 
-            $service = ($this->serviceModel)::findOrFail((int)$data['service_id']);
+            $service = ($this->serviceModel)::query()
+                ->where('id', (int)$data['service_id'])
+                ->where('active', 1)
+                ->first();
+            if (!$service) {
+                Cache::forget($submitLockKey);
+                return $this->failValidation($request, ['service_id' => 'Service is not active or not found.'], 422);
+            }
 
             if ($this->kind === 'file') {
                 $uploadedFile = $request->file('file');

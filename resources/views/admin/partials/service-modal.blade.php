@@ -683,7 +683,6 @@
     };
 
     const toggleMap = {
-      active: ['active'],
       allow_bulk: ['allowBulk'],
       allow_duplicates: ['allowDuplicates'],
       reply_with_latest: ['replyWithLatest'],
@@ -701,6 +700,11 @@
       el.checked = readInt(keys, Number(el.checked ? 1 : 0)) === 1;
     });
 
+    const activeToggle = scope.querySelector('[name="active"]');
+    if (activeToggle) {
+      activeToggle.checked = true;
+    }
+    
     const numberMap = {
       allow_report_time: ['allowReportTime'],
       allow_cancel_time: ['allowCancelTime'],
