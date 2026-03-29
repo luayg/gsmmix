@@ -125,6 +125,8 @@
               data-group-prices='{{ $gpJson }}'
               data-base-price="{{ $fallback }}"
               data-custom-fields='{{ $customFieldsJson }}'
+              data-smm-min="{{ (int)($params['smm_limits']['min'] ?? 0) }}"
+              data-smm-max="{{ (int)($params['smm_limits']['max'] ?? 0) }}"
             >{{ $name }}</option>
           @endforeach
         </select>
@@ -162,9 +164,10 @@
       </div>
 
       @if(!empty($supportsQty))
-      <div class="col-12 js-step-fields d-none">
+      <div class="col-12 js-step-fields d-none" id="quantityWrap">
         <label class="form-label">Quantity</label>
         <input type="number" class="form-control" name="quantity" min="1" value="1">
+        <div class="form-text" id="quantityHint"></div>
       </div>
       @endif
 
@@ -222,6 +225,9 @@
   const balanceAfterEl    = document.getElementById('balanceAfter');
   const balanceErrorEl    = document.getElementById('balanceError');
   const btnCreate         = document.getElementById('btnCreateOrder');
+  const quantityWrap      = document.getElementById('quantityWrap');
+  const quantityInput     = form.querySelector('input[name="quantity"]');
+  const quantityHint      = document.getElementById('quantityHint');
 
   function show(el){ el && el.classList.remove('d-none'); }
   function hide(el){ el && el.classList.add('d-none'); }
@@ -332,6 +338,27 @@
     let cf = safeJsonParse(opt.getAttribute('data-custom-fields') || '[]');
     if (!Array.isArray(cf)) cf = [];
 
+     const hasQtyField = cf.some(f => String((f && f.input) || '').toLowerCase().trim() === 'quantity');
+    const hasTargetField = cf.some(f => {
+      const input = String((f && f.input) || '').toLowerCase().trim();
+      return ['link', 'username', 'usernames', 'target'].includes(input);
+    });
+
+    if (kind === 'smm') {
+      if (hasTargetField) {
+        hide(singleWrap);
+        const deviceInput = singleWrap ? singleWrap.querySelector('input[name="device"]') : null;
+        if (deviceInput) deviceInput.value = '';
+      } else {
+        show(singleWrap);
+      }
+    }
+
+    if (quantityWrap && kind === 'smm') {
+      if (hasQtyField) hide(quantityWrap);
+      else show(quantityWrap);
+    }
+
     if (cf.length === 0) {
       hide(fieldsWrap);
       return;
@@ -422,6 +449,41 @@
     });
   }
 
+    function syncQuantityLimits(){
+    if (!quantityInput) return;
+
+    const opt = serviceSel && serviceSel.selectedOptions ? serviceSel.selectedOptions[0] : null;
+    if (!opt || !opt.value) {
+      quantityInput.min = '1';
+      quantityInput.removeAttribute('max');
+      if (quantityHint) quantityHint.textContent = '';
+      return;
+    }
+
+    const min = Number(opt.getAttribute('data-smm-min') || 0);
+    const max = Number(opt.getAttribute('data-smm-max') || 0);
+
+    if (!isNaN(min) && min > 0) {
+      quantityInput.min = String(min);
+      if (Number(quantityInput.value || 0) < min) quantityInput.value = String(min);
+    } else {
+      quantityInput.min = '1';
+    }
+
+    if (!isNaN(max) && max > 0) {
+      quantityInput.max = String(max);
+      if (Number(quantityInput.value || 0) > max) quantityInput.value = String(max);
+    } else {
+      quantityInput.removeAttribute('max');
+    }
+
+    if (quantityHint) {
+      quantityHint.textContent = (min > 0 || max > 0)
+        ? ('Allowed quantity: ' + (min > 0 ? min : '?') + ' - ' + (max > 0 ? max : '?'))
+        : '';
+    }
+  }
+
   function updateSummary(){
     const balance = userBalance();
     const price   = servicePriceForUser();
@@ -472,12 +534,14 @@
     if (serviceSel.value) {
       showAllFields();
       applyBulkModeByService();
+      syncQuantityLimits();
       renderCustomFields();
     } else {
       hideAllFields();
       if (bulkHidden) bulkHidden.value = '0';
       if (fieldsWrap) hide(fieldsWrap);
       if (fieldsBox) fieldsBox.innerHTML = '';
+      syncQuantityLimits();
     }
     updateSummary();
   });

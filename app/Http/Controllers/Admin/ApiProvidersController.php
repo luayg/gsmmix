@@ -543,6 +543,10 @@ class ApiProvidersController extends Controller
         $text = trim(strip_tags((string)(
             $ad['INFO'] ?? $ad['info'] ??
             $ad['DESCRIPTION'] ?? $ad['description'] ??
+            $ad['DESC'] ?? $ad['desc'] ??
+            $ad['SERVICE_DESCRIPTION'] ?? $ad['service_description'] ??
+            $ad['SERVICE_DESC'] ?? $ad['service_desc'] ??
+            $ad['DETAILS'] ?? $ad['details'] ??
             $ad['SERVICEINFO'] ?? $ad['serviceinfo'] ??
             $ad['SERVICE_INFO'] ?? $ad['service_info'] ??
             ''
@@ -641,34 +645,95 @@ class ApiProvidersController extends Controller
     private function smmCustomFieldsFromRemote($r): array
     {
         $type = strtolower(trim((string)($r->type ?? 'default')));
-        $fields = [
-            [
+       $quantityDescription = 'Requested quantity';
+        $min = (int)($r->min ?? 0);
+        $max = (int)($r->max ?? 0);
+        if ($min > 0 || $max > 0) {
+            $range = trim(($min > 0 ? $min : '?') . ' - ' . ($max > 0 ? $max : '?'));
+            $quantityDescription .= " (min/max: {$range})";
+        }
+
+        $targetField = [
+            'active' => 1,
+            'required' => 1,
+            'name' => 'Link',
+            'input' => 'link',
+            'type' => 'text',
+            'description' => 'Order target link',
+            'minimum' => 0,
+            'maximum' => 0,
+            'validation' => null,
+            'options' => [],
+        ];
+
+        $quantityField = [
+            'active' => 1,
+            'required' => 0,
+            'name' => 'Quantity',
+            'input' => 'quantity',
+            'type' => 'number',
+            'description' => $quantityDescription,
+            'minimum' => $min,
+            'maximum' => $max,
+            'validation' => null,
+            'options' => [],
+        ];
+
+        $fields = [$targetField];
+
+        if (in_array($type, ['default', 'drip-feed'], true)) {
+            $fields[] = $quantityField;
+        }
+
+        if ($type === 'mentions user followers' || $type === 'comment likes') {
+            $fields[] = [
                 'active' => 1,
                 'required' => 1,
-                'name' => 'Target',
-                'input' => 'link',
+                'name' => 'Username',
+                'input' => 'username',
                 'type' => 'text',
-                'description' => 'Link / username / target',
+                'description' => 'Target username',
                 'minimum' => 0,
                 'maximum' => 0,
                 'validation' => null,
                 'options' => [],
-            ],
-        ];
+          ];
+            $fields[] = $quantityField;
+        }
 
-        if (in_array($type, ['default', 'package', 'drip-feed', 'comment likes'], true)) {
+        if ($type === 'mentions custom list') {
             $fields[] = [
                 'active' => 1,
-                'required' => 0,
-                'name' => 'Quantity',
-                'input' => 'quantity',
-                'type' => 'number',
-                'description' => 'Requested quantity',
-                'minimum' => (int)($r->min ?? 0),
-                'maximum' => (int)($r->max ?? 0),
+                'required' => 1,
+                'name' => 'Usernames',
+                'input' => 'usernames',
+                'type' => 'textarea',
+                'description' => 'One username per line',
+                'minimum' => 0,
+                'maximum' => 0,
                 'validation' => null,
                 'options' => [],
             ];
+        }
+
+        if ($type === 'poll') {
+            $fields[] = $quantityField;
+            $fields[] = [
+                'active' => 1,
+                'required' => 1,
+                'name' => 'Answer Number',
+                'input' => 'answer_number',
+                'type' => 'number',
+                'description' => 'Poll answer number',
+                'minimum' => 0,
+                'maximum' => 0,
+                'validation' => null,
+                'options' => [],
+            ];
+        }
+
+         if ($type === 'package') {
+            $fields = [$targetField];
         }
 
         if ($type === 'custom comments') {
@@ -766,6 +831,18 @@ class ApiProvidersController extends Controller
                 [
                     'active' => 1,
                     'required' => 0,
+                    'name' => 'Old Posts',
+                    'input' => 'old_posts',
+                    'type' => 'number',
+                    'description' => 'Optional old posts count',
+                    'minimum' => 0,
+                    'maximum' => 0,
+                    'validation' => null,
+                    'options' => [],
+                ],
+                [
+                    'active' => 1,
+                    'required' => 0,
                     'name' => 'Delay',
                     'input' => 'delay',
                     'type' => 'number',
@@ -848,7 +925,7 @@ class ApiProvidersController extends Controller
                 if ($nameText === '') $nameText = "{$kind}-{$provider->id}-{$remoteId}";
 
                 $timeText = trim(strip_tags((string)($r->time ?? '')));
-                $infoText = trim(strip_tags((string)($r->info ?? '')));
+                $infoText = $this->extractRemoteInfoText($r);
 
                 $nameJson = json_encode(['en' => $nameText, 'fallback' => $nameText], JSON_UNESCAPED_UNICODE);
                 $timeJson = json_encode(['en' => $timeText, 'fallback' => $timeText], JSON_UNESCAPED_UNICODE);

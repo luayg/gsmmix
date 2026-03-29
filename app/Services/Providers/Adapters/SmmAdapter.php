@@ -9,6 +9,56 @@ use Illuminate\Support\Facades\Http;
 
 class SmmAdapter implements ProviderAdapterInterface
 {
+      private function asText($value): string
+    {
+        if (is_array($value)) {
+            $value = implode("\n", array_map(fn ($v) => (string)$v, $value));
+        }
+
+        return trim((string)$value);
+    }
+
+    private function pickDescription(array $row): string
+    {
+        foreach ([
+            'description',
+            'desc',
+            'service_description',
+            'service_desc',
+            'details',
+            'note',
+            'notes',
+            'info',
+            'service_info',
+        ] as $key) {
+            if (!array_key_exists($key, $row)) {
+                continue;
+            }
+
+            $text = $this->asText($row[$key]);
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        return '';
+    }
+
+    private function pickTime(array $row): string
+    {
+        foreach (['time', 'delivery', 'delivery_time', 'start_time', 'average_time'] as $key) {
+            if (!array_key_exists($key, $row)) {
+                continue;
+            }
+
+            $text = $this->asText($row[$key]);
+            if ($text !== '') {
+                return $text;
+            }
+        }
+
+        return '';
+    }
     public function type(): string
     {
         return 'smm';
@@ -81,6 +131,8 @@ class SmmAdapter implements ProviderAdapterInterface
             $max      = $row['max'] ?? null;
             $refill   = (bool)($row['refill'] ?? false);
             $cancel   = (bool)($row['cancel'] ?? false);
+            $description = $this->pickDescription($row);
+            $time = $this->pickTime($row);
 
             if ($remoteId === '' || $name === '') {
                 continue;
@@ -98,9 +150,11 @@ class SmmAdapter implements ProviderAdapterInterface
                 'max'               => is_numeric($max) ? (int)$max : null,
                 'refill'            => $refill,
                 'cancel'            => $cancel,
-                'time'              => '',
+                'time'              => $time,
                 'additional_fields' => [],
                 'additional_data'   => [
+                    'description' => $description,
+                    'time' => $time,
                     'raw' => $row,
                 ],
                 'params'            => [
