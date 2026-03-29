@@ -587,6 +587,8 @@
       const format = clean(s.format ?? s.file_format ?? s.FORMAT ?? '');
 
       const info = normalizeInfo(s.info ?? s.INFO ?? s.description ?? s.DESCRIPTION ?? '');
+      const min = Number(s.minimum ?? s.min ?? s.MIN ?? 0);
+      const max = Number(s.maximum ?? s.max ?? s.MAX ?? 0);
       const flags = {
         active: Number(s.active ?? 1),
         allow_bulk: Number(s.allow_bulk ?? 0),
@@ -610,6 +612,8 @@
         data-time="${escAttr(time)}"
         data-info="${escAttr(info)}"
         data-info-b64="${escAttr(btoa(unescape(encodeURIComponent(info))))}"
+        data-min="${Number.isFinite(min) ? min : 0}"
+        data-max="${Number.isFinite(max) ? max : 0}"
         data-additional-fields="${escAttr(afJson)}"
         data-allow-extensions="${escAttr(allowExt)}"
         data-format="${escAttr(format)}"
@@ -826,6 +830,8 @@
       const name = clean(opt.dataset.name);
       const credit = Number(opt.dataset.credit || 0);
       const time = clean(opt.dataset.time);
+       const minimum = Number(opt.dataset.min ?? 0);
+      const maximum = Number(opt.dataset.max ?? 0);
 
       // ✅ IMPORTANT FIX:
       // If API option info is empty (old backend), fallback to clone button info.
@@ -840,6 +846,12 @@
 
       if(name){ body.querySelector('[name="name"]').value = name; body.querySelector('[name="alias"]').value = slugify(name); }
       if(time) body.querySelector('[name="time"]').value = time;
+      if (Number.isFinite(minimum) && body.querySelector('#minChars')) {
+        body.querySelector('#minChars').value = String(minimum);
+      }
+      if (Number.isFinite(maximum) && body.querySelector('#maxChars')) {
+        body.querySelector('#maxChars').value = String(maximum);
+      }
 
       if(Number.isFinite(credit) && credit >= 0){
         body.querySelector('[name="cost"]').value = credit.toFixed(4);

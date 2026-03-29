@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Services;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Models\RemoteSmmService;
 use App\Models\RemoteImeiService;
 use App\Models\RemoteServerService;
 use App\Models\RemoteFileService;
@@ -16,7 +17,7 @@ class CloneController extends Controller
     public function modal(Request $request)
     {
         $kind = strtolower((string) $request->get('kind', 'imei'));
-        if (!in_array($kind, ['imei', 'server', 'file'], true)) {
+        if (!in_array($kind, ['imei', 'server', 'file', 'smm'], true)) {
             abort(404);
         }
 
@@ -38,6 +39,12 @@ class CloneController extends Controller
         }
 
         $services = match ($type) {
+            'smm' => RemoteSmmService::query()
+                ->where('api_provider_id', $providerId)
+                ->orderBy('group_name')
+                ->orderBy('name')
+                ->get(),
+
             'server' => RemoteServerService::query()
                 ->where('api_provider_id', $providerId)
                 ->orderBy('group_name')
@@ -75,7 +82,24 @@ class CloneController extends Controller
             if (!is_array($af)) $af = [];
 
             // ✅ THE MISSING PART: info
-            $info = (string) ($s->info ?? '');
+            $info = (string) (
+                $s->info
+                ?? $s->description
+                ?? $s->desc
+                ?? ''
+            );
+
+            $minimum = (int) (
+                $s->minimum
+                ?? $s->min
+                ?? 0
+            );
+
+            $maximum = (int) (
+                $s->maximum
+                ?? $s->max
+                ?? 0
+            );
 
             // ✅ For file services: allowed extensions
             $allowExt = '';
@@ -103,6 +127,9 @@ class CloneController extends Controller
                 'price'              => (float)  ($s->price ?? 0),
                 'group_name'         => (string) ($s->group_name ?? ''),
                 'info'               => $info,
+                'description'        => $info,
+                'minimum'            => $minimum,
+                'maximum'            => $maximum,
                 'allowed_extensions' => $allowExt,
                 'allow_extensions'   => $allowExt, // legacy (اختياري)
                 'format'             => $formatHint,

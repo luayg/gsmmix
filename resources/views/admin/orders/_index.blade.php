@@ -47,6 +47,34 @@
 
     return '—';
   };
+  
+  $extractRemains = function ($o) {
+    $response = $o->response ?? null;
+    if (is_string($response)) {
+      $decoded = json_decode($response, true);
+      $response = is_array($decoded) ? $decoded : null;
+    }
+
+    if (is_array($response)) {
+      $remains = $response['remains'] ?? $response['remain'] ?? null;
+      if ($remains !== null && $remains !== '') {
+        return (string)$remains;
+      }
+
+      $raw = $response['response_raw'] ?? null;
+      if (is_string($raw) && $raw !== '') {
+        $decodedRaw = json_decode($raw, true);
+        if (is_array($decodedRaw)) {
+          $rawRemains = $decodedRaw['remains'] ?? $decodedRaw['remain'] ?? null;
+          if ($rawRemains !== null && $rawRemains !== '') {
+            return (string)$rawRemains;
+          }
+        }
+      }
+    }
+
+    return '—';
+  };
 @endphp
 
 <div class="d-flex align-items-center justify-content-between mb-3 gap-2 flex-wrap">
@@ -159,6 +187,9 @@
             <th>Service</th>
             <th style="width:160px;">Provider</th>
             <th style="width:130px;">Status</th>
+             @if(($kind ?? '') === 'smm')
+              <th style="width:120px;">Remains</th>
+            @endif
             <th style="width:160px;">Actions</th>
           </tr>
         </thead>
@@ -194,6 +225,10 @@
                 @endif
               </td>
 
+               @if(($kind ?? '') === 'smm')
+                <td>{{ $extractRemains($o) }}</td>
+              @endif
+
               <td class="text-nowrap">
                 <a class="btn btn-sm btn-primary js-open-modal"
                    data-url="{{ route($routePrefix . '.modal.view', $o->id) }}">View</a>
@@ -204,7 +239,7 @@
             </tr>
           @empty
             <tr>
-              <td colspan="7" class="text-center text-muted py-4">No orders</td>
+              <td colspan="{{ ($kind ?? '') === 'smm' ? 8 : 7 }}" class="text-center text-muted py-4">No orders</td>
             </tr>
           @endforelse
         </tbody>
