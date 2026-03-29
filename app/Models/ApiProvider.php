@@ -34,6 +34,8 @@ class ApiProvider extends Model
         'used_server',
         'available_file',
         'used_file',
+        'available_smm',
+        'used_smm',
     ];
 
     protected $casts = [
