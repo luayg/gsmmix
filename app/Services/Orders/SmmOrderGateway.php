@@ -56,6 +56,78 @@ class SmmOrderGateway
         return trim((string)($service->remote_id ?? ''));
     }
 
+    private function firstNotEmpty(array $values): string
+    {
+        foreach ($values as $value) {
+            $value = trim((string)$value);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    private function normalizeLines($value): string
+    {
+        if (is_array($value)) {
+            $lines = [];
+            foreach ($value as $item) {
+                $item = trim((string)$item);
+                if ($item !== '') {
+                    $lines[] = $item;
+                }
+            }
+            return implode("\n", $lines);
+        }
+
+        $value = trim((string)$value);
+        if ($value === '') {
+            return '';
+        }
+
+        $parts = preg_split('/\r\n|\r|\n/', $value) ?: [];
+        $parts = array_values(array_filter(array_map(
+            static fn ($v) => trim((string)$v),
+            $parts
+        ), static fn ($v) => $v !== ''));
+
+        return implode("\n", $parts);
+    }
+
+    private function intOrNull($value): ?int
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        return is_numeric($value) ? (int)$value : null;
+    }
+
+    private function setTextIfPresent(array &$payload, string $key, $value): void
+    {
+        $value = trim((string)$value);
+        if ($value !== '') {
+            $payload[$key] = $value;
+        }
+    }
+
+    private function setIntIfPresent(array &$payload, string $key, $value): void
+    {
+        $value = $this->intOrNull($value);
+        if ($value !== null) {
+            $payload[$key] = $value;
+        }
+    }
+
+    private function setLinesIfPresent(array &$payload, string $key, $value): void
+    {
+        $value = $this->normalizeLines($value);
+        if ($value !== '') {
+            $payload[$key] = $value;
+        }
+    }
+
     private function buildAddPayload(ApiProvider $provider, SmmOrder $order): array
     {
         $service = $order->service;
@@ -68,48 +140,94 @@ class SmmOrderGateway
             'service' => $this->remoteServiceId($service),
         ];
 
+        // subscriptions
         if ($type === 'subscriptions') {
-            if (!empty($fields['username'])) $payload['username'] = (string)$fields['username'];
-            if (isset($fields['min']) && $fields['min'] !== '') $payload['min'] = $fields['min'];
-            if (isset($fields['max']) && $fields['max'] !== '') $payload['max'] = $fields['max'];
-            if (isset($fields['posts']) && $fields['posts'] !== '') $payload['posts'] = $fields['posts'];
-            if (isset($fields['delay']) && $fields['delay'] !== '') $payload['delay'] = $fields['delay'];
-            if (!empty($fields['expiry'])) $payload['expiry'] = (string)$fields['expiry'];
+            $this->setTextIfPresent($payload, 'username', $fields['username'] ?? null);
+            $this->setIntIfPresent($payload, 'min', $fields['min'] ?? null);
+            $this->setIntIfPresent($payload, 'max', $fields['max'] ?? null);
+            $this->setIntIfPresent($payload, 'posts', $fields['posts'] ?? null);
+            $this->setIntIfPresent($payload, 'old_posts', $fields['old_posts'] ?? null);
+            $this->setIntIfPresent($payload, 'delay', $fields['delay'] ?? null);
+            $this->setTextIfPresent($payload, 'expiry', $fields['expiry'] ?? null);
+
             return $payload;
         }
 
-        $target = trim((string)($fields['link'] ?? $order->device ?? ''));
+        $target = $this->firstNotEmpty([
+            $fields['link'] ?? '',
+            $order->device ?? '',
+        ]);
+
         if ($target !== '') {
-            if ($type === 'comment likes' && !empty($fields['username'])) {
-                $payload['link'] = $target;
-                $payload['username'] = (string)$fields['username'];
-            } else {
-                $payload['link'] = $target;
-            }
+            $payload['link'] = $target;
         }
 
-        if ($type === 'custom comments') {
-            if (!empty($fields['comments'])) {
-                $payload['comments'] = is_array($fields['comments'])
-                    ? implode("\n", $fields['comments'])
-                    : (string)$fields['comments'];
-            }
-            return $payload;
+        // quantity
+        $quantity = $this->intOrNull($fields['quantity'] ?? null);
+        if ($quantity === null && !empty($order->quantity)) {
+            $quantity = (int)$order->quantity;
         }
 
-        if (isset($fields['quantity']) && $fields['quantity'] !== '') {
-            $payload['quantity'] = (int)$fields['quantity'];
-        } elseif (!empty($order->quantity)) {
-            $payload['quantity'] = (int)$order->quantity;
-        }
+        switch ($type) {
+            case 'default':
+                if ($quantity !== null) {
+                    $payload['quantity'] = $quantity;
+                }
+                break;
 
-        if ($type === 'drip-feed') {
-            if (isset($fields['runs']) && $fields['runs'] !== '') {
-                $payload['runs'] = (int)$fields['runs'];
-            }
-            if (isset($fields['interval']) && $fields['interval'] !== '') {
-                $payload['interval'] = (int)$fields['interval'];
-            }
+            case 'package':
+                // عادة package يحتاج link فقط
+                break;
+
+            case 'drip-feed':
+                if ($quantity !== null) {
+                    $payload['quantity'] = $quantity;
+                }
+                $this->setIntIfPresent($payload, 'runs', $fields['runs'] ?? null);
+                $this->setIntIfPresent($payload, 'interval', $fields['interval'] ?? null);
+                break;
+
+            case 'mentions user followers':
+                $this->setTextIfPresent($payload, 'username', $fields['username'] ?? null);
+                if ($quantity !== null) {
+                    $payload['quantity'] = $quantity;
+                }
+                break;
+
+            case 'comment likes':
+                $this->setTextIfPresent($payload, 'username', $fields['username'] ?? null);
+                if ($quantity !== null) {
+                    $payload['quantity'] = $quantity;
+                }
+                break;
+
+            case 'mentions custom list':
+                $this->setLinesIfPresent($payload, 'usernames', $fields['usernames'] ?? null);
+                break;
+
+            case 'poll':
+                if ($quantity !== null) {
+                    $payload['quantity'] = $quantity;
+                }
+                $this->setIntIfPresent($payload, 'answer_number', $fields['answer_number'] ?? null);
+                break;
+
+            case 'custom comments':
+                $this->setLinesIfPresent($payload, 'comments', $fields['comments'] ?? null);
+                break;
+
+            default:
+                // fallback مرن للأنواع غير المعروفة
+                if ($quantity !== null) {
+                    $payload['quantity'] = $quantity;
+                }
+                $this->setTextIfPresent($payload, 'username', $fields['username'] ?? null);
+                $this->setLinesIfPresent($payload, 'usernames', $fields['usernames'] ?? null);
+                $this->setLinesIfPresent($payload, 'comments', $fields['comments'] ?? null);
+                $this->setIntIfPresent($payload, 'answer_number', $fields['answer_number'] ?? null);
+                $this->setIntIfPresent($payload, 'runs', $fields['runs'] ?? null);
+                $this->setIntIfPresent($payload, 'interval', $fields['interval'] ?? null);
+                break;
         }
 
         return $payload;
@@ -126,10 +244,35 @@ class SmmOrderGateway
             throw new \RuntimeException('AUTH FAILED');
         }
 
-        $response = Http::asForm()
-            ->timeout(60)
-            ->retry(1, 500)
-            ->post($url, $payload);
+        try {
+            $response = Http::asForm()
+                ->timeout(60)
+                ->retry(1, 500)
+                ->post($url, $payload);
+        } catch (\Throwable $e) {
+            return [
+                'ok' => false,
+                'retryable' => true,
+                'status' => 'waiting',
+                'remote_id' => null,
+                'request' => [
+                    'url' => $url,
+                    'method' => 'POST',
+                    'params' => $payload,
+                    'http_status' => 0,
+                ],
+                'response_raw' => [
+                    'raw' => $e->getMessage(),
+                    'http_status' => 0,
+                    'exception' => $e->getMessage(),
+                ],
+                'response_ui' => [
+                    'type' => 'error',
+                    'message' => $e->getMessage(),
+                    'result_text' => $e->getMessage(),
+                ],
+            ];
+        }
 
         $status = (int)$response->status();
         $body = (string)$response->body();
@@ -183,11 +326,69 @@ class SmmOrderGateway
             ];
         }
 
+        if (!empty($json['error'])) {
+            $message = trim((string)$json['error']);
+
+            return [
+                'ok' => false,
+                'retryable' => false,
+                'status' => 'rejected',
+                'remote_id' => null,
+                'request' => [
+                    'url' => $url,
+                    'method' => 'POST',
+                    'params' => $payload,
+                    'http_status' => $status,
+                ],
+                'response_raw' => [
+                    'raw' => $json,
+                    'http_status' => $status,
+                ],
+                'response_ui' => [
+                    'type' => 'error',
+                    'message' => $message !== '' ? $message : 'Provider error',
+                    'result_text' => json_encode($json, JSON_UNESCAPED_UNICODE),
+                ],
+            ];
+        }
+
+        $remoteId = $this->firstNotEmpty([
+            $json['order'] ?? '',
+            $json['order_id'] ?? '',
+            data_get($json, 'data.order', ''),
+            data_get($json, 'data.order_id', ''),
+            data_get($json, 'id', ''),
+        ]);
+
+        if ($remoteId === '') {
+            return [
+                'ok' => false,
+                'retryable' => false,
+                'status' => 'rejected',
+                'remote_id' => null,
+                'request' => [
+                    'url' => $url,
+                    'method' => 'POST',
+                    'params' => $payload,
+                    'http_status' => $status,
+                ],
+                'response_raw' => [
+                    'raw' => $json,
+                    'http_status' => $status,
+                ],
+                'response_ui' => [
+                    'type' => 'error',
+                    'message' => 'Provider response missing order id',
+                    'result_text' => json_encode($json, JSON_UNESCAPED_UNICODE),
+                ],
+            ];
+        }
+
         return [
             'ok' => true,
             'retryable' => false,
             'status' => 'inprogress',
-            'remote_id' => (string)($json['order'] ?? ''),
+            'remote_id' => $remoteId,
             'request' => [
                 'url' => $url,
                 'method' => 'POST',
@@ -200,8 +401,8 @@ class SmmOrderGateway
             ],
             'response_ui' => [
                 'type' => 'success',
-                'message' => !empty($json['order']) ? 'ORDER SENT' : 'OK',
-                'result_text' => !empty($json['order']) ? ('Order #' . $json['order']) : json_encode($json, JSON_UNESCAPED_UNICODE),
+                'message' => 'ORDER SENT',
+                'result_text' => 'Order #' . $remoteId,
             ],
         ];
     }
