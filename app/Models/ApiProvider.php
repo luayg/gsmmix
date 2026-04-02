@@ -69,6 +69,11 @@ class ApiProvider extends Model
         return $this->hasMany(RemoteFileService::class, 'api_provider_id');
     }
 
+    public function remoteSmmServices()
+    {
+        return $this->hasMany(RemoteSmmService::class, 'api_provider_id');
+    }
+
     /**
      * Normalize endpoint for DHRU-style APIs (DHRU / GSMHub etc).
      * If url is base domain, we append /api/index.php
@@ -79,6 +84,7 @@ class ApiProvider extends Model
         if (str_ends_with($url, '/api/index.php')) {
             return $url;
         }
+
         return $url . '/api/index.php';
     }
 }
