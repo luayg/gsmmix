@@ -263,12 +263,6 @@ class WebxOrderGateway
         return '';
     }
 
-    /**
-     * ✅ FIXED:
-     * - no longer auto-converts any non-empty result text into success
-     * - supports cancelled/canceled parsing from explicit status and fallback text
-     * - supports nested data.status / data.response / etc.
-     */
     private function normalizeWebxStatus(array $data): array
     {
         $statusCandidates = [
@@ -345,7 +339,6 @@ class WebxOrderGateway
             $items = null;
         }
 
-        // fallback textual analysis only, without forcing success just because result exists
         if ($status === null) {
             $status = $this->classifyStatusText($resultText);
         }
@@ -378,8 +371,6 @@ class WebxOrderGateway
 
         return [$status, $ui];
     }
-
-    // ===== PLACE =====
 
     public function placeImeiOrder(ApiProvider $p, ImeiOrder $order): array
     {
@@ -454,13 +445,6 @@ class WebxOrderGateway
         }
     }
 
-    /**
-     * ✅ FINAL FIX for file upload:
-     * - Builds real multipart body explicitly instead of mixing attach()+post(params)
-     * - Tries multiple candidate field names until one works
-     * - Stores clearer request metadata for debugging
-     * - Rejects only after exhausting all likely field names
-     */
     public function placeFileOrder(ApiProvider $p, FileOrder $order): array
     {
         $serviceId = trim((string)($order->service?->remote_id ?? ''));
@@ -494,7 +478,6 @@ class WebxOrderGateway
                 }
             }
         } catch (\Throwable $e) {
-            // ignore mime detection failure
         }
 
         $c = $this->client($p);
@@ -672,8 +655,6 @@ class WebxOrderGateway
             $msg
         );
     }
-
-    // ===== GET (NORMALIZED) =====
 
     public function getImeiOrder(ApiProvider $p, string $id): array
     {
