@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 class SyncImeiOrders extends Command
 {
-    protected $signature = 'orders:sync-imei {--limit=50} {--only-id=}';
+    protected $signature = 'orders:sync-imei {--limit=50} {--only-id=} {--include-final}';
     protected $description = 'Sync IMEI orders status/result from providers (DHRU/WebX/UnlockBase/GSMHub)';
 
     private function finance(): OrderFinanceService
@@ -129,16 +129,19 @@ class SyncImeiOrders extends Command
         if ($limit > 500) $limit = 500;
 
         $onlyId = $this->option('only-id');
+        $includeFinal = (bool)$this->option('include-final');
 
         $q = ImeiOrder::query()
             ->where('api_order', 1)
-            ->whereIn('status', ['waiting', 'inprogress'])
-            ->whereNotNull('remote_id')
-            ->orderBy('id', 'asc');
+            ->whereNotNull('remote_id');
 
         if (!empty($onlyId)) {
             $q->where('id', (int)$onlyId);
+        } elseif (!$includeFinal) {
+            $q->whereIn('status', ['waiting', 'inprogress']);
         }
+
+        $q->orderBy('id', 'asc');
 
         $orders = $q->limit($limit)->get();
 
@@ -216,8 +219,8 @@ class SyncImeiOrders extends Command
                     $order->response = $ui;
                     $order->save();
 
-                    if ($newStatus === 'rejected') {
-                        $this->finance()->refundOrderIfNeeded($order, 'sync_rejected_non_dhru');
+                    if (in_array($newStatus, ['rejected', 'cancelled'], true)) {
+                        $this->finance()->refundOrderIfNeeded($order, 'sync_' . $newStatus . '_non_dhru');
                     }
 
                     $synced++;
@@ -281,9 +284,9 @@ class SyncImeiOrders extends Command
                     }
 
                     $order->status = $newStatus;
-                    $order->processing = in_array($newStatus, ['success','rejected','cancelled'], true) ? 0 : 1;
+                    $order->processing = in_array($newStatus, ['success', 'rejected', 'cancelled'], true) ? 0 : 1;
 
-                    if (in_array($newStatus, ['success','rejected'], true)) {
+                    if (in_array($newStatus, ['success', 'rejected', 'cancelled'], true)) {
                         $order->replied_at = $order->replied_at ?: now();
                     }
 
@@ -299,7 +302,7 @@ class SyncImeiOrders extends Command
                     if (!empty($code)) {
                         $rawResult = is_string($code)
                             ? $code
-                            : json_encode($code, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+                            : json_encode($code, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
                         $imgSrc = $this->extractFirstImgSrc($rawResult);
                         if ($imgSrc) {
@@ -317,8 +320,8 @@ class SyncImeiOrders extends Command
                     $order->response = $ui;
                     $order->save();
 
-                    if ($newStatus === 'rejected') {
-                        $this->finance()->refundOrderIfNeeded($order, 'sync_rejected_status3');
+                    if (in_array($newStatus, ['rejected', 'cancelled'], true)) {
+                        $this->finance()->refundOrderIfNeeded($order, 'sync_' . $newStatus . '_status');
                     }
 
                     $synced++;

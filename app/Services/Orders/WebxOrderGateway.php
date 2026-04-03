@@ -213,59 +213,168 @@ class WebxOrderGateway
         return $data;
     }
 
+    private function classifyStatusText(string $text): ?string
+    {
+        $text = strtolower(trim(strip_tags($text)));
+        if ($text === '') {
+            return null;
+        }
+
+        $cancelTokens = ['cancelled', 'canceled', 'cancel', 'void'];
+        foreach ($cancelTokens as $token) {
+            if (str_contains($text, $token)) {
+                return 'cancelled';
+            }
+        }
+
+        $rejectTokens = ['rejected', 'reject', 'failed', 'fail', 'invalid', 'denied', 'declined', 'error'];
+        foreach ($rejectTokens as $token) {
+            if (str_contains($text, $token)) {
+                return 'rejected';
+            }
+        }
+
+        $successTokens = ['success', 'successful', 'completed', 'complete', 'finished', 'done', 'approved', 'delivered'];
+        foreach ($successTokens as $token) {
+            if (str_contains($text, $token)) {
+                return 'success';
+            }
+        }
+
+        $progressTokens = ['pending', 'processing', 'process', 'in progress', 'inprogress', 'queued', 'queue', 'waiting'];
+        foreach ($progressTokens as $token) {
+            if (str_contains($text, $token)) {
+                return 'inprogress';
+            }
+        }
+
+        return null;
+    }
+
+    private function pickFirstNonEmpty(array $values): string
+    {
+        foreach ($values as $value) {
+            $value = trim((string)$value);
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
     /**
      * ✅ FIXED:
-     * - supports numeric strings in "status" (e.g. "4" => success, "3" => rejected)
-     * - supports HTML in "response" field
+     * - no longer auto-converts any non-empty result text into success
+     * - supports cancelled/canceled parsing from explicit status and fallback text
+     * - supports nested data.status / data.response / etc.
      */
     private function normalizeWebxStatus(array $data): array
     {
-        $rawStatus = $data['status'] ?? $data['order_status'] ?? $data['state'] ?? $data['result_status'] ?? null;
+        $statusCandidates = [
+            $data['status'] ?? null,
+            $data['order_status'] ?? null,
+            $data['state'] ?? null,
+            $data['result_status'] ?? null,
+            $data['status_text'] ?? null,
+            $data['status_name'] ?? null,
+            $data['status_label'] ?? null,
 
-        if ($rawStatus !== null && is_numeric($rawStatus)) {
-            $stInt = (int)$rawStatus;
-            if ($stInt === 4) $status = 'success';
-            elseif ($stInt === 3) $status = 'rejected';
-            else $status = 'inprogress';
-        } else {
-            $st = strtolower(trim((string)$rawStatus));
-            $status = 'inprogress';
+            data_get($data, 'data.status'),
+            data_get($data, 'data.order_status'),
+            data_get($data, 'data.state'),
+            data_get($data, 'data.result_status'),
+            data_get($data, 'data.status_text'),
+            data_get($data, 'data.status_name'),
+            data_get($data, 'data.status_label'),
+        ];
 
-            $successTokens = ['success','successful','done','completed','complete','finished','delivered','approved'];
-            $rejectTokens  = ['rejected','reject','failed','fail','error','invalid','cancelled','canceled','cancel'];
+        $status = null;
+        $hasExplicitStatus = false;
 
-            if ($st !== '') {
-                if (in_array($st, $successTokens, true)) $status = 'success';
-                elseif (in_array($st, $rejectTokens, true)) {
-                    $status = ($st === 'cancelled' || $st === 'canceled' || $st === 'cancel') ? 'cancelled' : 'rejected';
+        foreach ($statusCandidates as $rawStatus) {
+            if ($rawStatus === null) {
+                continue;
+            }
+
+            $rawText = trim((string)$rawStatus);
+            if ($rawText === '') {
+                continue;
+            }
+
+            $hasExplicitStatus = true;
+
+            if (is_numeric($rawStatus)) {
+                $stInt = (int)$rawStatus;
+
+                if ($stInt === 4) {
+                    $status = 'success';
+                } elseif ($stInt === 3) {
+                    $status = 'rejected';
+                } else {
+                    $status = 'inprogress';
                 }
+
+                break;
+            }
+
+            $status = $this->classifyStatusText($rawText);
+            if ($status !== null) {
+                break;
             }
         }
 
-        $resultText = (string)(
-            $data['result_text'] ??
-            $data['response'] ??
-            $data['result'] ??
-            $data['reply'] ??
-            $data['message'] ??
-            ''
-        );
+        $resultText = $this->pickFirstNonEmpty([
+            $data['result_text'] ?? '',
+            $data['response'] ?? '',
+            $data['result'] ?? '',
+            $data['reply'] ?? '',
+            $data['message'] ?? '',
+            $data['comments'] ?? '',
 
-        $items = $data['result_items'] ?? null;
+            data_get($data, 'data.result_text', ''),
+            data_get($data, 'data.response', ''),
+            data_get($data, 'data.result', ''),
+            data_get($data, 'data.reply', ''),
+            data_get($data, 'data.message', ''),
+            data_get($data, 'data.comments', ''),
+        ]);
 
-        if ($status === 'inprogress') {
-            if (trim($resultText) !== '' || (is_array($items) && !empty($items))) {
-                $status = 'success';
-            }
+        $items = $data['result_items'] ?? data_get($data, 'data.result_items');
+        if (!is_array($items)) {
+            $items = null;
+        }
+
+        // fallback textual analysis only, without forcing success just because result exists
+        if ($status === null) {
+            $status = $this->classifyStatusText($resultText);
+        }
+
+        if ($status === null) {
+            $status = $hasExplicitStatus ? 'inprogress' : 'inprogress';
         }
 
         $ui = [
-            'type' => ($status === 'success') ? 'success' : (($status === 'rejected') ? 'error' : 'info'),
-            'message' => ($status === 'success') ? 'Result available' : (($status === 'rejected') ? 'Rejected' : 'In progress'),
+            'type' => match ($status) {
+                'success' => 'success',
+                'rejected', 'cancelled' => 'error',
+                default => 'info',
+            },
+            'message' => match ($status) {
+                'success' => 'Result available',
+                'rejected' => 'Rejected',
+                'cancelled' => 'Cancelled',
+                default => 'In progress',
+            },
         ];
 
-        if (trim($resultText) !== '') $ui['result_text'] = $resultText;
-        if (is_array($items) && !empty($items)) $ui['result_items'] = $items;
+        if (trim($resultText) !== '') {
+            $ui['result_text'] = $resultText;
+        }
+
+        if (is_array($items) && !empty($items)) {
+            $ui['result_items'] = $items;
+        }
 
         return [$status, $ui];
     }
