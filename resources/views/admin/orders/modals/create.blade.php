@@ -2,6 +2,9 @@
 
 @php
   $cleanText = function ($v) {
+    if (is_array($v)) {
+      $v = $v['en'] ?? $v['fallback'] ?? reset($v) ?? '';
+    }
     $v = (string)$v;
     $v = html_entity_decode($v, ENT_QUOTES | ENT_HTML5, 'UTF-8');
     $v = str_replace(["\r\n", "\r"], "\n", $v);
@@ -24,6 +27,20 @@
     return '$' . number_format((float)$v, 2);
   };
 
+  $safeScalarText = function ($v) use ($cleanText) {
+    if (is_string($v)) {
+      $s = trim($v);
+      if ($s !== '' && (str_starts_with($s, '{') || str_starts_with($s, '['))) {
+        $j = json_decode($s, true);
+        if (json_last_error() === JSON_ERROR_NONE) {
+          $v = $j;
+        }
+      }
+    }
+    return $cleanText($v);
+  };
+
+  // fallback base price from service columns if group map missing
   $basePrice = function ($svc) {
     foreach ([
       $svc->price ?? null,
@@ -37,62 +54,15 @@
 
     $cost = (float)($svc->cost ?? 0);
     $profit = (float)($svc->profit ?? 0);
-    $profitType = (int)($svc->profit_type ?? 1);
+    $profitType = (int)($svc->profit_type ?? 1); // 1 fixed, 2 percent
     if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit/100)));
     return max(0.0, $cost + $profit);
-  };
-
-  $decodeArr = function ($value) {
-    if (is_array($value)) return $value;
-    if (is_string($value)) {
-      $decoded = json_decode($value, true);
-      return is_array($decoded) ? $decoded : [];
-    }
-    return [];
-  };
-
-  $serviceMainFieldMeta = function ($svc) use ($decodeArr) {
-    $meta = $decodeArr($svc->main_field ?? []);
-
-    $type = strtolower(trim((string)($meta['type'] ?? $svc->main_type ?? '')));
-    $label = trim((string)($meta['label'] ?? ''));
-    $allowed = strtolower(trim((string)($meta['allowed_characters'] ?? '')));
-    $min = isset($meta['minimum']) && is_numeric($meta['minimum']) ? (int)$meta['minimum'] : null;
-    $max = isset($meta['maximum']) && is_numeric($meta['maximum']) ? (int)$meta['maximum'] : null;
-
-    if ($type === '') {
-      $params = $decodeArr($svc->params ?? []);
-      $type = strtolower(trim((string)($params['main_field_type'] ?? '')));
-    }
-
-    if ($type === '') {
-      $type = 'text';
-    }
-
-    $presets = [
-      'imei'        => ['label' => 'IMEI',        'allowed' => 'numbers',      'min' => 15, 'max' => 15],
-      'serial'      => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 13],
-      'imei_serial' => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 15],
-      'number'      => ['label' => 'Number',      'allowed' => 'numbers',      'min' => 1,  'max' => 255],
-      'email'       => ['label' => 'Email',       'allowed' => 'any',          'min' => 3,  'max' => 255],
-      'text'        => ['label' => 'Text',        'allowed' => 'any',          'min' => 1,  'max' => 255],
-      'custom'      => ['label' => 'Custom',      'allowed' => 'alphanumeric', 'min' => 1,  'max' => 255],
-    ];
-
-    $preset = $presets[$type] ?? $presets['text'];
-
-    return [
-      'type' => $type,
-      'label' => $label !== '' ? $label : $preset['label'],
-      'allowed_characters' => $allowed !== '' ? $allowed : $preset['allowed'],
-      'minimum' => $min !== null ? $min : $preset['min'],
-      'maximum' => $max !== null ? $max : $preset['max'],
-    ];
   };
 
   $kind = $kind ?? '';
   $isFileKind   = $kind === 'file';
   $isServerKind = $kind === 'server';
+
   $servicePriceMap = $servicePriceMap ?? [];
 @endphp
 
@@ -141,7 +111,7 @@
         </select>
       </div>
 
-      {{-- SERVICE --}}
+      {{-- SERVICE (hidden until user chosen) --}}
       <div class="col-12 js-step-service d-none">
         <label class="form-label">Service</label>
         <select class="form-select js-service" name="service_id" required>
@@ -156,12 +126,55 @@
 
               $fallback = $basePrice($s);
 
-              $params = $decodeArr($s->params ?? []);
+              $params = $s->params ?? [];
+              if (is_string($params)) $params = json_decode($params, true) ?: [];
+              if (!is_array($params)) $params = [];
               $customFields = $params['custom_fields'] ?? [];
               if (!is_array($customFields)) $customFields = [];
               $customFieldsJson = json_encode($customFields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 
-              $mainMeta = $serviceMainFieldMeta($s);
+              $mainField = $s->main_field ?? [];
+              if (is_string($mainField)) $mainField = json_decode($mainField, true) ?: [];
+              if (!is_array($mainField)) $mainField = [];
+
+              $mainType = strtolower($safeScalarText($mainField['type'] ?? ($s->main_type ?? 'text')));
+              if ($mainType === '') $mainType = 'text';
+
+              $mainLabel = $safeScalarText($mainField['label'] ?? '');
+              if ($mainLabel === '') {
+                if ($mainType === 'imei') $mainLabel = 'IMEI';
+                elseif ($mainType === 'serial') $mainLabel = 'Serial';
+                elseif ($mainType === 'imei_serial') $mainLabel = 'IMEI/Serial';
+                elseif ($mainType === 'email') $mainLabel = 'Email';
+                elseif ($mainType === 'number') $mainLabel = 'Number';
+                else $mainLabel = $deviceLabel ?? 'Device';
+              }
+
+              $mainAllowed = strtolower($safeScalarText($mainField['allowed_characters'] ?? ''));
+              if ($mainAllowed === '') {
+                if ($mainType === 'imei' || $mainType === 'number') $mainAllowed = 'numbers';
+                else $mainAllowed = 'any';
+              }
+
+              $mainMin = isset($mainField['minimum']) && is_numeric($mainField['minimum']) ? (int)$mainField['minimum'] : null;
+              $mainMax = isset($mainField['maximum']) && is_numeric($mainField['maximum']) ? (int)$mainField['maximum'] : null;
+
+              if ($mainType === 'imei') {
+                if ($mainMin === null) $mainMin = 15;
+                if ($mainMax === null) $mainMax = 15;
+              } elseif ($mainType === 'serial') {
+                if ($mainMin === null) $mainMin = 10;
+                if ($mainMax === null) $mainMax = 13;
+              } elseif ($mainType === 'imei_serial') {
+                if ($mainMin === null) $mainMin = 10;
+                if ($mainMax === null) $mainMax = 15;
+              } elseif ($mainType === 'email') {
+                if ($mainMin === null) $mainMin = 3;
+                if ($mainMax === null) $mainMax = 255;
+              } else {
+                if ($mainMin === null) $mainMin = 1;
+                if ($mainMax === null) $mainMax = 255;
+              }
             @endphp
             <option
               value="{{ $s->id }}"
@@ -172,11 +185,11 @@
               data-custom-fields='{{ $customFieldsJson }}'
               data-smm-min="{{ (int)($params['smm_limits']['min'] ?? 0) }}"
               data-smm-max="{{ (int)($params['smm_limits']['max'] ?? 0) }}"
-              data-main-type="{{ e($mainMeta['type']) }}"
-              data-main-label="{{ e($mainMeta['label']) }}"
-              data-main-allowed="{{ e($mainMeta['allowed_characters']) }}"
-              data-main-min="{{ (int)$mainMeta['minimum'] }}"
-              data-main-max="{{ (int)$mainMeta['maximum'] }}"
+              data-main-type="{{ e($mainType) }}"
+              data-main-label="{{ e($mainLabel) }}"
+              data-main-allowed="{{ e($mainAllowed) }}"
+              data-main-min="{{ (int)$mainMin }}"
+              data-main-max="{{ (int)$mainMax }}"
             >{{ $name }}</option>
           @endforeach
         </select>
@@ -337,13 +350,7 @@
   function getMainMeta(){
     const opt = selectedServiceOption();
     if (!opt) {
-      return {
-        type: 'text',
-        label: 'Device',
-        allowed: 'any',
-        min: 1,
-        max: 255
-      };
+      return { type: 'text', label: 'Device', allowed: 'any', min: 1, max: 255 };
     }
 
     return {
@@ -356,20 +363,14 @@
   }
 
   function validateAllowedCharacters(value, allowed){
-    if (allowed === 'numbers' || allowed === 'numeric') {
-      return /^\d+$/.test(value);
-    }
-    if (allowed === 'alphanumeric') {
-      return /^[A-Za-z0-9]+$/.test(value);
-    }
+    if (allowed === 'numbers' || allowed === 'numeric') return /^\d+$/.test(value);
+    if (allowed === 'alphanumeric') return /^[A-Za-z0-9]+$/.test(value);
     return true;
   }
 
   function validateSingleDevice(value, meta){
     value = String(value || '').trim();
-    if (!value) {
-      return { ok: false, message: 'Value is required.' };
-    }
+    if (!value) return { ok: false, message: 'Value is required.' };
 
     const type = String(meta.type || 'text').toLowerCase().trim();
     const min  = Number(meta.min || 0);
@@ -386,12 +387,8 @@
     }
 
     if (type === 'imei') {
-      if (!/^\d+$/.test(value)) {
-        return { ok: false, message: 'IMEI must contain numbers only.' };
-      }
-      if (len !== 15) {
-        return { ok: false, message: 'IMEI must be exactly 15 digits.' };
-      }
+      if (!/^\d+$/.test(value)) return { ok: false, message: 'IMEI must contain numbers only.' };
+      if (len !== 15) return { ok: false, message: 'IMEI must be exactly 15 digits.' };
       return { ok: true, message: '' };
     }
 
@@ -405,9 +402,7 @@
     }
 
     if (type === 'imei_serial') {
-      if (/^\d{15}$/.test(value)) {
-        return { ok: true, message: '' };
-      }
+      if (/^\d{15}$/.test(value)) return { ok: true, message: '' };
 
       if (len >= 10 && len <= 13) {
         if (allowed !== 'any' && !validateAllowedCharacters(value, allowed)) {
@@ -419,17 +414,9 @@
       return { ok: false, message: 'Value must be either a 15-digit IMEI or a Serial between 10 and 13 characters.' };
     }
 
-    if (min > 0 && len < min) {
-      return { ok: false, message: 'Value must be at least ' + min + ' characters.' };
-    }
-
-    if (max > 0 && len > max) {
-      return { ok: false, message: 'Value must be at most ' + max + ' characters.' };
-    }
-
-    if (!validateAllowedCharacters(value, allowed)) {
-      return { ok: false, message: 'Value contains invalid characters.' };
-    }
+    if (min > 0 && len < min) return { ok: false, message: 'Value must be at least ' + min + ' characters.' };
+    if (max > 0 && len > max) return { ok: false, message: 'Value must be at most ' + max + ' characters.' };
+    if (!validateAllowedCharacters(value, allowed)) return { ok: false, message: 'Value contains invalid characters.' };
 
     return { ok: true, message: '' };
   }
@@ -460,16 +447,17 @@
 
     const meta = getMainMeta();
 
-    if (deviceLabelText) {
-      deviceLabelText.textContent = meta.label || 'Device';
-    }
+    if (deviceLabelText) deviceLabelText.textContent = meta.label || 'Device';
+    if (deviceHint) deviceHint.textContent = buildMainHint(meta);
+    if (bulkDevicesHint) bulkDevicesHint.textContent = buildMainHint(meta) + ' One value per line.';
+
+    deviceInput.removeAttribute('maxlength');
+    deviceInput.removeAttribute('pattern');
 
     if (meta.type === 'email') {
       deviceInput.type = 'email';
       deviceInput.inputMode = 'email';
       deviceInput.placeholder = 'Enter email';
-      deviceInput.removeAttribute('pattern');
-      deviceInput.removeAttribute('maxlength');
     } else if (meta.type === 'imei') {
       deviceInput.type = 'text';
       deviceInput.inputMode = 'numeric';
@@ -481,33 +469,21 @@
       deviceInput.inputMode = 'text';
       deviceInput.placeholder = 'Enter Serial (10-13 chars)';
       deviceInput.setAttribute('maxlength', '13');
-      deviceInput.removeAttribute('pattern');
     } else if (meta.type === 'imei_serial') {
       deviceInput.type = 'text';
       deviceInput.inputMode = 'text';
       deviceInput.placeholder = 'Enter IMEI (15) or Serial (10-13)';
       deviceInput.setAttribute('maxlength', '15');
-      deviceInput.removeAttribute('pattern');
     } else if (meta.type === 'number') {
       deviceInput.type = 'text';
       deviceInput.inputMode = 'numeric';
       deviceInput.placeholder = 'Enter number';
-      deviceInput.removeAttribute('pattern');
       deviceInput.setAttribute('maxlength', String(meta.max || 255));
     } else {
       deviceInput.type = 'text';
       deviceInput.inputMode = 'text';
       deviceInput.placeholder = 'Enter value';
-      deviceInput.removeAttribute('pattern');
       deviceInput.setAttribute('maxlength', String(meta.max || 255));
-    }
-
-    if (deviceHint) {
-      deviceHint.textContent = buildMainHint(meta);
-    }
-
-    if (bulkDevicesHint) {
-      bulkDevicesHint.textContent = buildMainHint(meta) + ' One value per line.';
     }
 
     validateMainDeviceInputs();
@@ -774,12 +750,12 @@
   function updateSummary(){
     const balance = userBalance();
     const price   = servicePriceForUser();
+    const deviceOk = validateMainDeviceInputs();
 
     selectedPriceEl.textContent   = money(price);
     selectedBalanceEl.textContent = money(balance);
     balanceAfterEl.textContent    = money(balance - price);
 
-    const deviceOk = validateMainDeviceInputs();
     const ok = (userSel.value && serviceSel.value && price > 0 && balance >= price && deviceOk);
 
     if (ok) {
@@ -869,6 +845,7 @@
       return false;
     }
 
+    // مهم: قفل بصري فقط، بدون dataset.submitting
     lockVisualOnly();
   });
 
