@@ -20,7 +20,7 @@ abstract class BaseOrdersController extends Controller
     /** @var class-string<Model> */
     protected string $serviceModel;
 
-    protected string $kind;        // imei|server|file|product
+    protected string $kind;        // imei|server|file|product|smm
     protected string $title;       // IMEI Orders ...
     protected string $routePrefix; // admin.orders.imei ...
 
@@ -344,6 +344,294 @@ abstract class BaseOrdersController extends Controller
         return redirect()->route("{$this->routePrefix}.index")->with('ok', 'Order already submitted.');
     }
 
+    private function decodeArray($value): array
+    {
+        if (is_array($value)) return $value;
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
+    }
+
+    private function serviceMainFieldMeta($service): array
+    {
+        $meta = $this->decodeArray($service->main_field ?? []);
+
+        $type = strtolower(trim((string)($meta['type'] ?? $service->main_type ?? '')));
+        $label = trim((string)($meta['label'] ?? ''));
+        $allowed = strtolower(trim((string)($meta['allowed_characters'] ?? '')));
+        $min = isset($meta['minimum']) && is_numeric($meta['minimum']) ? (int)$meta['minimum'] : null;
+        $max = isset($meta['maximum']) && is_numeric($meta['maximum']) ? (int)$meta['maximum'] : null;
+
+        if ($type === '') {
+            $params = $this->decodeArray($service->params ?? []);
+            $type = strtolower(trim((string)($params['main_field_type'] ?? '')));
+        }
+
+        if ($type === '') {
+            $type = 'text';
+        }
+
+        $presets = [
+            'imei'        => ['label' => 'IMEI',        'allowed' => 'numbers',      'min' => 15, 'max' => 15],
+            'serial'      => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 13],
+            'imei_serial' => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 15],
+            'number'      => ['label' => 'Number',      'allowed' => 'numbers',      'min' => 1,  'max' => 255],
+            'email'       => ['label' => 'Email',       'allowed' => 'any',          'min' => 3,  'max' => 255],
+            'text'        => ['label' => 'Text',        'allowed' => 'any',          'min' => 1,  'max' => 255],
+            'custom'      => ['label' => 'Custom',      'allowed' => 'alphanumeric', 'min' => 1,  'max' => 255],
+        ];
+
+        $preset = $presets[$type] ?? $presets['text'];
+
+        return [
+            'type' => $type,
+            'label' => $label !== '' ? $label : $preset['label'],
+            'allowed_characters' => $allowed !== '' ? $allowed : $preset['allowed'],
+            'minimum' => $min !== null ? $min : $preset['min'],
+            'maximum' => $max !== null ? $max : $preset['max'],
+        ];
+    }
+
+    private function validateAllowedCharacters(string $value, string $allowed): bool
+    {
+        return match ($allowed) {
+            'numbers', 'numeric' => preg_match('/^\d+$/', $value) === 1,
+            'alphanumeric' => preg_match('/^[A-Za-z0-9]+$/', $value) === 1,
+            default => true,
+        };
+    }
+
+    private function validateSingleDeviceByType(string $value, array $meta): ?string
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return 'Value is required.';
+        }
+
+        $type = strtolower(trim((string)($meta['type'] ?? 'text')));
+        $min  = (int)($meta['minimum'] ?? 0);
+        $max  = (int)($meta['maximum'] ?? 0);
+        $allowed = strtolower(trim((string)($meta['allowed_characters'] ?? 'any')));
+        $len = mb_strlen($value);
+
+        if ($type === 'email') {
+            if (!filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                return 'Email format is invalid.';
+            }
+            if ($min > 0 && $len < $min) return "Email must be at least {$min} characters.";
+            if ($max > 0 && $len > $max) return "Email must be at most {$max} characters.";
+            return null;
+        }
+
+        if ($type === 'imei') {
+            if (!preg_match('/^\d+$/', $value)) {
+                return 'IMEI must contain numbers only.';
+            }
+            if ($len !== 15) {
+                return 'IMEI must be exactly 15 digits.';
+            }
+            return null;
+        }
+
+        if ($type === 'serial') {
+            if ($allowed !== 'any' && !$this->validateAllowedCharacters($value, $allowed)) {
+                return 'Serial contains invalid characters.';
+            }
+            if ($len < 10) return 'Serial must be at least 10 characters.';
+            if ($len > 13) return 'Serial must be at most 13 characters.';
+            return null;
+        }
+
+        if ($type === 'imei_serial') {
+            if (preg_match('/^\d{15}$/', $value)) {
+                return null; // valid IMEI
+            }
+
+            if ($len >= 10 && $len <= 13) {
+                if ($allowed !== 'any' && !$this->validateAllowedCharacters($value, $allowed)) {
+                    return 'IMEI/Serial contains invalid characters.';
+                }
+                return null; // valid Serial
+            }
+
+            return 'Value must be either a 15-digit IMEI or a Serial between 10 and 13 characters.';
+        }
+
+        if ($min > 0 && $len < $min) {
+            return "Value must be at least {$min} characters.";
+        }
+
+        if ($max > 0 && $len > $max) {
+            return "Value must be at most {$max} characters.";
+        }
+
+        if (!$this->validateAllowedCharacters($value, $allowed)) {
+            return 'Value contains invalid characters.';
+        }
+
+        return null;
+    }
+
+    private function validateDeviceInputsForService(Request $request, $service): array
+    {
+        if ($this->kind === 'file' || $this->kind === 'server' || $this->kind === 'smm') {
+            return [[], []];
+        }
+
+        $meta = $this->serviceMainFieldMeta($service);
+        $bulk = (bool)$request->boolean('bulk');
+        $deviceBased = (bool)($service->device_based ?? false);
+
+        $cleanDevices = [];
+        $errors = [];
+
+        if (!$deviceBased) {
+            $one = trim((string)$request->input('device', ''));
+            $err = $this->validateSingleDeviceByType($one, $meta);
+            if ($err !== null) {
+                $errors['device'] = $err;
+            } else {
+                $cleanDevices[] = $one;
+            }
+            return [$cleanDevices, $errors];
+        }
+
+        if ($bulk) {
+            $raw = (string)$request->input('devices', '');
+            $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
+            $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
+
+            if (count($lines) < 1) {
+                $errors['devices'] = 'Bulk list is empty.';
+                return [[], $errors];
+            }
+
+            if (count($lines) > 200) {
+                $errors['devices'] = 'Too many lines (max 200).';
+                return [[], $errors];
+            }
+
+            foreach ($lines as $idx => $line) {
+                $err = $this->validateSingleDeviceByType($line, $meta);
+                if ($err !== null) {
+                    $humanIndex = $idx + 1;
+                    $errors['devices'] = "Line {$humanIndex}: {$err}";
+                    return [[], $errors];
+                }
+                $cleanDevices[] = $line;
+            }
+
+            return [$cleanDevices, []];
+        }
+
+        $one = trim((string)$request->input('device', ''));
+        $err = $this->validateSingleDeviceByType($one, $meta);
+        if ($err !== null) {
+            $errors['device'] = $err;
+            return [[], $errors];
+        }
+
+        $cleanDevices[] = $one;
+        return [$cleanDevices, []];
+    }
+
+    private function validateRequiredFieldsAgainstService(Request $request, $service): array
+    {
+        if ($this->kind === 'product') {
+            return [];
+        }
+
+        $params = $this->decodeArray($service->params ?? []);
+        $customFields = $params['custom_fields'] ?? [];
+        if (!is_array($customFields) || empty($customFields)) {
+            return [];
+        }
+
+        $submitted = $request->input('required', []);
+        if (!is_array($submitted)) {
+            $submitted = [];
+        }
+
+        $errors = [];
+
+        foreach ($customFields as $field) {
+            if (!is_array($field)) continue;
+            if ((int)($field['active'] ?? 1) !== 1) continue;
+
+            $input = trim((string)($field['input'] ?? ''));
+            if ($input === '') continue;
+
+            $name = trim((string)($field['name'] ?? $input));
+            $required = (int)($field['required'] ?? 0) === 1;
+            $validation = strtolower(trim((string)($field['validation'] ?? '')));
+            $minimum = is_numeric($field['minimum'] ?? null) ? (int)$field['minimum'] : 0;
+            $maximum = is_numeric($field['maximum'] ?? null) ? (int)$field['maximum'] : 0;
+            $type = strtolower(trim((string)($field['type'] ?? 'text')));
+
+            $value = $submitted[$input] ?? null;
+
+            if (is_array($value)) {
+                $flat = array_values(array_filter(array_map(fn($v) => trim((string)$v), $value), fn($v) => $v !== ''));
+                $valueText = implode("\n", $flat);
+            } else {
+                $valueText = trim((string)$value);
+            }
+
+            if ($required && $valueText === '') {
+                $errors["required.{$input}"] = "{$name} is required.";
+                continue;
+            }
+
+            if ($valueText === '') {
+                continue;
+            }
+
+            $len = mb_strlen($valueText);
+
+            if ($minimum > 0 && $len < $minimum) {
+                $errors["required.{$input}"] = "{$name} must be at least {$minimum} characters.";
+                continue;
+            }
+
+            if ($maximum > 0 && $len > $maximum) {
+                $errors["required.{$input}"] = "{$name} must be at most {$maximum} characters.";
+                continue;
+            }
+
+            if ($type === 'number' || $validation === 'numeric') {
+                if (!preg_match('/^\d+$/', $valueText)) {
+                    $errors["required.{$input}"] = "{$name} must contain numbers only.";
+                    continue;
+                }
+            }
+
+            if ($validation === 'email' && !filter_var($valueText, FILTER_VALIDATE_EMAIL)) {
+                $errors["required.{$input}"] = "{$name} must be a valid email.";
+                continue;
+            }
+
+            if ($validation === 'imei') {
+                if (!preg_match('/^\d{15}$/', $valueText)) {
+                    $errors["required.{$input}"] = "{$name} must be exactly 15 digits.";
+                    continue;
+                }
+            }
+
+            if ($validation === 'serial') {
+                if ($len < 10 || $len > 13) {
+                    $errors["required.{$input}"] = "{$name} must be between 10 and 13 characters.";
+                    continue;
+                }
+            }
+        }
+
+        return $errors;
+    }
+
     // =========================
     // STORE
     // =========================
@@ -399,6 +687,18 @@ abstract class BaseOrdersController extends Controller
                 return $this->failValidation($request, ['service_id' => 'Service is not active or not found.'], 422);
             }
 
+            $customFieldErrors = $this->validateRequiredFieldsAgainstService($request, $service);
+            if (!empty($customFieldErrors)) {
+                Cache::forget($submitLockKey);
+                return $this->failValidation($request, $customFieldErrors, 422);
+            }
+
+            [$validatedDevices, $deviceErrors] = $this->validateDeviceInputsForService($request, $service);
+            if (!empty($deviceErrors)) {
+                Cache::forget($submitLockKey);
+                return $this->failValidation($request, $deviceErrors, 422);
+            }
+
             if ($this->kind === 'file') {
                 $uploadedFile = $request->file('file');
                 $allowedExtensions = $this->extractAllowedExtensionsFromServiceParams($service);
@@ -440,29 +740,12 @@ abstract class BaseOrdersController extends Controller
 
                 if ($deviceBased) {
                     if ($bulk) {
-                        $raw = (string)($data['devices'] ?? '');
-                        $lines = preg_split("/\r\n|\n|\r/", $raw) ?: [];
-                        $lines = array_values(array_filter(array_map('trim', $lines), fn($x) => $x !== ''));
-                        if (count($lines) < 1) {
-                            Cache::forget($submitLockKey);
-                            return redirect()->back()->withErrors(['devices' => 'Bulk list is empty.'])->withInput();
-                        }
-                        if (count($lines) > 200) {
-                            Cache::forget($submitLockKey);
-                            return redirect()->back()->withErrors(['devices' => 'Too many lines (max 200).'])->withInput();
-                        }
-                        $devices = $lines;
+                        $devices = $validatedDevices;
                     } else {
-                        $one = trim((string)($data['device'] ?? ''));
-                        if ($one === '') {
-                            Cache::forget($submitLockKey);
-                            return redirect()->back()->withErrors(['device' => 'Device is required.'])->withInput();
-                        }
-                        $devices = [$one];
+                        $devices = $validatedDevices;
                     }
                 } else {
-                    $one = trim((string)($data['device'] ?? ''));
-                    $devices = [$one];
+                    $devices = $validatedDevices;
                 }
             }
 
