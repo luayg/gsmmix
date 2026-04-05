@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 class SyncFileOrders extends Command
 {
-    protected $signature = 'orders:sync-file {--limit=50} {--only-id=}';
+    protected $signature = 'orders:sync-file {--limit=50} {--only-id=} {--include-final}';
     protected $description = 'Sync File Orders status/result from providers (DHRU/WebX/GSMHub/others)';
 
     private function finance(): OrderFinanceService
@@ -28,8 +28,9 @@ class SyncFileOrders extends Command
         if ($limit > 500) $limit = 500;
 
         $onlyId = $this->option('only-id');
+        $includeFinal = (bool)$this->option('include-final');
 
-        if (empty($onlyId)) {
+        if (empty($onlyId) && !$includeFinal) {
             $dispatched = $this->dispatchPendingFileWithoutRemoteId($limit);
             if ($dispatched > 0) {
                 $this->info("Dispatched {$dispatched} pending file orders before sync.");
@@ -39,11 +40,12 @@ class SyncFileOrders extends Command
         $q = FileOrder::query()
             ->with(['service', 'provider'])
             ->where('api_order', 1)
-            ->whereNotNull('remote_id')
-            ->whereIn('status', ['waiting', 'inprogress']);
+            ->whereNotNull('remote_id');
 
         if (!empty($onlyId)) {
             $q->where('id', (int)$onlyId);
+        } elseif (!$includeFinal) {
+            $q->whereIn('status', ['waiting', 'inprogress']);
         }
 
         $orders = $q->orderBy('id', 'asc')->limit($limit)->get();
@@ -57,7 +59,7 @@ class SyncFileOrders extends Command
                 })
                 ->count();
 
-            if ($pendingDispatch > 0) {
+            if ($pendingDispatch > 0 && empty($onlyId) && !$includeFinal) {
                 $this->info("No file orders to sync yet. {$pendingDispatch} order(s) are still waiting without remote_id after dispatch attempt.");
                 $this->info('This usually means provider/API validation/upload/connection issue. Check each order response/request payload.');
             } else {
@@ -105,7 +107,9 @@ class SyncFileOrders extends Command
 
                 if ($ptype !== 'dhru') {
                     $newStatus = strtolower(trim((string)($res['status'] ?? 'inprogress')));
-                    if ($newStatus === 'canceled') $newStatus = 'cancelled';
+                    if ($newStatus === 'canceled') {
+                        $newStatus = 'cancelled';
+                    }
 
                     if (!in_array($newStatus, ['success', 'rejected', 'cancelled', 'inprogress', 'waiting'], true)) {
                         $newStatus = 'inprogress';

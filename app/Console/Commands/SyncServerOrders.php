@@ -13,7 +13,7 @@ use Illuminate\Support\Facades\Log;
 
 class SyncServerOrders extends Command
 {
-    protected $signature = 'orders:sync-server {--limit=50} {--only-id=}';
+    protected $signature = 'orders:sync-server {--limit=50} {--only-id=} {--include-final}';
     protected $description = 'Sync Server Orders status/result from providers (DHRU/WebX/GSMHub/others)';
 
     private function finance(): OrderFinanceService
@@ -28,8 +28,9 @@ class SyncServerOrders extends Command
         if ($limit > 500) $limit = 500;
 
         $onlyId = $this->option('only-id');
+        $includeFinal = (bool)$this->option('include-final');
 
-        if (empty($onlyId)) {
+        if (empty($onlyId) && !$includeFinal) {
             $dispatched = $this->dispatchPendingServerWithoutRemoteId($limit);
             if ($dispatched > 0) {
                 $this->info("Dispatched {$dispatched} pending server orders before sync.");
@@ -39,11 +40,12 @@ class SyncServerOrders extends Command
         $q = ServerOrder::query()
             ->with(['service', 'provider'])
             ->where('api_order', 1)
-            ->whereNotNull('remote_id')
-            ->whereIn('status', ['waiting', 'inprogress']);
+            ->whereNotNull('remote_id');
 
         if (!empty($onlyId)) {
             $q->where('id', (int)$onlyId);
+        } elseif (!$includeFinal) {
+            $q->whereIn('status', ['waiting', 'inprogress']);
         }
 
         $orders = $q->orderBy('id', 'asc')->limit($limit)->get();
@@ -57,7 +59,7 @@ class SyncServerOrders extends Command
                 })
                 ->count();
 
-            if ($pendingDispatch > 0) {
+            if ($pendingDispatch > 0 && empty($onlyId) && !$includeFinal) {
                 $this->info("No server orders to sync yet. {$pendingDispatch} order(s) are still waiting without remote_id after dispatch attempt.");
                 $this->info('This usually means provider/API validation/connection issue. Check each order response/request payload.');
             } else {
@@ -104,9 +106,11 @@ class SyncServerOrders extends Command
 
                 if ($ptype !== 'dhru') {
                     $newStatus = strtolower(trim((string)($res['status'] ?? 'inprogress')));
-                    if ($newStatus === 'canceled') $newStatus = 'cancelled';
+                    if ($newStatus === 'canceled') {
+                        $newStatus = 'cancelled';
+                    }
 
-                    if (!in_array($newStatus, ['success','rejected','cancelled','inprogress','waiting'], true)) {
+                    if (!in_array($newStatus, ['success', 'rejected', 'cancelled', 'inprogress', 'waiting'], true)) {
                         $newStatus = 'inprogress';
                     }
 
@@ -121,10 +125,13 @@ class SyncServerOrders extends Command
                         'reference_id'  => $order->remote_id,
                     ]);
 
-                    $final = in_array($newStatus, ['success','rejected','cancelled'], true);
+                    $final = in_array($newStatus, ['success', 'rejected', 'cancelled'], true);
+
                     $order->status = $newStatus;
                     $order->processing = $final ? 0 : 1;
-                    if ($final) $order->replied_at = $order->replied_at ?: now();
+                    if ($final) {
+                        $order->replied_at = $order->replied_at ?: now();
+                    }
 
                     $req = $this->normalizeResponseArray($order->request);
                     $req['sync_last_at'] = now()->toDateTimeString();
@@ -134,8 +141,8 @@ class SyncServerOrders extends Command
                     $order->response = $respArr;
                     $order->save();
 
-                    if ($newStatus === 'rejected') {
-                        $this->finance()->refundOrderIfNeeded($order, 'api_rejected');
+                    if (in_array($newStatus, ['rejected', 'cancelled'], true)) {
+                        $this->finance()->refundOrderIfNeeded($order, 'api_' . $newStatus);
                     }
 
                     $synced++;
@@ -166,7 +173,7 @@ class SyncServerOrders extends Command
                     $respArr['message'] = trim($comments) !== '' ? trim($comments) : (trim($code) !== '' ? trim($code) : '—');
                 }
 
-                $final = in_array($newStatus, ['success','rejected','cancelled'], true);
+                $final = in_array($newStatus, ['success', 'rejected', 'cancelled'], true);
 
                 $order->status = $newStatus;
                 $order->processing = $final ? 0 : 1;
@@ -182,8 +189,8 @@ class SyncServerOrders extends Command
                 $order->response = $respArr;
                 $order->save();
 
-                if ($newStatus === 'rejected') {
-                    $this->finance()->refundOrderIfNeeded($order, 'api_rejected');
+                if (in_array($newStatus, ['rejected', 'cancelled'], true)) {
+                    $this->finance()->refundOrderIfNeeded($order, 'api_' . $newStatus);
                 }
 
                 $synced++;
@@ -194,11 +201,12 @@ class SyncServerOrders extends Command
                     'order_id' => $order->id ?? null,
                     'err' => $e->getMessage(),
                 ]);
+
                 $this->warn("Order #{$order->id}: error => " . $e->getMessage());
 
                 $order->status = 'waiting';
                 $order->processing = 0;
-                $order->response = ['type'=>'queued','message'=>'Sync error, will retry: '.$e->getMessage()];
+                $order->response = ['type' => 'queued', 'message' => 'Sync error, will retry: ' . $e->getMessage()];
                 $order->save();
             }
         }
@@ -292,7 +300,7 @@ class SyncServerOrders extends Command
     {
         if ($statusInt === 4) return 'success';
         if ($statusInt === 3) return 'rejected';
-        if (in_array($statusInt, [0,1,2], true)) return 'inprogress';
+        if (in_array($statusInt, [0, 1, 2], true)) return 'inprogress';
         return 'inprogress';
     }
 
