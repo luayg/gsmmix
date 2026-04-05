@@ -220,28 +220,68 @@ class WebxOrderGateway
             return null;
         }
 
-        $cancelTokens = ['cancelled', 'canceled', 'cancel', 'void'];
+        $cancelTokens = [
+            'cancelled',
+            'canceled',
+            'cancel',
+            'void',
+            'voided',
+            'terminated',
+            'aborted',
+        ];
         foreach ($cancelTokens as $token) {
             if (str_contains($text, $token)) {
                 return 'cancelled';
             }
         }
 
-        $rejectTokens = ['rejected', 'reject', 'failed', 'fail', 'invalid', 'denied', 'declined', 'error'];
+        $rejectTokens = [
+            'rejected',
+            'reject',
+            'failed',
+            'fail',
+            'invalid',
+            'denied',
+            'declined',
+            'error',
+            'not delivered',
+            'unavailable',
+        ];
         foreach ($rejectTokens as $token) {
             if (str_contains($text, $token)) {
                 return 'rejected';
             }
         }
 
-        $successTokens = ['success', 'successful', 'completed', 'complete', 'finished', 'done', 'approved', 'delivered'];
+        $successTokens = [
+            'success',
+            'successful',
+            'completed',
+            'complete',
+            'finished',
+            'done',
+            'approved',
+            'delivered',
+        ];
         foreach ($successTokens as $token) {
             if (str_contains($text, $token)) {
                 return 'success';
             }
         }
 
-        $progressTokens = ['pending', 'processing', 'process', 'in progress', 'inprogress', 'queued', 'queue', 'waiting'];
+        $progressTokens = [
+            'pending',
+            'processing',
+            'process',
+            'in progress',
+            'inprogress',
+            'queued',
+            'queue',
+            'waiting',
+            'running',
+            'active',
+            'started',
+        ];
         foreach ($progressTokens as $token) {
             if (str_contains($text, $token)) {
                 return 'inprogress';
@@ -263,6 +303,113 @@ class WebxOrderGateway
         return '';
     }
 
+    private function flattenAllStrings($value): array
+    {
+        if ($value === null) {
+            return [];
+        }
+
+        if (is_scalar($value)) {
+            $text = trim((string)$value);
+            return $text !== '' ? [$text] : [];
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($value as $item) {
+            $out = array_merge($out, $this->flattenAllStrings($item));
+        }
+
+        return $out;
+    }
+
+    private function detectStatusFromWholePayload(array $data): ?string
+    {
+        $texts = $this->flattenAllStrings($data);
+        if (empty($texts)) {
+            return null;
+        }
+
+        $joined = strtolower(implode("\n", $texts));
+
+        if ($joined === '') {
+            return null;
+        }
+
+        $cancelTokens = [
+            'cancelled',
+            'canceled',
+            'cancel',
+            'void',
+            'voided',
+            'terminated',
+            'aborted',
+        ];
+        foreach ($cancelTokens as $token) {
+            if (str_contains($joined, $token)) {
+                return 'cancelled';
+            }
+        }
+
+        $rejectTokens = [
+            'rejected',
+            'reject',
+            'failed',
+            'fail',
+            'invalid',
+            'denied',
+            'declined',
+            'error',
+            'not delivered',
+            'unavailable',
+        ];
+        foreach ($rejectTokens as $token) {
+            if (str_contains($joined, $token)) {
+                return 'rejected';
+            }
+        }
+
+        $successTokens = [
+            'success',
+            'successful',
+            'completed',
+            'complete',
+            'finished',
+            'done',
+            'approved',
+            'delivered',
+        ];
+        foreach ($successTokens as $token) {
+            if (str_contains($joined, $token)) {
+                return 'success';
+            }
+        }
+
+        $progressTokens = [
+            'pending',
+            'processing',
+            'process',
+            'in progress',
+            'inprogress',
+            'queued',
+            'queue',
+            'waiting',
+            'running',
+            'active',
+            'started',
+        ];
+        foreach ($progressTokens as $token) {
+            if (str_contains($joined, $token)) {
+                return 'inprogress';
+            }
+        }
+
+        return null;
+    }
+
     private function normalizeWebxStatus(array $data): array
     {
         $statusCandidates = [
@@ -273,6 +420,9 @@ class WebxOrderGateway
             $data['status_text'] ?? null,
             $data['status_name'] ?? null,
             $data['status_label'] ?? null,
+            $data['current_status'] ?? null,
+            $data['orderState'] ?? null,
+            $data['orderStatus'] ?? null,
 
             data_get($data, 'data.status'),
             data_get($data, 'data.order_status'),
@@ -281,10 +431,23 @@ class WebxOrderGateway
             data_get($data, 'data.status_text'),
             data_get($data, 'data.status_name'),
             data_get($data, 'data.status_label'),
+            data_get($data, 'data.current_status'),
+            data_get($data, 'data.orderState'),
+            data_get($data, 'data.orderStatus'),
+
+            data_get($data, 'order.status'),
+            data_get($data, 'order.order_status'),
+            data_get($data, 'order.state'),
+            data_get($data, 'order.result_status'),
+            data_get($data, 'order.status_text'),
+            data_get($data, 'order.status_name'),
+            data_get($data, 'order.status_label'),
+            data_get($data, 'order.current_status'),
+            data_get($data, 'order.orderState'),
+            data_get($data, 'order.orderStatus'),
         ];
 
         $status = null;
-        $hasExplicitStatus = false;
 
         foreach ($statusCandidates as $rawStatus) {
             if ($rawStatus === null) {
@@ -295,8 +458,6 @@ class WebxOrderGateway
             if ($rawText === '') {
                 continue;
             }
-
-            $hasExplicitStatus = true;
 
             if (is_numeric($rawStatus)) {
                 $stInt = (int)$rawStatus;
@@ -325,6 +486,8 @@ class WebxOrderGateway
             $data['reply'] ?? '',
             $data['message'] ?? '',
             $data['comments'] ?? '',
+            $data['note'] ?? '',
+            $data['details'] ?? '',
 
             data_get($data, 'data.result_text', ''),
             data_get($data, 'data.response', ''),
@@ -332,9 +495,20 @@ class WebxOrderGateway
             data_get($data, 'data.reply', ''),
             data_get($data, 'data.message', ''),
             data_get($data, 'data.comments', ''),
+            data_get($data, 'data.note', ''),
+            data_get($data, 'data.details', ''),
+
+            data_get($data, 'order.result_text', ''),
+            data_get($data, 'order.response', ''),
+            data_get($data, 'order.result', ''),
+            data_get($data, 'order.reply', ''),
+            data_get($data, 'order.message', ''),
+            data_get($data, 'order.comments', ''),
+            data_get($data, 'order.note', ''),
+            data_get($data, 'order.details', ''),
         ]);
 
-        $items = $data['result_items'] ?? data_get($data, 'data.result_items');
+        $items = $data['result_items'] ?? data_get($data, 'data.result_items') ?? data_get($data, 'order.result_items');
         if (!is_array($items)) {
             $items = null;
         }
@@ -344,7 +518,11 @@ class WebxOrderGateway
         }
 
         if ($status === null) {
-            $status = $hasExplicitStatus ? 'inprogress' : 'inprogress';
+            $status = $this->detectStatusFromWholePayload($data);
+        }
+
+        if ($status === null) {
+            $status = 'inprogress';
         }
 
         $ui = [
