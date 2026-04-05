@@ -410,7 +410,34 @@ class WebxOrderGateway
         return null;
     }
 
-    private function normalizeWebxStatus(array $data): array
+    private function isFwunlockLikeProvider(ApiProvider $provider): bool
+    {
+        $name = strtolower(trim((string)($provider->name ?? '')));
+        $url  = strtolower(trim((string)($provider->url ?? '')));
+
+        return str_contains($name, 'fwunlock') || str_contains($url, 'fwunlock');
+    }
+
+    private function mapNumericWebxStatus(ApiProvider $provider, int $statusInt): string
+    {
+        if ($statusInt === 4) {
+            return 'success';
+        }
+
+        if ($statusInt === 3) {
+            return 'rejected';
+        }
+
+        // provider-specific fix:
+        // fwunlock returns status=2 for cancelled orders in the status endpoint
+        if ($this->isFwunlockLikeProvider($provider) && $statusInt === 2) {
+            return 'cancelled';
+        }
+
+        return 'inprogress';
+    }
+
+    private function normalizeWebxStatus(ApiProvider $provider, array $data): array
     {
         $statusCandidates = [
             $data['status'] ?? null,
@@ -460,16 +487,7 @@ class WebxOrderGateway
             }
 
             if (is_numeric($rawStatus)) {
-                $stInt = (int)$rawStatus;
-
-                if ($stInt === 4) {
-                    $status = 'success';
-                } elseif ($stInt === 3) {
-                    $status = 'rejected';
-                } else {
-                    $status = 'inprogress';
-                }
-
+                $status = $this->mapNumericWebxStatus($provider, (int)$rawStatus);
                 break;
             }
 
@@ -841,7 +859,7 @@ class WebxOrderGateway
 
         try {
             $data = $this->getRaw($p, 'imei-orders/' . $id);
-            [$status, $ui] = $this->normalizeWebxStatus($data);
+            [$status, $ui] = $this->normalizeWebxStatus($p, $data);
 
             return [
                 'ok' => true,
@@ -864,7 +882,7 @@ class WebxOrderGateway
 
         try {
             $data = $this->getRaw($p, 'server-orders/' . $id);
-            [$status, $ui] = $this->normalizeWebxStatus($data);
+            [$status, $ui] = $this->normalizeWebxStatus($p, $data);
 
             return [
                 'ok' => true,
@@ -887,7 +905,7 @@ class WebxOrderGateway
 
         try {
             $data = $this->getRaw($p, 'file-orders/' . $id);
-            [$status, $ui] = $this->normalizeWebxStatus($data);
+            [$status, $ui] = $this->normalizeWebxStatus($p, $data);
 
             return [
                 'ok' => true,
