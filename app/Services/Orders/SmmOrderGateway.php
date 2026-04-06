@@ -165,7 +165,7 @@ class SmmOrderGateway
 
     private function resolveTargetValue(array $fields, SmmOrder $order): string
     {
-        $preferred = $this->firstNotEmpty([
+        $target = $this->firstNotEmpty([
             $fields['link'] ?? '',
             $fields['target'] ?? '',
             $fields['url'] ?? '',
@@ -173,17 +173,15 @@ class SmmOrderGateway
             $fields['channel'] ?? '',
             $fields['post'] ?? '',
             $fields['username'] ?? '',
+            $fields['custom'] ?? '',
             $order->device ?? '',
         ]);
 
-        $preferred = $this->normalizeTarget($preferred);
-        if ($preferred !== '') {
-            return $preferred;
+        $target = $this->normalizeTarget($target);
+        if ($target !== '') {
+            return $target;
         }
 
-        // fallback ذكي:
-        // خذ أول قيمة نصية غير فارغة من required fields
-        // مع تجاهل الحقول الرقمية/المعروفة بأنها ليست target
         $ignoredKeys = [
             'quantity', 'runs', 'interval', 'min', 'max', 'posts', 'old_posts',
             'delay', 'expiry', 'answer_number', 'comments', 'usernames'
@@ -220,7 +218,6 @@ class SmmOrderGateway
             'service' => $this->remoteServiceId($service),
         ];
 
-        // subscriptions
         if ($type === 'subscriptions') {
             $this->setTextIfPresent($payload, 'username', $fields['username'] ?? ($fields['target'] ?? null));
             $this->setIntIfPresent($payload, 'min', $fields['min'] ?? null);

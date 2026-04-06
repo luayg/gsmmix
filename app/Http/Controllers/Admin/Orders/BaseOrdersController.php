@@ -390,9 +390,6 @@ abstract class BaseOrdersController extends Controller
     $label = $this->safeScalarText($meta['label'] ?? '');
     $allowed = strtolower($this->safeScalarText($meta['allowed_characters'] ?? ''));
 
-    // دعم الشكلين:
-    // 1) minimum / maximum مباشرة
-    // 2) rules.minimum / rules.maximum / rules.allowed
     $rules = $this->decodeArray($meta['rules'] ?? []);
 
     if ($allowed === '') {

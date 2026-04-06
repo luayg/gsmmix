@@ -40,6 +40,15 @@
     return $cleanText($v);
   };
 
+  $decodeArr = function ($value) {
+    if (is_array($value)) return $value;
+    if (is_string($value)) {
+      $decoded = json_decode($value, true);
+      return is_array($decoded) ? $decoded : [];
+    }
+    return [];
+  };
+
   // fallback base price from service columns if group map missing
   $basePrice = function ($svc) {
     foreach ([
@@ -55,7 +64,7 @@
     $cost = (float)($svc->cost ?? 0);
     $profit = (float)($svc->profit ?? 0);
     $profitType = (int)($svc->profit_type ?? 1); // 1 fixed, 2 percent
-    if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit/100)));
+    if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit / 100)));
     return max(0.0, $cost + $profit);
   };
 
@@ -93,7 +102,6 @@
 
     <div class="row g-3">
 
-      {{-- USER --}}
       <div class="col-12">
         <label class="form-label">User</label>
         <select class="form-select js-step-user" name="user_id" required>
@@ -111,7 +119,6 @@
         </select>
       </div>
 
-      {{-- SERVICE (hidden until user chosen) --}}
       <div class="col-12 js-step-service d-none">
         <label class="form-label">Service</label>
         <select class="form-select js-service" name="service_id" required>
@@ -126,16 +133,13 @@
 
               $fallback = $basePrice($s);
 
-              $params = $s->params ?? [];
-              if (is_string($params)) $params = json_decode($params, true) ?: [];
-              if (!is_array($params)) $params = [];
+              $params = $decodeArr($s->params ?? []);
               $customFields = $params['custom_fields'] ?? [];
               if (!is_array($customFields)) $customFields = [];
               $customFieldsJson = json_encode($customFields, JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
 
-              $mainField = $s->main_field ?? [];
-              if (is_string($mainField)) $mainField = json_decode($mainField, true) ?: [];
-              if (!is_array($mainField)) $mainField = [];
+              $mainField = $decodeArr($s->main_field ?? []);
+              $mainRules = $decodeArr($mainField['rules'] ?? []);
 
               $mainType = strtolower($safeScalarText($mainField['type'] ?? ($s->main_type ?? 'text')));
               if ($mainType === '') $mainType = 'text';
@@ -150,14 +154,25 @@
                 else $mainLabel = $deviceLabel ?? 'Device';
               }
 
-              $mainAllowed = strtolower($safeScalarText($mainField['allowed_characters'] ?? ''));
+              $mainAllowed = strtolower($safeScalarText($mainField['allowed_characters'] ?? ($mainRules['allowed'] ?? '')));
               if ($mainAllowed === '') {
                 if ($mainType === 'imei' || $mainType === 'number') $mainAllowed = 'numbers';
                 else $mainAllowed = 'any';
               }
 
-              $mainMin = isset($mainField['minimum']) && is_numeric($mainField['minimum']) ? (int)$mainField['minimum'] : null;
-              $mainMax = isset($mainField['maximum']) && is_numeric($mainField['maximum']) ? (int)$mainField['maximum'] : null;
+              $mainMin = null;
+              if (isset($mainField['minimum']) && is_numeric($mainField['minimum'])) {
+                $mainMin = (int)$mainField['minimum'];
+              } elseif (isset($mainRules['minimum']) && is_numeric($mainRules['minimum'])) {
+                $mainMin = (int)$mainRules['minimum'];
+              }
+
+              $mainMax = null;
+              if (isset($mainField['maximum']) && is_numeric($mainField['maximum'])) {
+                $mainMax = (int)$mainField['maximum'];
+              } elseif (isset($mainRules['maximum']) && is_numeric($mainRules['maximum'])) {
+                $mainMax = (int)$mainRules['maximum'];
+              }
 
               if ($mainType === 'imei') {
                 if ($mainMin === null) $mainMin = 15;
@@ -197,7 +212,6 @@
 
       <input type="hidden" name="bulk" id="bulkHidden" value="0">
 
-      {{-- SINGLE device / upload --}}
       <div class="col-12 js-step-fields d-none" id="singleDeviceWrap">
         @if($isFileKind)
           <label class="form-label">Upload file</label>
@@ -214,7 +228,6 @@
         @endif
       </div>
 
-      {{-- BULK devices --}}
       <div class="col-12 js-step-fields d-none" id="bulkDevicesWrap">
         <label class="form-label">Devices (one per line)</label>
         <textarea class="form-control" name="devices" id="bulkDevicesInput" rows="6" placeholder="Enter one per line"></textarea>
@@ -222,7 +235,6 @@
         <div class="invalid-feedback d-block d-none" id="bulkDevicesError"></div>
       </div>
 
-      {{-- CUSTOM FIELDS --}}
       <div class="col-12 js-step-fields d-none" id="serviceFieldsWrap">
         <label class="form-label fw-semibold">Service fields</label>
         <div class="row g-2" id="serviceFieldsContainer"></div>
@@ -455,7 +467,7 @@
     const cf = currentCustomFields();
     return cf.some(f => {
       const input = String((f && f.input) || '').toLowerCase().trim();
-      return ['link', 'username', 'usernames', 'target'].includes(input);
+      return ['link', 'username', 'usernames', 'target', 'url', 'page', 'channel', 'post', 'custom'].includes(input);
     });
   }
 
@@ -485,12 +497,12 @@
       deviceInput.type = 'text';
       deviceInput.inputMode = 'text';
       deviceInput.placeholder = 'Enter Serial (10-13 chars)';
-      deviceInput.setAttribute('maxlength', '13');
+      deviceInput.setAttribute('maxlength', String(meta.max || 13));
     } else if (meta.type === 'imei_serial') {
       deviceInput.type = 'text';
       deviceInput.inputMode = 'text';
       deviceInput.placeholder = 'Enter IMEI (15) or Serial (10-13)';
-      deviceInput.setAttribute('maxlength', '15');
+      deviceInput.setAttribute('maxlength', String(meta.max || 15));
     } else if (meta.type === 'number') {
       deviceInput.type = 'text';
       deviceInput.inputMode = 'numeric';
@@ -627,7 +639,7 @@
     const hasQtyField = cf.some(f => String((f && f.input) || '').toLowerCase().trim() === 'quantity');
     const hasTargetField = cf.some(f => {
       const input = String((f && f.input) || '').toLowerCase().trim();
-      return ['link', 'username', 'usernames', 'target'].includes(input);
+      return ['link', 'username', 'usernames', 'target', 'url', 'page', 'channel', 'post', 'custom'].includes(input);
     });
 
     if (kind === 'smm') {
@@ -716,9 +728,12 @@
 
       const min = parseInt(f.minimum ?? 0, 10);
       const max = parseInt(f.maximum ?? 0, 10);
+
       if (control.type === 'number') {
         if (!isNaN(min) && min > 0) control.min = String(min);
         if (!isNaN(max) && max > 0) control.max = String(max);
+      } else {
+        if (!isNaN(max) && max > 0) control.maxLength = max;
       }
 
       col.appendChild(control);
