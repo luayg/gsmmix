@@ -128,6 +128,57 @@ class SmmOrderGateway
         }
     }
 
+    private function cleanSingleLineText($value): string
+    {
+        if (is_array($value)) {
+            $value = reset($value);
+        }
+
+        $value = html_entity_decode((string)$value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $value = preg_replace('/[\x{200B}-\x{200D}\x{FEFF}]/u', '', $value);
+        $value = str_replace(["\r", "\n", "\t"], ' ', $value);
+        $value = preg_replace('/\s+/u', ' ', $value);
+        return trim((string)$value);
+    }
+
+    private function normalizeTarget($value): string
+    {
+        $value = $this->cleanSingleLineText($value);
+        if ($value === '') {
+            return '';
+        }
+
+        // remove spaces around slashes/colons that break URLs
+        $value = preg_replace('/\s*\/\s*/u', '/', $value);
+        $value = preg_replace('/\s*:\s*/u', ':', $value);
+        $value = trim((string)$value);
+
+        // If user entered domain/path without scheme, add https://
+        $looksLikeDomain = preg_match('/^(www\.)?[A-Za-z0-9-]+\.[A-Za-z]{2,}(\/.*)?$/u', $value) === 1;
+        $hasScheme = preg_match('/^[a-z][a-z0-9+\-.]*:\/\//i', $value) === 1;
+
+        if (!$hasScheme && $looksLikeDomain) {
+            $value = 'https://' . ltrim($value, '/');
+        }
+
+        return trim($value);
+    }
+
+    private function resolveTargetValue(array $fields, SmmOrder $order): string
+    {
+        $target = $this->firstNotEmpty([
+            $fields['link'] ?? '',
+            $fields['target'] ?? '',
+            $fields['url'] ?? '',
+            $fields['page'] ?? '',
+            $fields['channel'] ?? '',
+            $fields['post'] ?? '',
+            $order->device ?? '',
+        ]);
+
+        return $this->normalizeTarget($target);
+    }
+
     private function buildAddPayload(ApiProvider $provider, SmmOrder $order): array
     {
         $service = $order->service;
@@ -142,7 +193,7 @@ class SmmOrderGateway
 
         // subscriptions
         if ($type === 'subscriptions') {
-            $this->setTextIfPresent($payload, 'username', $fields['username'] ?? null);
+            $this->setTextIfPresent($payload, 'username', $fields['username'] ?? ($fields['target'] ?? null));
             $this->setIntIfPresent($payload, 'min', $fields['min'] ?? null);
             $this->setIntIfPresent($payload, 'max', $fields['max'] ?? null);
             $this->setIntIfPresent($payload, 'posts', $fields['posts'] ?? null);
@@ -153,10 +204,7 @@ class SmmOrderGateway
             return $payload;
         }
 
-        $target = $this->firstNotEmpty([
-            $fields['link'] ?? '',
-            $order->device ?? '',
-        ]);
+        $target = $this->resolveTargetValue($fields, $order);
 
         if ($target !== '') {
             $payload['link'] = $target;
@@ -176,7 +224,7 @@ class SmmOrderGateway
                 break;
 
             case 'package':
-                // عادة package يحتاج link فقط
+                // package usually needs link only
                 break;
 
             case 'drip-feed':
@@ -188,21 +236,21 @@ class SmmOrderGateway
                 break;
 
             case 'mentions user followers':
-                $this->setTextIfPresent($payload, 'username', $fields['username'] ?? null);
+                $this->setTextIfPresent($payload, 'username', $fields['username'] ?? ($fields['target'] ?? null));
                 if ($quantity !== null) {
                     $payload['quantity'] = $quantity;
                 }
                 break;
 
             case 'comment likes':
-                $this->setTextIfPresent($payload, 'username', $fields['username'] ?? null);
+                $this->setTextIfPresent($payload, 'username', $fields['username'] ?? ($fields['target'] ?? null));
                 if ($quantity !== null) {
                     $payload['quantity'] = $quantity;
                 }
                 break;
 
             case 'mentions custom list':
-                $this->setLinesIfPresent($payload, 'usernames', $fields['usernames'] ?? null);
+                $this->setLinesIfPresent($payload, 'usernames', $fields['usernames'] ?? ($fields['target'] ?? null));
                 break;
 
             case 'poll':
@@ -217,11 +265,11 @@ class SmmOrderGateway
                 break;
 
             default:
-                // fallback مرن للأنواع غير المعروفة
+                // fallback flexible for unknown types
                 if ($quantity !== null) {
                     $payload['quantity'] = $quantity;
                 }
-                $this->setTextIfPresent($payload, 'username', $fields['username'] ?? null);
+                $this->setTextIfPresent($payload, 'username', $fields['username'] ?? ($fields['target'] ?? null));
                 $this->setLinesIfPresent($payload, 'usernames', $fields['usernames'] ?? null);
                 $this->setLinesIfPresent($payload, 'comments', $fields['comments'] ?? null);
                 $this->setIntIfPresent($payload, 'answer_number', $fields['answer_number'] ?? null);
