@@ -91,8 +91,8 @@ abstract class BaseOrdersController extends Controller
             ->get();
 
         if (in_array($this->kind, ['imei','server','file','smm'], true) && $services->count() > 0) {
-             $this->injectCustomFieldsIntoServices($services, $this->kind);
-}
+            $this->injectCustomFieldsIntoServices($services, $this->kind);
+        }
 
         $servicePriceMap = $this->buildServicePriceMap($services);
 
@@ -357,71 +357,71 @@ abstract class BaseOrdersController extends Controller
     }
 
     private function safeScalarText($value): string
-{
-    if (is_array($value)) {
-        return $this->pickTranslatableText($value);
-    }
-
-    if (is_string($value)) {
-        $s = trim($value);
-
-        if ($s !== '' && ($s[0] === '{' || $s[0] === '[')) {
-            $decoded = json_decode($s, true);
-            if (is_array($decoded)) {
-                return $this->pickTranslatableText($decoded);
-            }
+    {
+        if (is_array($value)) {
+            return $this->pickTranslatableText($value);
         }
 
-        return $s;
-    }
+        if (is_string($value)) {
+            $s = trim($value);
 
-    if ($value === null) {
-        return '';
-    }
+            if ($s !== '' && ($s[0] === '{' || $s[0] === '[')) {
+                $decoded = json_decode($s, true);
+                if (is_array($decoded)) {
+                    return $this->pickTranslatableText($decoded);
+                }
+            }
 
-    return trim((string)$value);
-}
+            return $s;
+        }
+
+        if ($value === null) {
+            return '';
+        }
+
+        return trim((string)$value);
+    }
 
     private function serviceMainFieldMeta($service): array
-{
-    $meta = $this->decodeArray($service->main_field ?? []);
+    {
+        $meta = $this->decodeArray($service->main_field ?? []);
 
-    $type = strtolower($this->safeScalarText($meta['type'] ?? ($service->main_type ?? '')));
-    $label = $this->safeScalarText($meta['label'] ?? '');
-    $allowed = strtolower($this->safeScalarText($meta['allowed_characters'] ?? ''));
+        $type = strtolower($this->safeScalarText($meta['type'] ?? ($service->main_type ?? '')));
+        $label = $this->safeScalarText($meta['label'] ?? '');
+        $allowed = strtolower($this->safeScalarText($meta['allowed_characters'] ?? ''));
 
-    $min = isset($meta['minimum']) && is_numeric($meta['minimum']) ? (int)$meta['minimum'] : null;
-    $max = isset($meta['maximum']) && is_numeric($meta['maximum']) ? (int)$meta['maximum'] : null;
+        $min = isset($meta['minimum']) && is_numeric($meta['minimum']) ? (int)$meta['minimum'] : null;
+        $max = isset($meta['maximum']) && is_numeric($meta['maximum']) ? (int)$meta['maximum'] : null;
 
-    if ($type === '') {
-        $params = $this->decodeArray($service->params ?? []);
-        $type = strtolower($this->safeScalarText($params['main_field_type'] ?? ''));
+        if ($type === '') {
+            $params = $this->decodeArray($service->params ?? []);
+            $type = strtolower($this->safeScalarText($params['main_field_type'] ?? ''));
+        }
+
+        if ($type === '') {
+            $type = 'text';
+        }
+
+        $presets = [
+            'imei'        => ['label' => 'IMEI',        'allowed' => 'numbers',      'min' => 15, 'max' => 15],
+            'serial'      => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 13],
+            'imei_serial' => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 15],
+            'number'      => ['label' => 'Number',      'allowed' => 'numbers',      'min' => 1,  'max' => 255],
+            'email'       => ['label' => 'Email',       'allowed' => 'any',          'min' => 3,  'max' => 255],
+            'text'        => ['label' => 'Text',        'allowed' => 'any',          'min' => 1,  'max' => 255],
+            'custom'      => ['label' => 'Custom',      'allowed' => 'alphanumeric', 'min' => 1,  'max' => 255],
+        ];
+
+        $preset = $presets[$type] ?? $presets['text'];
+
+        return [
+            'type' => $type,
+            'label' => $label !== '' ? $label : $preset['label'],
+            'allowed_characters' => $allowed !== '' ? $allowed : $preset['allowed'],
+            'minimum' => $min !== null ? $min : $preset['min'],
+            'maximum' => $max !== null ? $max : $preset['max'],
+        ];
     }
-
-    if ($type === '') {
-        $type = 'text';
-    }
-
-    $presets = [
-        'imei'        => ['label' => 'IMEI',        'allowed' => 'numbers',      'min' => 15, 'max' => 15],
-        'serial'      => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 13],
-        'imei_serial' => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 15],
-        'number'      => ['label' => 'Number',      'allowed' => 'numbers',      'min' => 1,  'max' => 255],
-        'email'       => ['label' => 'Email',       'allowed' => 'any',          'min' => 3,  'max' => 255],
-        'text'        => ['label' => 'Text',        'allowed' => 'any',          'min' => 1,  'max' => 255],
-        'custom'      => ['label' => 'Custom',      'allowed' => 'alphanumeric', 'min' => 1,  'max' => 255],
-    ];
-
-    $preset = $presets[$type] ?? $presets['text'];
-
-    return [
-        'type' => $type,
-        'label' => $label !== '' ? $label : $preset['label'],
-        'allowed_characters' => $allowed !== '' ? $allowed : $preset['allowed'],
-        'minimum' => $min !== null ? $min : $preset['min'],
-        'maximum' => $max !== null ? $max : $preset['max'],
-    ];
-}
 
     private function validateAllowedCharacters(string $value, string $allowed): bool
     {
@@ -475,14 +475,14 @@ abstract class BaseOrdersController extends Controller
 
         if ($type === 'imei_serial') {
             if (preg_match('/^\d{15}$/', $value)) {
-                return null; // valid IMEI
+                return null;
             }
 
             if ($len >= 10 && $len <= 13) {
                 if ($allowed !== 'any' && !$this->validateAllowedCharacters($value, $allowed)) {
                     return 'IMEI/Serial contains invalid characters.';
                 }
-                return null; // valid Serial
+                return null;
             }
 
             return 'Value must be either a 15-digit IMEI or a Serial between 10 and 13 characters.';
@@ -759,18 +759,13 @@ abstract class BaseOrdersController extends Controller
 
             $params['fields'] = (isset($data['required']) && is_array($data['required'])) ? $data['required'] : [];
 
-            $bulk = (bool)($data['bulk'] ?? false);
             $devices = [];
 
             if ($this->kind !== 'file') {
                 $deviceBased = (bool)($service->device_based ?? false);
 
                 if ($deviceBased) {
-                    if ($bulk) {
-                        $devices = $validatedDevices;
-                    } else {
-                        $devices = $validatedDevices;
-                    }
+                    $devices = $validatedDevices;
                 } else {
                     $devices = $validatedDevices;
                 }
@@ -781,7 +776,7 @@ abstract class BaseOrdersController extends Controller
 
             DB::transaction(function () use (
                 $request, $data, $userId, $service, $provider, $isApi,
-                $sellPrice, $costPrice, $profitOne, $params, $devices, $countOrders, $totalCharge, $requestUid
+                $sellPrice, $costPrice, $profitOne, $params, $devices, $totalCharge, $requestUid
             ) {
                 $u = User::query()->lockForUpdate()->findOrFail($userId);
                 $balance = (float)($u->balance ?? 0);
@@ -883,8 +878,13 @@ abstract class BaseOrdersController extends Controller
 
                 if ($this->kind === 'file') {
                     $createOne('');
+                } elseif (empty($devices)) {
+                    // مهم جدًا لـ SMM والخدمات التي تعتمد على required fields
+                    $createOne('');
                 } else {
-                    foreach ($devices as $dv) $createOne($dv);
+                    foreach ($devices as $dv) {
+                        $createOne($dv);
+                    }
                 }
             });
         } catch (\RuntimeException $e) {
