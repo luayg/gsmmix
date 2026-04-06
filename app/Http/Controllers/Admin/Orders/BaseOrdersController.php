@@ -90,9 +90,9 @@ abstract class BaseOrdersController extends Controller
             ->limit(1000)
             ->get();
 
-        if (in_array($this->kind, ['imei','server','file'], true) && $services->count() > 0) {
-            $this->injectCustomFieldsIntoServices($services, $this->kind);
-        }
+        if (in_array($this->kind, ['imei','server','file','smm'], true) && $services->count() > 0) {
+             $this->injectCustomFieldsIntoServices($services, $this->kind);
+}
 
         $servicePriceMap = $this->buildServicePriceMap($services);
 
