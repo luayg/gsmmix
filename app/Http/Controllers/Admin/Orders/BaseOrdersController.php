@@ -383,45 +383,65 @@ abstract class BaseOrdersController extends Controller
     }
 
     private function serviceMainFieldMeta($service): array
-    {
-        $meta = $this->decodeArray($service->main_field ?? []);
+{
+    $meta = $this->decodeArray($service->main_field ?? []);
 
-        $type = strtolower($this->safeScalarText($meta['type'] ?? ($service->main_type ?? '')));
-        $label = $this->safeScalarText($meta['label'] ?? '');
-        $allowed = strtolower($this->safeScalarText($meta['allowed_characters'] ?? ''));
+    $type = strtolower($this->safeScalarText($meta['type'] ?? ($service->main_type ?? '')));
+    $label = $this->safeScalarText($meta['label'] ?? '');
+    $allowed = strtolower($this->safeScalarText($meta['allowed_characters'] ?? ''));
 
-        $min = isset($meta['minimum']) && is_numeric($meta['minimum']) ? (int)$meta['minimum'] : null;
-        $max = isset($meta['maximum']) && is_numeric($meta['maximum']) ? (int)$meta['maximum'] : null;
+    // دعم الشكلين:
+    // 1) minimum / maximum مباشرة
+    // 2) rules.minimum / rules.maximum / rules.allowed
+    $rules = $this->decodeArray($meta['rules'] ?? []);
 
-        if ($type === '') {
-            $params = $this->decodeArray($service->params ?? []);
-            $type = strtolower($this->safeScalarText($params['main_field_type'] ?? ''));
-        }
-
-        if ($type === '') {
-            $type = 'text';
-        }
-
-        $presets = [
-            'imei'        => ['label' => 'IMEI',        'allowed' => 'numbers',      'min' => 15, 'max' => 15],
-            'serial'      => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 13],
-            'imei_serial' => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 15],
-            'number'      => ['label' => 'Number',      'allowed' => 'numbers',      'min' => 1,  'max' => 255],
-            'email'       => ['label' => 'Email',       'allowed' => 'any',          'min' => 3,  'max' => 255],
-            'text'        => ['label' => 'Text',        'allowed' => 'any',          'min' => 1,  'max' => 255],
-            'custom'      => ['label' => 'Custom',      'allowed' => 'alphanumeric', 'min' => 1,  'max' => 255],
-        ];
-
-        $preset = $presets[$type] ?? $presets['text'];
-
-        return [
-            'type' => $type,
-            'label' => $label !== '' ? $label : $preset['label'],
-            'allowed_characters' => $allowed !== '' ? $allowed : $preset['allowed'],
-            'minimum' => $min !== null ? $min : $preset['min'],
-            'maximum' => $max !== null ? $max : $preset['max'],
-        ];
+    if ($allowed === '') {
+        $allowed = strtolower($this->safeScalarText($rules['allowed'] ?? ''));
     }
+
+    $min = null;
+    if (isset($meta['minimum']) && is_numeric($meta['minimum'])) {
+        $min = (int)$meta['minimum'];
+    } elseif (isset($rules['minimum']) && is_numeric($rules['minimum'])) {
+        $min = (int)$rules['minimum'];
+    }
+
+    $max = null;
+    if (isset($meta['maximum']) && is_numeric($meta['maximum'])) {
+        $max = (int)$meta['maximum'];
+    } elseif (isset($rules['maximum']) && is_numeric($rules['maximum'])) {
+        $max = (int)$rules['maximum'];
+    }
+
+    if ($type === '') {
+        $params = $this->decodeArray($service->params ?? []);
+        $type = strtolower($this->safeScalarText($params['main_field_type'] ?? ''));
+    }
+
+    if ($type === '') {
+        $type = 'text';
+    }
+
+    $presets = [
+        'imei'        => ['label' => 'IMEI',        'allowed' => 'numbers',      'min' => 15, 'max' => 15],
+        'serial'      => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 13],
+        'imei_serial' => ['label' => 'IMEI/Serial', 'allowed' => 'any',          'min' => 10, 'max' => 15],
+        'number'      => ['label' => 'Number',      'allowed' => 'numbers',      'min' => 1,  'max' => 255],
+        'email'       => ['label' => 'Email',       'allowed' => 'any',          'min' => 3,  'max' => 255],
+        'text'        => ['label' => 'Text',        'allowed' => 'any',          'min' => 1,  'max' => 255],
+        'custom'      => ['label' => 'Custom',      'allowed' => 'alphanumeric', 'min' => 1,  'max' => 255],
+    ];
+
+    $preset = $presets[$type] ?? $presets['text'];
+
+    return [
+        'type' => $type,
+        'label' => $label !== '' ? $label : $preset['label'],
+        'allowed_characters' => $allowed !== '' ? $allowed : $preset['allowed'],
+        'minimum' => $min !== null ? $min : $preset['min'],
+        'maximum' => $max !== null ? $max : $preset['max'],
+    ];
+}
 
     private function validateAllowedCharacters(string $value, string $allowed): bool
     {

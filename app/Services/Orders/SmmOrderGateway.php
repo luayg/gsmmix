@@ -138,6 +138,7 @@ class SmmOrderGateway
         $value = preg_replace('/[\x{200B}-\x{200D}\x{FEFF}]/u', '', $value);
         $value = str_replace(["\r", "\n", "\t"], ' ', $value);
         $value = preg_replace('/\s+/u', ' ', $value);
+
         return trim((string)$value);
     }
 
@@ -148,12 +149,10 @@ class SmmOrderGateway
             return '';
         }
 
-        // remove spaces around slashes/colons that break URLs
         $value = preg_replace('/\s*\/\s*/u', '/', $value);
         $value = preg_replace('/\s*:\s*/u', ':', $value);
         $value = trim((string)$value);
 
-        // If user entered domain/path without scheme, add https://
         $looksLikeDomain = preg_match('/^(www\.)?[A-Za-z0-9-]+\.[A-Za-z]{2,}(\/.*)?$/u', $value) === 1;
         $hasScheme = preg_match('/^[a-z][a-z0-9+\-.]*:\/\//i', $value) === 1;
 
@@ -166,17 +165,47 @@ class SmmOrderGateway
 
     private function resolveTargetValue(array $fields, SmmOrder $order): string
     {
-        $target = $this->firstNotEmpty([
+        $preferred = $this->firstNotEmpty([
             $fields['link'] ?? '',
             $fields['target'] ?? '',
             $fields['url'] ?? '',
             $fields['page'] ?? '',
             $fields['channel'] ?? '',
             $fields['post'] ?? '',
+            $fields['username'] ?? '',
             $order->device ?? '',
         ]);
 
-        return $this->normalizeTarget($target);
+        $preferred = $this->normalizeTarget($preferred);
+        if ($preferred !== '') {
+            return $preferred;
+        }
+
+        // fallback ذكي:
+        // خذ أول قيمة نصية غير فارغة من required fields
+        // مع تجاهل الحقول الرقمية/المعروفة بأنها ليست target
+        $ignoredKeys = [
+            'quantity', 'runs', 'interval', 'min', 'max', 'posts', 'old_posts',
+            'delay', 'expiry', 'answer_number', 'comments', 'usernames'
+        ];
+
+        foreach ($fields as $key => $value) {
+            $keyNorm = strtolower(trim((string)$key));
+            if (in_array($keyNorm, $ignoredKeys, true)) {
+                continue;
+            }
+
+            if (is_array($value)) {
+                continue;
+            }
+
+            $candidate = $this->normalizeTarget($value);
+            if ($candidate !== '') {
+                return $candidate;
+            }
+        }
+
+        return '';
     }
 
     private function buildAddPayload(ApiProvider $provider, SmmOrder $order): array
@@ -210,7 +239,6 @@ class SmmOrderGateway
             $payload['link'] = $target;
         }
 
-        // quantity
         $quantity = $this->intOrNull($fields['quantity'] ?? null);
         if ($quantity === null && !empty($order->quantity)) {
             $quantity = (int)$order->quantity;
@@ -224,7 +252,6 @@ class SmmOrderGateway
                 break;
 
             case 'package':
-                // package usually needs link only
                 break;
 
             case 'drip-feed':
@@ -265,7 +292,6 @@ class SmmOrderGateway
                 break;
 
             default:
-                // fallback flexible for unknown types
                 if ($quantity !== null) {
                     $payload['quantity'] = $quantity;
                 }
