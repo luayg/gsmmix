@@ -442,6 +442,23 @@
     return 'Allowed length: ' + meta.min + ' - ' + meta.max + ' characters.';
   }
 
+  function currentCustomFields(){
+    const opt = selectedServiceOption();
+    if (!opt) return [];
+    let cf = safeJsonParse(opt.getAttribute('data-custom-fields') || '[]');
+    if (!Array.isArray(cf)) cf = [];
+    return cf;
+  }
+
+  function smmHasTargetField(){
+    if (kind !== 'smm') return false;
+    const cf = currentCustomFields();
+    return cf.some(f => {
+      const input = String((f && f.input) || '').toLowerCase().trim();
+      return ['link', 'username', 'usernames', 'target'].includes(input);
+    });
+  }
+
   function updateMainFieldUI(){
     if (isFileKind || isServerKind || !deviceInput) return;
 
@@ -490,68 +507,13 @@
   }
 
   function validateMainDeviceInputs(){
-  if (isFileKind || isServerKind) return true;
+    if (isFileKind || isServerKind) return true;
 
-  const opt = selectedServiceOption();
-  let cf = [];
-  if (opt) {
-    cf = safeJsonParse(opt.getAttribute('data-custom-fields') || '[]');
-    if (!Array.isArray(cf)) cf = [];
-  }
-
-  const smmHasTargetField = kind === 'smm' && cf.some(f => {
-    const input = String((f && f.input) || '').toLowerCase().trim();
-    return ['link', 'username', 'usernames', 'target'].includes(input);
-  });
-
-  // إذا كانت خدمة SMM تعتمد على custom target fields
-  // لا نتحقق من device إطلاقًا
-  if (smmHasTargetField) {
-    setFieldError(deviceError, '');
-    setFieldError(bulkDevicesError, '');
-    return true;
-  }
-
-  const meta = getMainMeta();
-  const bulkMode = bulkHidden && bulkHidden.value === '1';
-
-  let ok = true;
-
-  if (bulkMode) {
-    const raw = bulkDevicesInput ? String(bulkDevicesInput.value || '') : '';
-    const lines = raw.split(/\r\n|\n|\r/).map(v => v.trim()).filter(Boolean);
-
-    if (lines.length < 1) {
-      setFieldError(bulkDevicesError, 'Bulk list is empty.');
-      ok = false;
-    } else if (lines.length > 200) {
-      setFieldError(bulkDevicesError, 'Too many lines (max 200).');
-      ok = false;
-    } else {
-      let err = '';
-      lines.some((line, idx) => {
-        const res = validateSingleDevice(line, meta);
-        if (!res.ok) {
-          err = 'Line ' + (idx + 1) + ': ' + res.message;
-          return true;
-        }
-        return false;
-      });
-      setFieldError(bulkDevicesError, err);
-      ok = err === '';
+    if (smmHasTargetField()) {
+      setFieldError(deviceError, '');
+      setFieldError(bulkDevicesError, '');
+      return true;
     }
-
-    setFieldError(deviceError, '');
-  } else {
-    const value = deviceInput ? String(deviceInput.value || '').trim() : '';
-    const res = validateSingleDevice(value, meta);
-    setFieldError(deviceError, res.ok ? '' : res.message);
-    setFieldError(bulkDevicesError, '');
-    ok = res.ok;
-  }
-
-  return ok;
-}
 
     const meta = getMainMeta();
     const bulkMode = bulkHidden && bulkHidden.value === '1';
@@ -660,8 +622,7 @@
       return;
     }
 
-    let cf = safeJsonParse(opt.getAttribute('data-custom-fields') || '[]');
-    if (!Array.isArray(cf)) cf = [];
+    let cf = currentCustomFields();
 
     const hasQtyField = cf.some(f => String((f && f.input) || '').toLowerCase().trim() === 'quantity');
     const hasTargetField = cf.some(f => {
@@ -906,7 +867,6 @@
       return false;
     }
 
-    // مهم: قفل بصري فقط، بدون dataset.submitting
     lockVisualOnly();
   });
 
