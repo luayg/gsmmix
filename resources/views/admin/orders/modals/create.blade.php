@@ -49,7 +49,6 @@
     return [];
   };
 
-  // fallback base price from service columns if group map missing
   $basePrice = function ($svc) {
     foreach ([
       $svc->price ?? null,
@@ -63,7 +62,7 @@
 
     $cost = (float)($svc->cost ?? 0);
     $profit = (float)($svc->profit ?? 0);
-    $profitType = (int)($svc->profit_type ?? 1); // 1 fixed, 2 percent
+    $profitType = (int)($svc->profit_type ?? 1);
     if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit / 100)));
     return max(0.0, $cost + $profit);
   };
@@ -71,7 +70,6 @@
   $kind = $kind ?? '';
   $isFileKind   = $kind === 'file';
   $isServerKind = $kind === 'server';
-
   $servicePriceMap = $servicePriceMap ?? [];
 @endphp
 
@@ -496,13 +494,13 @@
     } else if (meta.type === 'serial') {
       deviceInput.type = 'text';
       deviceInput.inputMode = 'text';
-      deviceInput.placeholder = 'Enter Serial (10-13 chars)';
-      deviceInput.setAttribute('maxlength', String(meta.max || 13));
+      deviceInput.placeholder = 'Enter Serial';
+      deviceInput.setAttribute('maxlength', String(meta.max || 255));
     } else if (meta.type === 'imei_serial') {
       deviceInput.type = 'text';
       deviceInput.inputMode = 'text';
-      deviceInput.placeholder = 'Enter IMEI (15) or Serial (10-13)';
-      deviceInput.setAttribute('maxlength', String(meta.max || 15));
+      deviceInput.placeholder = 'Enter IMEI or Serial';
+      deviceInput.setAttribute('maxlength', String(meta.max || 255));
     } else if (meta.type === 'number') {
       deviceInput.type = 'text';
       deviceInput.inputMode = 'numeric';
