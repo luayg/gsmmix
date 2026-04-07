@@ -32,6 +32,9 @@ abstract class BaseOrdersController extends Controller
         return app(OrderFinanceService::class);
     }
 
+    // =========================
+    // LIST
+    // =========================
     public function index(Request $request)
     {
         $q      = trim((string)$request->get('q', ''));
@@ -75,6 +78,9 @@ abstract class BaseOrdersController extends Controller
         ]);
     }
 
+    // =========================
+    // CREATE MODAL
+    // =========================
     public function modalCreate()
     {
         $users = User::query()->orderByDesc('id')->limit(500)->get();
@@ -91,20 +97,20 @@ abstract class BaseOrdersController extends Controller
         $servicePriceMap = $this->buildServicePriceMap($services);
 
         return view('admin.orders.modals.create', [
-            'title'          => "Create {$this->title}",
-            'kind'           => $this->kind,
-            'routePrefix'    => $this->routePrefix,
-            'deviceLabel'    => $this->deviceLabel(),
-            'supportsQty'    => $this->supportsQuantity(),
-            'users'          => $users,
-            'services'       => $services,
-            'servicePriceMap'=> $servicePriceMap,
+            'title'           => "Create {$this->title}",
+            'kind'            => $this->kind,
+            'routePrefix'     => $this->routePrefix,
+            'deviceLabel'     => $this->deviceLabel(),
+            'supportsQty'     => $this->supportsQuantity(),
+            'users'           => $users,
+            'services'        => $services,
+            'servicePriceMap' => $servicePriceMap,
         ]);
     }
 
     private function injectCustomFieldsIntoServices($services, string $kind): void
     {
-        $serviceIds = $services->pluck('id')->map(fn($x)=>(int)$x)->filter()->values()->all();
+        $serviceIds = $services->pluck('id')->map(fn($x) => (int)$x)->filter()->values()->all();
         if (empty($serviceIds)) return;
 
         $serviceType = $kind . '_service';
@@ -186,7 +192,7 @@ abstract class BaseOrdersController extends Controller
     {
         if (!class_exists(\App\Models\ServiceGroupPrice::class)) return [];
 
-        $ids = $services->pluck('id')->map(fn($x)=>(int)$x)->filter()->values()->all();
+        $ids = $services->pluck('id')->map(fn($x) => (int)$x)->filter()->values()->all();
         if (empty($ids)) return [];
 
         $serviceType = $this->kind;
@@ -266,6 +272,9 @@ abstract class BaseOrdersController extends Controller
         return $s;
     }
 
+    // =========================
+    // PRICING (user group)
+    // =========================
     private function calcServiceSellPriceForUser($service, User $user): float
     {
         if ($this->kind === 'imei') {
@@ -305,7 +314,7 @@ abstract class BaseOrdersController extends Controller
         $cost = (float)($service->cost ?? 0);
         $profit = (float)($service->profit ?? 0);
         $profitType = (int)($service->profit_type ?? 1);
-        if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit/100)));
+        if ($profitType === 2) return max(0.0, $cost + ($cost * ($profit / 100)));
         return max(0.0, $cost + $profit);
     }
 
@@ -313,9 +322,9 @@ abstract class BaseOrdersController extends Controller
     {
         if ($request->expectsJson()) {
             return response()->json([
-                'ok'     => false,
-                'message'=> 'Validation error',
-                'errors' => $errors,
+                'ok'      => false,
+                'message' => 'Validation error',
+                'errors'  => $errors,
             ], $status);
         }
 
@@ -326,8 +335,8 @@ abstract class BaseOrdersController extends Controller
     {
         if ($request->expectsJson()) {
             return response()->json([
-                'ok' => true,
-                'message' => 'Order already submitted.',
+                'ok'           => true,
+                'message'      => 'Order already submitted.',
                 'redirect_url' => route("{$this->routePrefix}.index"),
             ]);
         }
@@ -423,11 +432,11 @@ abstract class BaseOrdersController extends Controller
         $preset = $presets[$type] ?? $presets['text'];
 
         return [
-            'type' => $type,
-            'label' => $label !== '' ? $label : $preset['label'],
+            'type'               => $type,
+            'label'              => $label !== '' ? $label : $preset['label'],
             'allowed_characters' => $allowed !== '' ? $allowed : $preset['allowed'],
-            'minimum' => $min !== null ? $min : $preset['min'],
-            'maximum' => $max !== null ? $max : $preset['max'],
+            'minimum'            => $min !== null ? $min : $preset['min'],
+            'maximum'            => $max !== null ? $max : $preset['max'],
         ];
     }
 
@@ -511,10 +520,57 @@ abstract class BaseOrdersController extends Controller
         return null;
     }
 
+    private function smmServiceHasTargetField($service): bool
+    {
+        if ($this->kind !== 'smm') {
+            return false;
+        }
+
+        $params = $this->decodeArray($service->params ?? []);
+        $customFields = $params['custom_fields'] ?? [];
+
+        if (!is_array($customFields) || empty($customFields)) {
+            return false;
+        }
+
+        foreach ($customFields as $field) {
+            if (!is_array($field)) {
+                continue;
+            }
+
+            if ((int)($field['active'] ?? 1) !== 1) {
+                continue;
+            }
+
+            $input = strtolower(trim((string)($field['input'] ?? '')));
+            if (in_array($input, ['link', 'username', 'usernames', 'target', 'url', 'page', 'channel', 'post', 'custom'], true)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function validateDeviceInputsForService(Request $request, $service): array
     {
-        if ($this->kind === 'file' || $this->kind === 'server' || $this->kind === 'smm') {
+        if ($this->kind === 'file' || $this->kind === 'server') {
             return [[], []];
+        }
+
+        if ($this->kind === 'smm') {
+            if ($this->smmServiceHasTargetField($service)) {
+                return [[], []];
+            }
+
+            $meta = $this->serviceMainFieldMeta($service);
+            $one = trim((string)$request->input('device', ''));
+            $err = $this->validateSingleDeviceByType($one, $meta);
+
+            if ($err !== null) {
+                return [[], ['device' => $err]];
+            }
+
+            return [[$one], []];
         }
 
         $meta = $this->serviceMainFieldMeta($service);
@@ -667,6 +723,9 @@ abstract class BaseOrdersController extends Controller
         return $errors;
     }
 
+    // =========================
+    // STORE
+    // =========================
     public function store(Request $request)
     {
         $rules = [
@@ -764,6 +823,16 @@ abstract class BaseOrdersController extends Controller
 
             $params['fields'] = (isset($data['required']) && is_array($data['required'])) ? $data['required'] : [];
 
+            if ($this->kind === 'smm') {
+                $deviceInputValue = trim((string)$request->input('device', ''));
+
+                if ($deviceInputValue !== '' && !$this->smmServiceHasTargetField($service)) {
+                    if (!isset($params['fields']['custom']) || trim((string)$params['fields']['custom']) === '') {
+                        $params['fields']['custom'] = $deviceInputValue;
+                    }
+                }
+            }
+
             $devices = [];
 
             if ($this->kind !== 'file') {
@@ -857,7 +926,7 @@ abstract class BaseOrdersController extends Controller
                                 $order->save();
                             }
                         } catch (\Throwable $e) {
-                            Log::error('Auto dispatch failed', ['id'=>$order->id,'err'=>$e->getMessage()]);
+                            Log::error('Auto dispatch failed', ['id' => $order->id, 'err' => $e->getMessage()]);
 
                             $order->processing = 0;
                             $order->status = 'waiting';
@@ -897,7 +966,7 @@ abstract class BaseOrdersController extends Controller
             if ($e->getMessage() === 'INSUFFICIENT_BALANCE') {
                 if ($request->expectsJson()) {
                     return response()->json([
-                        'ok' => false,
+                        'ok'      => false,
                         'message' => 'No enough balance for this order.',
                     ], 422);
                 }
@@ -915,8 +984,8 @@ abstract class BaseOrdersController extends Controller
 
         if ($request->expectsJson()) {
             return response()->json([
-                'ok' => true,
-                'message' => 'Order created.',
+                'ok'           => true,
+                'message'      => 'Order created.',
                 'redirect_url' => route("{$this->routePrefix}.index"),
             ]);
         }
@@ -973,8 +1042,8 @@ abstract class BaseOrdersController extends Controller
             'title'       => "View Order #{$row->id}",
             'kind'        => $this->kind,
             'routePrefix' => $this->routePrefix,
-            'row'   => $row,
-            'order' => $row,
+            'row'         => $row,
+            'order'       => $row,
         ]);
     }
 
@@ -986,11 +1055,14 @@ abstract class BaseOrdersController extends Controller
             'title'       => "Edit Order #{$row->id}",
             'kind'        => $this->kind,
             'routePrefix' => $this->routePrefix,
-            'row'   => $row,
-            'order' => $row,
+            'row'         => $row,
+            'order'       => $row,
         ]);
     }
 
+    // =========================
+    // UPDATE (manual status change)
+    // =========================
     public function update(Request $request, int $id)
     {
         $row = ($this->orderModel)::findOrFail($id);
