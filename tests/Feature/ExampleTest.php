@@ -32,4 +32,13 @@ class ExampleTest extends TestCase
             route('admin.services.server.syncFields', ['id' => 123], false)
         );
     }
+
+    public function test_service_create_modals_render_successfully(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $this->get(route("admin.services.{$kind}.modal.create"))
+                ->assertOk()
+                ->assertSee('serviceCreateForm', false);
+        }
+    }
 }
