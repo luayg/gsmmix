@@ -1,5 +1,5 @@
 {{-- resources/views/admin/api/remote/server/import.blade.php --}}
-@extends('admin.layouts.app')
+@extends('layouts.admin-standalone')
 
 @section('content')
   <div class="container-fluid py-3">
@@ -11,7 +11,7 @@
       </div>
 
       <div class="d-flex gap-2">
-        <a href="{{ route('admin.apis.services.server.page', $provider) }}" class="btn btn-outline-secondary btn-sm">
+        <a href="{{ route('admin.apis.remote.server.index', $provider) }}" class="btn btn-outline-secondary btn-sm">
           Back to list
         </a>
       </div>
@@ -89,7 +89,7 @@
 <script>
 (function(){
   const csrfToken = @json(csrf_token());
-  const importUrl = @json(route('admin.apis.services.server.import', $provider));
+  const importUrl = @json(route('admin.apis.remote.server.import', $provider));
 
   const importSearch = document.getElementById('importSearch');
   importSearch?.addEventListener('input', () => {
