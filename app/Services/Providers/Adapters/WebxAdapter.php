@@ -9,6 +9,7 @@ use App\Models\RemoteServerService;
 use App\Services\Api\WebxClient;
 use App\Services\Providers\ProviderAdapterInterface;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 class WebxAdapter implements ProviderAdapterInterface
 {
@@ -45,7 +46,9 @@ class WebxAdapter implements ProviderAdapterInterface
 
         if (!is_array($services)) return 0;
 
-        return DB::transaction(function () use ($provider, $kind, $services) {
+        $groupMap = $this->fetchPublicGroupMap($provider, $kind);
+
+        return DB::transaction(function () use ($provider, $kind, $services, $groupMap) {
             $seen = [];
             $count = 0;
 
@@ -56,7 +59,7 @@ class WebxAdapter implements ProviderAdapterInterface
                 if ($remoteId === '') continue;
 
                 $seen[] = $remoteId;
-                $groupName = $this->resolveGroupName($srv, $provider, $kind);
+                $groupName = $this->resolveGroupName($srv, $groupMap);
 
                 $basePayload = [
                     'api_provider_id'   => $provider->id,
@@ -130,7 +133,84 @@ class WebxAdapter implements ProviderAdapterInterface
         });
     }
 
-    private function resolveGroupName(array $service, ApiProvider $provider, string $kind): ?string
+    private function fetchPublicGroupMap(ApiProvider $provider, string $kind): array
+    {
+        $route = match ($kind) {
+            'imei' => 'imei-services',
+            'server' => 'server-services',
+            'file' => 'file-services',
+            default => null,
+        };
+
+        if ($route === null) {
+            return [];
+        }
+
+        try {
+            $url = rtrim((string) $provider->url, '/') . '/' . $route;
+            $response = Http::withHeaders([
+                'User-Agent' => 'GsmMix/1.0 (+Laravel WebX Group Sync)',
+                'Accept' => 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            ])->timeout(30)->get($url);
+
+            if (!$response->successful()) {
+                return [];
+            }
+
+            return $this->parsePublicGroups((string) $response->body());
+        } catch (\Throwable) {
+            return [];
+        }
+    }
+
+    private function parsePublicGroups(string $html): array
+    {
+        if (trim($html) === '') {
+            return [];
+        }
+
+        $previous = libxml_use_internal_errors(true);
+        $dom = new \DOMDocument();
+        $loaded = $dom->loadHTML('<?xml encoding="UTF-8">' . $html);
+        libxml_clear_errors();
+        libxml_use_internal_errors($previous);
+
+        if (!$loaded) {
+            return [];
+        }
+
+        $xpath = new \DOMXPath($dom);
+        $groups = [];
+
+        foreach ($xpath->query("//*[contains(concat(' ', normalize-space(@class), ' '), ' service-group ')]") as $groupNode) {
+            $title = null;
+            $titleNode = $xpath->query(".//*[contains(concat(' ', normalize-space(@class), ' '), ' title ')]", $groupNode)->item(0);
+
+            if ($titleNode) {
+                $title = $this->cleanStr($titleNode->textContent);
+            }
+
+            if ($title === null) {
+                continue;
+            }
+
+            foreach ($xpath->query(".//*[contains(concat(' ', normalize-space(@class), ' '), ' searchable ')]", $groupNode) as $serviceNode) {
+                $serviceName = $this->cleanStr($serviceNode->textContent);
+                if ($serviceName === null) {
+                    continue;
+                }
+
+                $key = $this->normalizeServiceName($serviceName);
+                if ($key !== '') {
+                    $groups[$key] = $title;
+                }
+            }
+        }
+
+        return $groups;
+    }
+
+    private function resolveGroupName(array $service, array $groupMap): ?string
     {
         $candidates = [
             $service['group_name'] ?? null,
@@ -152,12 +232,22 @@ class WebxAdapter implements ProviderAdapterInterface
             }
         }
 
-        $providerName = $this->cleanStr($provider->name);
-        if ($providerName !== null) {
-            return $providerName . ' ' . strtoupper($kind);
+        $serviceName = $this->cleanStr($service['name'] ?? null);
+        if ($serviceName !== null) {
+            $key = $this->normalizeServiceName($serviceName);
+            if ($key !== '' && isset($groupMap[$key])) {
+                return $groupMap[$key];
+            }
         }
 
-        return 'WebX ' . strtoupper($kind);
+        return null;
+    }
+
+    private function normalizeServiceName(string $name): string
+    {
+        $name = html_entity_decode(strip_tags($name), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $name = preg_replace('/\s+/u', ' ', $name) ?? $name;
+        return mb_strtolower(trim($name), 'UTF-8');
     }
 
     private function toFloat($value): float
