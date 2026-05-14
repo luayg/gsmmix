@@ -26,9 +26,8 @@ use App\Http\Controllers\Admin\Orders\FileOrdersController;
 use App\Http\Controllers\Admin\Orders\SmmOrdersController;
 use App\Http\Controllers\Admin\Orders\ProductOrdersController;
 
-
-
 use App\Http\Controllers\Auth\LoginController;
+
 /*
 |--------------------------------------------------------------------------
 | Web
@@ -80,7 +79,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/{user}/modal/services', [UserController::class, 'modalServices'])->name('modal.services');
 
         // Roles attach
-        Route::get ('/{user}/roles', [UserRoleController::class, 'edit'])->name('roles.edit');
+        Route::get('/{user}/roles', [UserRoleController::class, 'edit'])->name('roles.edit');
         Route::post('/{user}/roles', [UserRoleController::class, 'sync'])->name('roles.sync');
 
         /* ========= User Finances ========= */
@@ -105,16 +104,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     /* ====================== Groups ====================== */
     Route::prefix('groups')->name('groups.')->group(function () {
-        Route::get('/',             [GroupController::class,'index'])->name('index');
-        Route::get('/data',         [GroupController::class,'data'])->name('data');
+        Route::get('/',             [GroupController::class, 'index'])->name('index');
+        Route::get('/data',         [GroupController::class, 'data'])->name('data');
 
         // ✅ هذا هو المسار المطلوب في Blade: route('admin.groups.options')
-        Route::get('/options',      [GroupController::class,'options'])->name('options');
+        Route::get('/options',      [GroupController::class, 'options'])->name('options');
 
-        Route::post('/',            [GroupController::class,'store'])->name('store');
-        Route::put('/{group}',      [GroupController::class,'update'])->name('update');
-        Route::delete('/{group}',   [GroupController::class,'destroy'])->name('destroy');
-        Route::get('/{group}',      [GroupController::class,'show'])->name('show');
+        Route::post('/',            [GroupController::class, 'store'])->name('store');
+        Route::put('/{group}',      [GroupController::class, 'update'])->name('update');
+        Route::delete('/{group}',   [GroupController::class, 'destroy'])->name('destroy');
+        Route::get('/{group}',      [GroupController::class, 'show'])->name('show');
 
         // Ajax modals
         Route::get('/modal/create',         [GroupController::class, 'modalCreate'])->name('modal.create');
@@ -136,11 +135,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     /* ====================== Permissions ====================== */
     Route::prefix('permissions')->name('permissions.')->group(function () {
-        Route::get('/',        [PermissionController::class,'index'])->name('index');
-        Route::get('/data',    [PermissionController::class,'data'])->name('data');
-        Route::post('/',       [PermissionController::class,'store'])->name('store');
-        Route::put('/{perm}',  [PermissionController::class,'update'])->name('update');
-        Route::delete('/{perm}', [PermissionController::class,'destroy'])->name('destroy');
+        Route::get('/',          [PermissionController::class, 'index'])->name('index');
+        Route::get('/data',      [PermissionController::class, 'data'])->name('data');
+        Route::post('/',         [PermissionController::class, 'store'])->name('store');
+        Route::put('/{perm}',    [PermissionController::class, 'update'])->name('update');
+        Route::delete('/{perm}', [PermissionController::class, 'destroy'])->name('destroy');
     });
 
     /* ================== ✅ Service Management ==================== */
@@ -151,42 +150,52 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Ajax: groups filtered by type (imei/server/file/smm)
         Route::get('groups/options', [ServiceGroupController::class, 'options'])->name('groups.options');
 
-        // ✅ (ملاحظة) هذا المسار عندك اسمه غلط (admin داخل admin)
-        // لو شغال عندك اتركه، لكن الأفضل تصحيحه لاحقاً
-        Route::post('/admin/services/server/{id}/sync-fields', [\App\Http\Controllers\Admin\Services\ServerServiceController::class, 'syncFields'])
-            ->name('admin.services.server.syncFields');
+        Route::post('server-services/{id}/sync-fields', [ServerServiceController::class, 'syncFields'])
+            ->name('server.syncFields');
 
         // ===== IMEI services =====
-        Route::resource('imei-services', ImeiServiceController::class)->except(['show'])->names('imei');
-        Route::post('imei-services/bulk',             [ImeiServiceController::class, 'bulk'])->name('imei.bulk');
-        Route::get('imei-services/{service}/json',    [ImeiServiceController::class, 'showJson'])->name('imei.show.json');
+        Route::resource('imei-services', ImeiServiceController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('imei');
+
+        Route::post('imei-services/bulk', [ImeiServiceController::class, 'bulk'])->name('imei.bulk');
+        Route::get('imei-services/{service}/json', [ImeiServiceController::class, 'showJson'])->name('imei.show.json');
         Route::post('imei-services/{service}/toggle', [ImeiServiceController::class, 'toggle'])->name('imei.toggle');
-        Route::get('imei-services/modal/create',      [ImeiServiceController::class, 'modalCreate'])->name('imei.modal.create');
+        Route::get('imei-services/modal/create', [ImeiServiceController::class, 'modalCreate'])->name('imei.modal.create');
         Route::get('imei-services/{service}/modal/edit', [ImeiServiceController::class, 'modalEdit'])->name('imei.modal.edit');
 
         // ===== Server services =====
-        Route::resource('server-services', ServerServiceController::class)->except(['show'])->names('server');
-        Route::post('server-services/bulk',              [ServerServiceController::class, 'bulk'])->name('server.bulk');
-        Route::get('server-services/{service}/json',     [ServerServiceController::class, 'showJson'])->name('server.show.json');
-        Route::post('server-services/{service}/toggle',  [ServerServiceController::class, 'toggle'])->name('server.toggle');
-        Route::get('server-services/modal/create',       [ServerServiceController::class, 'modalCreate'])->name('server.modal.create');
-        Route::get('server-services/{service}/modal/edit',[ServerServiceController::class, 'modalEdit'])->name('server.modal.edit');
+        Route::resource('server-services', ServerServiceController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('server');
+
+        Route::post('server-services/bulk', [ServerServiceController::class, 'bulk'])->name('server.bulk');
+        Route::get('server-services/{service}/json', [ServerServiceController::class, 'showJson'])->name('server.show.json');
+        Route::post('server-services/{service}/toggle', [ServerServiceController::class, 'toggle'])->name('server.toggle');
+        Route::get('server-services/modal/create', [ServerServiceController::class, 'modalCreate'])->name('server.modal.create');
+        Route::get('server-services/{service}/modal/edit', [ServerServiceController::class, 'modalEdit'])->name('server.modal.edit');
 
         // ===== File services =====
-        Route::resource('file-services', FileServiceController::class)->except(['show'])->names('file');
-        Route::post('file-services/bulk',              [FileServiceController::class, 'bulk'])->name('file.bulk');
-        Route::get('file-services/{service}/json',     [FileServiceController::class, 'showJson'])->name('file.show.json');
-        Route::post('file-services/{service}/toggle',  [FileServiceController::class, 'toggle'])->name('file.toggle');
-        Route::get('file-services/modal/create',       [FileServiceController::class, 'modalCreate'])->name('file.modal.create');
-        Route::get('file-services/{service}/modal/edit',[FileServiceController::class, 'modalEdit'])->name('file.modal.edit');
+        Route::resource('file-services', FileServiceController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('file');
+
+        Route::post('file-services/bulk', [FileServiceController::class, 'bulk'])->name('file.bulk');
+        Route::get('file-services/{service}/json', [FileServiceController::class, 'showJson'])->name('file.show.json');
+        Route::post('file-services/{service}/toggle', [FileServiceController::class, 'toggle'])->name('file.toggle');
+        Route::get('file-services/modal/create', [FileServiceController::class, 'modalCreate'])->name('file.modal.create');
+        Route::get('file-services/{service}/modal/edit', [FileServiceController::class, 'modalEdit'])->name('file.modal.edit');
 
         // ===== SMM services =====
-        Route::resource('smm-services', SmmServiceController::class)->except(['show'])->names('smm');
-        Route::post('smm-services/bulk',              [SmmServiceController::class, 'bulk'])->name('smm.bulk');
-        Route::get('smm-services/{service}/json',     [SmmServiceController::class, 'showJson'])->name('smm.show.json');
-        Route::post('smm-services/{service}/toggle',  [SmmServiceController::class, 'toggle'])->name('smm.toggle');
-        Route::get('smm-services/modal/create',       [SmmServiceController::class, 'modalCreate'])->name('smm.modal.create');
-        Route::get('smm-services/{service}/modal/edit',[SmmServiceController::class, 'modalEdit'])->name('smm.modal.edit');
+        Route::resource('smm-services', SmmServiceController::class)
+            ->only(['index', 'store', 'update', 'destroy'])
+            ->names('smm');
+
+        Route::post('smm-services/bulk', [SmmServiceController::class, 'bulk'])->name('smm.bulk');
+        Route::get('smm-services/{service}/json', [SmmServiceController::class, 'showJson'])->name('smm.show.json');
+        Route::post('smm-services/{service}/toggle', [SmmServiceController::class, 'toggle'])->name('smm.toggle');
+        Route::get('smm-services/modal/create', [SmmServiceController::class, 'modalCreate'])->name('smm.modal.create');
+        Route::get('smm-services/{service}/modal/edit', [SmmServiceController::class, 'modalEdit'])->name('smm.modal.edit');
 
         // ✅ Service Groups Modals
         Route::get('groups/modal/create', [ServiceGroupController::class, 'modalCreate'])->name('groups.modal.create');
@@ -194,7 +203,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('groups/{group}/modal/delete', [ServiceGroupController::class, 'modalDelete'])->name('groups.modal.delete');
 
         // ===== Clone from API =====
-        Route::get('clone/modal',             [CloneController::class, 'modal'])->name('clone.modal');
+        Route::get('clone/modal', [CloneController::class, 'modal'])->name('clone.modal');
         Route::get('clone/provider-services', [CloneController::class, 'providerServices'])->name('clone.provider_services');
     });
 
@@ -240,7 +249,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/smm/{id}/modal/view', [SmmOrdersController::class, 'modalView'])->name('smm.modal.view');
         Route::get('/smm/{id}/modal/edit', [SmmOrdersController::class, 'modalEdit'])->name('smm.modal.edit');
 
-        // Product (placeholder)
+        // Product placeholder
         Route::get('/product', [ProductOrdersController::class, 'index'])->name('product.index');
         Route::get('/product/modal/create', [ProductOrdersController::class, 'modalCreate'])->name('product.modal.create');
     });
@@ -270,7 +279,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/', fn () => 'Replies')->name('index');
     });
 
-    /* ================== Downloads (placeholders) ==================== */
+    /* ================== Downloads placeholders ==================== */
     Route::prefix('downloads')->name('downloads.')->group(function () {
         Route::get('/', fn () => 'Downloads')->name('index');
         Route::get('/categories', fn () => 'Download categories')->name('categories.index');
