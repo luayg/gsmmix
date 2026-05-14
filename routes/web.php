@@ -151,10 +151,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Ajax: groups filtered by type (imei/server/file/smm)
         Route::get('groups/options', [ServiceGroupController::class, 'options'])->name('groups.options');
 
-        // ✅ (ملاحظة) هذا المسار عندك اسمه غلط (admin داخل admin)
-        // لو شغال عندك اتركه، لكن الأفضل تصحيحه لاحقاً
-        Route::post('/admin/services/server/{id}/sync-fields', [\App\Http\Controllers\Admin\Services\ServerServiceController::class, 'syncFields'])
-            ->name('admin.services.server.syncFields');
+        Route::post('server-services/{id}/sync-fields', [ServerServiceController::class, 'syncFields'])
+            ->name('server.syncFields');
 
         // ===== IMEI services =====
         Route::resource('imei-services', ImeiServiceController::class)->except(['show'])->names('imei');
