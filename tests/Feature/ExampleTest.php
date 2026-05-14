@@ -41,4 +41,14 @@ class ExampleTest extends TestCase
                 ->assertSee('serviceCreateForm', false);
         }
     }
+
+    public function test_local_sources_and_replies_routes_are_registered(): void
+    {
+        $this->assertTrue(Route::has('admin.sources.index'));
+        $this->assertTrue(Route::has('admin.sources.store'));
+        $this->assertTrue(Route::has('admin.sources.modal.create'));
+        $this->assertTrue(Route::has('admin.replies.index'));
+        $this->assertTrue(Route::has('admin.replies.store'));
+        $this->assertTrue(Route::has('admin.replies.modal.create'));
+    }
 }
