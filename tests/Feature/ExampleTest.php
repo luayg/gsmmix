@@ -2,18 +2,34 @@
 
 namespace Tests\Feature;
 
-// use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
-    /**
-     * A basic test example.
-     */
-    public function test_the_application_returns_a_successful_response(): void
+    public function test_root_redirects_to_admin_dashboard(): void
     {
         $response = $this->get('/');
 
-        $response->assertStatus(200);
+        $response->assertRedirect(route('admin.dashboard'));
+    }
+
+    public function test_completed_management_module_routes_are_registered(): void
+    {
+        $this->assertTrue(Route::has('admin.apis.index'));
+        $this->assertTrue(Route::has('admin.orders.imei.index'));
+        $this->assertTrue(Route::has('admin.orders.server.index'));
+        $this->assertTrue(Route::has('admin.orders.file.index'));
+        $this->assertTrue(Route::has('admin.orders.smm.index'));
+        $this->assertTrue(Route::has('admin.services.imei.index'));
+        $this->assertTrue(Route::has('admin.services.server.index'));
+        $this->assertTrue(Route::has('admin.services.file.index'));
+        $this->assertTrue(Route::has('admin.services.smm.index'));
+        $this->assertTrue(Route::has('admin.services.server.syncFields'));
+
+        $this->assertSame(
+            '/admin/service-management/server-services/123/sync-fields',
+            route('admin.services.server.syncFields', ['id' => 123], false)
+        );
     }
 }
