@@ -155,7 +155,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
             ->name('server.syncFields');
 
         // ===== IMEI services =====
-        Route::resource('imei-services', ImeiServiceController::class)->except(['show'])->names('imei');
+        Route::resource('imei-services', ImeiServiceController::class)->only(['index', 'store', 'update', 'destroy'])->names('imei');
         Route::post('imei-services/bulk',             [ImeiServiceController::class, 'bulk'])->name('imei.bulk');
         Route::get('imei-services/{service}/json',    [ImeiServiceController::class, 'showJson'])->name('imei.show.json');
         Route::post('imei-services/{service}/toggle', [ImeiServiceController::class, 'toggle'])->name('imei.toggle');
@@ -163,7 +163,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('imei-services/{service}/modal/edit', [ImeiServiceController::class, 'modalEdit'])->name('imei.modal.edit');
 
         // ===== Server services =====
-        Route::resource('server-services', ServerServiceController::class)->except(['show'])->names('server');
+        Route::resource('server-services', ServerServiceController::class)->only(['index', 'store', 'update', 'destroy'])->names('server');
         Route::post('server-services/bulk',              [ServerServiceController::class, 'bulk'])->name('server.bulk');
         Route::get('server-services/{service}/json',     [ServerServiceController::class, 'showJson'])->name('server.show.json');
         Route::post('server-services/{service}/toggle',  [ServerServiceController::class, 'toggle'])->name('server.toggle');
@@ -171,7 +171,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('server-services/{service}/modal/edit',[ServerServiceController::class, 'modalEdit'])->name('server.modal.edit');
 
         // ===== File services =====
-        Route::resource('file-services', FileServiceController::class)->except(['show'])->names('file');
+        Route::resource('file-services', FileServiceController::class)->only(['index', 'store', 'update', 'destroy'])->names('file');
         Route::post('file-services/bulk',              [FileServiceController::class, 'bulk'])->name('file.bulk');
         Route::get('file-services/{service}/json',     [FileServiceController::class, 'showJson'])->name('file.show.json');
         Route::post('file-services/{service}/toggle',  [FileServiceController::class, 'toggle'])->name('file.toggle');
@@ -179,7 +179,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('file-services/{service}/modal/edit',[FileServiceController::class, 'modalEdit'])->name('file.modal.edit');
 
         // ===== SMM services =====
-        Route::resource('smm-services', SmmServiceController::class)->except(['show'])->names('smm');
+        Route::resource('smm-services', SmmServiceController::class)->only(['index', 'store', 'update', 'destroy'])->names('smm');
         Route::post('smm-services/bulk',              [SmmServiceController::class, 'bulk'])->name('smm.bulk');
         Route::get('smm-services/{service}/json',     [SmmServiceController::class, 'showJson'])->name('smm.show.json');
         Route::post('smm-services/{service}/toggle',  [SmmServiceController::class, 'toggle'])->name('smm.toggle');
