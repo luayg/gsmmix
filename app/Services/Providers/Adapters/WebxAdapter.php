@@ -56,12 +56,13 @@ class WebxAdapter implements ProviderAdapterInterface
                 if ($remoteId === '') continue;
 
                 $seen[] = $remoteId;
+                $groupName = $this->resolveGroupName($srv, $provider, $kind);
 
                 $basePayload = [
                     'api_provider_id'   => $provider->id,
                     'remote_id'         => $remoteId,
                     'name'              => (string)($srv['name'] ?? ''),
-                    'group_name'        => null,
+                    'group_name'        => $groupName,
                     'price'             => $this->toFloat($srv['credits'] ?? 0),
                     'time'              => $this->cleanStr($srv['time'] ?? null),
                     'info'              => $this->cleanStr($srv['info'] ?? null),
@@ -71,6 +72,7 @@ class WebxAdapter implements ProviderAdapterInterface
                         'main_field'        => $srv['main_field'] ?? null,
                         'calculation_type'  => $srv['type'] ?? null,
                         'allow_duplicates'  => $srv['allow_duplicates'] ?? null,
+                        'group_name'        => $groupName,
                     ],
                 ];
 
@@ -126,6 +128,36 @@ class WebxAdapter implements ProviderAdapterInterface
 
             return $count;
         });
+    }
+
+    private function resolveGroupName(array $service, ApiProvider $provider, string $kind): ?string
+    {
+        $candidates = [
+            $service['group_name'] ?? null,
+            $service['groupName'] ?? null,
+            $service['group'] ?? null,
+            $service['category'] ?? null,
+            $service['service_group'] ?? null,
+            $service['serviceGroup'] ?? null,
+            data_get($service, 'group.name'),
+            data_get($service, 'category.name'),
+            data_get($service, 'main_field.group'),
+            data_get($service, 'main_field.category'),
+        ];
+
+        foreach ($candidates as $candidate) {
+            $value = $this->cleanStr($candidate);
+            if ($value !== null) {
+                return $value;
+            }
+        }
+
+        $providerName = $this->cleanStr($provider->name);
+        if ($providerName !== null) {
+            return $providerName . ' ' . strtoupper($kind);
+        }
+
+        return 'WebX ' . strtoupper($kind);
     }
 
     private function toFloat($value): float
