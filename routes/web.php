@@ -13,6 +13,8 @@ use App\Http\Controllers\Admin\ApiProvidersController;
 use App\Http\Controllers\Admin\UploadController;
 use App\Http\Controllers\Admin\LocalSourceController;
 use App\Http\Controllers\Admin\LocalReplyController;
+use App\Http\Controllers\Admin\ProductCategoryController;
+use App\Http\Controllers\Admin\ProductController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -265,8 +267,31 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('store')->name('store.')->group(function () {
-        Route::get('/categories', fn () => 'Product categories')->name('categories.index');
-        Route::get('/products',   fn () => 'Products')->name('products.index');
+        Route::prefix('categories')->name('categories.')->group(function () {
+            Route::get('/', [ProductCategoryController::class, 'index'])->name('index');
+            Route::get('/options', [ProductCategoryController::class, 'options'])->name('options');
+            Route::post('/', [ProductCategoryController::class, 'store'])->name('store');
+            Route::put('/{category}', [ProductCategoryController::class, 'update'])->name('update');
+            Route::delete('/{category}', [ProductCategoryController::class, 'destroy'])->name('destroy');
+
+            Route::get('/modal/create', [ProductCategoryController::class, 'modalCreate'])->name('modal.create');
+            Route::get('/{category}/modal/view', [ProductCategoryController::class, 'modalView'])->name('modal.view');
+            Route::get('/{category}/modal/edit', [ProductCategoryController::class, 'modalEdit'])->name('modal.edit');
+            Route::get('/{category}/modal/delete', [ProductCategoryController::class, 'modalDelete'])->name('modal.delete');
+        });
+
+        Route::prefix('products')->name('products.')->group(function () {
+            Route::get('/', [ProductController::class, 'index'])->name('index');
+            Route::get('/options', [ProductController::class, 'options'])->name('options');
+            Route::post('/', [ProductController::class, 'store'])->name('store');
+            Route::put('/{product}', [ProductController::class, 'update'])->name('update');
+            Route::delete('/{product}', [ProductController::class, 'destroy'])->name('destroy');
+
+            Route::get('/modal/create', [ProductController::class, 'modalCreate'])->name('modal.create');
+            Route::get('/{product}/modal/view', [ProductController::class, 'modalView'])->name('modal.view');
+            Route::get('/{product}/modal/edit', [ProductController::class, 'modalEdit'])->name('modal.edit');
+            Route::get('/{product}/modal/delete', [ProductController::class, 'modalDelete'])->name('modal.delete');
+        });
     });
 
     Route::prefix('pages')->name('pages.')->group(function () {
@@ -274,7 +299,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('sources')->name('sources.')->group(function () {
-         Route::get('/', [LocalSourceController::class, 'index'])->name('index');
+        Route::get('/', [LocalSourceController::class, 'index'])->name('index');
         Route::get('/options', [LocalSourceController::class, 'options'])->name('options');
         Route::post('/', [LocalSourceController::class, 'store'])->name('store');
         Route::put('/{source}', [LocalSourceController::class, 'update'])->name('update');
@@ -287,7 +312,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('replies')->name('replies.')->group(function () {
-         Route::get('/', [LocalReplyController::class, 'index'])->name('index');
+        Route::get('/', [LocalReplyController::class, 'index'])->name('index');
         Route::post('/', [LocalReplyController::class, 'store'])->name('store');
         Route::put('/{reply}', [LocalReplyController::class, 'update'])->name('update');
         Route::delete('/{reply}', [LocalReplyController::class, 'destroy'])->name('destroy');

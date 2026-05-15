@@ -7,12 +7,10 @@ use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
-    
     public function test_root_redirects_to_admin_dashboard(): void
     {
         $response = $this->get('/');
 
-        
         $response->assertRedirect(route('admin.dashboard'));
     }
 
@@ -52,5 +50,15 @@ class ExampleTest extends TestCase
         $this->assertTrue(Route::has('admin.replies.index'));
         $this->assertTrue(Route::has('admin.replies.store'));
         $this->assertTrue(Route::has('admin.replies.modal.create'));
+    }
+
+    public function test_store_routes_are_registered(): void
+    {
+        $this->assertTrue(Route::has('admin.store.categories.index'));
+        $this->assertTrue(Route::has('admin.store.categories.store'));
+        $this->assertTrue(Route::has('admin.store.categories.modal.create'));
+        $this->assertTrue(Route::has('admin.store.products.index'));
+        $this->assertTrue(Route::has('admin.store.products.store'));
+        $this->assertTrue(Route::has('admin.store.products.modal.create'));
     }
 }
