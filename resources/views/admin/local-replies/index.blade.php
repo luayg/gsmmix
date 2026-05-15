@@ -17,6 +17,7 @@
               <option value="{{ $n }}" @selected((int)$perPage === $n)>Show {{ $n }} items</option>
             @endforeach
           </select>
+
           <input type="hidden" name="q" value="{{ $q }}">
           <input type="hidden" name="source_id" value="{{ $sourceId ?: '' }}">
           <input type="hidden" name="usage" value="{{ $usage }}">
@@ -32,7 +33,11 @@
       <form method="GET" action="{{ route('admin.replies.index') }}" class="d-flex align-items-center gap-2">
         <input type="hidden" name="per_page" value="{{ $perPage }}">
         <label class="small mb-0">Search:</label>
-        <input type="text" name="q" class="form-control form-control-sm" value="{{ $q }}" style="width:220px">
+        <input type="text"
+               name="q"
+               class="form-control form-control-sm"
+               value="{{ $q }}"
+               style="width:220px">
       </form>
     </div>
 
@@ -44,8 +49,11 @@
         <label class="form-label small">Source</label>
         <select name="source_id" class="form-select form-select-sm" onchange="this.form.submit()">
           <option value="">All sources</option>
+
           @foreach($sources as $source)
-            <option value="{{ $source->id }}" @selected((int)$sourceId === (int)$source->id)>{{ $source->name }}</option>
+            <option value="{{ $source->id }}" @selected((int)$sourceId === (int)$source->id)>
+              {{ $source->name }}
+            </option>
           @endforeach
         </select>
       </div>
@@ -60,7 +68,10 @@
       </div>
 
       <div class="col-md-2">
-        <a href="{{ route('admin.replies.index', ['per_page' => $perPage]) }}" class="btn btn-light btn-sm w-100">Reset</a>
+        <a href="{{ route('admin.replies.index', ['per_page' => $perPage]) }}"
+           class="btn btn-light btn-sm w-100">
+          Reset
+        </a>
       </div>
     </form>
 
@@ -76,12 +87,20 @@
             <th style="width:100px" class="text-end">Actions</th>
           </tr>
         </thead>
+
         <tbody>
           @forelse($rows as $reply)
             <tr>
               <td>{{ $reply->id }}</td>
-              <td>{{ $reply->source?->name ?? 'None' }}</td>
-              <td>{{ $reply->device_identifier ?: '-' }}</td>
+
+              <td>
+                {{ $reply->source?->name ?? 'None' }}
+              </td>
+
+              <td>
+                {{ $reply->device_identifier ?: '-' }}
+              </td>
+
               <td>
                 @if($reply->used_by_product_order_id)
                   <a href="{{ route('admin.orders.product.index') }}"
@@ -92,7 +111,11 @@
                   <span class="text-muted">None</span>
                 @endif
               </td>
-              <td>{{ $reply->expires_at ? $reply->expires_at->format('d/m/Y H:i:s') : 'None' }}</td>
+
+              <td>
+                {{ $reply->expires_at ? $reply->expires_at->format('d/m/Y H:i:s') : 'None' }}
+              </td>
+
               <td class="text-end text-nowrap">
                 <button type="button"
                         class="btn btn-primary btn-sm js-open-modal"
@@ -103,7 +126,9 @@
             </tr>
           @empty
             <tr>
-              <td colspan="6" class="text-center text-muted py-4">No replies found</td>
+              <td colspan="6" class="text-center text-muted py-4">
+                No replies found
+              </td>
             </tr>
           @endforelse
         </tbody>
@@ -114,6 +139,7 @@
       <div class="small text-muted">
         Showing {{ $rows->firstItem() ?? 0 }} to {{ $rows->lastItem() ?? 0 }} of {{ $rows->total() }} items
       </div>
+
       {{ $rows->links('admin.components.pagination.compact') }}
     </div>
   </div>
