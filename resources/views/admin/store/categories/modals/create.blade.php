@@ -12,11 +12,6 @@
       <input type="text" name="name" class="form-control" placeholder="Name" required>
     </div>
 
-    <div class="mb-3">
-      <label class="form-label">Ordering</label>
-      <input type="number" name="ordering" class="form-control" value="0" min="0">
-    </div>
-
     <div class="form-check form-switch">
       <input class="form-check-input" type="checkbox" name="active" value="1" id="categoryActiveCreate" checked>
       <label class="form-check-label" for="categoryActiveCreate">Active</label>
