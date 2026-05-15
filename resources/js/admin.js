@@ -143,6 +143,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       $content.html(html);
 
+      if (typeof window.initModalEditors === 'function') {
+        await window.initModalEditors($content[0]);
+      }
+
       if (typeof initSelect2Safe === 'function') initSelect2Safe($content, $modal);
 
       $content.find('form.js-ajax-form').off('submit').on('submit', async function (ev) {

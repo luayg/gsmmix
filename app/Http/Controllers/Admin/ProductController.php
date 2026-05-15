@@ -146,11 +146,24 @@ class ProductController extends Controller
                 Rule::unique('products', 'alias')->ignore($product?->id),
             ],
             'description' => ['nullable', 'string'],
+            'main_image' => ['nullable', 'string', 'max:255'],
+            'delivery_time' => ['nullable', 'string', 'max:255'],
             'cost' => ['nullable', 'numeric', 'min:0'],
             'price' => ['required', 'numeric', 'min:0'],
+            'converted_price' => ['nullable', 'numeric', 'min:0'],
+            'currency' => ['nullable', 'string', 'max:10'],
+            'profit' => ['nullable', 'numeric', 'min:0'],
+            'profit_type' => ['nullable', 'string', 'in:credits,percent'],
             'active' => ['nullable', 'boolean'],
             'device_based' => ['nullable', 'boolean'],
+            'unlimited' => ['nullable', 'boolean'],
+            'hot' => ['nullable', 'boolean'],
+            'new' => ['nullable', 'boolean'],
+            'sale' => ['nullable', 'boolean'],
             'ordering' => ['nullable', 'integer', 'min:0'],
+            'meta_title' => ['nullable', 'string', 'max:255'],
+            'meta_keywords' => ['nullable', 'string'],
+            'meta_description' => ['nullable', 'string'],
         ]);
     }
 
@@ -161,12 +174,27 @@ class ProductController extends Controller
             'local_source_id' => $data['local_source_id'] ?? null,
             'name' => $data['name'],
             'alias' => trim((string) ($data['alias'] ?? '')) ?: null,
+            'main_image' => trim((string) ($data['main_image'] ?? '')) ?: null,
             'description' => $data['description'] ?? null,
+            'delivery_time' => trim((string) ($data['delivery_time'] ?? '')) ?: null,
             'cost' => (float) ($data['cost'] ?? 0),
             'price' => (float) ($data['price'] ?? 0),
+            'converted_price' => (float) ($data['converted_price'] ?? 0),
+            'currency' => trim((string) ($data['currency'] ?? 'USD')) ?: 'USD',
+            'profit' => (float) ($data['profit'] ?? 0),
+            'profit_type' => in_array(($data['profit_type'] ?? 'credits'), ['credits', 'percent'], true)
+                ? $data['profit_type']
+                : 'credits',
             'active' => $request->boolean('active'),
             'device_based' => $request->boolean('device_based'),
+            'unlimited' => $request->boolean('unlimited'),
+            'hot' => $request->boolean('hot'),
+            'new' => $request->boolean('new'),
+            'sale' => $request->boolean('sale'),
             'ordering' => (int) ($data['ordering'] ?? 0),
+            'meta_title' => trim((string) ($data['meta_title'] ?? '')) ?: null,
+            'meta_keywords' => trim((string) ($data['meta_keywords'] ?? '')) ?: null,
+            'meta_description' => trim((string) ($data['meta_description'] ?? '')) ?: null,
         ];
     }
 }
