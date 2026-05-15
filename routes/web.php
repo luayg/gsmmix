@@ -11,6 +11,8 @@ use App\Http\Controllers\Admin\PermissionController;
 use App\Http\Controllers\Admin\UserFinanceController;
 use App\Http\Controllers\Admin\ApiProvidersController;
 use App\Http\Controllers\Admin\UploadController;
+use App\Http\Controllers\Admin\LocalSourceController;
+use App\Http\Controllers\Admin\LocalReplyController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -272,11 +274,28 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('sources')->name('sources.')->group(function () {
-        Route::get('/', fn () => 'Sources')->name('index');
+         Route::get('/', [LocalSourceController::class, 'index'])->name('index');
+        Route::get('/options', [LocalSourceController::class, 'options'])->name('options');
+        Route::post('/', [LocalSourceController::class, 'store'])->name('store');
+        Route::put('/{source}', [LocalSourceController::class, 'update'])->name('update');
+        Route::delete('/{source}', [LocalSourceController::class, 'destroy'])->name('destroy');
+
+        Route::get('/modal/create', [LocalSourceController::class, 'modalCreate'])->name('modal.create');
+        Route::get('/{source}/modal/view', [LocalSourceController::class, 'modalView'])->name('modal.view');
+        Route::get('/{source}/modal/edit', [LocalSourceController::class, 'modalEdit'])->name('modal.edit');
+        Route::get('/{source}/modal/delete', [LocalSourceController::class, 'modalDelete'])->name('modal.delete');
     });
 
     Route::prefix('replies')->name('replies.')->group(function () {
-        Route::get('/', fn () => 'Replies')->name('index');
+         Route::get('/', [LocalReplyController::class, 'index'])->name('index');
+        Route::post('/', [LocalReplyController::class, 'store'])->name('store');
+        Route::put('/{reply}', [LocalReplyController::class, 'update'])->name('update');
+        Route::delete('/{reply}', [LocalReplyController::class, 'destroy'])->name('destroy');
+
+        Route::get('/modal/create', [LocalReplyController::class, 'modalCreate'])->name('modal.create');
+        Route::get('/{reply}/modal/view', [LocalReplyController::class, 'modalView'])->name('modal.view');
+        Route::get('/{reply}/modal/edit', [LocalReplyController::class, 'modalEdit'])->name('modal.edit');
+        Route::get('/{reply}/modal/delete', [LocalReplyController::class, 'modalDelete'])->name('modal.delete');
     });
 
     /* ================== Downloads placeholders ==================== */
