@@ -15,19 +15,15 @@ class ApiProvider extends Model
         'username',
         'api_key',
         'params',
-
         'sync_imei',
         'sync_server',
         'sync_file',
         'sync_smm',
-
         'ignore_low_balance',
         'auto_sync',
         'active',
         'synced',
-
         'balance',
-
         'available_imei',
         'used_imei',
         'available_server',
@@ -38,19 +34,21 @@ class ApiProvider extends Model
         'used_smm',
     ];
 
-    protected $casts = [
-        'params' => 'array',
+    protected $hidden = [
+        'api_key',
+    ];
 
+    protected $casts = [
+        'api_key' => 'encrypted',
+        'params' => 'array',
         'sync_imei' => 'boolean',
         'sync_server' => 'boolean',
         'sync_file' => 'boolean',
         'sync_smm' => 'boolean',
-
         'ignore_low_balance' => 'boolean',
         'auto_sync' => 'boolean',
         'active' => 'boolean',
         'synced' => 'boolean',
-
         'balance' => 'decimal:2',
     ];
 
@@ -74,10 +72,6 @@ class ApiProvider extends Model
         return $this->hasMany(RemoteSmmService::class, 'api_provider_id');
     }
 
-    /**
-     * Normalize endpoint for DHRU-style APIs (DHRU / GSMHub etc).
-     * If url is base domain, we append /api/index.php
-     */
     public function dhruEndpoint(): string
     {
         $url = rtrim((string) $this->url, '/');
