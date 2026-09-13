@@ -5,40 +5,15 @@ namespace App\Services\Orders;
 final class ProviderPayloadSanitizer
 {
     private const REQUEST_SECRET_KEYS = [
-        'apiaccesskey',
-        'apikey',
-        'api_key',
-        'accesskey',
-        'access_key',
-        'authorization',
-        'accesstoken',
-        'access_token',
-        'refreshtoken',
-        'refresh_token',
-        'token',
-        'secret',
-        'clientsecret',
-        'client_secret',
-        'password',
-        'pass',
-        'key',
+        'apiaccesskey','apikey','api_key','accesskey','access_key','authorization',
+        'accesstoken','access_token','refreshtoken','refresh_token','token','secret',
+        'clientsecret','client_secret','password','pass','key',
     ];
 
     private const RESPONSE_SECRET_KEYS = [
-        'apiaccesskey',
-        'apikey',
-        'api_key',
-        'accesskey',
-        'access_key',
-        'authorization',
-        'accesstoken',
-        'access_token',
-        'refreshtoken',
-        'refresh_token',
-        'token',
-        'secret',
-        'clientsecret',
-        'client_secret',
+        'apiaccesskey','apikey','api_key','accesskey','access_key','authorization',
+        'accesstoken','access_token','refreshtoken','refresh_token','token','secret',
+        'clientsecret','client_secret',
     ];
 
     public function sanitizeRequest(mixed $value): mixed
@@ -48,14 +23,18 @@ final class ProviderPayloadSanitizer
 
     public function sanitizeResponse(mixed $value): mixed
     {
-        // Response payloads may legitimately contain an unlock "key" or a returned
-        // account password. Do not destroy customer results; redact only fields whose
-        // names clearly represent provider/API credentials.
+        // Provider results can legitimately contain an unlock "key" or an account
+        // password. Response sanitization therefore targets provider/API credentials
+        // only, not generic customer result fields.
         return $this->sanitize($value, self::RESPONSE_SECRET_KEYS);
     }
 
     private function sanitize(mixed $value, array $secretKeys): mixed
     {
+        if (is_string($value)) {
+            return $this->redactUrlQuerySecrets($value, $secretKeys);
+        }
+
         if (!is_array($value)) {
             return $value;
         }
@@ -67,12 +46,28 @@ final class ProviderPayloadSanitizer
                 continue;
             }
 
-            $out[$key] = is_array($item)
-                ? $this->sanitize($item, $secretKeys)
-                : $item;
+            $out[$key] = $this->sanitize($item, $secretKeys);
         }
 
         return $out;
+    }
+
+    private function redactUrlQuerySecrets(string $value, array $secretKeys): string
+    {
+        if (!str_contains($value, '?') && !str_contains($value, '&')) {
+            return $value;
+        }
+
+        foreach ($secretKeys as $secretKey) {
+            $quoted = preg_quote($secretKey, '/');
+            $value = preg_replace(
+                '/([?&](?:' . $quoted . ')=)[^&#\s]*/i',
+                '$1[REDACTED]',
+                $value
+            ) ?? $value;
+        }
+
+        return $value;
     }
 
     private function isSecretKey(string $key, array $secretKeys): bool
