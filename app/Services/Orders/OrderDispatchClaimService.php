@@ -39,6 +39,10 @@ final class OrderDispatchClaimService
             }
 
             $request = $this->requestMeta($order);
+            if (!empty($request['dispatch_hold'])) {
+                return null;
+            }
+
             $request['dispatch_claimed_at'] = now()->toDateTimeString();
             $request['dispatch_attempt'] = ((int)($request['dispatch_attempt'] ?? 0)) + 1;
 
