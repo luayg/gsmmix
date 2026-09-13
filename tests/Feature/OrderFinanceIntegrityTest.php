@@ -9,6 +9,7 @@ use App\Models\ImeiOrder;
 use App\Models\User;
 use App\Services\Orders\OrderFinanceService;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schema;
@@ -259,9 +260,14 @@ class OrderFinanceIntegrityTest extends TestCase
         $this->order($user, 'success', 'refunded', '20.00');
         $this->order($user, 'rejected', 'charged', '15.00');
 
-        $this->artisan('orders:finance-audit', ['--json' => true])
-            ->expectsOutputToContain('"active_or_success_refunded":1')
-            ->expectsOutputToContain('"rejected_or_cancelled_not_refunded":1')
-            ->assertFailed();
+        $exit = Artisan::call('orders:finance-audit', ['--json' => true]);
+        $output = trim(Artisan::output());
+        $counts = json_decode($output, true);
+
+        $this->assertIsArray($counts, $output);
+        $this->assertSame(1, $counts['active_or_success_refunded'] ?? null, $output);
+        $this->assertSame(1, $counts['rejected_or_cancelled_not_refunded'] ?? null, $output);
+        $this->assertSame(1, $exit, $output);
+        $this->assertStringNotContainsString('finance@example.test', $output);
     }
 }
