@@ -100,6 +100,8 @@ abstract class SecurityTestCase extends TestCase
 
     protected function rememberSessionCookie(): void
     {
+        // JSON test requests omit cookies unless credentials are explicitly enabled.
+        $this->withCredentials();
         $this->withCookie(config('session.cookie'), app('session')->getId());
         $this->resetSessionRuntime();
     }

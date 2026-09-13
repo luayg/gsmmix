@@ -32,7 +32,9 @@ final class AdminPermissions
         $safe = in_array($method, ['GET', 'HEAD'], true);
         $path = trim($path, '/');
 
-        if (!$name) {
+        // Unnamed routes inside the admin name group inherit its bare prefix.
+        // Only the reviewed redirects below are permitted by path.
+        if (!$name || $name === 'admin.') {
             if (!$safe) {
                 return null;
             }
