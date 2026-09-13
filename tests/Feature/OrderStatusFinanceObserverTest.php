@@ -133,6 +133,32 @@ class OrderStatusFinanceObserverTest extends TestCase
         $this->assertSame('100.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
     }
 
+    public function test_terminal_status_always_clears_processing_before_persisting(): void
+    {
+        $user = $this->user('80.0000');
+        $order = $this->order($user);
+
+        $order->status = 'success';
+        $order->processing = true;
+        $order->save();
+
+        $this->assertFalse((bool)$order->fresh()->processing);
+    }
+
+    public function test_remote_order_cannot_be_moved_back_to_unsent_waiting_state(): void
+    {
+        $user = $this->user('80.0000');
+        $order = $this->order($user);
+        $order->remote_id = 'REMOTE-100';
+        $order->status = 'waiting';
+        $order->processing = false;
+        $order->save();
+
+        $fresh = $order->fresh();
+        $this->assertSame('inprogress', $fresh->status);
+        $this->assertTrue((bool)$fresh->processing);
+    }
+
     public function test_status_audit_detects_and_then_clears_financial_inconsistency(): void
     {
         $user = $this->user('100.0000');

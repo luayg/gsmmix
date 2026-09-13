@@ -181,8 +181,8 @@ class SyncImeiOrders extends Command
                 $order->request = $req;
 
                 if (!is_array($res)) {
-                    $order->status = 'waiting';
-                    $order->processing = 0;
+                    $order->status = 'inprogress';
+                    $order->processing = 1;
                     $order->save();
                     continue;
                 }
@@ -230,44 +230,25 @@ class SyncImeiOrders extends Command
                 $raw = $res['response_raw'] ?? null;
 
                 if (!is_array($raw)) {
-                    $order->status = 'waiting';
-                    $order->processing = 0;
+                    $order->status = 'inprogress';
+                    $order->processing = 1;
                     $order->save();
                     continue;
                 }
 
                 if (isset($raw['ERROR'][0]['MESSAGE'])) {
+                    // A status-check API error is not an order rejection. The order
+                    // already exists remotely; only an explicit provider order status
+                    // (e.g. DHRU STATUS=3) may reject/refund it.
                     $msg = (string)$raw['ERROR'][0]['MESSAGE'];
-                    $m = strtolower($msg);
-
-                    if (
-                        str_contains($m, 'command not found') ||
-                        str_contains($m, 'invalid action') ||
-                        (str_contains($m, 'parameter') && str_contains($m, 'required'))
-                    ) {
-                        $order->response = [
-                            'type' => 'info',
-                            'message' => $msg,
-                            'reference_id' => $order->remote_id,
-                        ];
-                        $order->status = 'inprogress';
-                        $order->processing = 1;
-                        $order->save();
-                        continue;
-                    }
-
-                    $order->status = 'rejected';
-                    $order->processing = 0;
-                    $order->replied_at = now();
                     $order->response = [
-                        'type' => 'error',
+                        'type' => 'info',
                         'message' => $msg,
                         'reference_id' => $order->remote_id,
                     ];
+                    $order->status = 'inprogress';
+                    $order->processing = 1;
                     $order->save();
-
-                    $this->finance()->refundOrderIfNeeded($order, 'sync_rejected_error');
-                    $synced++;
                     continue;
                 }
 
@@ -338,8 +319,9 @@ class SyncImeiOrders extends Command
                     'err' => $e->getMessage(),
                 ]);
 
-                $order->status = 'waiting';
-                $order->processing = 0;
+                $hasRemoteId = trim((string)($order->remote_id ?? '')) !== '';
+                $order->status = $hasRemoteId ? 'inprogress' : 'waiting';
+                $order->processing = $hasRemoteId ? 1 : 0;
                 $order->response = ['type' => 'queued', 'message' => 'Sync error, will retry: ' . $e->getMessage()];
                 $order->save();
             }

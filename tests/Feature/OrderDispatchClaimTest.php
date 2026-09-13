@@ -4,9 +4,13 @@ namespace Tests\Feature;
 
 use App\Models\ImeiOrder;
 use App\Services\Orders\OrderDispatchClaimService;
+use App\Services\Orders\OrderDispatcher;
+use App\Services\Orders\OrderFinanceService;
+use App\Services\Orders\OrderSender;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Mockery;
 use Tests\TestCase;
 
 class OrderDispatchClaimTest extends TestCase
@@ -82,5 +86,26 @@ class OrderDispatchClaimTest extends TestCase
 
         $this->assertNull($claims->claim(ImeiOrder::class, $sent->id));
         $this->assertNull($claims->claim(ImeiOrder::class, $done->id));
+    }
+
+    public function test_dispatcher_refuses_unclaimed_waiting_order_before_provider_call(): void
+    {
+        $order = ImeiOrder::create([
+            'status' => 'waiting',
+            'api_order' => true,
+            'processing' => false,
+            'request' => [],
+        ]);
+
+        $sender = Mockery::mock(OrderSender::class);
+        $sender->shouldNotReceive('sendImei');
+        $finance = Mockery::mock(OrderFinanceService::class);
+
+        $dispatcher = new OrderDispatcher($sender, $finance);
+        $dispatcher->send('imei', $order->id);
+
+        $fresh = $order->fresh();
+        $this->assertSame('waiting', $fresh->status);
+        $this->assertFalse((bool)$fresh->processing);
     }
 }
