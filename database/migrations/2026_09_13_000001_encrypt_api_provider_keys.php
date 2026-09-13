@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -12,6 +13,10 @@ return new class extends Migration
         if (! Schema::hasTable('api_providers') || ! Schema::hasColumn('api_providers', 'api_key')) {
             return;
         }
+
+        Schema::table('api_providers', function (Blueprint $table): void {
+            $table->text('api_key')->nullable()->change();
+        });
 
         DB::table('api_providers')
             ->select(['id', 'api_key'])
