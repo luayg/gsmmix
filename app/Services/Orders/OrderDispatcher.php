@@ -21,12 +21,17 @@ class OrderDispatcher
         $kind = strtolower(trim($kind));
 
         try {
+            $order = $this->claimedOrder($kind, $orderId);
+            if (!$order) {
+                return;
+            }
+
             match ($kind) {
-                'imei'   => $this->dispatchImei(ImeiOrder::findOrFail($orderId)),
-                'server' => $this->dispatchServer(ServerOrder::findOrFail($orderId)),
-                'file'   => $this->dispatchFile(FileOrder::findOrFail($orderId)),
-                'smm'    => $this->dispatchSmm(SmmOrder::findOrFail($orderId)),
-                default  => Log::warning('Unknown order kind', ['kind' => $kind, 'order_id' => $orderId]),
+                'imei'   => $this->dispatchImei($order),
+                'server' => $this->dispatchServer($order),
+                'file'   => $this->dispatchFile($order),
+                'smm'    => $this->dispatchSmm($order),
+                default  => null,
             };
         } catch (\Throwable $e) {
             Log::error('OrderDispatcher send failed', [
@@ -37,6 +42,45 @@ class OrderDispatcher
 
             throw $e;
         }
+    }
+
+    /**
+     * Provider submission is allowed only after the caller has atomically claimed
+     * the order (or the synchronous create flow has marked it in-progress). This
+     * makes duplicate/legacy sync pre-dispatch paths harmless: they cannot submit
+     * an unclaimed waiting row to a provider.
+     */
+    private function claimedOrder(string $kind, int $orderId)
+    {
+        $model = match ($kind) {
+            'imei' => ImeiOrder::class,
+            'server' => ServerOrder::class,
+            'file' => FileOrder::class,
+            'smm' => SmmOrder::class,
+            default => null,
+        };
+
+        if ($model === null) {
+            Log::warning('Unknown order kind', ['kind' => $kind, 'order_id' => $orderId]);
+            return null;
+        }
+
+        $order = $model::findOrFail($orderId);
+        $status = strtolower(trim((string)($order->status ?? '')));
+        $remoteId = trim((string)($order->remote_id ?? ''));
+
+        if ($status !== 'inprogress' || !(bool)($order->processing ?? false) || $remoteId !== '') {
+            Log::info('Order dispatch skipped because row is not an unresolved claimed order', [
+                'kind' => $kind,
+                'order_id' => $orderId,
+                'status' => $status,
+                'processing' => (bool)($order->processing ?? false),
+                'has_remote_id' => $remoteId !== '',
+            ]);
+            return null;
+        }
+
+        return $order;
     }
 
     private function resolveProvider($order): ?ApiProvider
