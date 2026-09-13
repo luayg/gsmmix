@@ -1,62 +1,39 @@
 <?php
-// database/seeders/RbacSeeder.php
-// {{-- [انسخ] --}}
+
 namespace Database\Seeders;
 
+use App\Support\AdminPermissions;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Str;
-use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
-use App\Models\User;
+use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 class RbacSeeder extends Seeder
 {
     public function run(): void
     {
-        // صلاحيات أساسية لوحداتنا الحالية
-        $entities = ['users','groups','roles','permissions'];
-        $actions  = ['view','create','edit','delete'];
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        foreach (AdminPermissions::all() as $permission) {
+            Permission::findOrCreate($permission, 'web');
+        }
 
-        $allPerms = [];
-        foreach ($entities as $e) {
-            foreach ($actions as $a) {
-                $allPerms[] = "{$e}.{$a}";
+        Role::findOrCreate(AdminPermissions::ADMIN_ROLE, 'web')
+            ->givePermissionTo(AdminPermissions::all());
+
+        $manager = ['admin.access', 'dashboard.view', 'users.view', 'uploads.create'];
+        foreach (['groups', 'services', 'orders', 'store', 'sources', 'replies'] as $module) {
+            foreach (['view', 'create', 'edit'] as $action) {
+                $manager[] = "{$module}.{$action}";
             }
         }
+        Role::findOrCreate('Manager', 'web')->givePermissionTo($manager);
+        Role::findOrCreate('Support', 'web')->givePermissionTo([
+            'admin.access', 'dashboard.view', 'users.view', 'services.view',
+            'orders.view', 'store.view',
+        ]);
+        Role::findOrCreate('Basic', 'web');
 
-        // إنشاء الصلاحيات إن لم تكن موجودة
-        foreach ($allPerms as $perm) {
-            Permission::findOrCreate($perm, 'web');
-        }
-
-        // الأدوار
-        $admin   = Role::findOrCreate('Administrator', 'web');
-        $manager = Role::findOrCreate('Manager', 'web');
-        $support = Role::findOrCreate('Support', 'web');
-        $basic   = Role::findOrCreate('Basic', 'web');
-
-        // إعطاء كل الصلاحيات للأدمن
-        $admin->syncPermissions($allPerms);
-
-        // المدير: مشاهدة + إنشاء/تعديل، بدون حذف
-        $managerPerms = collect($allPerms)->filter(fn($p)=>!Str::endsWith($p,'.delete'))->values()->all();
-        $manager->syncPermissions($managerPerms);
-
-        // الدعم: مشاهدة فقط
-        $supportPerms = collect($allPerms)->filter(fn($p)=>Str::endsWith($p,'.view'))->values()->all();
-        $support->syncPermissions($supportPerms);
-
-        // بيسك: لا شيء أو صلاحيات محدودة جدًا (اختر ما يلزم لاحقاً)
-        $basic->syncPermissions([]);
-
-        // ربط الأدمن بالمستخدم الأول/بريد معين
-        $adminUser = User::query()
-            ->where('id', 1)
-            ->orWhere('email', 'admin@example.com')
-            ->first();
-
-        if ($adminUser) {
-            $adminUser->syncRoles(['Administrator']);
-        }
+        // Additive and repeatable: never reset customized grants or assign a user.
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
     }
 }

@@ -1,0 +1,38 @@
+name: Security tests
+
+on:
+  push:
+    branches: [main, phase-1-access-control-20260913]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with:
+          php-version: '8.2'
+          extensions: mbstring, xml, dom, curl, bcmath, pdo_sqlite, sqlite3
+          coverage: none
+          tools: composer:v2
+      - name: Prepare isolated test environment
+        run: cp .env.example .env
+      - name: Install locked dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Generate disposable test key
+        run: php artisan key:generate --force
+      - name: Run tests without production data or provider credentials
+        run: vendor/bin/phpunit --testdox

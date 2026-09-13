@@ -5,65 +5,68 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 
 class LoginController extends Controller
 {
-    /**
-     * Show login form
-     */
     public function create()
     {
-        return view('auth.login');
+        return response()->view('auth.login')->header('Cache-Control', 'no-store, private');
     }
 
-    /**
-     * Handle login
-     * - supports email or username in single field: "login"
-     * - checks status = active
-     */
     public function store(Request $request)
     {
+        // An IP limit also covers invalid forms and attempts across many usernames.
+        $ipKey = 'login:ip:' . hash('sha256', (string) $request->ip());
+        $this->checkLimit($ipKey, 25);
+        RateLimiter::hit($ipKey, 60);
+
         $data = $request->validate([
             'login' => ['required', 'string', 'max:255'],
             'password' => ['required', 'string', 'max:255'],
-            'remember' => ['nullable'],
+            'remember' => ['nullable'], // The existing HTML checkbox submits 'on'.
         ]);
 
         $login = trim($data['login']);
-        $password = $data['password'];
-        $remember = $request->boolean('remember');
+        $key = 'login:account:' . hash('sha256', Str::lower($login) . '|' . $request->ip());
+        $this->checkLimit($key, 5);
+        RateLimiter::hit($key, 60);
 
-        // نجرب email ثم username (حتى لو المستخدم كتب username)
-        $attempts = [
-            ['email' => $login, 'password' => $password, 'status' => 'active'],
-            ['username' => $login, 'password' => $password, 'status' => 'active'],
-        ];
-
-        foreach ($attempts as $credentials) {
-            if (Auth::attempt($credentials, $remember)) {
+        foreach (['email', 'username'] as $field) {
+            if (Auth::guard('web')->attempt([
+                $field => $login,
+                'password' => $data['password'],
+                'status' => 'active',
+            ], $request->boolean('remember'))) {
+                RateLimiter::clear($key);
                 $request->session()->regenerate();
-
-                // يرجع لآخر صفحة كان يريدها (مثل API Management) أو للداشبورد
+                $request->session()->put('password_hash_web', Auth::guard('web')->user()->getAuthPassword());
                 return redirect()->intended(route('admin.dashboard'));
             }
         }
 
-        throw ValidationException::withMessages([
-            'login' => 'بيانات الدخول غير صحيحة أو الحساب غير مفعل.',
-        ]);
+        // Do not reveal whether the account exists or is inactive.
+        throw ValidationException::withMessages(['login' => __('auth.failed')]);
     }
 
-    /**
-     * Logout
-     */
+    private function checkLimit(string $key, int $attempts): void
+    {
+        if (RateLimiter::tooManyAttempts($key, $attempts)) {
+            throw new TooManyRequestsHttpException(
+                max(1, RateLimiter::availableIn($key)),
+                'Too many login attempts. Please try again shortly.',
+            );
+        }
+    }
+
     public function destroy(Request $request)
     {
-        Auth::logout();
-
+        Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-
         return redirect()->route('login');
     }
 }
