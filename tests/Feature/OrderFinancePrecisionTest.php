@@ -34,7 +34,9 @@ class OrderFinancePrecisionTest extends TestCase
         Schema::create('smm_orders', function (Blueprint $table): void {
             $table->id();
             $table->unsignedBigInteger('user_id')->nullable();
+            $table->string('remote_id')->nullable();
             $table->string('status')->default('waiting');
+            $table->boolean('processing')->default(false);
             $table->text('request')->nullable();
             $table->text('response')->nullable();
             $table->timestamps();
