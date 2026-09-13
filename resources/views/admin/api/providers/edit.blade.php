@@ -30,7 +30,7 @@
       <div class="col-md-6" id="username_wrap"><label class="form-label">Username</label><input type="text" name="username" class="form-control" value="{{ old('username', $provider->username) }}"></div>
       <div class="col-md-6" id="key_wrap">
         <label class="form-label">Key</label>
-        <input type="password" id="api_key_replacement" class="form-control" value="" autocomplete="new-password" placeholder="Leave blank to keep the current key">
+        <input type="password" name="api_key" id="api_key_replacement" class="form-control" value="" autocomplete="new-password" placeholder="Leave blank to keep the current key">
         <div class="form-text">The saved key is never displayed. Enter a new key only to replace it.</div>
       </div>
     </div>
@@ -55,13 +55,6 @@
 
 <script>
 (function(){
-  const form = document.getElementById('apiProviderEditForm');
-  const keyInput = document.getElementById('api_key_replacement');
-
-  form?.addEventListener('submit', function(){
-    if (keyInput && keyInput.value.trim() !== '') keyInput.name = 'api_key';
-  });
-
   function toggleSimpleLink(){
     var t = document.getElementById('api_type').value;
     var isSimple = (t === 'simple_link');
