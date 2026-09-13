@@ -39,7 +39,7 @@ final class OrderDispatchClaimService
             }
 
             $request = $this->requestMeta($order);
-            if (!empty($request['dispatch_hold'])) {
+            if (!empty($request['dispatch_hold']) || !empty(data_get($request, 'request.dispatch_hold'))) {
                 return null;
             }
 
