@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\EncryptedProviderKey;
 use Illuminate\Database\Eloquent\Model;
 
 class ApiProvider extends Model
@@ -9,37 +10,17 @@ class ApiProvider extends Model
     protected $table = 'api_providers';
 
     protected $fillable = [
-        'name',
-        'type',
-        'url',
-        'username',
-        'api_key',
-        'params',
-        'sync_imei',
-        'sync_server',
-        'sync_file',
-        'sync_smm',
-        'ignore_low_balance',
-        'auto_sync',
-        'active',
-        'synced',
-        'balance',
-        'available_imei',
-        'used_imei',
-        'available_server',
-        'used_server',
-        'available_file',
-        'used_file',
-        'available_smm',
-        'used_smm',
+        'name', 'type', 'url', 'username', 'api_key', 'params',
+        'sync_imei', 'sync_server', 'sync_file', 'sync_smm',
+        'ignore_low_balance', 'auto_sync', 'active', 'synced', 'balance',
+        'available_imei', 'used_imei', 'available_server', 'used_server',
+        'available_file', 'used_file', 'available_smm', 'used_smm',
     ];
 
-    protected $hidden = [
-        'api_key',
-    ];
+    protected $hidden = ['api_key'];
 
     protected $casts = [
-        'api_key' => 'encrypted',
+        'api_key' => EncryptedProviderKey::class,
         'params' => 'array',
         'sync_imei' => 'boolean',
         'sync_server' => 'boolean',
@@ -78,7 +59,6 @@ class ApiProvider extends Model
         if (str_ends_with($url, '/api/index.php')) {
             return $url;
         }
-
         return $url . '/api/index.php';
     }
 }

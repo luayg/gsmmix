@@ -50,7 +50,7 @@
 
       <div class="col-md-6" id="key_wrap">
         <label class="form-label">Key</label>
-        <input type="text" name="api_key" class="form-control" value="{{ old('api_key') }}">
+        <input type="password" name="api_key" class="form-control" value="" autocomplete="new-password">
       </div>
     </div>
 

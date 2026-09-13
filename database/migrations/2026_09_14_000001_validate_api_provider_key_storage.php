@@ -7,7 +7,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Harden the original path for installations that have not run it yet.
+        // Also covers installations where the earlier migration is already recorded.
         app(ProviderKeyStorage::class)->upgrade();
     }
 

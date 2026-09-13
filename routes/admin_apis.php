@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\ApiProvidersController;
+use App\Http\Controllers\Admin\ApiProviderWriteController;
 use App\Http\Controllers\Admin\Api\RemoteServerServicesController;
 
 /*
@@ -22,11 +23,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::get('/',                [ApiProvidersController::class,'index'])->name('index');
         Route::get('/create',          [ApiProvidersController::class,'create'])->name('create');
-        Route::post('/',               [ApiProvidersController::class,'store'])->name('store');
+        Route::post('/',               [ApiProviderWriteController::class,'store'])->name('store');
 
         Route::get('/{provider}/view', [ApiProvidersController::class,'view'])->name('view');
         Route::get('/{provider}/edit', [ApiProvidersController::class,'edit'])->name('edit');
-        Route::put('/{provider}',      [ApiProvidersController::class,'update'])->name('update');
+        Route::put('/{provider}',      [ApiProviderWriteController::class,'update'])->name('update');
         Route::delete('/{provider}',   [ApiProvidersController::class,'destroy'])->name('destroy');
 
         // options
