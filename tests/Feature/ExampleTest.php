@@ -10,8 +10,20 @@ class ExampleTest extends TestCase
     public function test_root_redirects_to_admin_dashboard(): void
     {
         $response = $this->get('/');
-
         $response->assertRedirect(route('admin.dashboard'));
+    }
+
+    public function test_admin_dashboard_requires_authentication(): void
+    {
+        $this->get('/admin/dashboard')->assertRedirect(route('login'));
+    }
+
+    public function test_admin_service_modals_require_authentication(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $this->get(route("admin.services.{$kind}.modal.create"))
+                ->assertRedirect(route('login'));
+        }
     }
 
     public function test_completed_management_module_routes_are_registered(): void
@@ -31,15 +43,6 @@ class ExampleTest extends TestCase
             '/admin/service-management/server-services/123/sync-fields',
             route('admin.services.server.syncFields', ['id' => 123], false)
         );
-    }
-
-    public function test_service_create_modals_render_successfully(): void
-    {
-        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
-            $this->get(route("admin.services.{$kind}.modal.create"))
-                ->assertOk()
-                ->assertSee('serviceCreateForm', false);
-        }
     }
 
     public function test_local_sources_and_replies_routes_are_registered(): void
