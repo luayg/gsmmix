@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Admin\Orders;
 
+use App\Http\Controllers\Admin\Orders\Concerns\HandlesOrderFinanceStatusUpdates;
 use App\Models\SmmOrder;
 use App\Models\SmmService;
 
 class SmmOrdersController extends BaseOrdersController
 {
+    use HandlesOrderFinanceStatusUpdates;
+
     protected string $orderModel   = SmmOrder::class;
     protected string $serviceModel = SmmService::class;
 

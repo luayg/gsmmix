@@ -8,83 +8,125 @@ use Illuminate\Support\Facades\DB;
 
 class OrderFinanceService
 {
-    public function refundOrderIfNeeded(Model $order, string $reason): void
+    private function money(mixed $value): string
     {
-        $req = (array)($order->request ?? []);
-        if (!empty($req['refunded_at'])) {
-            return;
+        if (!is_numeric($value)) {
+            return '0.00';
         }
 
-        $uid = (int)($order->user_id ?? 0);
-        if ($uid <= 0) {
-            return;
-        }
-
-        $amount = (float)($req['charged_amount'] ?? 0);
-        if ($amount <= 0) {
-            return;
-        }
-
-        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
-            $u = User::query()->lockForUpdate()->find($uid);
-            if (!$u) {
-                return;
-            }
-
-            $u->balance = (float)($u->balance ?? 0) + $amount;
-            $u->save();
-
-            $req['refunded_at'] = now()->toDateTimeString();
-            $req['refunded_amount'] = $amount;
-            $req['refunded_reason'] = $reason;
-
-            $order->request = $req;
-            $order->save();
-        });
+        return number_format((float)$value, 2, '.', '');
     }
 
-    public function rechargeOrderIfNeeded(Model $order, string $reason): void
+    private function financialState(array $request): string
     {
-        $req = (array)($order->request ?? []);
-
-        if (empty($req['refunded_at'])) {
-            return;
+        $state = strtolower(trim((string)($request['financial_state'] ?? '')));
+        if (in_array($state, ['charged', 'refunded'], true)) {
+            return $state;
         }
 
-        if (!empty($req['recharged_at'])) {
-            return;
+        // Backward compatibility with orders created before financial_state existed.
+        if (!empty($request['refunded_at']) && empty($request['recharged_at'])) {
+            return 'refunded';
         }
 
-        $uid = (int)($order->user_id ?? 0);
-        if ($uid <= 0) {
-            return;
-        }
+        return 'charged';
+    }
 
-        $amount = (float)($req['charged_amount'] ?? 0);
-        if ($amount <= 0) {
-            return;
-        }
-
-        DB::transaction(function () use ($order, $uid, $amount, $reason, $req) {
-            $u = User::query()->lockForUpdate()->find($uid);
-            if (!$u) {
-                return;
+    public function refundOrderIfNeeded(Model $order, string $reason): bool
+    {
+        $changed = DB::transaction(function () use ($order, $reason): bool {
+            /** @var Model|null $lockedOrder */
+            $lockedOrder = $order->newQuery()->lockForUpdate()->find($order->getKey());
+            if (!$lockedOrder) {
+                return false;
             }
 
-            $bal = (float)($u->balance ?? 0);
-            if ($bal < $amount) {
+            $request = (array)($lockedOrder->request ?? []);
+            if ($this->financialState($request) === 'refunded') {
+                return false;
+            }
+
+            $uid = (int)($lockedOrder->user_id ?? 0);
+            $amount = $this->money($request['charged_amount'] ?? 0);
+            if ($uid <= 0 || bccomp($amount, '0.00', 2) !== 1) {
+                return false;
+            }
+
+            $user = User::query()->lockForUpdate()->find($uid);
+            if (!$user) {
+                return false;
+            }
+
+            $balance = $this->money($user->balance ?? 0);
+            $user->balance = bcadd($balance, $amount, 2);
+            $user->save();
+
+            $request['financial_state'] = 'refunded';
+            $request['refunded_at'] = now()->toDateTimeString();
+            $request['refunded_amount'] = (float)$amount;
+            $request['refunded_reason'] = $reason;
+
+            $lockedOrder->request = $request;
+            $lockedOrder->save();
+
+            return true;
+        });
+
+        if ($order->exists) {
+            $order->refresh();
+        }
+
+        return $changed;
+    }
+
+    public function rechargeOrderIfNeeded(Model $order, string $reason): bool
+    {
+        $changed = DB::transaction(function () use ($order, $reason): bool {
+            /** @var Model|null $lockedOrder */
+            $lockedOrder = $order->newQuery()->lockForUpdate()->find($order->getKey());
+            if (!$lockedOrder) {
+                return false;
+            }
+
+            $request = (array)($lockedOrder->request ?? []);
+            if ($this->financialState($request) !== 'refunded') {
+                return false;
+            }
+
+            $uid = (int)($lockedOrder->user_id ?? 0);
+            $amount = $this->money($request['charged_amount'] ?? 0);
+            if ($uid <= 0 || bccomp($amount, '0.00', 2) !== 1) {
+                return false;
+            }
+
+            $user = User::query()->lockForUpdate()->find($uid);
+            if (!$user) {
+                return false;
+            }
+
+            $balance = $this->money($user->balance ?? 0);
+            if (bccomp($balance, $amount, 2) === -1) {
                 throw new \RuntimeException('INSUFFICIENT_BALANCE_RECHARGE');
             }
 
-            $u->balance = $bal - $amount;
-            $u->save();
+            $user->balance = bcsub($balance, $amount, 2);
+            $user->save();
 
-            $req['recharged_at'] = now()->toDateTimeString();
-            $req['recharged_amount'] = $amount;
-            $req['recharged_reason'] = $reason;
+            $request['financial_state'] = 'charged';
+            $request['recharged_at'] = now()->toDateTimeString();
+            $request['recharged_amount'] = (float)$amount;
+            $request['recharged_reason'] = $reason;
 
-            $order->request = $req;
-            $order->save();
+            $lockedOrder->request = $request;
+            $lockedOrder->save();
+
+            return true;
         });
+
+        if ($order->exists) {
+            $order->refresh();
+        }
+
+        return $changed;
     }
 }
