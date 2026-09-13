@@ -61,7 +61,8 @@
 
       <div class="col-md-6" id="key_wrap">
         <label class="form-label">Key</label>
-        <input type="text" name="api_key" class="form-control" value="{{ old('api_key', $provider->api_key) }}">
+        <input type="password" name="api_key" class="form-control" value="" autocomplete="new-password" placeholder="Leave blank to keep the current key">
+        <div class="form-text">For security, the saved key is never displayed. Enter a new key only when you want to replace it.</div>
       </div>
     </div>
 
@@ -70,12 +71,7 @@
         <div class="col-md-6">
           <label class="form-label">Main field name</label>
           <input type="text" name="main_field_name" id="main_field_name" class="form-control" value="{{ $simpleMain }}">
-          <small class="text-muted">
-            For example if your link looks like this:
-            <code>https://example.com?key=XXXXXXXX&imei=123456789012345</code>,
-            then your Main field name is <code>imei</code>.
-            Please note that it is case sensitive.
-          </small>
+          <small class="text-muted">For example, if your link contains <code>&imei=123456789012345</code>, use <code>imei</code>. It is case sensitive.</small>
         </div>
 
         <div class="col-md-6">
@@ -85,9 +81,7 @@
             <option value="POST" @selected($simpleMethod === 'POST')>POST</option>
           </select>
           <div class="alert alert-warning mt-2 mb-0">
-            <b>Warning!!!</b>
-            If your link returns HTTP status 200 OK, orders will be replied as success, and the content will be the reply.
-            To be able to handle rejects, your link provider has to return HTTP status other than 200 OK on bad responses.
+            <b>Warning!!!</b> If your link returns HTTP status 200 OK, orders will be replied as success. Return a non-200 status for rejected requests.
           </div>
         </div>
       </div>
@@ -95,63 +89,27 @@
 
     <hr class="my-3">
 
-    <input type="hidden" name="sync_imei" value="0">
-    <input type="hidden" name="sync_server" value="0">
-    <input type="hidden" name="sync_file" value="0">
-    <input type="hidden" name="sync_smm" value="0">
-    <input type="hidden" name="ignore_low_balance" value="0">
-    <input type="hidden" name="auto_sync" value="0">
-    <input type="hidden" name="active" value="0">
+    @foreach(['sync_imei','sync_server','sync_file','sync_smm','ignore_low_balance','auto_sync','active'] as $flag)
+      <input type="hidden" name="{{ $flag }}" value="0">
+    @endforeach
 
     <div class="row gy-3">
-      <div class="col-md-4">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="sync_imei" id="sync_imei" value="1" @checked(old('sync_imei', $provider->sync_imei))>
-          <label class="form-check-label" for="sync_imei">Sync IMEI services</label>
+      @foreach([
+        'sync_imei' => 'Sync IMEI services',
+        'sync_server' => 'Sync server services',
+        'sync_file' => 'Sync file services',
+        'sync_smm' => 'Sync SMM service',
+        'ignore_low_balance' => 'Ignore low balance',
+        'auto_sync' => 'Auto sync',
+        'active' => 'Active',
+      ] as $flag => $label)
+        <div class="col-md-4">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" name="{{ $flag }}" id="{{ $flag }}" value="1" @checked(old($flag, $provider->{$flag} ?? ($flag === 'sync_smm' ? 1 : 0)))>
+            <label class="form-check-label" for="{{ $flag }}">{{ $label }}</label>
+          </div>
         </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="sync_server" id="sync_server" value="1" @checked(old('sync_server', $provider->sync_server))>
-          <label class="form-check-label" for="sync_server">Sync server services</label>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="sync_file" id="sync_file" value="1" @checked(old('sync_file', $provider->sync_file))>
-          <label class="form-check-label" for="sync_file">Sync file services</label>
-        </div>
-      </div>
-
-       <div class="col-md-4">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="sync_smm" id="sync_smm" value="1" @checked(old('sync_smm', $provider->sync_smm ?? 1))>
-          <label class="form-check-label" for="sync_smm">Sync SMM service</label>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="ignore_low_balance" id="ignore_low_balance" value="1" @checked(old('ignore_low_balance', $provider->ignore_low_balance))>
-          <label class="form-check-label" for="ignore_low_balance">Ignore low balance</label>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="auto_sync" id="auto_sync" value="1" @checked(old('auto_sync', $provider->auto_sync))>
-          <label class="form-check-label" for="auto_sync">Auto sync</label>
-        </div>
-      </div>
-
-      <div class="col-md-4">
-        <div class="form-check form-switch">
-          <input class="form-check-input" type="checkbox" name="active" id="active" value="1" @checked(old('active', $provider->active))>
-          <label class="form-check-label" for="active">Active</label>
-        </div>
-      </div>
+      @endforeach
     </div>
   </div>
 
@@ -167,11 +125,9 @@
     var t = document.getElementById('api_type').value;
     var isSimple = (t === 'simple_link');
     var isSmm = (t === 'smm');
-
     var box = document.getElementById('simple_link_box');
     var usernameWrap = document.getElementById('username_wrap');
     var keyWrap = document.getElementById('key_wrap');
-
     if (box) box.style.display = isSimple ? 'block' : 'none';
     if (usernameWrap) usernameWrap.style.display = (isSimple || isSmm) ? 'none' : 'block';
     if (keyWrap) keyWrap.style.display = isSimple ? 'none' : 'block';
