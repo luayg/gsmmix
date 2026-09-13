@@ -26,7 +26,6 @@ class OrderFinanceService
             return $state;
         }
 
-        // Backward compatibility with orders created before financial_state existed.
         if (!empty($request['refunded_at']) && empty($request['recharged_at'])) {
             return 'refunded';
         }
@@ -81,9 +80,9 @@ class OrderFinanceService
         return $changed;
     }
 
-    public function rechargeOrderIfNeeded(Model $order, string $reason): bool
+    public function rechargeOrderIfNeeded(Model $order, string $reason, bool $allowNegative = false): bool
     {
-        $changed = DB::transaction(function () use ($order, $reason): bool {
+        $changed = DB::transaction(function () use ($order, $reason, $allowNegative): bool {
             /** @var Model|null $lockedOrder */
             $lockedOrder = $order->newQuery()->lockForUpdate()->find($order->getKey());
             if (!$lockedOrder) {
@@ -107,7 +106,7 @@ class OrderFinanceService
             }
 
             $balance = $this->money($user->balance ?? 0);
-            if (bccomp($balance, $amount, self::SCALE) === -1) {
+            if (!$allowNegative && bccomp($balance, $amount, self::SCALE) === -1) {
                 throw new \RuntimeException('INSUFFICIENT_BALANCE_RECHARGE');
             }
 
@@ -118,6 +117,9 @@ class OrderFinanceService
             $request['recharged_at'] = now()->toDateTimeString();
             $request['recharged_amount'] = (float)$amount;
             $request['recharged_reason'] = $reason;
+            if ($allowNegative && bccomp($balance, $amount, self::SCALE) === -1) {
+                $request['recharged_with_negative_balance'] = true;
+            }
 
             $lockedOrder->request = $request;
             $lockedOrder->save();

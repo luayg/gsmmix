@@ -2,8 +2,12 @@
 
 namespace App\Providers;
 
+use App\Models\FileOrder;
+use App\Models\ImeiOrder;
 use App\Models\ServerOrder;
+use App\Models\SmmOrder;
 use App\Models\User;
+use App\Observers\OrderStatusFinanceObserver;
 use App\Observers\ServerOrderQuantityBillingObserver;
 use App\Support\AdminPermissions;
 use Illuminate\Support\Facades\Gate;
@@ -27,6 +31,9 @@ class AppServiceProvider extends ServiceProvider
         Route::aliasMiddleware('role_or_permission', RoleOrPermissionMiddleware::class);
 
         ServerOrder::observe(ServerOrderQuantityBillingObserver::class);
+        foreach ([ImeiOrder::class, ServerOrder::class, FileOrder::class, SmmOrder::class] as $orderModel) {
+            $orderModel::observe(OrderStatusFinanceObserver::class);
+        }
 
         Gate::before(function (User $user, string $ability): ?bool {
             if ($user->status !== 'active') {
