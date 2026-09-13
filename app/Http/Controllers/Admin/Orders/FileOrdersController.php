@@ -2,11 +2,14 @@
 
 namespace App\Http\Controllers\Admin\Orders;
 
+use App\Http\Controllers\Admin\Orders\Concerns\HandlesOrderFinanceStatusUpdates;
 use App\Models\FileOrder;
 use App\Models\FileService;
 
 class FileOrdersController extends BaseOrdersController
 {
+    use HandlesOrderFinanceStatusUpdates;
+
     protected string $orderModel   = FileOrder::class;
     protected string $serviceModel = FileService::class;
 
@@ -16,6 +19,6 @@ class FileOrdersController extends BaseOrdersController
 
     protected function deviceLabel(): string
     {
-        return 'Device / Serial';
+        return 'File';
     }
 }
