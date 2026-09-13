@@ -24,11 +24,12 @@ class OrderSender
         $type = strtolower(trim((string)($provider->type ?? 'dhru')));
 
         return match ($type) {
+            'dhru'        => $this->dhru->placeImeiOrder($provider, $order),
             'webx'        => $this->webx->placeImeiOrder($provider, $order),
             'unlockbase'  => $this->unlockbase->placeImeiOrder($provider, $order),
             'gsmhub'      => $this->gsmhub->placeImeiOrder($provider, $order),
             'simple_link' => $this->simpleLink->placeImeiOrder($provider, $order),
-            default       => $this->dhru->placeImeiOrder($provider, $order),
+            default       => $this->unsupported($type, 'imei'),
         };
     }
 
@@ -37,10 +38,10 @@ class OrderSender
         $type = strtolower(trim((string)($provider->type ?? 'dhru')));
 
         return match ($type) {
-            'webx'        => $this->webx->placeServerOrder($provider, $order),
-            'gsmhub'      => $this->gsmhub->placeServerOrder($provider, $order),
-            'simple_link' => $this->simpleLink->placeServerOrder($provider, $order),
-            default       => $this->dhru->placeServerOrder($provider, $order),
+            'dhru'   => $this->dhru->placeServerOrder($provider, $order),
+            'webx'   => $this->webx->placeServerOrder($provider, $order),
+            'gsmhub' => $this->gsmhub->placeServerOrder($provider, $order),
+            default  => $this->unsupported($type, 'server'),
         };
     }
 
@@ -49,10 +50,10 @@ class OrderSender
         $type = strtolower(trim((string)($provider->type ?? 'dhru')));
 
         return match ($type) {
-            'webx'        => $this->webx->placeFileOrder($provider, $order),
-            'gsmhub'      => $this->gsmhub->placeFileOrder($provider, $order),
-            'simple_link' => $this->simpleLink->placeFileOrder($provider, $order),
-            default       => $this->dhru->placeFileOrder($provider, $order),
+            'dhru'   => $this->dhru->placeFileOrder($provider, $order),
+            'webx'   => $this->webx->placeFileOrder($provider, $order),
+            'gsmhub' => $this->gsmhub->placeFileOrder($provider, $order),
+            default  => $this->unsupported($type, 'file'),
         };
     }
 
@@ -62,26 +63,34 @@ class OrderSender
 
         return match ($type) {
             'smm' => $this->smm->placeSmmOrder($provider, $order),
-            default => [
-                'ok' => false,
-                'retryable' => false,
-                'status' => 'rejected',
-                'remote_id' => null,
-                'request' => [
-                    'url' => (string)($provider->url ?? ''),
-                    'method' => 'POST',
-                    'params' => [],
-                    'http_status' => 0,
-                ],
-                'response_raw' => [
-                    'raw' => 'UNSUPPORTED SMM PROVIDER TYPE',
-                    'http_status' => 0,
-                ],
-                'response_ui' => [
-                    'type' => 'error',
-                    'message' => 'UNSUPPORTED SMM PROVIDER TYPE',
-                ],
-            ],
+            default => $this->unsupported($type, 'smm'),
         };
+    }
+
+    private function unsupported(string $providerType, string $kind): array
+    {
+        $providerType = $providerType !== '' ? $providerType : 'unknown';
+        $message = sprintf('UNSUPPORTED PROVIDER TYPE "%s" FOR %s ORDER', $providerType, strtoupper($kind));
+
+        return [
+            'ok' => false,
+            'retryable' => false,
+            'status' => 'rejected',
+            'remote_id' => null,
+            'request' => [
+                'provider_type' => $providerType,
+                'order_kind' => $kind,
+                'http_status' => 0,
+            ],
+            'response_raw' => [
+                'error' => 'unsupported_provider_type',
+                'provider_type' => $providerType,
+                'order_kind' => $kind,
+            ],
+            'response_ui' => [
+                'type' => 'error',
+                'message' => $message,
+            ],
+        ];
     }
 }
