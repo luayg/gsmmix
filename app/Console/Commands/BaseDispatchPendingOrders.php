@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Orders\OrderDispatchClaimService;
 use App\Services\Orders\OrderDispatcher;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
@@ -73,37 +74,52 @@ abstract class BaseDispatchPendingOrders extends Command
         return 'Unknown reason (remote_id still empty after dispatch).';
     }
 
-    public function handle(OrderDispatcher $dispatcher): int
+    public function handle(OrderDispatcher $dispatcher, OrderDispatchClaimService $claims): int
     {
         $limit = $this->limitOption();
         $orders = $this->pendingOrders($limit);
 
-        $attempted = $orders->count();
+        $attempted = 0;
         $sent = 0;
         $failed = 0;
 
         $label = strtoupper($this->dispatchKind());
-        $this->info("Dispatching {$attempted} pending {$label} orders...");
+        $this->info("Found {$orders->count()} pending {$label} candidates...");
 
-        foreach ($orders as $o) {
-            try {
-                $dispatcher->send($this->dispatchKind(), (int)$o->id);
-            } catch (\Throwable $e) {
-                // Keep same tolerant behavior: do not stop whole batch
+        foreach ($orders as $candidate) {
+            $claimed = $claims->claim($this->orderModelClass(), (int)$candidate->id);
+            if (!$claimed) {
+                continue;
             }
 
-            $o->refresh();
-            $remoteId = trim((string)$o->remote_id);
+            $attempted++;
 
+            try {
+                $dispatcher->send($this->dispatchKind(), (int)$claimed->id);
+            } catch (\Throwable $e) {
+                // OrderDispatcher handles normal provider/network failures itself.
+                // Release only an unexpected local failure so the order is not stuck.
+                $claims->releaseUnexpectedFailure($this->orderModelClass(), (int)$claimed->id);
+            }
+
+            /** @var Model|null $fresh */
+            $model = $this->orderModelClass();
+            $fresh = $model::query()->find((int)$claimed->id);
+            if (!$fresh) {
+                $failed++;
+                continue;
+            }
+
+            $remoteId = trim((string)$fresh->remote_id);
             if ($remoteId !== '') {
                 $sent++;
-                $this->line(" - Sent order #{$o->id} => remote_id={$remoteId}");
+                $this->line(" - Sent order #{$fresh->id} => remote_id={$remoteId}");
                 continue;
             }
 
             $failed++;
-            $reason = $this->extractOrderReason($o);
-            $this->warn(" - Not sent order #{$o->id}: {$reason}");
+            $reason = $this->extractOrderReason($fresh);
+            $this->warn(" - Not sent order #{$fresh->id}: {$reason}");
         }
 
         $this->info("Done. attempted={$attempted} sent={$sent} failed={$failed}.");
@@ -112,6 +128,6 @@ abstract class BaseDispatchPendingOrders extends Command
             $this->warn("No {$label} orders received remote_id from provider. Check provider credentials, service mapping, required fields, and provider response.");
         }
 
-        return 0;
+        return self::SUCCESS;
     }
 }
