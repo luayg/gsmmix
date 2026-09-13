@@ -2,7 +2,9 @@
 
 namespace App\Providers;
 
+use App\Models\ServerOrder;
 use App\Models\User;
+use App\Observers\ServerOrderQuantityBillingObserver;
 use App\Support\AdminPermissions;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
@@ -23,6 +25,8 @@ class AppServiceProvider extends ServiceProvider
         Route::aliasMiddleware('role', RoleMiddleware::class);
         Route::aliasMiddleware('permission', PermissionMiddleware::class);
         Route::aliasMiddleware('role_or_permission', RoleOrPermissionMiddleware::class);
+
+        ServerOrder::observe(ServerOrderQuantityBillingObserver::class);
 
         Gate::before(function (User $user, string $ability): ?bool {
             if ($user->status !== 'active') {

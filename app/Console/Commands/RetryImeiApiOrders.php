@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\ImeiOrder;
+use App\Services\Orders\OrderDispatchClaimService;
 use App\Services\Orders\OrderDispatcher;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -12,68 +13,58 @@ class RetryImeiApiOrders extends Command
     protected $signature = 'orders:retry-imei {--limit=20}';
     protected $description = 'Retry sending IMEI API orders that are still waiting (provider unreachable previously).';
 
-    public function handle(): int
+    public function handle(OrderDispatcher $dispatcher, OrderDispatchClaimService $claims): int
     {
-        $limit = (int) $this->option('limit');
+        $limit = max(1, min(500, (int)$this->option('limit')));
 
-        // نعيد المحاولة فقط للطلبات:
-        // - api_order = 1 (ليست manual)
-        // - status = waiting
-        // - processing = 0 (غير قيد الإرسال)
-        // - remote_id NULL (لم تُرسل/لم تحصل على رقم مرجعي من المزود بعد)
         $orders = ImeiOrder::query()
             ->where('api_order', 1)
             ->where('status', 'waiting')
-            ->where('processing', 0)
-            ->whereNull('remote_id')
+            ->where(function ($q) {
+                $q->whereNull('processing')->orWhere('processing', 0)->orWhere('processing', false);
+            })
+            ->where(function ($q) {
+                $q->whereNull('remote_id')->orWhere('remote_id', '');
+            })
             ->orderBy('id')
             ->limit($limit)
             ->get();
 
-        $this->info("Retrying {$orders->count()} IMEI orders...");
+        $this->info("Found {$orders->count()} IMEI retry candidates...");
 
-        if ($orders->isEmpty()) {
-            $this->info("Nothing to retry.");
-            return 0;
-        }
+        $attempted = 0;
+        foreach ($orders as $candidate) {
+            $claimed = $claims->claim(ImeiOrder::class, (int)$candidate->id);
+            if (!$claimed) {
+                continue;
+            }
 
-        $dispatcher = app(OrderDispatcher::class);
+            $attempted++;
 
-        foreach ($orders as $order) {
             try {
-                // علّمها processing أثناء المحاولة
-                $order->processing = 1;
-                $order->save();
-
-                // إرسال فعلي
-                $dispatcher->send('imei', (int)$order->id);
-
-                // لو send نجح غالباً سيغيّر status/remote_id داخل dispatcher
-                $this->line("✔ Sent order #{$order->id}");
-
+                $dispatcher->send('imei', (int)$claimed->id);
             } catch (\Throwable $e) {
                 Log::warning('Retry dispatch failed', [
-                    'id' => $order->id,
+                    'id' => $claimed->id,
                     'err' => $e->getMessage(),
                 ]);
+                $claims->releaseUnexpectedFailure(ImeiOrder::class, (int)$claimed->id);
+            }
 
-                // رجّعها waiting
-                $order->processing = 0;
-                $order->status = 'waiting';
+            $fresh = ImeiOrder::query()->find((int)$claimed->id);
+            if (!$fresh) {
+                continue;
+            }
 
-                $order->request = array_merge((array)$order->request, [
-                    'dispatch_failed_at' => now()->toDateTimeString(),
-                    'dispatch_error'     => $e->getMessage(),
-                    'dispatch_retry'     => ((int) data_get($order->request, 'dispatch_retry', 0)) + 1,
-                ]);
-
-                $order->save();
-
-                $this->line("✖ Failed order #{$order->id}: {$e->getMessage()}");
+            if (trim((string)$fresh->remote_id) !== '') {
+                $this->line("Sent order #{$fresh->id} => remote_id={$fresh->remote_id}");
+            } else {
+                $message = trim((string)data_get($fresh->response, 'message', 'Queued for another retry.'));
+                $this->warn("Not sent order #{$fresh->id}: {$message}");
             }
         }
 
-        $this->info("Done.");
-        return 0;
+        $this->info("Done. attempted={$attempted}.");
+        return self::SUCCESS;
     }
 }

@@ -14,6 +14,8 @@ import 'select2/dist/js/select2.full.js';
 import 'select2/dist/css/select2.min.css';
 import 'select2-bootstrap-5-theme/dist/select2-bootstrap-5-theme.min.css';
 
+import './server-order-quantity';
+
 // أي تهيئة عامة…
 import { initModalEditors } from './modal-editors';
 window.initModalEditors = initModalEditors;
