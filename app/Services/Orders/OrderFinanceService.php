@@ -8,13 +8,15 @@ use Illuminate\Support\Facades\DB;
 
 class OrderFinanceService
 {
+    private const SCALE = 4;
+
     private function money(mixed $value): string
     {
         if (!is_numeric($value)) {
-            return '0.00';
+            return '0.0000';
         }
 
-        return number_format((float)$value, 2, '.', '');
+        return number_format((float)$value, self::SCALE, '.', '');
     }
 
     private function financialState(array $request): string
@@ -48,7 +50,7 @@ class OrderFinanceService
 
             $uid = (int)($lockedOrder->user_id ?? 0);
             $amount = $this->money($request['charged_amount'] ?? 0);
-            if ($uid <= 0 || bccomp($amount, '0.00', 2) !== 1) {
+            if ($uid <= 0 || bccomp($amount, '0.0000', self::SCALE) !== 1) {
                 return false;
             }
 
@@ -58,7 +60,7 @@ class OrderFinanceService
             }
 
             $balance = $this->money($user->balance ?? 0);
-            $user->balance = bcadd($balance, $amount, 2);
+            $user->balance = bcadd($balance, $amount, self::SCALE);
             $user->save();
 
             $request['financial_state'] = 'refunded';
@@ -95,7 +97,7 @@ class OrderFinanceService
 
             $uid = (int)($lockedOrder->user_id ?? 0);
             $amount = $this->money($request['charged_amount'] ?? 0);
-            if ($uid <= 0 || bccomp($amount, '0.00', 2) !== 1) {
+            if ($uid <= 0 || bccomp($amount, '0.0000', self::SCALE) !== 1) {
                 return false;
             }
 
@@ -105,11 +107,11 @@ class OrderFinanceService
             }
 
             $balance = $this->money($user->balance ?? 0);
-            if (bccomp($balance, $amount, 2) === -1) {
+            if (bccomp($balance, $amount, self::SCALE) === -1) {
                 throw new \RuntimeException('INSUFFICIENT_BALANCE_RECHARGE');
             }
 
-            $user->balance = bcsub($balance, $amount, 2);
+            $user->balance = bcsub($balance, $amount, self::SCALE);
             $user->save();
 
             $request['financial_state'] = 'charged';
