@@ -78,6 +78,11 @@ abstract class BaseServiceController extends Controller
         ]);
     }
 
+    public function modalCreate()
+    {
+        return view("admin.services.{$this->viewPrefix}._modal_create");
+    }
+
     // =========================
     // JSON for Edit modal
     // =========================
