@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\Group;
+use App\Services\Users\UserDeletionGuard;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -40,7 +41,6 @@ class UserController extends Controller
                 });
             }
 
-            // 0:id, 1:name, 2:email, 3:username, 4:roles(null), 5:group_id, 6:balance, 7:status
             $map = [
                 0=>'id', 1=>'name', 2=>'email', 3=>'username',
                 4=>null, 5=>'group_id', 6=>'balance', 7=>'status'
@@ -92,7 +92,7 @@ class UserController extends Controller
                     'username' => e($u->username ?? ''),
                     'roles'    => method_exists($u, 'roles') ? ($u->roles?->pluck('name')->implode(', ') ?? '') : '',
                     'group'    => optional($u->group)->name ?: '-',
-                    'balance'  => number_format((float)$u->balance, 2), // ← الجديد
+                    'balance'  => number_format((float)$u->balance, 2),
                     'status'   => $u->status,
                     'actions'  => $viewBtn.' '.$finBtn.' '.$svcBtn.' '.$ordersBtn.' '.$editBtn.' '.$delBtn,
                 ];
@@ -128,9 +128,6 @@ class UserController extends Controller
         ]);
     }
 
-    // =========================
-    // Modals
-    // =========================
     public function modalCreate()
     {
         $groups = Group::orderBy('name')->get(['id','name']);
@@ -158,9 +155,10 @@ class UserController extends Controller
         return view('admin.users.modals.edit', compact('user','groups','roles'));
     }
 
-    public function modalDelete(User $user)
+    public function modalDelete(User $user, UserDeletionGuard $guard)
     {
-        return view('admin.users.modals.delete', compact('user'));
+        $deletionInspection = $guard->inspect($user);
+        return view('admin.users.modals.delete', compact('user', 'deletionInspection'));
     }
 
     public function modalServices(User $user)
@@ -168,9 +166,6 @@ class UserController extends Controller
         return response('<div class="modal-content"><div class="modal-header"><h5 class="modal-title">Services</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">Coming soon…</div></div>');
     }
 
-    // =========================
-    // Create
-    // =========================
     public function store(Request $r)
     {
         $messages = [
@@ -213,9 +208,6 @@ class UserController extends Controller
         return response()->json(['ok'=>true,'msg'=>'User created']);
     }
 
-    // =========================
-    // Update
-    // =========================
     public function update(Request $r, User $user)
     {
         $messages = [
@@ -259,15 +251,21 @@ class UserController extends Controller
         return response()->json(['ok'=>true,'msg'=>'User updated']);
     }
 
-    public function destroy(User $user)
+    public function destroy(User $user, UserDeletionGuard $guard)
     {
+        $inspection = $guard->inspect($user);
+        if ($inspection['blocked']) {
+            return response()->json([
+                'ok' => false,
+                'msg' => $guard->message($inspection),
+                'details' => $inspection,
+            ], 409);
+        }
+
         $user->delete();
         return response()->json(['ok'=>true,'msg'=>'User deleted']);
     }
 
-    // =========================
-    // Select2: Roles
-    // =========================
     public function roles(Request $r)
     {
         $term = trim($r->input('q',''));
@@ -287,9 +285,6 @@ class UserController extends Controller
         ]);
     }
 
-    // =========================
-    // Select2: Groups
-    // =========================
     public function groups(Request $r)
     {
         $term = trim($r->input('q',''));
