@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Cache\LockProvider;
+use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Console\Command;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Cache;
