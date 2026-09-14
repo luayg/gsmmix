@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 
 abstract class BaseServiceController extends Controller
 {
@@ -249,7 +250,8 @@ abstract class BaseServiceController extends Controller
 
         $v = $request->validate([
             'alias'        => 'nullable|string|max:255',
-            'group_id'     => 'nullable|integer|exists:service_groups,id',
+            'group_id'     => ['nullable', 'integer', Rule::exists('service_groups', 'id')
+                ->where(fn ($query) => $query->whereRaw('LOWER(type) = ?', [$this->viewPrefix . '_service']))],
             'type'         => 'required|string|max:255',
 
             'source'       => 'nullable|integer',
@@ -436,8 +438,9 @@ abstract class BaseServiceController extends Controller
         }
 
         $v = $request->validate([
-            'alias'        => 'nullable|string|max:255',
-            'group_id'     => 'nullable|integer|exists:service_groups,id',
+            'alias'        => ['nullable', 'string', 'max:255', Rule::unique($this->table, 'alias')->ignore($row->getKey())],
+            'group_id'     => ['nullable', 'integer', Rule::exists('service_groups', 'id')
+                ->where(fn ($query) => $query->whereRaw('LOWER(type) = ?', [$this->viewPrefix . '_service']))],
             'type'         => 'required|string|max:255',
 
             'source'       => 'nullable|integer',
