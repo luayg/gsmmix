@@ -30,11 +30,18 @@ class UserDeletionSafetyTest extends TestCase
             $table->timestamps();
         });
 
-        // Spatie's HasRoles trait removes pivot rows during User::delete().
-        // The isolated test database therefore needs the same pivot surface,
-        // even though these tests do not assign any roles.
+        // Spatie permission traits clean these pivots during User::delete().
+        // The isolated test DB needs the same pivot surface even though the
+        // test users have no assigned roles or direct permissions.
         Schema::create('model_has_roles', function (Blueprint $table): void {
             $table->unsignedBigInteger('role_id');
+            $table->string('model_type');
+            $table->unsignedBigInteger('model_id');
+            $table->index(['model_id', 'model_type']);
+        });
+
+        Schema::create('model_has_permissions', function (Blueprint $table): void {
+            $table->unsignedBigInteger('permission_id');
             $table->string('model_type');
             $table->unsignedBigInteger('model_id');
             $table->index(['model_id', 'model_type']);
