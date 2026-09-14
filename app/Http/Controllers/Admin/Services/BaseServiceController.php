@@ -486,10 +486,7 @@ abstract class BaseServiceController extends Controller
 
         $this->validateGroupPrices($v['group_prices'] ?? []);
 
-        $customFields = $this->normalizeCustomFields(
-            $request->input('custom_fields'),
-            $request->input('custom_fields_json')
-        );
+        $customFields = $this->customFieldsForUpdate($request);
 
         $mainType = strtolower(trim((string)($v['main_field_type'] ?? 'serial')));
 
@@ -528,15 +525,29 @@ abstract class BaseServiceController extends Controller
             $incomingParams = [];
         }
 
-        $params = $incomingParams;
-        $params['custom_fields'] = $customFields;
+        $existingParams = $row->params;
+        // Older controller writes may have encoded array-cast params twice.
+        for ($depth = 0; $depth < 2 && is_string($existingParams); $depth++) {
+            $existingParams = json_decode($existingParams, true);
+        }
+        $existingParams = is_array($existingParams) ? $existingParams : [];
+        // Dedicated custom-field inputs control replacement; params alone must
+        // not desynchronize the JSON copy from the custom_fields table.
+        unset($incomingParams['custom_fields']);
+        $params = array_replace($existingParams, $incomingParams);
+        if ($customFields !== null) {
+            $params['custom_fields'] = $customFields;
+        }
+        $paramsValue = !$request->exists('params') && $customFields === null
+            ? $row->params
+            : ($row->hasCast('params', ['array', 'json']) ? $params : json_encode($params, JSON_UNESCAPED_UNICODE));
 
         if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
             $v['supplier_id'] = (int)$v['api_provider_id'];
             $v['remote_id']   = (int)$v['api_service_remote_id'];
         }
 
-        return DB::transaction(function () use ($request, $row, $v, $name, $time, $info, $main, $params, $customFields) {
+        return DB::transaction(function () use ($request, $row, $v, $name, $time, $info, $main, $paramsValue, $customFields) {
 
             $row->update([
                 'alias' => $v['alias'] ?? $row->alias,
@@ -552,7 +563,7 @@ abstract class BaseServiceController extends Controller
                 'time'       => json_encode($time, JSON_UNESCAPED_UNICODE),
                 'info'       => json_encode($info, JSON_UNESCAPED_UNICODE),
                 'main_field' => json_encode($main, JSON_UNESCAPED_UNICODE),
-                'params'     => json_encode($params, JSON_UNESCAPED_UNICODE),
+                'params'     => $paramsValue,
 
                 'cost'        => $v['cost'] ?? 0,
                 'profit'      => $v['profit'] ?? 0,
@@ -578,7 +589,9 @@ abstract class BaseServiceController extends Controller
             ]);
 
             $this->saveGroupPrices((int)$row->id, $v['group_prices'] ?? []);
-            $this->saveCustomFieldsToTable((int)$row->id, $this->viewPrefix, $customFields);
+            if ($customFields !== null) {
+                $this->saveCustomFieldsToTable((int)$row->id, $this->viewPrefix, $customFields);
+            }
 
             return response()->json(['ok' => true, 'msg' => 'Updated']);
         });
@@ -724,6 +737,49 @@ abstract class BaseServiceController extends Controller
                 ]
             );
         }
+    }
+
+    /** Null means omitted; an explicit empty list means remove all fields. */
+    private function customFieldsForUpdate(Request $request): ?array
+    {
+        $inputs = [];
+        foreach (['custom_fields', 'custom_fields_json'] as $key) {
+            if (!$request->exists($key)) {
+                continue;
+            }
+            $value = $request->input($key);
+            if (is_string($value)) {
+                $decoded = json_decode($value);
+                if (!is_array($decoded)) {
+                    throw ValidationException::withMessages([$key => 'Provide a valid JSON list of custom fields.']);
+                }
+                $value = json_decode($value, true);
+            }
+            if (!is_array($value) || !array_is_list($value)) {
+                throw ValidationException::withMessages([$key => 'Provide a list of custom fields; use [] to remove all fields.']);
+            }
+            foreach ($value as $field) {
+                if (!is_array($field) || !is_string($field['name'] ?? null) || trim($field['name']) === '') {
+                    throw ValidationException::withMessages([$key => 'Every custom field must have a name.']);
+                }
+                foreach (['input_name', 'input', 'field_type', 'type', 'description', 'validation'] as $attribute) {
+                    if (isset($field[$attribute]) && !is_scalar($field[$attribute])) {
+                        throw ValidationException::withMessages([$key => 'Custom field attributes must be scalar values.']);
+                    }
+                }
+                foreach (['options', 'field_options'] as $attribute) {
+                    if (isset($field[$attribute]) && !is_scalar($field[$attribute])
+                        && !(is_array($field[$attribute]) && count(array_filter($field[$attribute], 'is_scalar')) === count($field[$attribute]))) {
+                        throw ValidationException::withMessages([$key => 'Custom field options must be text or a list of scalar values.']);
+                    }
+                }
+            }
+            $inputs[$key] = $value;
+        }
+        if ($inputs === []) {
+            return null;
+        }
+        return $this->normalizeCustomFields($inputs['custom_fields'] ?? $inputs['custom_fields_json'], null);
     }
 
     protected function normalizeCustomFields($customFieldsRaw, ?string $customFieldsJson): array
