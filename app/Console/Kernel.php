@@ -10,7 +10,7 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         /**
-         * ✅ Provider Sync (Remote Tables)
+         * Provider service/catalog sync.
          */
         $schedule->command('providers:sync')
             ->everyMinute()
@@ -18,79 +18,63 @@ class Kernel extends ConsoleKernel
             ->onOneServer();
 
         /**
-         * ✅ Retry IMEI API orders that are waiting and not sent yet (no remote_id)
-         */
-        $schedule->command('orders:retry-imei --limit=20')
-            ->everyMinute()
-            ->withoutOverlapping();
-
-        /**
-         * ✅ Dispatch pending IMEI orders
+         * Dispatch is the single automatic submission path for waiting API orders.
+         * `orders:retry-imei` remains available as an operator command, but is not
+         * scheduled separately; scheduling both could retry the same IMEI twice in
+         * one minute after a transient provider failure.
          */
         $schedule->command('orders:dispatch-pending-imei --limit=50')
             ->everyMinute()
             ->withoutOverlapping()
+            ->onOneServer()
             ->runInBackground();
 
-        /**
-         * ✅ Sync IMEI results/status from providers
-         */
         $schedule->command('orders:sync-imei --limit=50')
             ->everyMinute()
-            ->withoutOverlapping();
+            ->withoutOverlapping()
+            ->onOneServer();
 
-        /**
-         * ✅ Dispatch pending Server orders
-         */
         $schedule->command('orders:dispatch-pending-server --limit=50')
             ->everyMinute()
             ->withoutOverlapping()
+            ->onOneServer()
             ->runInBackground();
 
-        /**
-         * ✅ Sync Server results/status from providers
-         */
         $schedule->command('orders:sync-server --limit=50')
             ->everyMinute()
-            ->withoutOverlapping();
+            ->withoutOverlapping()
+            ->onOneServer();
 
-        /**
-         * ✅ Dispatch pending File orders
-         */
         $schedule->command('orders:dispatch-pending-file --limit=50')
             ->everyMinute()
             ->withoutOverlapping()
+            ->onOneServer()
             ->runInBackground();
 
-        /**
-         * ✅ Sync File results/status from providers
-         */
         $schedule->command('orders:sync-file --limit=50')
             ->everyMinute()
-            ->withoutOverlapping();
+            ->withoutOverlapping()
+            ->onOneServer();
 
-        /**
-         * ✅ Dispatch pending SMM orders
-         */
         $schedule->command('orders:dispatch-pending-smm --limit=50')
             ->everyMinute()
             ->withoutOverlapping()
+            ->onOneServer()
             ->runInBackground();
 
-        /**
-         * ✅ Sync SMM results/status from providers
-         */
         $schedule->command('orders:sync-smm --limit=50')
             ->everyMinute()
-            ->withoutOverlapping();
+            ->withoutOverlapping()
+            ->onOneServer();
     }
 
     /**
-     * ✅ Register commands explicitly
+     * Register commands explicitly.
      */
     protected $commands = [
         \App\Console\Commands\ProvidersSyncCommand::class,
 
+        // Manual operator retry command; deliberately not scheduled.
         \App\Console\Commands\RetryImeiApiOrders::class,
         \App\Console\Commands\DispatchPendingImeiOrders::class,
         \App\Console\Commands\DispatchPendingServerOrders::class,
