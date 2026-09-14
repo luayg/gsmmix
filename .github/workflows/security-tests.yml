@@ -28,8 +28,8 @@ jobs:
           extensions: mbstring, xml, dom, curl, bcmath, pdo_sqlite, sqlite3
           coverage: none
           tools: composer:v2
-      - name: Test saved custom-field editor round trip
-        run: node --test tests/js/service-saved-fields.test.mjs
+      - name: Test service editor data preservation
+        run: node --test tests/js/*.test.mjs
       - name: Prepare isolated test environment
         run: cp .env.example .env
       - name: Install locked dependencies
