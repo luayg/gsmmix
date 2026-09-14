@@ -3,20 +3,10 @@
   /**
    * helper: يطابق أي routeIs
    */
-  function route_is_any(array $patterns): bool {
+  $routeIsAny = static function (array $patterns): bool {
     foreach ($patterns as $p) if (request()->routeIs($p)) return true;
     return false;
-  }
-
-  /**
-   * helper: يُرجع 'active' إذا طابقنا routeIs أو path (request()->is)
-   */
-  function nav_active(array $patterns): string {
-    foreach ($patterns as $p) {
-      if (request()->routeIs($p) || request()->is($p)) return 'active';
-    }
-    return '';
-  }
+  };
 
   use Illuminate\Support\Facades\Route as R;
 
@@ -44,7 +34,7 @@
   // افتح مجموعة الخدمات إذا كنا على أي صفحة ضمن service-management أو الخدمات بأسمائها القديمة
   $servicesOpen =
         request()->is('admin/service-management/*')
-     || route_is_any([
+     || $routeIsAny([
           'admin.services.groups.*',
           'admin.services.imei.*',
           'admin.services.server.*',
@@ -66,7 +56,7 @@
 
     {{-- User Management --}}
     @php
-      $open = route_is_any(['admin.users.*','admin.groups.*','admin.roles.*','admin.permissions.*']);
+      $open = $routeIsAny(['admin.users.*','admin.groups.*','admin.roles.*','admin.permissions.*']);
     @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
@@ -88,7 +78,7 @@
 
     {{-- Order Management --}}
     @php
-      $open = route_is_any([
+      $open = $routeIsAny([
         'admin.orders.imei.*',
         'admin.orders.server.*',
         'admin.orders.file.*',
@@ -167,7 +157,7 @@
     </li>
 
     {{-- Retail store --}}
-    @php $open = route_is_any(['admin.store.categories.*','admin.store.products.*']); @endphp
+    @php $open = $routeIsAny(['admin.store.categories.*','admin.store.products.*']); @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -185,7 +175,7 @@
     </li>
 
     {{-- Local sources --}}
-    @php $open = route_is_any(['admin.sources.*','admin.replies.*']); @endphp
+    @php $open = $routeIsAny(['admin.sources.*','admin.replies.*']); @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -203,7 +193,7 @@
     </li>
 
     {{-- Downloads --}}
-    @php $open = route_is_any(['admin.downloads.categories.*','admin.downloads.*']); @endphp
+    @php $open = $routeIsAny(['admin.downloads.categories.*','admin.downloads.*']); @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -221,7 +211,7 @@
     </li>
 
     {{-- Finances --}}
-    @php $open = route_is_any(['admin.finances.invoices.*','admin.finances.statements.*','admin.finances.transactions.*']); @endphp
+    @php $open = $routeIsAny(['admin.finances.invoices.*','admin.finances.statements.*','admin.finances.transactions.*']); @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -247,7 +237,7 @@
     </li>
 
     {{-- Settings --}}
-    @php $open = route_is_any(['admin.settings.general','admin.settings.mail','admin.settings.payment','admin.settings.languages','admin.settings.currencies']); @endphp
+    @php $open = $routeIsAny(['admin.settings.general','admin.settings.mail','admin.settings.payment','admin.settings.languages','admin.settings.currencies']); @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -275,7 +265,7 @@
     </li>
 
     {{-- System --}}
-    @php $open = route_is_any(['admin.system.filemanager','admin.system.update','admin.system.maintenance','admin.system.backups']); @endphp
+    @php $open = $routeIsAny(['admin.system.filemanager','admin.system.update','admin.system.maintenance','admin.system.backups']); @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -295,7 +285,7 @@
     </li>
 
     {{-- Reports --}}
-    @php $open = route_is_any(['admin.reports.users','admin.reports.services','admin.reports.products']); @endphp
+    @php $open = $routeIsAny(['admin.reports.users','admin.reports.services','admin.reports.products']); @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -314,7 +304,7 @@
     </li>
 
     {{-- Logs --}}
-    @php $open = route_is_any(['admin.logs.access','admin.logs.activity','admin.logs.error']); @endphp
+    @php $open = $routeIsAny(['admin.logs.access','admin.logs.activity','admin.logs.error']); @endphp
     <li class="nav-item mb-3">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"

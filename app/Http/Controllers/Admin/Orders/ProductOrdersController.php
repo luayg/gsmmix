@@ -9,6 +9,8 @@ use App\Models\User;
 use App\Services\Orders\ProductOrderService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Validation\ValidationException;
 
 class ProductOrdersController extends Controller
 {
@@ -50,7 +52,11 @@ class ProductOrdersController extends Controller
             'product_id' => 'required|integer|exists:products,id',
             'device' => 'nullable|string|max:255', 'comments' => 'nullable|string|max:5000',
         ]);
-        $order = $orders->create($data, (int) $request->user()->id);
+        try {
+            $order = $orders->create($data, (int) $request->user()->id);
+        } catch (UniqueConstraintViolationException $exception) {
+            throw ValidationException::withMessages(['request_uid' => 'This submission was already used. Reopen the order form for a new order.']);
+        }
         if ($request->expectsJson()) {
             return response()->json(['ok' => true, 'id' => $order->id, 'status' => $order->status]);
         }

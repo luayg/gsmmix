@@ -35,7 +35,7 @@ abstract class SecurityTestCase extends TestCase
             'cache.default' => 'array',
             'hashing.bcrypt.rounds' => 4,
         ]);
-        app('db')->purge('sqlite');
+        $this->configureTestDatabase();
         $this->resetSessionRuntime();
 
         Schema::create('users', function (Blueprint $table): void {
@@ -72,6 +72,11 @@ abstract class SecurityTestCase extends TestCase
         });
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         (new RbacSeeder)->run();
+    }
+
+    protected function configureTestDatabase(): void
+    {
+        app('db')->purge('sqlite');
     }
 
     protected function user(?string $role = null, string $status = 'active'): User

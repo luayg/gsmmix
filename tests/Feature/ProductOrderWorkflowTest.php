@@ -13,12 +13,25 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Tests\Support\SecurityTestCase;
+use Tests\Support\ProductOrderMysqlDatabase;
+use Symfony\Component\Process\Process;
 
 class ProductOrderWorkflowTest extends SecurityTestCase
 {
     protected User $customer;
     protected User $admin;
     protected Product $product;
+
+    protected function configureTestDatabase(): void
+    {
+        if (getenv('PRODUCT_ORDERS_TEST_MYSQL') !== '1') {
+            parent::configureTestDatabase();
+            return;
+        }
+        ProductOrderMysqlDatabase::configure();
+        // The helper requires testing mode and one exact disposable database name.
+        Schema::dropAllTables();
+    }
 
     protected function setUp(): void
     {
@@ -226,5 +239,83 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         (require database_path('migrations/2026_09_15_000001_add_product_order_lifecycle.php'))->up();
         $this->assertSame($snapshot, (array) DB::table('product_orders')->where('id', $id)->first());
         $this->assertSame('100.1234', $this->balance());
+    }
+
+    public function test_simultaneous_retries_create_one_order_and_one_charge_on_mariadb(): void
+    {
+        $this->requireMysql();
+        $this->localStock();
+        $payload = $this->payload();
+        $results = $this->runTogether([$payload, $payload]);
+        $this->assertTrue($results[0]['ok']);
+        $this->assertTrue($results[1]['ok']);
+        $this->assertSame($results[0]['id'], $results[1]['id']);
+        $this->assertDatabaseCount('product_orders', 1);
+        $this->assertSame('87.7834', $this->balance());
+    }
+
+    public function test_two_customers_competing_for_last_reply_only_charge_the_winner_on_mariadb(): void
+    {
+        $this->requireMysql();
+        $this->localStock();
+        $other = $this->user();
+        $other->forceFill(['balance' => '100.1234'])->save();
+        $results = $this->runTogether([$this->payload(), $this->payload(['user_id' => $other->id])]);
+        $this->assertCount(1, array_filter($results, fn ($result) => $result['ok']));
+        $this->assertDatabaseCount('product_orders', 1);
+        $balances = [$this->balance(), number_format((float) $other->fresh()->balance, 4, '.', '')];
+        sort($balances, SORT_STRING);
+        $this->assertSame(['100.1234', '87.7834'], $balances);
+        $this->assertSame(1, LocalReply::whereNotNull('used_by_product_order_id')->count());
+    }
+
+    private function requireMysql(): void
+    {
+        if (getenv('PRODUCT_ORDERS_TEST_MYSQL') !== '1') {
+            $this->markTestSkipped('Concurrent worker tests run in the disposable MariaDB workflow.');
+        }
+    }
+
+    private function runTogether(array $payloads): array
+    {
+        $workers = [];
+        DB::beginTransaction();
+        try {
+            User::whereIn('id', array_column($payloads, 'user_id'))->lockForUpdate()->get();
+            foreach ($payloads as $payload) {
+                $process = new Process([PHP_BINARY, base_path('tests/Support/product-order-worker.php'),
+                    json_encode($payload, JSON_THROW_ON_ERROR), (string) $this->admin->id], base_path(), ['APP_ENV' => 'testing']);
+                $process->setTimeout(25);
+                $process->start();
+                $workers[] = $process;
+            }
+            $deadline = microtime(true) + 10;
+            do {
+                $ready = count(array_filter($workers, fn ($worker) => str_contains($worker->getOutput(), 'READY')));
+                if ($ready === count($workers)) {
+                    break;
+                }
+                usleep(20000);
+            } while (microtime(true) < $deadline);
+            $this->assertSame(count($workers), $ready, 'Both workers must contend before the parent releases the customer locks.');
+            DB::commit();
+            $results = [];
+            foreach ($workers as $worker) {
+                $worker->wait();
+                $this->assertSame(0, $worker->getExitCode(), $worker->getErrorOutput() . $worker->getOutput());
+                $lines = explode("\n", trim($worker->getOutput()));
+                $results[] = json_decode(end($lines), true, 512, JSON_THROW_ON_ERROR);
+            }
+            return $results;
+        } finally {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            foreach ($workers as $worker) {
+                if ($worker->isRunning()) {
+                    $worker->stop();
+                }
+            }
+        }
     }
 }

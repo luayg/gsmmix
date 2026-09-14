@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\LocalSourceController;
 use App\Http\Controllers\Admin\LocalReplyController;
 use App\Http\Controllers\Admin\ProductCategoryController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ManagementOverviewController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -251,12 +252,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::put('/product/{order}', [ProductOrdersController::class, 'update'])->whereNumber('order')->name('product.update');
     });
 
-    /* ================== placeholders ==================== */
+    /* ================== Finance ==================== */
     Route::prefix('finances')->name('finances.')->group(function () {
-        Route::get('/', fn () => 'Finances home')->name('index');
-        Route::get('/invoices',     fn () => 'Invoices')->name('invoices.index');
-        Route::get('/statements',   fn () => 'Statements')->name('statements.index');
-        Route::get('/transactions', fn () => 'Transactions')->name('transactions.index');
+        Route::get('/', [ManagementOverviewController::class, 'finances'])->name('index');
+        Route::get('/invoices',     [ManagementOverviewController::class, 'unavailable'])->name('invoices.index');
+        Route::get('/statements',   [ManagementOverviewController::class, 'statements'])->name('statements.index');
+        Route::get('/transactions', [ManagementOverviewController::class, 'transactions'])->name('transactions.index');
     });
 
     Route::prefix('store')->name('store.')->group(function () {
@@ -288,7 +289,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('pages')->name('pages.')->group(function () {
-        Route::get('/', fn () => 'Pages')->name('index');
+        Route::get('/', [ManagementOverviewController::class, 'unavailable'])->name('index');
     });
 
     Route::prefix('sources')->name('sources.')->group(function () {
@@ -318,35 +319,35 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     /* ================== Downloads placeholders ==================== */
     Route::prefix('downloads')->name('downloads.')->group(function () {
-        Route::get('/', fn () => 'Downloads')->name('index');
-        Route::get('/categories', fn () => 'Download categories')->name('categories.index');
+        Route::get('/', [ManagementOverviewController::class, 'unavailable'])->name('index');
+        Route::get('/categories', [ManagementOverviewController::class, 'unavailable'])->name('categories.index');
     });
 
     Route::prefix('settings')->name('settings.')->group(function () {
-        Route::get('/general',    fn () => 'General settings')->name('general');
-        Route::get('/mail',       fn () => 'Mail settings')->name('mail');
-        Route::get('/payment',    fn () => 'Payment settings')->name('payment');
-        Route::get('/languages',  fn () => 'Languages')->name('languages');
-        Route::get('/currencies', fn () => 'Currencies')->name('currencies');
+        Route::get('/general',    [ManagementOverviewController::class, 'unavailable'])->name('general');
+        Route::get('/mail',       [ManagementOverviewController::class, 'unavailable'])->name('mail');
+        Route::get('/payment',    [ManagementOverviewController::class, 'unavailable'])->name('payment');
+        Route::get('/languages',  [ManagementOverviewController::class, 'unavailable'])->name('languages');
+        Route::get('/currencies', [ManagementOverviewController::class, 'unavailable'])->name('currencies');
     });
 
     Route::prefix('system')->name('system.')->group(function () {
-        Route::get('/filemanager', fn () => 'File manager')->name('filemanager');
-        Route::get('/update',      fn () => 'Update')->name('update');
-        Route::get('/maintenance', fn () => 'Maintenance')->name('maintenance');
-        Route::get('/backups',     fn () => 'Backups')->name('backups');
+        Route::get('/filemanager', [ManagementOverviewController::class, 'unavailable'])->name('filemanager');
+        Route::get('/update',      [ManagementOverviewController::class, 'unavailable'])->name('update');
+        Route::get('/maintenance', [ManagementOverviewController::class, 'unavailable'])->name('maintenance');
+        Route::get('/backups',     [ManagementOverviewController::class, 'unavailable'])->name('backups');
     });
 
     Route::prefix('reports')->name('reports.')->group(function () {
-        Route::get('/users',    fn () => 'User reports')->name('users');
-        Route::get('/services', fn () => 'Service reports')->name('services');
-        Route::get('/products', fn () => 'Product reports')->name('products');
+        Route::get('/users',    [ManagementOverviewController::class, 'users'])->name('users');
+        Route::get('/services', [ManagementOverviewController::class, 'services'])->name('services');
+        Route::get('/products', [ManagementOverviewController::class, 'products'])->name('products');
     });
 
     Route::prefix('logs')->name('logs.')->group(function () {
-        Route::get('/access',   fn () => 'Access logs')->name('access');
-        Route::get('/activity', fn () => 'Activity logs')->name('activity');
-        Route::get('/error',    fn () => 'Error logs')->name('error');
+        Route::get('/access',   [ManagementOverviewController::class, 'unavailable'])->name('access');
+        Route::get('/activity', [ManagementOverviewController::class, 'unavailable'])->name('activity');
+        Route::get('/error',    [ManagementOverviewController::class, 'unavailable'])->name('error');
     });
 
 });
