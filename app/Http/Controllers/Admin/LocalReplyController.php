@@ -7,6 +7,8 @@ use App\Models\LocalReply;
 use App\Models\LocalSource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class LocalReplyController extends Controller
 {
@@ -101,6 +103,19 @@ class LocalReplyController extends Controller
 
     public function destroy(LocalReply $reply)
     {
+        $linkedOrderCount = Schema::hasTable('product_orders') && Schema::hasColumn('product_orders', 'local_reply_id')
+            ? DB::table('product_orders')->where('local_reply_id', $reply->id)->count()
+            : 0;
+
+        if (!empty($reply->used_by_product_order_id) || $linkedOrderCount > 0) {
+            return response()->json([
+                'ok' => false,
+                'msg' => "Can't delete this reply: it is linked to a product order.",
+                'used_by_product_order_id' => $reply->used_by_product_order_id,
+                'linked_product_orders' => $linkedOrderCount,
+            ], 409);
+        }
+
         $reply->delete();
 
         return response()->json(['ok' => true, 'msg' => 'Reply deleted']);
