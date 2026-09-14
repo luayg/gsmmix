@@ -145,13 +145,16 @@ abstract class BaseServiceController extends Controller
             ->get();
         foreach ($cf as $c) {
             $nm = json_decode((string)$c->name, true);
+            $description = json_decode((string)$c->description, true);
             $customFields[] = [
                 'active' => (int)($c->active ?? 1),
                 'required' => (int)($c->required ?? 0),
                 'name' => is_array($nm) ? ($nm['fallback'] ?? $nm['en'] ?? '') : (string)$c->name,
                 'input' => (string)($c->input ?? ''),
                 'type' => (string)($c->field_type ?? 'text'),
-                'description' => (string)($c->description ?? ''),
+                'description' => is_array($description)
+                    ? ($description['fallback'] ?? $description['en'] ?? '')
+                    : (string)($c->description ?? ''),
                 'minimum' => (int)($c->minimum ?? 0),
                 'maximum' => (int)($c->maximum ?? 0),
                 'validation' => (string)($c->validation ?? ''),

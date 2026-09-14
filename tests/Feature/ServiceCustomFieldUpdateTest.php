@@ -145,6 +145,30 @@ class ServiceCustomFieldUpdateTest extends SecurityTestCase
         }
     }
 
+    public function test_edit_json_exposes_saved_field_properties_and_readable_description(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $this->seedService($kind);
+            DB::table('custom_fields')->where('service_type', $kind . '_service')->update([
+                'name' => json_encode(['en' => 'Saved label']),
+                'input' => 'exact_api_key', 'field_type' => 'text',
+                'description' => json_encode(['en' => 'Readable description']),
+                'active' => 0, 'required' => 1, 'minimum' => 3, 'maximum' => 48,
+                'validation' => 'alphanumeric', 'ordering' => 1,
+            ]);
+            $this->getJson(route("admin.services.{$kind}.show.json", ['service' => 1]))
+                ->assertOk()
+                ->assertJsonPath('service.custom_fields.0.name', 'Saved label')
+                ->assertJsonPath('service.custom_fields.0.input', 'exact_api_key')
+                ->assertJsonPath('service.custom_fields.0.description', 'Readable description')
+                ->assertJsonPath('service.custom_fields.0.active', 0)
+                ->assertJsonPath('service.custom_fields.0.minimum', 3)
+                ->assertJsonPath('service.custom_fields.0.maximum', 48)
+                ->assertJsonPath('service.custom_fields.0.validation', 'alphanumeric');
+        }
+        Http::assertNothingSent();
+    }
+
     private function seedService(string $kind): void
     {
         DB::table($kind . '_services')->insert([

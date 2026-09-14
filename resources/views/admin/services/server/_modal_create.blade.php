@@ -537,6 +537,8 @@
   btnAdd?.addEventListener('click', () => addField(form));
 
   // ===== Hooks for service-modal.js =====
+  @include('admin.services.partials.saved-fields-hook', ['kind' => 'server'])
+
   window.__serverServiceApplyRemoteFields__ = function(scope, additionalFields){
     try{
       if (!scope || !Array.isArray(additionalFields)) return;

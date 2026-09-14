@@ -625,6 +625,8 @@
   btnAdd?.addEventListener('click', () => addField(form));
 
   // ===== Hooks for service-modal.blade.php (dynamic) =====
+  @include('admin.services.partials.saved-fields-hook', ['kind' => 'file'])
+
   window.__fileServiceApplyRemoteFields__ = function(scope, additionalFields){
     try{
       if (!scope || !Array.isArray(additionalFields)) return;
