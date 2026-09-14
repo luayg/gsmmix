@@ -344,10 +344,7 @@ abstract class BaseServiceController extends Controller
         ];
 
         // custom_fields_json (إن وجد) نحفظه داخل params + داخل جدول custom_fields عبر نفس منطق مشروعك
-        $customFields = $this->normalizeCustomFields(
-            $request->input('custom_fields'),
-            $request->input('custom_fields_json')
-        );
+        $customFields = $this->customFieldsForWrite($request) ?? [];
 
         $incomingParams = $request->input('params');
         if (is_string($incomingParams)) {
@@ -493,7 +490,7 @@ abstract class BaseServiceController extends Controller
 
         $this->validateGroupPrices($v['group_prices'] ?? []);
 
-        $customFields = $this->customFieldsForUpdate($request);
+        $customFields = $this->customFieldsForWrite($request);
 
         $mainType = strtolower(trim((string)($v['main_field_type'] ?? 'serial')));
 
@@ -756,7 +753,7 @@ abstract class BaseServiceController extends Controller
     }
 
     /** Null means omitted; an explicit empty list means remove all fields. */
-    private function customFieldsForUpdate(Request $request): ?array
+    private function customFieldsForWrite(Request $request): ?array
     {
         $inputs = [];
         foreach (['custom_fields', 'custom_fields_json'] as $key) {
