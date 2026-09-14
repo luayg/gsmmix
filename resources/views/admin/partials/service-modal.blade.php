@@ -358,8 +358,7 @@
       if (priceInput.dataset.autoPrice !== '1') return;
 
       priceInput.value = servicePrice.toFixed(4);
-      const outEl = row.querySelector('[data-final]');
-      if (outEl) outEl.textContent = servicePrice.toFixed(4);
+      row.dispatchEvent(new Event('pricing:refresh'));
     });
   }
 
@@ -420,11 +419,13 @@
     }
   }
 
-  function buildPricingTable(scope, groups){
+  function buildPricingTable(scope, groups, savedPrices = []){
     const wrap = scope.querySelector('#groupsPricingWrap');
     if(!wrap) return;
     wrap.innerHTML = '';
     const initialServicePrice = calcServiceFinalPrice(scope);
+    const savedByGroup = new Map((Array.isArray(savedPrices) ? savedPrices : [])
+      .map(price => [String(price.group_id), price]));
 
     groups.forEach(g=>{
       const row = document.createElement('div');
@@ -465,6 +466,14 @@
       const typeSelect = row.querySelector('[data-discount-type]');
       const outEl      = row.querySelector('[data-final]');
 
+      const saved = savedByGroup.get(String(g.id));
+      if (saved) {
+        priceInput.value = Number(saved.price ?? 0).toFixed(4);
+        priceInput.dataset.autoPrice = '0';
+        discInput.value = Number(saved.discount ?? 0).toFixed(4);
+        typeSelect.value = String(saved.discount_type ?? 1);
+      }
+
       const updateFinal = () => {
         const price = Number(priceInput?.value || 0);
         const disc  = Number(discInput?.value  || 0);
@@ -476,6 +485,7 @@
         if (outEl) outEl.textContent = final.toFixed(4);
       };
 
+      row.addEventListener('pricing:refresh', updateFinal);
       priceInput?.addEventListener('input', ()=>{ priceInput.dataset.autoPrice = '0'; updateFinal(); });
       discInput?.addEventListener('input', updateFinal);
       typeSelect?.addEventListener('change', updateFinal);
@@ -1151,27 +1161,7 @@
     if(custom.length) openGeneralTab();
 
     const userGroups = await loadUserGroups();
-    buildPricingTable(body, userGroups);
-
-    try{
-      const gp = Array.isArray(s.group_prices) ? s.group_prices : [];
-      if(gp.length){
-        setTimeout(()=>{
-          gp.forEach(row=>{
-            const gid = String(row.group_id || '');
-            if(!gid) return;
-            const priceInput = body.querySelector(`[name="group_prices[${gid}][price]"]`);
-            const discInput  = body.querySelector(`[name="group_prices[${gid}][discount]"]`);
-            const typeSel    = body.querySelector(`[name="group_prices[${gid}][discount_type]"]`);
-            if(priceInput) { priceInput.dataset.autoPrice = '1'; }
-            if(discInput)  discInput.value = Number(row.discount||0).toFixed(4);
-            if(typeSel)    typeSel.value = String(row.discount_type||1);
-            discInput?.dispatchEvent(new Event('input'));
-            typeSel?.dispatchEvent(new Event('change'));
-          });
-        }, 300);
-      }
-    }catch(e){}
+    buildPricingTable(body, userGroups, s.group_prices);
 
     const priceHelper = initPrice(body);
     priceHelper.setCost(Number(s.cost||0));
