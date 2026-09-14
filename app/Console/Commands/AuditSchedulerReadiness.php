@@ -18,6 +18,7 @@ class AuditSchedulerReadiness extends Command
     public function handle(Schedule $schedule): int
     {
         $required = [
+            'providers:sync --balance-only' => false,
             'providers:sync' => false,
             'orders:dispatch-pending-imei --limit=50' => true,
             'orders:sync-imei --limit=50' => false,
@@ -38,7 +39,14 @@ class AuditSchedulerReadiness extends Command
 
         foreach ($required as $needle => $needsBackground) {
             $matches = $events->filter(function ($event) use ($needle): bool {
-                return str_contains((string)($event->command ?? ''), $needle);
+                $command = (string)($event->command ?? '');
+
+                if ($needle === 'providers:sync') {
+                    return str_contains($command, 'providers:sync')
+                        && !str_contains($command, 'providers:sync --balance-only');
+                }
+
+                return str_contains($command, $needle);
             });
 
             if ($matches->isEmpty()) {
@@ -79,7 +87,6 @@ class AuditSchedulerReadiness extends Command
         $cacheLocksTableReady = null;
         if ($cacheStore === 'database') {
             $cacheTableReady = Schema::hasTable((string)config('cache.stores.database.table', 'cache'));
-            // Laravel's database lock store convention is cache_locks when no override is supplied.
             $lockTable = (string)(config('cache.stores.database.lock_table') ?: 'cache_locks');
             $cacheLocksTableReady = Schema::hasTable($lockTable);
         }
