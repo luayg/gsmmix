@@ -33,7 +33,11 @@ class AuditServiceRouting extends Command
             'api_service_missing_remote_id' => 0,
             'service_provider_missing' => 0,
             'service_provider_disabled' => 0,
+            // Only waiting orders are actionable routing mismatches. Historical
+            // or already-submitted API orders may legitimately remain marked
+            // api_order=1 after their local service later falls back to Manual.
             'api_order_on_manual_service' => 0,
+            'nonwaiting_api_order_on_manual_service' => 0,
             'manual_order_on_api_service' => 0,
             'waiting_api_order_without_provider' => 0,
             'waiting_api_order_without_remote_service' => 0,
@@ -128,8 +132,12 @@ class AuditServiceRouting extends Command
                 $waiting = $status === 'waiting';
 
                 if ($apiOrder && $serviceSource === 1) {
-                    $state['api_order_on_manual_service']++;
-                    $this->detail($details, $limit, $kind, 'order', (int)$order->id, 'api_order_on_manual_service', $serviceSupplierId, $serviceRemoteId);
+                    if ($waiting) {
+                        $state['api_order_on_manual_service']++;
+                        $this->detail($details, $limit, $kind, 'order', (int)$order->id, 'api_order_on_manual_service', $serviceSupplierId, $serviceRemoteId);
+                    } else {
+                        $state['nonwaiting_api_order_on_manual_service']++;
+                    }
                 }
 
                 if (!$apiOrder && $serviceSource === 2 && $waiting) {
