@@ -11,8 +11,10 @@ use Illuminate\Support\Facades\Log;
 
 class ProviderManager
 {
-    public function __construct(private ProviderFactory $factory)
-    {
+    public function __construct(
+        private ProviderFactory $factory,
+        private LocalServiceManualFallback $manualFallback
+    ) {
     }
 
     public function sync(ApiProvider $provider, ?string $onlyKind = null, bool $balanceOnly = false): array
@@ -77,7 +79,21 @@ class ProviderManager
         foreach ($kinds as $kind) {
             try {
                 $count = $adapter->syncCatalog($provider, $kind);
-                $result['catalog'][$kind] = ['ok' => true, 'count' => (int)$count];
+                $fallback = $this->manualFallback->reconcile($provider, $kind);
+
+                $result['catalog'][$kind] = [
+                    'ok' => true,
+                    'count' => (int)$count,
+                    'manual_fallback' => $fallback,
+                ];
+
+                if (($fallback['converted_services'] ?? 0) > 0) {
+                    $result['warnings'][] = sprintf(
+                        '%s: %d local service(s) moved to Manual because the provider removed them',
+                        strtoupper($kind),
+                        (int)$fallback['converted_services']
+                    );
+                }
             } catch (\Throwable $e) {
                 $short = $this->shortProviderError($e);
 
