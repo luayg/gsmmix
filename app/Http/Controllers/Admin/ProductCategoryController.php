@@ -72,6 +72,16 @@ class ProductCategoryController extends Controller
 
     public function destroy(ProductCategory $category)
     {
+        $productCount = $category->products()->count();
+
+        if ($productCount > 0) {
+            return response()->json([
+                'ok' => false,
+                'msg' => "Can't delete this category: {$productCount} product(s) still reference it.",
+                'products' => $productCount,
+            ], 409);
+        }
+
         $category->delete();
 
         return response()->json(['ok' => true, 'msg' => 'Category deleted']);

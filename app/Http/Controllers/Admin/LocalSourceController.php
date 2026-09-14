@@ -66,11 +66,16 @@ class LocalSourceController extends Controller
             ? DB::table('product_orders')->where('local_source_id', $source->id)->count()
             : 0;
 
-        if ($replyCount > 0 || $orderCount > 0) {
+        $productCount = Schema::hasTable('products') && Schema::hasColumn('products', 'local_source_id')
+            ? DB::table('products')->where('local_source_id', $source->id)->count()
+            : 0;
+
+        if ($replyCount > 0 || $orderCount > 0 || $productCount > 0) {
             return response()->json([
                 'ok' => false,
-                'msg' => "Can't delete this source: {$replyCount} reply/replies and {$orderCount} product order(s) still reference it.",
+                'msg' => "Can't delete this source: {$replyCount} reply/replies, {$productCount} product(s), and {$orderCount} product order(s) still reference it.",
                 'replies' => $replyCount,
+                'products' => $productCount,
                 'product_orders' => $orderCount,
             ], 409);
         }
