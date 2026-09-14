@@ -69,6 +69,36 @@ class ServiceRoutingAuditTest extends TestCase
         $this->assertStringContainsString('waiting_api_order_without_remote_service', $out);
     }
 
+    public function test_historical_api_order_on_service_that_later_became_manual_is_informational_only(): void
+    {
+        DB::table('server_services')->insert([
+            'id' => 52,
+            'name' => 'Manual fallback',
+            'source' => 1,
+            'active' => 1,
+            'supplier_id' => null,
+            'remote_id' => null,
+        ]);
+
+        DB::table('server_orders')->insert([
+            'id' => 5,
+            'service_id' => 52,
+            'supplier_id' => 8,
+            'remote_id' => 'REMOTE-ORDER-5',
+            'api_order' => 1,
+            'status' => 'success',
+            'processing' => 0,
+        ]);
+
+        $exit = Artisan::call('services:routing-audit');
+
+        $this->assertSame(0, $exit);
+        $out = Artisan::output();
+        $this->assertStringContainsString('api_order_on_manual_service', $out);
+        $this->assertStringContainsString('nonwaiting_api_order_on_manual_service', $out);
+        $this->assertStringNotContainsString('Routing risks (read-only):', $out);
+    }
+
     public function test_broken_manual_and_api_routes_fail_and_are_reported(): void
     {
         DB::table('api_providers')->insert(['id' => 7, 'active' => 1]);
