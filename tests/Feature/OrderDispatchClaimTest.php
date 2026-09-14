@@ -88,6 +88,25 @@ class OrderDispatchClaimTest extends TestCase
         $this->assertNull($claims->claim(ImeiOrder::class, $done->id));
     }
 
+    public function test_ambiguous_provider_ack_hold_cannot_be_claimed_again(): void
+    {
+        $order = ImeiOrder::create([
+            'status' => 'waiting',
+            'api_order' => true,
+            'processing' => false,
+            'request' => [
+                'request' => [
+                    'dispatch_hold' => true,
+                    'contract_error' => 'provider_ack_without_remote_id',
+                ],
+            ],
+        ]);
+
+        $this->assertNull(app(OrderDispatchClaimService::class)->claim(ImeiOrder::class, $order->id));
+        $this->assertSame('waiting', $order->fresh()->status);
+        $this->assertFalse((bool)$order->fresh()->processing);
+    }
+
     public function test_dispatcher_refuses_unclaimed_waiting_order_before_provider_call(): void
     {
         $order = ImeiOrder::create([
