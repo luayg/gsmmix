@@ -169,6 +169,64 @@ class ServiceCustomFieldUpdateTest extends SecurityTestCase
         Http::assertNothingSent();
     }
 
+    public function test_service_json_is_encoded_once_and_round_trips_through_create_edit_and_read(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $payload = [
+                'name' => 'خدمة اختبار', 'time' => '1–2 hours', 'info' => '<p>Keep this description</p>',
+                'type' => 'service', 'main_field_type' => 'text', 'main_field_label' => 'Device ID',
+                'allowed_characters' => 'alphanumeric', 'minimum' => 3, 'maximum' => 48,
+                'source' => 1, 'params' => json_encode(['marker' => 'preserved']),
+            ];
+            $response = $this->postJson(route("admin.services.{$kind}.store"), $payload)->assertSuccessful();
+            $id = (int)$response->json('id');
+            foreach (['created', 'updated'] as $stage) {
+                if ($stage === 'updated') {
+                    $payload['name'] = 'Edited خدمة';
+                    $this->putJson(route("admin.services.{$kind}.update", [$id]), $payload)->assertOk();
+                }
+                $row = DB::table($kind . '_services')->where('id', $id)->first();
+                foreach (['name', 'time', 'info', 'main_field', 'params'] as $attribute) {
+                    $this->assertIsArray(json_decode($row->$attribute, true), "{$kind} {$stage} {$attribute} must be encoded exactly once");
+                }
+                $this->getJson(route("admin.services.{$kind}.show.json", ['service' => $id]))
+                    ->assertOk()
+                    ->assertJsonPath('service.name', $payload['name'])
+                    ->assertJsonPath('service.time', $payload['time'])
+                    ->assertJsonPath('service.info', $payload['info'])
+                    ->assertJsonPath('service.main_field.label.en', 'Device ID')
+                    ->assertJsonPath('service.main_field.rules.minimum', 3)
+                    ->assertJsonPath('service.main_field.rules.maximum', 48)
+                    ->assertJsonPath('service.params.marker', 'preserved');
+            }
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_reading_legacy_double_encoded_service_json_does_not_rewrite_storage(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $values = [
+                'name' => ['en' => 'Legacy name'], 'time' => ['en' => 'Legacy time'],
+                'info' => ['en' => 'Legacy info'],
+                'main_field' => ['type' => 'text', 'rules' => ['minimum' => 7]],
+                'params' => ['marker' => 'legacy'],
+            ];
+            foreach ($values as $key => $value) {
+                $values[$key] = json_encode(json_encode($value));
+            }
+            DB::table($kind . '_services')->insert(['id' => 1] + $values);
+            $this->getJson(route("admin.services.{$kind}.show.json", ['service' => 1]))
+                ->assertOk()->assertJsonPath('service.name', 'Legacy name')
+                ->assertJsonPath('service.time', 'Legacy time')
+                ->assertJsonPath('service.info', 'Legacy info')
+                ->assertJsonPath('service.main_field.rules.minimum', 7)
+                ->assertJsonPath('service.params.marker', 'legacy');
+            $this->assertDatabaseHas($kind . '_services', ['id' => 1] + $values);
+        }
+        Http::assertNothingSent();
+    }
+
     private function seedService(string $kind): void
     {
         DB::table($kind . '_services')->insert([
