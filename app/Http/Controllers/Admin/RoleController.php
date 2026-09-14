@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
 
@@ -28,7 +30,7 @@ class RoleController extends Controller
 
         $q = Role::query()
             ->where('guard_name', 'web')
-            ->withCount(['permissions as perms'])   // alias يطابق عمود JS "perms"
+            ->withCount(['permissions as perms'])
             ->with('permissions:id,name');
 
         $recordsTotal = (clone $q)->count();
@@ -40,14 +42,12 @@ class RoleController extends Controller
             });
         }
 
-        // ترتيب الأعمدة (0:id,1:name,2:perms,3:created_at)
         $map = [0=>'id', 1=>'name', 2=>'perms', 3=>'created_at'];
         $col = (int) $r->input('order.0.column', 1);
         $dir = strtolower((string) $r->input('order.0.dir','asc')) === 'desc' ? 'desc' : 'asc';
         $q->orderBy($map[$col] ?? 'name', $dir);
 
         $recordsFiltered = (clone $q)->count();
-
         $rows = $q->skip($start)->take($length)->get();
 
         $data = $rows->map(function (Role $role) {
@@ -108,6 +108,18 @@ class RoleController extends Controller
     /** حذف دور */
     public function destroy(Role $role)
     {
+        $assignedModels = Schema::hasTable('model_has_roles')
+            ? DB::table('model_has_roles')->where('role_id', $role->id)->count()
+            : 0;
+
+        if ($assignedModels > 0) {
+            return response()->json([
+                'ok' => false,
+                'msg' => "Role cannot be deleted because it is still assigned to {$assignedModels} model(s). Remove the assignments first.",
+                'assigned_models' => $assignedModels,
+            ], 409);
+        }
+
         $role->delete();
 
         return response()->json([
@@ -146,7 +158,6 @@ class RoleController extends Controller
             ]);
         }
 
-        // رجوع مباشر إلى صفحة الرولز + Session flash لعرض Toast عند الرجوع
         return redirect()
             ->route('admin.roles.index')
             ->with('ok', 'Permissions updated');
@@ -159,7 +170,6 @@ class RoleController extends Controller
 
         $first = reset($items);
 
-        // IDs
         if (is_numeric($first)) {
             return Permission::whereIn('id', $items)
                 ->where('guard_name', 'web')
@@ -167,7 +177,6 @@ class RoleController extends Controller
                 ->all();
         }
 
-        // أسماء
         return Permission::whereIn('name', $items)
             ->where('guard_name', 'web')
             ->pluck('name')
