@@ -7,6 +7,8 @@ use App\Models\LocalSource;
 use App\Models\Product;
 use App\Models\ProductCategory;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class ProductController extends Controller
@@ -59,25 +61,32 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         $data = $this->validateProduct($request);
-
         Product::create($this->payload($request, $data));
-
         return response()->json(['ok' => true, 'msg' => 'Product created']);
     }
 
     public function update(Request $request, Product $product)
     {
         $data = $this->validateProduct($request, $product);
-
         $product->update($this->payload($request, $data));
-
         return response()->json(['ok' => true, 'msg' => 'Product updated']);
     }
 
     public function destroy(Product $product)
     {
-        $product->delete();
+        $orderCount = Schema::hasTable('product_orders') && Schema::hasColumn('product_orders', 'product_id')
+            ? DB::table('product_orders')->where('product_id', $product->id)->count()
+            : 0;
 
+        if ($orderCount > 0) {
+            return response()->json([
+                'ok' => false,
+                'msg' => "Can't delete this product: {$orderCount} product order(s) still reference it.",
+                'product_orders' => $orderCount,
+            ], 409);
+        }
+
+        $product->delete();
         return response()->json(['ok' => true, 'msg' => 'Product deleted']);
     }
 
@@ -89,7 +98,6 @@ class ProductController extends Controller
     public function modalView(Product $product)
     {
         $product->load(['category', 'localSource'])->loadCount('orders');
-
         return view('admin.store.products.modals.view', compact('product'));
     }
 
@@ -97,14 +105,12 @@ class ProductController extends Controller
     {
         $data = $this->formData();
         $data['product'] = $product;
-
         return view('admin.store.products.modals.edit', $data);
     }
 
     public function modalDelete(Product $product)
     {
         $product->loadCount('orders');
-
         return view('admin.store.products.modals.delete', compact('product'));
     }
 
@@ -139,12 +145,7 @@ class ProductController extends Controller
             'product_category_id' => ['nullable', 'integer', 'exists:product_categories,id'],
             'local_source_id' => ['nullable', 'integer', 'exists:local_sources,id'],
             'name' => ['required', 'string', 'max:255'],
-            'alias' => [
-                'nullable',
-                'string',
-                'max:255',
-                Rule::unique('products', 'alias')->ignore($product?->id),
-            ],
+            'alias' => ['nullable', 'string', 'max:255', Rule::unique('products', 'alias')->ignore($product?->id)],
             'description' => ['nullable', 'string'],
             'main_image' => ['nullable', 'string', 'max:255'],
             'delivery_time' => ['nullable', 'string', 'max:255'],
@@ -183,8 +184,7 @@ class ProductController extends Controller
             'currency' => trim((string) ($data['currency'] ?? 'USD')) ?: 'USD',
             'profit' => (float) ($data['profit'] ?? 0),
             'profit_type' => in_array(($data['profit_type'] ?? 'credits'), ['credits', 'percent'], true)
-                ? $data['profit_type']
-                : 'credits',
+                ? $data['profit_type'] : 'credits',
             'active' => $request->boolean('active'),
             'device_based' => $request->boolean('device_based'),
             'unlimited' => $request->boolean('unlimited'),
