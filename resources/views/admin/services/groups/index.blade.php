@@ -100,6 +100,7 @@
               <option value="imei_service">IMEI_SERVICE</option>
               <option value="server_service">SERVER_SERVICE</option>
               <option value="file_service">FILE_SERVICE</option>
+              <option value="smm_service">SMM_SERVICE</option>
             </select>
           </div>
         </form>
@@ -268,7 +269,6 @@
         });
 
         if (!res.ok) {
-          // إذا انحذف السجل فعلياً من الضغط السابق، اعتبر الحالة منتهية بنجاح.
           if (res.status === 404 || res.status === 410) {
             window.location.reload();
             return;
