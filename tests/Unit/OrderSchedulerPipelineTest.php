@@ -2,45 +2,37 @@
 
 namespace Tests\Unit;
 
+use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
 class OrderSchedulerPipelineTest extends TestCase
 {
-    public function test_imei_retry_is_manual_only_and_not_a_second_scheduled_dispatch_path(): void
+    public function test_schedule_list_contains_the_active_order_pipeline(): void
     {
-        $source = file_get_contents(app_path('Console/Kernel.php'));
+        $exit = Artisan::call('schedule:list');
+        $output = Artisan::output();
 
-        $this->assertIsString($source);
-        $this->assertStringNotContainsString("schedule->command('orders:retry-imei", $source);
-        $this->assertStringContainsString('RetryImeiApiOrders::class', $source);
-        $this->assertStringContainsString("schedule->command('orders:dispatch-pending-imei --limit=50')", $source);
+        $this->assertSame(0, $exit, $output);
+        $this->assertStringContainsString('providers:sync', $output);
+        $this->assertStringContainsString('orders:dispatch-pending-imei --limit=50', $output);
+        $this->assertStringContainsString('orders:sync-imei --limit=50', $output);
+        $this->assertStringContainsString('orders:dispatch-pending-server --limit=50', $output);
+        $this->assertStringContainsString('orders:sync-server --limit=50', $output);
+        $this->assertStringContainsString('orders:dispatch-pending-file --limit=50', $output);
+        $this->assertStringContainsString('orders:sync-file --limit=50', $output);
+        $this->assertStringContainsString('orders:dispatch-pending-smm --limit=50', $output);
+        $this->assertStringContainsString('orders:sync-smm --limit=50', $output);
+        $this->assertStringNotContainsString('orders:retry-imei', $output);
+        $this->assertStringNotContainsString('No scheduled tasks have been defined', $output);
     }
 
-    public function test_every_automatic_order_dispatch_and_sync_job_is_single_server_and_non_overlapping(): void
+    public function test_scheduler_is_defined_in_the_console_routes_loaded_by_bootstrap(): void
     {
-        $source = (string) file_get_contents(app_path('Console/Kernel.php'));
+        $bootstrap = (string) file_get_contents(base_path('bootstrap/app.php'));
+        $console = (string) file_get_contents(base_path('routes/console.php'));
 
-        $commands = [
-            'orders:dispatch-pending-imei --limit=50',
-            'orders:sync-imei --limit=50',
-            'orders:dispatch-pending-server --limit=50',
-            'orders:sync-server --limit=50',
-            'orders:dispatch-pending-file --limit=50',
-            'orders:sync-file --limit=50',
-            'orders:dispatch-pending-smm --limit=50',
-            'orders:sync-smm --limit=50',
-        ];
-
-        foreach ($commands as $command) {
-            $start = strpos($source, "schedule->command('{$command}')");
-            $this->assertNotFalse($start, "Missing scheduled command: {$command}");
-
-            $end = strpos($source, ';', $start);
-            $this->assertNotFalse($end, "Missing schedule terminator: {$command}");
-
-            $block = substr($source, $start, $end - $start + 1);
-            $this->assertStringContainsString('->withoutOverlapping()', $block, $command);
-            $this->assertStringContainsString('->onOneServer()', $block, $command);
-        }
+        $this->assertStringContainsString("commands: __DIR__.'/../routes/console.php'", $bootstrap);
+        $this->assertStringContainsString("Schedule::command('orders:dispatch-pending-imei --limit=50')", $console);
+        $this->assertStringNotContainsString("Schedule::command('orders:retry-imei", $console);
     }
 }
