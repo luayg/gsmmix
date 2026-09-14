@@ -92,19 +92,20 @@ abstract class BaseServiceController extends Controller
     $row = ($this->model)::query()->findOrFail($service);
 
     // name/time/info/main_field/params قد تكون JSON مخزنة كنص
-    $decode = function ($v) {
-        if (is_array($v)) return $v;
-        $s = trim((string)$v);
-        if ($s === '') return [];
-        $j = json_decode($s, true);
-        return is_array($j) ? $j : [];
+    $decode = function ($value) {
+        // Read raw storage so collection/array casts cannot hide legacy
+        // double encoding. Normal writes require only the first decode.
+        for ($depth = 0; $depth < 2 && is_string($value); $depth++) {
+            $value = json_decode($value, true);
+        }
+        return is_array($value) ? $value : [];
     };
 
-    $name = $decode($row->name);
-    $time = $decode($row->time);
-    $info = $decode($row->info);
-    $main = $decode($row->main_field);
-    $params = $decode($row->params);
+    $name = $decode($row->getRawOriginal('name'));
+    $time = $decode($row->getRawOriginal('time'));
+    $info = $decode($row->getRawOriginal('info'));
+    $main = $decode($row->getRawOriginal('main_field'));
+    $params = $decode($row->getRawOriginal('params'));
 
     // group prices
     $gp = [];
@@ -376,11 +377,11 @@ abstract class BaseServiceController extends Controller
                 'remote_id'   => $v['remote_id'] ?? null,
                 'supplier_id' => $v['supplier_id'] ?? null,
 
-                'name'       => json_encode($name, JSON_UNESCAPED_UNICODE),
-                'time'       => json_encode($time, JSON_UNESCAPED_UNICODE),
-                'info'       => json_encode($info, JSON_UNESCAPED_UNICODE),
-                'main_field' => json_encode($main, JSON_UNESCAPED_UNICODE),
-                'params'     => json_encode($params, JSON_UNESCAPED_UNICODE),
+                'name'       => $this->serviceJsonValue('name', $name),
+                'time'       => $this->serviceJsonValue('time', $time),
+                'info'       => $this->serviceJsonValue('info', $info),
+                'main_field' => $this->serviceJsonValue('main_field', $main),
+                'params'     => $this->serviceJsonValue('params', $params),
 
                 'cost'        => $v['cost'] ?? 0,
                 'profit'      => $v['profit'] ?? 0,
@@ -543,7 +544,7 @@ abstract class BaseServiceController extends Controller
         }
         $paramsValue = !$request->exists('params') && $customFields === null
             ? $row->params
-            : ($row->hasCast('params', ['array', 'json']) ? $params : json_encode($params, JSON_UNESCAPED_UNICODE));
+            : ($row->hasCast('params', ['array', 'json']) ? $params : $this->serviceJsonValue('params', $params));
 
         if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
             $v['supplier_id'] = (int)$v['api_provider_id'];
@@ -562,10 +563,10 @@ abstract class BaseServiceController extends Controller
                 'remote_id'   => $v['remote_id'] ?? null,
                 'supplier_id' => $v['supplier_id'] ?? null,
 
-                'name'       => json_encode($name, JSON_UNESCAPED_UNICODE),
-                'time'       => json_encode($time, JSON_UNESCAPED_UNICODE),
-                'info'       => json_encode($info, JSON_UNESCAPED_UNICODE),
-                'main_field' => json_encode($main, JSON_UNESCAPED_UNICODE),
+                'name'       => $this->serviceJsonValue('name', $name),
+                'time'       => $this->serviceJsonValue('time', $time),
+                'info'       => $this->serviceJsonValue('info', $info),
+                'main_field' => $this->serviceJsonValue('main_field', $main),
                 'params'     => $paramsValue,
 
                 'cost'        => $v['cost'] ?? 0,
@@ -693,6 +694,15 @@ abstract class BaseServiceController extends Controller
     // =========================
     // Helpers from your existing Base
     // =========================
+    /** Let Eloquent encode cast attributes; encode only raw JSON columns. */
+    private function serviceJsonValue(string $attribute, array $value): array|string
+    {
+        $model = new $this->model;
+        return $model->hasCast($attribute)
+            ? $value
+            : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
+
     private function validateGroupPrices(array $groupPrices): void
     {
         if ($groupPrices === []) {
