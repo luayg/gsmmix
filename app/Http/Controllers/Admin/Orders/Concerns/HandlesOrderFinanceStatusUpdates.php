@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin\Orders\Concerns;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 trait HandlesOrderFinanceStatusUpdates
 {
@@ -19,7 +20,24 @@ trait HandlesOrderFinanceStatusUpdates
         try {
             DB::transaction(function () use ($data, $id): void {
                 $row = ($this->orderModel)::query()->lockForUpdate()->findOrFail($id);
+                $oldStatus = strtolower(trim((string)($row->status ?? '')));
                 $newStatus = strtolower(trim((string)$data['status']));
+                $remoteId = trim((string)($row->remote_id ?? ''));
+
+                // An order cannot be genuinely in progress at a provider until it has
+                // a provider-side reference. Keeping such an order as waiting also
+                // lets the atomic dispatch worker pick it up safely.
+                if ($newStatus === 'inprogress' && $remoteId === '') {
+                    throw ValidationException::withMessages([
+                        'status' => 'In progress requires a provider remote ID. Keep the order Waiting until it is sent.',
+                    ]);
+                }
+
+                // A provider-owned order must never be moved back into the unsent
+                // waiting bucket. Treat the manual request as in-progress instead.
+                if ($newStatus === 'waiting' && $remoteId !== '') {
+                    $newStatus = 'inprogress';
+                }
 
                 // A terminal failure must be refunded exactly once. Re-activating any
                 // refunded order (waiting/inprogress/success) must re-charge first.
@@ -32,7 +50,7 @@ trait HandlesOrderFinanceStatusUpdates
                 // The finance service writes request metadata through a separately
                 // locked model instance. Refresh before saving the status/UI fields.
                 $row->refresh();
-                $row->status = $data['status'];
+                $row->status = $newStatus;
                 $row->comments = (string)($data['comments'] ?? '');
 
                 $currentResponse = $row->response;
@@ -64,10 +82,20 @@ trait HandlesOrderFinanceStatusUpdates
                 }
 
                 $row->response = $currentResponse;
+
                 if (in_array($newStatus, ['success', 'rejected', 'cancelled'], true)) {
                     $row->processing = false;
-                    $row->replied_at = now();
+                    // Editing comments/result on an already-final order must not rewrite
+                    // the original reply time on every save.
+                    if (!$row->replied_at || $oldStatus !== $newStatus) {
+                        $row->replied_at = now();
+                    }
+                } else {
+                    // Active status transitions must leave deterministic worker state.
+                    $row->processing = $newStatus === 'inprogress';
+                    $row->replied_at = null;
                 }
+
                 $row->save();
             });
         } catch (\RuntimeException $exception) {
