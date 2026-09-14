@@ -22,13 +22,7 @@ class LocalServiceManualFallback
     {
         $kind = strtolower(trim($kind));
         $map = $this->map($kind);
-
-        $result = [
-            'converted_services' => 0,
-            'converted_orders' => 0,
-            'skipped_empty_catalog' => false,
-            'service_ids' => [],
-        ];
+        $result = $this->emptyResult();
 
         if ($map === null
             || !Schema::hasTable($map['services'])
@@ -61,18 +55,7 @@ class LocalServiceManualFallback
             return $result;
         }
 
-        $select = array_values(array_intersect([
-            'id', 'remote_id', 'params', 'active', 'source', 'supplier_id',
-            'cost', 'profit', 'profit_type',
-            'use_remote_cost', 'use_remote_price', 'stop_on_api_change',
-        ], $serviceColumns));
-
-        $linked = DB::table($map['services'])
-            ->where('supplier_id', (int)$provider->id)
-            ->whereNotNull('remote_id')
-            ->where('remote_id', '<>', '')
-            ->get($select);
-
+        $linked = $this->linkedServices($map['services'], $serviceColumns, (int)$provider->id, true);
         if ($linked->isEmpty()) {
             return $result;
         }
@@ -87,19 +70,107 @@ class LocalServiceManualFallback
             return $result;
         }
 
-        DB::transaction(function () use ($provider, $kind, $map, $serviceColumns, $missing, &$result): void {
-            foreach ($missing as $service) {
+        return $this->convertLinkedServices(
+            $provider,
+            $kind,
+            $map,
+            $serviceColumns,
+            $missing,
+            'remote_service_removed',
+            true,
+            $result
+        );
+    }
+
+    /**
+     * Convert every local service still linked to a provider into Manual.
+     * This is used before a provider itself is deleted, so local services are
+     * preserved instead of being left with a dangling supplier_id/remote_id.
+     *
+     * @return array{converted_services:int,converted_orders:int,skipped_empty_catalog:bool,service_ids:array<int,int>}
+     */
+    public function convertAllLinked(ApiProvider $provider, string $kind, string $reason = 'provider_deleted'): array
+    {
+        $kind = strtolower(trim($kind));
+        $map = $this->map($kind);
+        $result = $this->emptyResult();
+
+        if ($map === null || !Schema::hasTable($map['services'])) {
+            return $result;
+        }
+
+        $serviceColumns = Schema::getColumnListing($map['services']);
+        if (!in_array('supplier_id', $serviceColumns, true)) {
+            return $result;
+        }
+
+        $linked = $this->linkedServices($map['services'], $serviceColumns, (int)$provider->id, false);
+        if ($linked->isEmpty()) {
+            return $result;
+        }
+
+        return $this->convertLinkedServices(
+            $provider,
+            $kind,
+            $map,
+            $serviceColumns,
+            $linked,
+            $reason,
+            false,
+            $result
+        );
+    }
+
+    private function linkedServices(string $table, array $serviceColumns, int $providerId, bool $requireRemoteId)
+    {
+        $select = array_values(array_intersect([
+            'id', 'remote_id', 'params', 'active', 'source', 'supplier_id',
+            'cost', 'profit', 'profit_type',
+            'use_remote_cost', 'use_remote_price', 'stop_on_api_change',
+        ], $serviceColumns));
+
+        $query = DB::table($table)->where('supplier_id', $providerId);
+        if ($requireRemoteId && in_array('remote_id', $serviceColumns, true)) {
+            $query->whereNotNull('remote_id')->where('remote_id', '<>', '');
+        }
+
+        return $query->get($select);
+    }
+
+    private function convertLinkedServices(
+        ApiProvider $provider,
+        string $kind,
+        array $map,
+        array $serviceColumns,
+        $services,
+        string $reason,
+        bool $recheckRemoteId,
+        array $result
+    ): array {
+        DB::transaction(function () use (
+            $provider,
+            $kind,
+            $map,
+            $serviceColumns,
+            $services,
+            $reason,
+            $recheckRemoteId,
+            &$result
+        ): void {
+            foreach ($services as $service) {
                 $serviceId = (int)($service->id ?? 0);
                 $remoteId = trim((string)($service->remote_id ?? ''));
-                if ($serviceId <= 0 || $remoteId === '') {
+                if ($serviceId <= 0) {
                     continue;
                 }
 
                 $update = [
                     'supplier_id' => null,
-                    'remote_id' => null,
                 ];
 
+                if (in_array('remote_id', $serviceColumns, true)) {
+                    $update['remote_id'] = null;
+                }
                 if (in_array('source', $serviceColumns, true)) {
                     $update['source'] = 1; // Manual
                 }
@@ -120,7 +191,7 @@ class LocalServiceManualFallback
                         'provider_type' => (string)($provider->type ?? ''),
                         'remote_id' => $remoteId,
                         'kind' => $kind,
-                        'reason' => 'remote_service_removed',
+                        'reason' => $reason,
                         'converted_at' => now()->toDateTimeString(),
                     ];
                     $update['params'] = json_encode($params, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
@@ -129,14 +200,17 @@ class LocalServiceManualFallback
                     $update['updated_at'] = now();
                 }
 
-                // Re-check the original mapping inside the transaction so a
-                // concurrent admin relink is never overwritten.
-                $changed = DB::table($map['services'])
+                // Re-check the provider link inside the transaction so a
+                // concurrent admin relink to another provider is not overwritten.
+                $query = DB::table($map['services'])
                     ->where('id', $serviceId)
-                    ->where('supplier_id', (int)$provider->id)
-                    ->where('remote_id', $remoteId)
-                    ->update($update);
+                    ->where('supplier_id', (int)$provider->id);
 
+                if ($recheckRemoteId && in_array('remote_id', $serviceColumns, true)) {
+                    $query->where('remote_id', $remoteId);
+                }
+
+                $changed = $query->update($update);
                 if ($changed < 1) {
                     continue;
                 }
@@ -148,14 +222,16 @@ class LocalServiceManualFallback
                     $kind,
                     $map['orders'],
                     $serviceId,
-                    $remoteId
+                    $remoteId,
+                    $reason
                 );
 
-                Log::warning('Provider service removed; local service converted to manual', [
+                Log::warning('Provider-linked local service converted to manual', [
                     'kind' => $kind,
                     'service_id' => $serviceId,
                     'provider_id' => (int)$provider->id,
                     'remote_id' => $remoteId,
+                    'reason' => $reason,
                 ]);
             }
         });
@@ -168,7 +244,8 @@ class LocalServiceManualFallback
         string $kind,
         string $ordersTable,
         int $serviceId,
-        string $previousRemoteId
+        string $previousRemoteId,
+        string $reason
     ): int {
         if (!Schema::hasTable($ordersTable)) {
             return 0;
@@ -209,7 +286,7 @@ class LocalServiceManualFallback
                 'provider_type' => (string)($provider->type ?? ''),
                 'previous_remote_service_id' => $previousRemoteId,
                 'kind' => $kind,
-                'reason' => 'remote_service_removed',
+                'reason' => $reason,
                 'converted_at' => now()->toDateTimeString(),
             ];
 
@@ -226,7 +303,9 @@ class LocalServiceManualFallback
             if (in_array('response', $columns, true)) {
                 $response = $this->decodeArray($order->response ?? null);
                 $response['type'] = 'info';
-                $response['message'] = 'SERVICE MOVED TO MANUAL - provider removed remote service';
+                $response['message'] = $reason === 'provider_deleted'
+                    ? 'SERVICE MOVED TO MANUAL - provider deleted'
+                    : 'SERVICE MOVED TO MANUAL - provider removed remote service';
                 $update['response'] = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             }
             if (in_array('updated_at', $columns, true)) {
@@ -251,6 +330,19 @@ class LocalServiceManualFallback
         }
 
         return $converted;
+    }
+
+    /**
+     * @return array{converted_services:int,converted_orders:int,skipped_empty_catalog:bool,service_ids:array<int,int>}
+     */
+    private function emptyResult(): array
+    {
+        return [
+            'converted_services' => 0,
+            'converted_orders' => 0,
+            'skipped_empty_catalog' => false,
+            'service_ids' => [],
+        ];
     }
 
     private function map(string $kind): ?array
