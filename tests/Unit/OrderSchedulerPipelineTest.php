@@ -13,6 +13,7 @@ class OrderSchedulerPipelineTest extends TestCase
         $output = Artisan::output();
 
         $this->assertSame(0, $exit, $output);
+        $this->assertStringContainsString('providers:sync --balance-only', $output);
         $this->assertStringContainsString('providers:sync', $output);
         $this->assertStringContainsString('orders:dispatch-pending-imei --limit=50', $output);
         $this->assertStringContainsString('orders:sync-imei --limit=50', $output);
@@ -32,6 +33,10 @@ class OrderSchedulerPipelineTest extends TestCase
         $console = (string) file_get_contents(base_path('routes/console.php'));
 
         $this->assertStringContainsString("commands: __DIR__.'/../routes/console.php'", $bootstrap);
+        $this->assertStringContainsString("Schedule::command('providers:sync --balance-only')", $console);
+        $this->assertStringContainsString('->everyFiveMinutes()', $console);
+        $this->assertStringContainsString("Schedule::command('providers:sync')", $console);
+        $this->assertStringContainsString('->hourlyAt(17)', $console);
         $this->assertStringContainsString("Schedule::command('orders:dispatch-pending-imei --limit=50')", $console);
         $this->assertStringNotContainsString("Schedule::command('orders:retry-imei", $console);
     }
