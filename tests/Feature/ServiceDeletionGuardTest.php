@@ -8,6 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Console\Output\BufferedOutput;
 use Tests\TestCase;
 
 class ServiceDeletionGuardTest extends TestCase
@@ -80,10 +81,12 @@ class ServiceDeletionGuardTest extends TestCase
             'service_id' => 12345,
         ]);
 
-        $exit = Artisan::call('services:reference-audit');
+        $output = new BufferedOutput();
+        $exit = Artisan::call('services:reference-audit', [], $output);
+        $text = $output->fetch();
 
         $this->assertSame(1, $exit);
-        $this->assertStringContainsString('orphan_order_service_refs', Artisan::output());
-        $this->assertStringContainsString('12345', Artisan::output());
+        $this->assertStringContainsString('orphan_order_service_refs', $text);
+        $this->assertStringContainsString('12345', $text);
     }
 }
