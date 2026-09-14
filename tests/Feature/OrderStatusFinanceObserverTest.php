@@ -118,6 +118,61 @@ class OrderStatusFinanceObserverTest extends TestCase
         $this->assertTrue((bool)data_get($fresh->request, 'recharged_with_negative_balance'));
     }
 
+    public function test_late_success_recharge_is_exactly_once_even_after_additional_success_updates(): void
+    {
+        $user = $this->user('80.0000');
+        $order = $this->order($user);
+
+        $order->status = 'rejected';
+        $order->processing = false;
+        $order->save();
+        $this->assertSame('100.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
+
+        $order = $order->fresh();
+        $order->status = 'success';
+        $order->save();
+        $this->assertSame('80.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
+
+        $fresh = $order->fresh();
+        $firstRechargedAt = data_get($fresh->request, 'recharged_at');
+        $this->assertNotEmpty($firstRechargedAt);
+        $this->assertSame('charged', data_get($fresh->request, 'financial_state'));
+
+        $fresh->comments = 'Provider result reviewed after late success';
+        $fresh->save();
+
+        $again = $fresh->fresh();
+        $this->assertSame('80.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
+        $this->assertSame($firstRechargedAt, data_get($again->request, 'recharged_at'));
+        $this->assertSame('charged', data_get($again->request, 'financial_state'));
+    }
+
+    public function test_finance_audit_is_clean_after_late_success_recharges_refunded_order(): void
+    {
+        $user = $this->user('80.0000');
+        $order = $this->order($user);
+
+        $order->status = 'rejected';
+        $order->processing = false;
+        $order->save();
+
+        $this->artisan('orders:finance-audit', ['--json' => true])
+            ->expectsOutputToContain('"rejected_or_cancelled_not_refunded":0')
+            ->assertSuccessful();
+
+        $order = $order->fresh();
+        $order->status = 'success';
+        $order->save();
+
+        $this->artisan('orders:finance-audit', ['--json' => true])
+            ->expectsOutputToContain('"active_or_success_refunded":0')
+            ->expectsOutputToContain('"rejected_or_cancelled_not_refunded":0')
+            ->assertSuccessful();
+
+        $this->assertSame('80.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
+        $this->assertSame('charged', data_get($order->fresh()->request, 'financial_state'));
+    }
+
     public function test_non_status_updates_do_not_repeat_financial_actions(): void
     {
         $user = $this->user('80.0000');
