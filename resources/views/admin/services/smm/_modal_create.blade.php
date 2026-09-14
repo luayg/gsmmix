@@ -535,6 +535,8 @@
 
   btnAdd?.addEventListener('click', () => addField(form));
 
+  @include('admin.services.partials.saved-fields-hook', ['kind' => 'smm'])
+
   window.__smmServiceApplyRemoteFields__ = function(scope, additionalFields){
     try{
       if (!scope || !Array.isArray(additionalFields)) return;

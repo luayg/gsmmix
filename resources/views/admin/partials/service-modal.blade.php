@@ -723,7 +723,8 @@
     const apply  = window[`__${t}ServiceApplyRemoteFields__`] || window.__serverServiceApplyRemoteFields__ || null;
     const setMain= window[`__${t}ServiceSetMainField__`]      || window.__serverServiceSetMainField__      || null;
     const setExt = window[`__${t}ServiceSetAllowedExtensions__`] || null;
-    return { apply, setMain, setExt };
+    const restore = window[`__${t}ServiceRestoreSavedFields__`] || null;
+    return { apply, setMain, setExt, restore };
   }
 
   // ==========================================================
@@ -1142,20 +1143,12 @@
       form.querySelector('#fileFormatPreview').value = String(params.format);
     }
 
-    const custom = Array.isArray(params.custom_fields) ? params.custom_fields : [];
-    if(custom.length){
-      const additionalFields = custom.map(cf => ({
-        fieldname: cf.name ?? '',
-        fieldtype: cf.field_type ?? cf.type ?? 'text',
-        required: (cf.required ? 'on' : ''),
-        description: cf.description ?? '',
-        fieldoptions: cf.options ?? '',
-      }));
-
-      const hooks = resolveHooks(serviceType);
-      hooks.apply?.(body, additionalFields);
-      openGeneralTab();
-    }
+    const custom = Array.isArray(s.custom_fields) && s.custom_fields.length
+      ? s.custom_fields
+      : (Array.isArray(params.custom_fields) ? params.custom_fields : []);
+    const hooks = resolveHooks(serviceType);
+    hooks.restore?.(body, custom);
+    if(custom.length) openGeneralTab();
 
     const userGroups = await loadUserGroups();
     buildPricingTable(body, userGroups);

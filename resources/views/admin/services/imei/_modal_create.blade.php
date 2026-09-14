@@ -574,6 +574,8 @@
   btnAdd?.addEventListener('click', () => addField(form));
 
   // ===== Hooks (التي نحتاجها) =====
+  @include('admin.services.partials.saved-fields-hook', ['kind' => 'imei'])
+
   window.__imeiServiceApplyRemoteFields__ = function(scope, additionalFields){
     try{
       if (!scope || !Array.isArray(additionalFields)) return;
