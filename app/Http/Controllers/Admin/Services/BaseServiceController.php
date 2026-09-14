@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 abstract class BaseServiceController extends Controller
 {
@@ -287,12 +288,15 @@ abstract class BaseServiceController extends Controller
             'api_service_remote_id' => 'nullable|integer',
 
             'group_prices' => 'nullable|array',
+            'group_prices.*' => 'array',
             'group_prices.*.price' => 'nullable|numeric|min:0',
             'group_prices.*.discount' => 'nullable|numeric|min:0',
             'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
 
             'custom_fields_json' => 'nullable|string',
         ]);
+
+        $this->validateGroupPrices($v['group_prices'] ?? []);
 
         $alias = $v['alias'] ?? null;
         if (!$alias) $alias = Str::slug($v['name'] ?? '');
@@ -472,12 +476,15 @@ abstract class BaseServiceController extends Controller
             'api_service_remote_id' => 'nullable|integer',
 
             'group_prices' => 'nullable|array',
+            'group_prices.*' => 'array',
             'group_prices.*.price' => 'nullable|numeric|min:0',
             'group_prices.*.discount' => 'nullable|numeric|min:0',
             'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
 
             'custom_fields_json' => 'nullable|string',
         ]);
+
+        $this->validateGroupPrices($v['group_prices'] ?? []);
 
         $customFields = $this->normalizeCustomFields(
             $request->input('custom_fields'),
@@ -670,6 +677,35 @@ abstract class BaseServiceController extends Controller
     // =========================
     // Helpers from your existing Base
     // =========================
+    private function validateGroupPrices(array $groupPrices): void
+    {
+        if ($groupPrices === []) {
+            return;
+        }
+
+        $existingGroups = DB::table('groups')->whereIn('id', array_keys($groupPrices))
+            ->pluck('id')->map(fn ($id) => (string)$id)->all();
+        $errors = [];
+        foreach ($groupPrices as $groupId => $priceRow) {
+            $key = "group_prices.{$groupId}";
+            if (!ctype_digit((string)$groupId) || (int)$groupId < 1
+                || !in_array((string)$groupId, $existingGroups, true)) {
+                $errors[$key . '.group_id'] = 'Select an existing customer group.';
+            }
+            $price = (float)($priceRow['price'] ?? 0);
+            $discount = (float)($priceRow['discount'] ?? 0);
+            $type = (int)($priceRow['discount_type'] ?? 1);
+            if ($type === 2 && $discount > 100) {
+                $errors[$key . '.discount'] = 'Percentage discount cannot exceed 100.';
+            } elseif ($type === 1 && $discount > $price) {
+                $errors[$key . '.discount'] = 'Fixed discount cannot exceed the group price.';
+            }
+        }
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
     protected function saveGroupPrices(int $serviceId, array $groupPrices): void
     {
         if (!class_exists(ServiceGroupPrice::class)) return;
