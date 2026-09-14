@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class GroupController extends Controller
 {
@@ -25,13 +26,11 @@ class GroupController extends Controller
 
             $recordsTotal = (clone $base)->count();
 
-            // بحث
             $search = trim((string) data_get($r->input('search'), 'value', ''));
             if ($search !== '') {
                 $base->where('name', 'like', "%{$search}%");
             }
 
-            // ترتيب
             $map = [ 0=>'id', 1=>'name', 2=>null, 3=>'created_at' ];
             $col = (int) $r->input('order.0.column', 0);
             $dir = strtolower((string)$r->input('order.0.dir','asc')) === 'desc' ? 'desc' : 'asc';
@@ -40,14 +39,12 @@ class GroupController extends Controller
 
             $recordsFiltered = (clone $base)->count();
 
-            // ترقيم
             $start  = max(0,(int)$r->input('start',0));
             $length = (int)$r->input('length',10);
             if ($length < 1 || $length > 500) $length = 10;
 
             $rows = $base->skip($start)->take($length)->get();
 
-            // جهّز عدد المستخدمين لكل جروب (اختياري/سريع)
             $counts = User::query()
                 ->select('group_id', DB::raw('COUNT(*) as c'))
                 ->whereIn('group_id', $rows->pluck('id')->filter())
@@ -89,13 +86,11 @@ class GroupController extends Controller
         ]);
     }
 
-    /* ===== مودالات Ajax (Blade تُعرض داخل #ajaxModal) ===== */
     public function modalCreate()  { return view('admin.groups.modals.create'); }
     public function modalView(Group $group)   { return view('admin.groups.modals.view', compact('group')); }
     public function modalEdit(Group $group)   { return view('admin.groups.modals.edit', compact('group')); }
     public function modalDelete(Group $group) { return view('admin.groups.modals.delete', compact('group')); }
 
-    /* ===== CRUD عبر Ajax ===== */
     public function store(Request $r)
     {
         $data = $r->validate([
@@ -122,24 +117,36 @@ class GroupController extends Controller
     }
 
     public function options(Request $r)
-{
-    $q = trim((string)$r->input('q', ''));
+    {
+        $q = trim((string)$r->input('q', ''));
 
-    $rows = Group::query()
-        ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
-        ->orderBy('id', 'asc')
-        ->limit(200)
-        ->get(['id','name']);
+        $rows = Group::query()
+            ->when($q !== '', fn($qq) => $qq->where('name', 'like', "%{$q}%"))
+            ->orderBy('id', 'asc')
+            ->limit(200)
+            ->get(['id','name']);
 
-    return response()->json($rows);
-}
-
-
-
+        return response()->json($rows);
+    }
 
     public function destroy(Group $group)
     {
+        $usersCount = User::where('group_id', $group->id)->count();
+        $pricesCount = Schema::hasTable('service_group_prices')
+            ? DB::table('service_group_prices')->where('group_id', $group->id)->count()
+            : 0;
+
+        if ($usersCount > 0 || $pricesCount > 0) {
+            return response()->json([
+                'ok' => false,
+                'msg' => "Can't delete this group: {$usersCount} user(s) and {$pricesCount} service price rule(s) still reference it.",
+                'users' => $usersCount,
+                'service_group_prices' => $pricesCount,
+            ], 409);
+        }
+
         $group->delete();
+
         return response()->json(['ok'=>true,'msg'=>'Group deleted']);
     }
 }
