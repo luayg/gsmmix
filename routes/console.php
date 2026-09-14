@@ -17,10 +17,19 @@ Artisan::command('inspire', function () {
 | Keep one automatic submission path per order type. The legacy
 | orders:retry-imei command remains available for manual operator use only.
 |
+| Provider balance refresh is intentionally lightweight and frequent, while
+| full catalog/service synchronization is less frequent so provider APIs are
+| not hit with expensive catalog requests every minute.
+|
 */
 
+Schedule::command('providers:sync --balance-only')
+    ->everyFiveMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
 Schedule::command('providers:sync')
-    ->everyMinute()
+    ->hourlyAt(17)
     ->withoutOverlapping()
     ->onOneServer();
 
