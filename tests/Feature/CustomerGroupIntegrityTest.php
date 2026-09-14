@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Http\Controllers\Admin\GroupController;
 use App\Models\Group;
 use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -14,7 +13,32 @@ use Tests\TestCase;
 
 class CustomerGroupIntegrityTest extends TestCase
 {
-    use RefreshDatabase;
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'database.default' => 'sqlite',
+            'database.connections.sqlite.database' => ':memory:',
+        ]);
+        DB::purge('sqlite');
+
+        Schema::create('groups', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+        });
+
+        Schema::create('users', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('group_id')->nullable();
+        });
+
+        Schema::create('service_group_prices', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('group_id');
+        });
+    }
 
     public function test_group_audit_reports_clean_references(): void
     {
@@ -25,39 +49,11 @@ class CustomerGroupIntegrityTest extends TestCase
         ]);
 
         $userId = DB::table('users')->insertGetId([
-            'name' => 'Test User',
-            'email' => 'group-audit@example.test',
-            'username' => 'group-audit',
-            'password' => bcrypt('password'),
             'group_id' => $groupId,
-            'balance' => 0,
-            'status' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
-        if (!Schema::hasTable('service_group_prices')) {
-            Schema::create('service_group_prices', function (Blueprint $table): void {
-                $table->id();
-                $table->unsignedBigInteger('service_id');
-                $table->string('service_type');
-                $table->unsignedBigInteger('group_id');
-                $table->decimal('price', 12, 4)->default(0);
-                $table->decimal('discount', 12, 4)->default(0);
-                $table->tinyInteger('discount_type')->default(1);
-                $table->timestamps();
-            });
-        }
-
         DB::table('service_group_prices')->insert([
-            'service_id' => 999,
-            'service_type' => 'imei',
             'group_id' => $groupId,
-            'price' => 1,
-            'discount' => 0,
-            'discount_type' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
         ]);
 
         $output = new BufferedOutput();
@@ -75,20 +71,19 @@ class CustomerGroupIntegrityTest extends TestCase
         $group = Group::create(['name' => 'Wholesale']);
 
         DB::table('users')->insert([
-            'name' => 'Linked User',
-            'email' => 'linked-group@example.test',
-            'username' => 'linked-group',
-            'password' => bcrypt('password'),
             'group_id' => $group->id,
-            'balance' => 0,
-            'status' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
+        ]);
+
+        DB::table('service_group_prices')->insert([
+            'group_id' => $group->id,
         ]);
 
         $response = app(GroupController::class)->destroy($group);
 
         $this->assertSame(409, $response->getStatusCode());
+        $payload = $response->getData(true);
+        $this->assertSame(1, $payload['users']);
+        $this->assertSame(1, $payload['service_group_prices']);
         $this->assertDatabaseHas('groups', ['id' => $group->id]);
     }
 
