@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Models\ApiProvider;
 use App\Models\FileOrder;
 use App\Models\FileService;
 use App\Models\ImeiOrder;
@@ -14,6 +15,7 @@ use App\Models\User;
 use App\Observers\FileOrderGroupPricingObserver;
 use App\Observers\OrderProviderMetadataSanitizerObserver;
 use App\Observers\OrderStatusFinanceObserver;
+use App\Observers\ProviderDeletionFallbackObserver;
 use App\Observers\ServerOrderQuantityBillingObserver;
 use App\Observers\ServiceDeletionGuardObserver;
 use App\Support\AdminPermissions;
@@ -36,6 +38,8 @@ class AppServiceProvider extends ServiceProvider
         Route::aliasMiddleware('role', RoleMiddleware::class);
         Route::aliasMiddleware('permission', PermissionMiddleware::class);
         Route::aliasMiddleware('role_or_permission', RoleOrPermissionMiddleware::class);
+
+        ApiProvider::observe(ProviderDeletionFallbackObserver::class);
 
         ServerOrder::observe(ServerOrderQuantityBillingObserver::class);
         FileOrder::observe(FileOrderGroupPricingObserver::class);
