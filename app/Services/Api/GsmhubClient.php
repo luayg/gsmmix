@@ -40,7 +40,7 @@ class GsmhubClient
 
         $candidates = [];
 
-        // ✅ Preferred (document-friendly): /public/api.php
+        // Preferred (document-friendly): /public/api.php
         if (Str::endsWith($base, '/public')) {
             $candidates[] = $base . '/api.php';
         }
@@ -70,6 +70,31 @@ class GsmhubClient
         }
 
         return $unique;
+    }
+
+    /**
+     * Return the endpoint used for request metadata without exposing credentials.
+     * Successful calls cache a doc-friendly resolved endpoint in provider params;
+     * before the first success, return the preferred candidate.
+     */
+    public function endpoint(): string
+    {
+        $params = $this->provider->params ?? [];
+        if (is_string($params) && trim($params) !== '') {
+            $decoded = json_decode($params, true);
+            $params = is_array($decoded) ? $decoded : [];
+        }
+        if (!is_array($params)) {
+            $params = [];
+        }
+
+        $resolved = trim((string)($params['gsmhub_resolved_endpoint'] ?? ''));
+        if ($resolved !== '') {
+            return $resolved;
+        }
+
+        $candidates = $this->endpointCandidates();
+        return (string)($candidates[0] ?? rtrim($this->baseUrl, '/'));
     }
 
     public function call(string $action, array $params = []): array
@@ -131,9 +156,7 @@ class GsmhubClient
                 throw new ProviderApiException('gsmhub', $action, $data, (string)$msg);
             }
 
-            // ✅ SUCCESS:
-            // Do NOT persist resolved endpoint outside /public to keep doc-consistency.
-            // If you still want caching, cache ONLY if url starts with baseUrl (doc-friendly).
+            // SUCCESS: cache only endpoints under the configured base URL.
             $this->saveResolvedEndpointIfDocFriendly($url);
 
             return $data;
