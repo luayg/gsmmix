@@ -44,7 +44,7 @@ class ServiceGroupController extends Controller
     {
         $data = $request->validate([
             'name'     => ['required','string'],
-            'type'     => ['required','in:imei,server,file,imei_service,file_service,server_service'],
+            'type'     => ['required','in:imei,server,file,smm,imei_service,file_service,server_service,smm_service'],
             'ordering' => ['nullable','integer','min:1'],
         ]);
 
@@ -65,7 +65,7 @@ class ServiceGroupController extends Controller
     {
         $data = $request->validate([
             'name'     => ['required','string'],
-            'type'     => ['required','in:imei,server,file,imei_service,file_service,server_service'],
+            'type'     => ['required','in:imei,server,file,smm,imei_service,file_service,server_service,smm_service'],
             'ordering' => ['nullable','integer','min:1'],
         ]);
 
@@ -94,6 +94,7 @@ class ServiceGroupController extends Controller
             'imei', 'imei_service'       => 'imei_service',
             'file', 'file_service'       => 'file_service',
             'server', 'server_service'   => 'server_service',
+            'smm', 'smm_service'         => 'smm_service',
             default                      => 'server_service',
         };
     }
@@ -103,7 +104,8 @@ class ServiceGroupController extends Controller
         $c1 = (int) DB::table('imei_services')->where('group_id', $groupId)->count();
         $c2 = (int) DB::table('server_services')->where('group_id', $groupId)->count();
         $c3 = (int) DB::table('file_services')->where('group_id', $groupId)->count();
-        return $c1 + $c2 + $c3;
+        $c4 = (int) DB::table('smm_services')->where('group_id', $groupId)->count();
+        return $c1 + $c2 + $c3 + $c4;
     }
 
     public function modalCreate()
@@ -124,10 +126,10 @@ public function modalDelete(\App\Models\ServiceGroup $group)
 
 
     /**
-     * ✅ AJAX: إرجاع الخيارات بحسب النوع (imei|server|file)
+     * ✅ AJAX: إرجاع الخيارات بحسب النوع (imei|server|file|smm)
      * IMPORTANT:
-     * - جدول service_groups يخزن النوع بصيغة: imei_service/server_service/file_service
-     * - بينما المودال يرسل type بصيغة: imei/server/file
+     * - جدول service_groups يخزن النوع بصيغة: imei_service/server_service/file_service/smm_service
+     * - بينما المودال قد يرسل type بصيغة مختصرة: imei/server/file/smm
      * لذلك نعمل normalize قبل الفلترة.
      */
     public function options(Request $request)
@@ -135,7 +137,7 @@ public function modalDelete(\App\Models\ServiceGroup $group)
         $typeIn = strtolower((string) $request->get('type', ''));
 
         // فقط الأنواع المسموحة (لو غير ذلك رجّع كل الجروبات)
-        $allowed = ['imei','imei_service','server','server_service','file','file_service'];
+        $allowed = ['imei','imei_service','server','server_service','file','file_service','smm','smm_service'];
 
         $q = ServiceGroup::query();
 
