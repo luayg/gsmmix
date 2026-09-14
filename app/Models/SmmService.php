@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Casts\AsCollection;
 use Illuminate\Database\Eloquent\Model;
 
 class SmmService extends Model
@@ -43,7 +44,10 @@ class SmmService extends Model
         'local_source_id' => 'int',
         'ordering' => 'int',
 
-        'name' => 'array',
+        // Shared order views stringify translatable service names before
+        // selecting en/fallback. A Collection stays array-accessible while
+        // also providing safe JSON string conversion, unlike a plain array.
+        'name' => AsCollection::class,
         'time' => 'array',
         'info' => 'array',
         'main_field' => 'array',
