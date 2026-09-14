@@ -62,6 +62,35 @@ class ServiceCustomFieldUpdateTest extends SecurityTestCase
         $this->actingAs($this->user('Administrator'));
     }
 
+    public function test_malformed_create_fields_are_rejected_before_any_rows_are_written(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            foreach (['custom_fields', 'custom_fields_json'] as $key) {
+                foreach (['{broken', '{}', 'null', '["invalid"]', '[{}]', '[{"name":"X","options":[{}]}]'] as $value) {
+                    $this->postJson(route("admin.services.{$kind}.store"), $this->payload() + [$key => $value])
+                        ->assertUnprocessable()->assertJsonValidationErrors($key);
+                    $this->assertDatabaseCount($kind . '_services', 0);
+                    $this->assertDatabaseCount('custom_fields', 0);
+                    $this->assertDatabaseCount('service_group_prices', 0);
+                }
+            }
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_create_explicit_empty_list_wins_over_alternate_json_fields(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $response = $this->postJson(route("admin.services.{$kind}.store"), $this->payload() + [
+                'custom_fields' => [],
+                'custom_fields_json' => '[{"name":"Ignored","input":"ignored"}]',
+            ])->assertSuccessful();
+            $this->assertDatabaseCount('custom_fields', 0);
+            $raw = DB::table($kind . '_services')->where('id', $response->json('id'))->value('params');
+            $this->assertSame([], json_decode($raw, true)['custom_fields']);
+        }
+    }
+
     public function test_omission_preserves_fields_and_params_even_with_empty_params_input(): void
     {
         foreach (['imei', 'server', 'file', 'smm'] as $kind) {
