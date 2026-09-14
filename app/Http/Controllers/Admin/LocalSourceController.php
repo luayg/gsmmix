@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\LocalSource;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class LocalSourceController extends Controller
@@ -56,6 +58,23 @@ class LocalSourceController extends Controller
 
     public function destroy(LocalSource $source)
     {
+        $replyCount = Schema::hasTable('local_replies')
+            ? DB::table('local_replies')->where('local_source_id', $source->id)->count()
+            : 0;
+
+        $orderCount = Schema::hasTable('product_orders') && Schema::hasColumn('product_orders', 'local_source_id')
+            ? DB::table('product_orders')->where('local_source_id', $source->id)->count()
+            : 0;
+
+        if ($replyCount > 0 || $orderCount > 0) {
+            return response()->json([
+                'ok' => false,
+                'msg' => "Can't delete this source: {$replyCount} reply/replies and {$orderCount} product order(s) still reference it.",
+                'replies' => $replyCount,
+                'product_orders' => $orderCount,
+            ], 409);
+        }
+
         $source->delete();
 
         return response()->json(['ok' => true, 'msg' => 'Source deleted']);
