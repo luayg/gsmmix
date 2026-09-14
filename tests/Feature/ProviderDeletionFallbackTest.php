@@ -4,6 +4,9 @@ namespace Tests\Feature;
 
 use App\Exceptions\ProviderHasActiveOrdersException;
 use App\Models\ApiProvider;
+use App\Http\Controllers\Admin\ApiProvidersController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -153,4 +156,81 @@ class ProviderDeletionFallbackTest extends TestCase
             'remote_id' => '145',
         ]);
     }
+
+    public function test_controller_refusal_rolls_back_catalog_purge_for_waiting_and_inprogress_orders(): void
+    {
+        Http::preventStrayRequests();
+        $this->createRemoteCatalogTables();
+        foreach (['waiting', 'inprogress'] as $status) {
+            $provider = ApiProvider::create(['name' => 'Busy ' . $status, 'type' => 'webx', 'active' => 1]);
+            $this->seedCatalogs((int)$provider->id);
+            DB::table('server_orders')->insert(['supplier_id' => $provider->id, 'status' => $status]);
+            try {
+                app(ApiProvidersController::class)->destroy(Request::create('/', 'DELETE'), $provider);
+                $this->fail('Expected active-order guard.');
+            } catch (ProviderHasActiveOrdersException $e) {
+                $this->assertSame(1, $e->activeOrderCount);
+            }
+            $this->assertDatabaseHas('api_providers', ['id' => $provider->id]);
+            foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+                $this->assertDatabaseHas('remote_' . $kind . '_services', ['api_provider_id' => $provider->id]);
+            }
+            $this->assertDatabaseHas('server_orders', ['supplier_id' => $provider->id, 'status' => $status]);
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_controller_delete_preserves_history_and_other_provider_catalogs(): void
+    {
+        Http::preventStrayRequests();
+        $this->createRemoteCatalogTables();
+        $provider = ApiProvider::create(['name' => 'Retired', 'type' => 'webx', 'active' => 1]);
+        $other = ApiProvider::create(['name' => 'Keep', 'type' => 'webx', 'active' => 1]);
+        $this->seedCatalogs((int)$provider->id);
+        $this->seedCatalogs((int)$other->id);
+        $serviceId = DB::table('server_services')->insertGetId([
+            'name' => 'Preserve service', 'cost' => 12.3456, 'profit' => 4.5,
+            'source' => 2, 'supplier_id' => $provider->id, 'remote_id' => '115', 'active' => 1,
+        ]);
+        $orderId = DB::table('server_orders')->insertGetId([
+            'service_id' => $serviceId, 'supplier_id' => $provider->id,
+            'remote_id' => 'HISTORICAL-1', 'status' => 'success',
+        ]);
+        $response = app(ApiProvidersController::class)->destroy(Request::create('/', 'DELETE'), $provider);
+        $this->assertSame(302, $response->getStatusCode());
+        $this->assertDatabaseMissing('api_providers', ['id' => $provider->id]);
+        $this->assertDatabaseHas('api_providers', ['id' => $other->id]);
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $this->assertDatabaseMissing('remote_' . $kind . '_services', ['api_provider_id' => $provider->id]);
+            $this->assertDatabaseHas('remote_' . $kind . '_services', ['api_provider_id' => $other->id]);
+        }
+        $this->assertDatabaseHas('server_services', [
+            'id' => $serviceId, 'name' => 'Preserve service', 'source' => 1,
+            'supplier_id' => null, 'remote_id' => null, 'active' => 1,
+            'cost' => 12.3456, 'profit' => 4.5,
+        ]);
+        $this->assertDatabaseHas('server_orders', [
+            'id' => $orderId, 'service_id' => $serviceId, 'supplier_id' => $provider->id,
+            'remote_id' => 'HISTORICAL-1', 'status' => 'success',
+        ]);
+        Http::assertNothingSent();
+    }
+
+    private function createRemoteCatalogTables(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            Schema::create('remote_' . $kind . '_services', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('api_provider_id');
+            });
+        }
+    }
+
+    private function seedCatalogs(int $providerId): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            DB::table('remote_' . $kind . '_services')->insert(['api_provider_id' => $providerId]);
+        }
+    }
+
 }
