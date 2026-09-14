@@ -3,14 +3,19 @@
 namespace App\Providers;
 
 use App\Models\FileOrder;
+use App\Models\FileService;
 use App\Models\ImeiOrder;
+use App\Models\ImeiService;
 use App\Models\ServerOrder;
+use App\Models\ServerService;
 use App\Models\SmmOrder;
+use App\Models\SmmService;
 use App\Models\User;
 use App\Observers\FileOrderGroupPricingObserver;
 use App\Observers\OrderProviderMetadataSanitizerObserver;
 use App\Observers\OrderStatusFinanceObserver;
 use App\Observers\ServerOrderQuantityBillingObserver;
+use App\Observers\ServiceDeletionGuardObserver;
 use App\Support\AdminPermissions;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
@@ -37,6 +42,10 @@ class AppServiceProvider extends ServiceProvider
         foreach ([ImeiOrder::class, ServerOrder::class, FileOrder::class, SmmOrder::class] as $orderModel) {
             $orderModel::observe(OrderProviderMetadataSanitizerObserver::class);
             $orderModel::observe(OrderStatusFinanceObserver::class);
+        }
+
+        foreach ([ImeiService::class, ServerService::class, FileService::class, SmmService::class] as $serviceModel) {
+            $serviceModel::observe(ServiceDeletionGuardObserver::class);
         }
 
         Gate::before(function (User $user, string $ability): ?bool {
