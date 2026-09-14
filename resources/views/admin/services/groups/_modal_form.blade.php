@@ -22,14 +22,14 @@
       <div class="col-md-3">
         <label class="form-label">Type</label>
         <select class="form-select" name="type" required>
-          @foreach(['imei','server','file'] as $t)
-            <option value="{{ $t }}" @selected(($group->type ?? '') === $t)>{{ strtoupper($t) }}</option>
+          @foreach(['imei_service','server_service','file_service','smm_service'] as $t)
+            <option value="{{ $t }}" @selected(str_replace('_service', '', strtolower($group->type ?? 'imei_service')) . '_service' === $t)>{{ strtoupper($t) }}</option>
           @endforeach
         </select>
       </div>
       <div class="col-md-3">
         <label class="form-label">Ordering</label>
-        <input type="number" class="form-control" name="ordering" value="{{ (int)($group->ordering ?? 0) }}">
+        <input type="number" class="form-control" name="ordering" min="1" value="{{ (int)($group->ordering ?? 1) }}">
       </div>
       <div class="col-md-3">
         <label class="form-label">Active</label>

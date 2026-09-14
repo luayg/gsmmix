@@ -53,4 +53,11 @@ class ServiceGroupTypeUpdateTest extends SecurityTestCase
         $this->putJson(route('admin.services.groups.update', 2), ['name' => 'Moved', 'type' => 'file'])->assertRedirect();
         $this->assertDatabaseHas('service_groups', ['id' => 2, 'name' => 'Moved', 'type' => 'file_service']);
     }
+
+    public function test_smm_group_forms_keep_the_existing_canonical_kind_selected(): void
+    {
+        DB::table('service_groups')->insert(['id' => 1, 'name' => 'SMM group', 'type' => 'smm_service']);
+        $this->get(route('admin.services.groups.edit', 1))->assertOk()->assertSee('value="smm_service" selected', false);
+        $this->get(route('admin.services.groups.modal.edit', 1))->assertOk()->assertSee('value="smm_service" selected', false);
+    }
 }

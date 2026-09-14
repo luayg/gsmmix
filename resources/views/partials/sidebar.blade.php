@@ -8,6 +8,13 @@
     return false;
   };
 
+  $navActive = static function (array $patterns): string {
+    foreach ($patterns as $pattern) {
+      if (request()->routeIs($pattern) || request()->is($pattern)) return 'active';
+    }
+    return '';
+  };
+
   use Illuminate\Support\Facades\Route as R;
 
   // روابط مرنة: إن وُجد اسم روت نستخدمه، وإلا نستخدم المسار العامل new service-management
@@ -119,35 +126,35 @@
         <ul class="nav flex-column">
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/services-groups*','admin.services.groups.*']) }}"
+            <a class="nav-link {{ $navActive(['admin/service-management/services-groups*','admin.services.groups.*']) }}"
                href="{{ $groupsHref }}">
               <i class="fas fa-layer-group"></i> Services groups
             </a>
           </li>
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/imei-services*','admin.services.imei.*']) }}"
+            <a class="nav-link {{ $navActive(['admin/service-management/imei-services*','admin.services.imei.*']) }}"
                href="{{ $imeiHref }}">
               <i class="fas fa-mobile-alt"></i> IMEI Service
             </a>
           </li>
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/server-services*','admin.services.server.*']) }}"
+            <a class="nav-link {{ $navActive(['admin/service-management/server-services*','admin.services.server.*']) }}"
                href="{{ $serverHref }}">
               <i class="fas fa-server"></i> Server Service
             </a>
           </li>
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/file-services*','admin.services.file.*']) }}"
+            <a class="nav-link {{ $navActive(['admin/service-management/file-services*','admin.services.file.*']) }}"
                href="{{ $fileHref }}">
               <i class="fas fa-file-alt"></i> File Service
             </a>
           </li>
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/smm-services*','admin.services.smm.*']) }}"
+            <a class="nav-link {{ $navActive(['admin/service-management/smm-services*','admin.services.smm.*']) }}"
                href="{{ $smmHref }}">
               <i class="fas fa-share-alt"></i> SMM Service
             </a>

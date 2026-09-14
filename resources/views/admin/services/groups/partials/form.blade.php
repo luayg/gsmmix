@@ -9,10 +9,10 @@
 
   <div class="col-md-3">
     <label class="form-label">Type</label>
-    @php $types = ['imei' => 'IMEI', 'server' => 'Server', 'file' => 'File']; @endphp
+    @php $types = ['imei_service' => 'IMEI', 'server_service' => 'Server', 'file_service' => 'File', 'smm_service' => 'SMM']; @endphp
     <select name="type" class="form-select">
       @foreach($types as $k => $v)
-        <option value="{{ $k }}" @selected(old('type', $group->type ?? '') == $k)>{{ $v }}</option>
+        <option value="{{ $k }}" @selected(str_replace('_service', '', strtolower(old('type', $group->type ?? 'imei_service'))) . '_service' === $k)>{{ $v }}</option>
       @endforeach
     </select>
     @error('type') <div class="text-danger small">{{ $message }}</div> @enderror
