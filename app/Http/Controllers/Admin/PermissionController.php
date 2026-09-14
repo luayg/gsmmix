@@ -4,6 +4,8 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Permission;
 
 class PermissionController extends Controller
@@ -34,7 +36,6 @@ class PermissionController extends Controller
             $q->where('name', 'like', "%{$search}%");
         }
 
-        // 0:id,1:name,2:guard_name,3:roles_count,4:users_count,5:created_at
         $map = [0=>'id',1=>'name',2=>'guard_name',3=>'roles_count',4=>'users_count',5=>'created_at'];
         $col = (int) $r->input('order.0.column', 0);
         $dir = strtolower((string) $r->input('order.0.dir','asc')) === 'desc' ? 'desc' : 'asc';
@@ -100,6 +101,22 @@ class PermissionController extends Controller
     /** حذف صلاحية */
     public function destroy(Permission $perm)
     {
+        $roleAssignments = Schema::hasTable('role_has_permissions')
+            ? DB::table('role_has_permissions')->where('permission_id', $perm->id)->count()
+            : 0;
+        $directAssignments = Schema::hasTable('model_has_permissions')
+            ? DB::table('model_has_permissions')->where('permission_id', $perm->id)->count()
+            : 0;
+
+        if ($roleAssignments > 0 || $directAssignments > 0) {
+            return response()->json([
+                'ok' => false,
+                'msg' => "Permission cannot be deleted while assigned to {$roleAssignments} role(s) and {$directAssignments} model(s). Remove the assignments first.",
+                'roles' => $roleAssignments,
+                'models' => $directAssignments,
+            ], 409);
+        }
+
         $perm->delete();
         return response()->json(['ok' => true, 'msg' => 'Permission deleted']);
     }
