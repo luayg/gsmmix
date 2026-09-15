@@ -23,6 +23,8 @@
     .store-product-toggle{display:flex;align-items:center;gap:.5rem;margin:.55rem 0}
     .store-product-toggle .form-check-input{margin-top:0}
     .store-product-info-editor .note-editor{margin-bottom:0}
+    .product-pricing-title{background:#f1f1f1;padding:.45rem .65rem;font-weight:600;margin-bottom:.5rem}
+    .product-pricing-row{border-bottom:1px solid #e5e7eb;padding-bottom:.75rem;margin-bottom:.75rem}
   </style>
 
   <input type="hidden" name="description" id="infoHidden" value="">
@@ -208,6 +210,41 @@
               <label class="form-check-label" for="productDeviceBasedCreate">Device based product</label>
             </div>
           </div>
+          <div class="col-12"><hr class="my-1"></div>
+          <div class="col-12">
+            <h6 class="mb-2">Groups</h6>
+            <div id="productGroupsPricingCreate">
+              @forelse($customerGroups as $group)
+                <div class="product-pricing-row" data-product-group-price>
+                  <div class="product-pricing-title">{{ $group->name }}</div>
+                  <div class="row g-2">
+                    <div class="col-md-6">
+                      <label class="form-label small">Price <span class="text-muted" data-price-mode-label>Automatic</span></label>
+                      <input type="hidden" name="group_prices[{{ $group->id }}][auto_price]" value="1" data-auto-price-input>
+                      <div class="input-group input-group-sm">
+                        <input type="number" step="0.0001" min="0" name="group_prices[{{ $group->id }}][price]" value="0.0000" class="form-control" data-group-price data-auto-price="1">
+                        <span class="input-group-text">Credits</span>
+                      </div>
+                      <div class="small text-muted mt-1">Final: <span data-group-final>0.0000</span> Credits</div>
+                    </div>
+                    <div class="col-md-6">
+                      <label class="form-label small">Discount</label>
+                      <div class="input-group input-group-sm">
+                        <input type="number" step="0.0001" min="0" name="group_prices[{{ $group->id }}][discount]" value="0.0000" class="form-control" data-group-discount>
+                        <select name="group_prices[{{ $group->id }}][discount_type]" class="form-select" data-group-discount-type>
+                          <option value="1">Credits</option><option value="2">Percent</option>
+                        </select>
+                        <button type="button" class="btn btn-light" data-group-reset>Reset</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              @empty
+                <div class="text-muted">No customer groups found.</div>
+              @endforelse
+            </div>
+            <div class="form-text">Set special prices or discounts per customer group for this product.</div>
+          </div>
         </div>
       </div>
 
@@ -250,10 +287,6 @@
     imagePreview.classList.remove('d-none');
   });
 
-  if (window.initModalEditors) {
-    window.initModalEditors(document.currentScript.closest('.modal-content') || document);
-  }
-
   const typeSelect = document.getElementById('productServiceTypeCreate');
   const serviceSelect = document.getElementById('productServiceIdCreate');
   const sourceSelect = document.getElementById('productSourceTypeCreate');
@@ -271,7 +304,38 @@
     const profit = Number.parseFloat(profitInput?.value || '0') || 0;
     const price = profitType?.value === 'percent' ? cost + (cost * profit / 100) : cost + profit;
     if (priceInput) priceInput.value = price.toFixed(2);
+    syncGroupPrices();
   };
+  const groupRows = Array.from(form?.querySelectorAll('[data-product-group-price]') || []);
+  const refreshGroup = function(row){
+    const price = Number.parseFloat(row.querySelector('[data-group-price]')?.value || '0') || 0;
+    const discount = Number.parseFloat(row.querySelector('[data-group-discount]')?.value || '0') || 0;
+    const percent = row.querySelector('[data-group-discount-type]')?.value === '2';
+    const finalPrice = Math.max(0, price - (percent ? price * discount / 100 : discount));
+    const output = row.querySelector('[data-group-final]');
+    if (output) output.textContent = finalPrice.toFixed(4);
+  };
+  const syncGroupPrices = function(){
+    const price = Number.parseFloat(priceInput?.value || '0') || 0;
+    groupRows.forEach(function(row){
+      const input = row.querySelector('[data-group-price]');
+      if (input?.dataset.autoPrice === '1') input.value = price.toFixed(4);
+      refreshGroup(row);
+    });
+  };
+  groupRows.forEach(function(row){
+    const price = row.querySelector('[data-group-price]');
+    const mode = row.querySelector('[data-auto-price-input]');
+    const label = row.querySelector('[data-price-mode-label]');
+    price?.addEventListener('input', function(){ this.dataset.autoPrice = '0'; mode.value = '0'; label.textContent = 'Manual'; refreshGroup(row); });
+    row.querySelector('[data-group-discount]')?.addEventListener('input', function(){ refreshGroup(row); });
+    row.querySelector('[data-group-discount-type]')?.addEventListener('change', function(){ refreshGroup(row); });
+    row.querySelector('[data-group-reset]')?.addEventListener('click', function(){
+      price.dataset.autoPrice = '1'; mode.value = '1'; label.textContent = 'Automatic';
+      row.querySelector('[data-group-discount]').value = '0.0000';
+      row.querySelector('[data-group-discount-type]').value = '1'; syncGroupPrices();
+    });
+  });
   const applyServiceCost = function(){
     const option = serviceSelect?.selectedOptions?.[0];
     if (!option?.dataset.serviceCost) return;
@@ -301,5 +365,7 @@
   serviceSelect?.addEventListener('change', applyServiceCost);
   profitInput?.addEventListener('input', calculatePrice);
   profitType?.addEventListener('change', calculatePrice);
+  priceInput?.addEventListener('input', syncGroupPrices);
+  syncGroupPrices();
 })();
 </script>

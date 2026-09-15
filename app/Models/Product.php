@@ -74,6 +74,11 @@ class Product extends Model
         return $this->hasMany(ProductOrder::class);
     }
 
+    public function groupPrices()
+    {
+        return $this->hasMany(ServiceGroupPrice::class, 'service_id')->where('service_type', 'product');
+    }
+
     public function linkedService()
     {
         if (!$this->service_type || !$this->service_id) {

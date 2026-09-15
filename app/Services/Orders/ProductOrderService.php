@@ -7,12 +7,14 @@ use App\Models\LocalReply;
 use App\Models\LocalSource;
 use App\Models\Product;
 use App\Models\ProductOrder;
+use App\Models\ServiceGroupPrice;
 use App\Models\User;
 use App\Support\ProductService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 class ProductOrderService
@@ -60,6 +62,13 @@ class ProductOrderService
             }
             // The catalog defines price in account credits; converted_price is display metadata.
             $price = (string) $product->getRawOriginal('price');
+            if ($user->group_id && Schema::hasTable('service_group_prices')) {
+                $groupPrice = ServiceGroupPrice::query()->where('service_type', 'product')
+                    ->where('service_id', $product->id)->where('group_id', $user->group_id)->first();
+                if ($groupPrice) {
+                    $price = number_format((float) $groupPrice->finalPrice($product), 4, '.', '');
+                }
+            }
             if (!is_numeric($price) || bccomp($price, '0', 4) < 0 || bccomp($price, '99999999.99', 4) > 0) {
                 throw ValidationException::withMessages(['product_id' => 'Correct the product credit price before ordering.']);
             }
