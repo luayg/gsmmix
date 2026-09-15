@@ -213,6 +213,51 @@ class ServiceEditorSafetyTest extends ServiceEditorTestCase
         }
     }
 
+    public function test_import_encodes_json_once_and_reimport_preserves_local_changes(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            Schema::table('remote_' . $kind . '_services', function (Blueprint $table): void {
+                $table->string('name')->nullable();
+                $table->decimal('price', 12, 4)->default(0);
+            });
+            DB::table('remote_' . $kind . '_services')->where('api_provider_id', 1)->update([
+                'name' => 'Imported service', 'price' => 2.5,
+                'additional_fields' => json_encode([['fieldname' => 'Email', 'input' => 'email', 'required' => 'yes']]),
+            ]);
+            $payload = ['kind' => $kind, 'service_ids' => ['42'], 'profit_mode' => 'fixed', 'profit_value' => 1];
+            $url = route('admin.apis.services.import', [1]);
+            $this->postJson($url, $payload)->assertOk()->assertJsonPath('count', 1);
+            $row = DB::table($kind . '_services')->first();
+            foreach (['name', 'time', 'info', 'main_field', 'params'] as $column) {
+                $this->assertIsArray(json_decode($row->$column, true), "{$kind}.{$column} is encoded once");
+            }
+            $this->assertSame('Imported service', json_decode($row->name, true)['en']);
+            $this->assertNotEmpty(json_decode($row->params, true)['custom_fields']);
+            DB::table($kind . '_services')->update(['profit' => 17]);
+            $this->postJson($url, $payload)->assertOk()->assertJsonPath('count', 0);
+            $this->assertDatabaseCount($kind . '_services', 1);
+            $this->assertDatabaseHas($kind . '_services', ['id' => $row->id, 'profit' => 17]);
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_import_rejects_invalid_pricing_and_group_references_without_writes(): void
+    {
+        foreach ([['profit_value' => -1], ['profit_value' => 'invalid'], ['profit_mode' => 'invalid'],
+            ['group_prices' => 'invalid'], ['service_ids' => [[]]],
+            ['group_prices' => [['group_id' => 999, 'price' => 1]]],
+            ['group_prices' => [['group_id' => 1, 'price' => -1]]],
+            ['group_prices' => [['group_id' => 1, 'price' => 10, 'discount' => 11]]],
+            ['group_prices' => [['group_id' => 1, 'price' => 10, 'discount' => 101, 'discount_type' => 2]]],
+        ] as $extra) {
+            $payload = array_replace(['kind' => 'server', 'service_ids' => ['42']], $extra);
+            $this->postJson(route('admin.apis.services.import', [1]), $payload)->assertUnprocessable();
+            $this->assertDatabaseCount('server_services', 0);
+            $this->assertDatabaseCount('custom_fields', 0);
+            $this->assertDatabaseCount('service_group_prices', 0);
+        }
+    }
+
     private function payload(): array
     {
         return ['name' => 'Service', 'type' => 'service', 'source' => 1, 'main_field_type' => 'text'];

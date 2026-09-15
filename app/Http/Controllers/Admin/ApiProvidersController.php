@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Models\ServiceGroupPrice;
+use Illuminate\Validation\ValidationException;
 
 class ApiProvidersController extends Controller
 {
@@ -307,18 +308,33 @@ class ApiProvidersController extends Controller
             }
         }
 
-        $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
-        $mode  = strtolower(trim($mode));
-        if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
-
-        $value = (float)($request->input('profit_value') ?? $request->input('pricing_value') ?? 0);
-
         $groupPrices = $request->input('group_prices', []);
-        if (is_string($groupPrices) && trim($groupPrices) !== '') {
-            $decoded = json_decode($groupPrices, true);
-            if (is_array($decoded)) $groupPrices = $decoded;
+        if (is_string($groupPrices)) {
+            $groupPrices = json_decode($groupPrices, true);
         }
-        if (!is_array($groupPrices)) $groupPrices = [];
+        $request->merge([
+            'profit_mode' => $request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed',
+            'profit_value' => $request->input('profit_value') ?? $request->input('pricing_value') ?? 0,
+            'group_prices' => $groupPrices,
+            'service_ids' => $ids ?? [],
+        ]);
+        $validated = $request->validate([
+            'apply_all' => 'sometimes|boolean',
+            'service_ids' => 'array',
+            'service_ids.*' => 'required|regex:/^[a-zA-Z0-9_-]+$/|max:255',
+            'profit_mode' => 'required|in:fixed,percent',
+            'profit_value' => 'required|numeric|min:0|max:99999999.9999',
+            'group_prices' => 'present|array',
+            'group_prices.*' => 'array',
+            'group_prices.*.group_id' => 'required|integer|distinct|exists:groups,id',
+            'group_prices.*.auto_price' => 'sometimes|boolean',
+            'group_prices.*.price' => 'nullable|numeric|min:0|max:99999999.9999',
+            'group_prices.*.discount' => 'nullable|numeric|min:0|max:99999999.9999',
+            'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
+        ]);
+        $mode = $validated['profit_mode'];
+        $value = (float) $validated['profit_value'];
+        $groupPrices = $validated['group_prices'];
 
         try {
             $result = $this->doBulkImport(
@@ -336,8 +352,11 @@ class ApiProvidersController extends Controller
                 'count' => $result['count'],
                 'added_remote_ids' => $result['added_remote_ids'],
             ]);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
-            return response()->json(['ok' => false, 'msg' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['ok' => false, 'msg' => 'Service import failed. No changes were saved.'], 500);
         }
     }
 
@@ -724,6 +743,8 @@ class ApiProvidersController extends Controller
         $groupPrices = $this->normalizeGroupPrices($groupPrices);
 
         DB::transaction(function () use ($provider, $kind, $remoteRows, $localModel, $profitMode, $profitValue, $groupPrices, &$added, &$count) {
+            // Serialize imports for this provider so concurrent imports cannot duplicate rows.
+            ApiProvider::query()->whereKey($provider->id)->lockForUpdate()->firstOrFail();
             foreach ($remoteRows as $r) {
                 $remoteId = (string)($r->remote_id ?? '');
                 if ($remoteId === '') continue;
@@ -836,6 +857,24 @@ class ApiProvidersController extends Controller
                     'reply_expiration' => 0,
                 ];
 
+                $finalPrice = $cost + ($profitType === 2 ? $cost * $profitValue / 100 : $profitValue);
+                if (!is_finite($cost) || $cost < 0 || !is_finite($finalPrice) || $finalPrice > 99999999.9999) {
+                    throw ValidationException::withMessages(['profit_value' => 'The imported service must have a valid nonnegative price.']);
+                }
+                foreach ($groupPrices as $priceRow) {
+                    $base = $priceRow['auto_price'] ? $finalPrice : $priceRow['price'];
+                    if (($priceRow['discount_type'] === 2 && $priceRow['discount'] > 100)
+                        || ($priceRow['discount_type'] === 1 && $priceRow['discount'] > $base)) {
+                        throw ValidationException::withMessages(['group_prices' => 'A group discount cannot exceed its base price or 100 percent.']);
+                    }
+                }
+                // Cast attributes receive arrays; raw JSON columns receive encoded text.
+                $model = new $localModel;
+                foreach (['name', 'time', 'info', 'main_field', 'params'] as $attribute) {
+                    $json = is_string($data[$attribute]) ? json_decode($data[$attribute], true) : $data[$attribute];
+                    $data[$attribute] = $model->hasCast($attribute)
+                        ? $json : ($json === null ? null : json_encode($json, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+                }
                 $created = $localModel::query()->create($data);
 
                 if (!empty($localFields) && $created?->id) {
