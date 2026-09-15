@@ -6,6 +6,10 @@ Service-group edits refuse a kind change while any IMEI, Server, File or SMM ser
 
 Create and update use the same custom-field input validation. Malformed JSON/list entries fail before writes. An explicit empty custom_fields list takes precedence over alternate custom_fields_json input. Omission preserves fields on update and means no custom fields on creation.
 
+All four editors now share price, flag, duration and input-bound validation. Negative values, values outside the database range and reversed positive bounds fail before writes; zero maximum still means unlimited. A selected service group is checked again under a row lock before saving.
+
+New API links must refer to an existing provider and a service in that provider's catalog for the same kind. Conflicting field aliases and duplicate links are rejected. Existing unchanged links can survive catalog removal while local fields are edited. Switching to Manual clears both routing identifiers. Omitted routing and group inputs preserve their saved values. PR #49's manual/automatic group prices and Reset behavior are retained.
+
 Nine unused service routes with missing actions were retired: the four modal/edit routes, four toggle routes and Server sync-fields. The shipped editor continues to use show.json + update, and activation uses bulk. No live provider sync is added.
 
 ## Product orders
@@ -18,6 +22,7 @@ Product orders now use products and product_orders, with their own create/list/d
 - Manual-source products are charged once and enter Waiting; an operator can set In progress, deliver a result, or reject/cancel.
 - A selected Local Source requires an unused, unexpired matching reply. Source and reply locks serialize stock allocation across customers/products. No reply is recycled, even when a product is marked Unlimited.
 - Delivery snapshots the result in the order and records both reply/order backlinks.
+- Used replies cannot have their delivery content, source or device changed. Product, reply and source deletion checks run while holding the corresponding record lock, so a concurrent purchase cannot lose its references.
 - Cancellation/rejection of an undelivered new order refunds its original charge once. Reactivation recharges that same amount and fails if credits are insufficient.
 - Successful delivered orders retain their result, charge and stock assignment. Corrections requiring a refund need a separate reviewed financial adjustment.
 - Historical orders without the new billing metadata allow notes but refuse status transitions. The migration never infers old charges or changes balances.
@@ -51,3 +56,5 @@ php artisan replies:integrity-audit --details=0
 The initial test-only commit reproduced three failures on the previous main: linked group retyping, malformed create JSON accepted, and an empty list overridden by alternate field JSON.
 
 The suite exercises the actual authenticated HTTP routes, old-data migration preservation, price authority, exact four-decimal balances, retry/cancel/reactivation, stock expiry/device matching, permissions and escaped delivery results. The dedicated disposable MariaDB workflow also launches simultaneous workers for duplicate submissions and competition for one remaining reply. There are no live provider calls or production credentials in these tests.
+
+Additional regressions cover duplicate concurrent refunds/recharges, and a purchase committed while deletion of its product or reply is waiting on a lock. Service tests cover invalid numeric values, provider ownership, stale group validation, custom-field bounds and the saved-price regressions from current main.

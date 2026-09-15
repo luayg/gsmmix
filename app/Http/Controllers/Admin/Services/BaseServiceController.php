@@ -118,12 +118,13 @@ abstract class BaseServiceController extends Controller
             ->get();
         foreach ($gpRows as $g) {
             $groupId = (int) $g->group_id;
-            $price = (float) $g->price;
+            $price = $g->basePrice($row) ?? (float) $g->price;
             $discount = (float) $g->discount;
             $discountType = (int) $g->discount_type;
 
             $gp[$groupId] = [
                 'price' => $price,
+                'auto_price' => (bool) $g->auto_price,
                 'discount' => $discount,
                 'discount_type' => $discountType,
             ];
@@ -131,6 +132,7 @@ abstract class BaseServiceController extends Controller
             $gpList[] = [
                 'group_id' => $groupId,
                 'price' => $price,
+                'auto_price' => (bool) $g->auto_price,
                 'discount' => $discount,
                 'discount_type' => $discountType,
             ];
@@ -243,66 +245,9 @@ abstract class BaseServiceController extends Controller
     // =========================
     public function store(Request $request)
     {
-        foreach (['remote_id', 'supplier_id', 'api_provider_id', 'api_service_remote_id'] as $k) {
-            $v = $request->input($k);
-            if ($v === 'undefined' || $v === '') $request->merge([$k => null]);
-        }
+        $v = $this->validatedServiceInput($request);
 
-        $v = $request->validate([
-            'alias'        => 'nullable|string|max:255',
-            'group_id'     => ['nullable', 'integer', Rule::exists('service_groups', 'id')
-                ->where(fn ($query) => $query->whereRaw('LOWER(type) = ?', [$this->viewPrefix . '_service']))],
-            'type'         => 'required|string|max:255',
-
-            'source'       => 'nullable|integer',
-            'remote_id'    => 'nullable',
-            'supplier_id'  => 'nullable',
-
-            'name'         => 'required|string',
-            'time'         => 'nullable|string',
-            'info'         => 'nullable|string',
-
-            'main_field_type'    => 'required|string|max:50',
-            'allowed_characters' => 'nullable|string|max:50',
-            'min'                => 'nullable|integer',
-            'max'                => 'nullable|integer',
-            'minimum'            => 'nullable|integer',
-            'maximum'            => 'nullable|integer',
-            'main_field_label'   => 'nullable|string|max:255',
-
-            'cost'        => 'nullable|numeric',
-            'profit'      => 'nullable|numeric',
-            'profit_type' => 'nullable|integer',
-
-            'active'            => 'sometimes|boolean',
-            'allow_bulk'        => 'sometimes|boolean',
-            'allow_duplicates'  => 'sometimes|boolean',
-            'reply_with_latest' => 'sometimes|boolean',
-            'allow_report'      => 'sometimes|boolean',
-            'allow_report_time' => 'nullable|integer',
-            'allow_cancel'      => 'sometimes|boolean',
-            'allow_cancel_time' => 'nullable|integer',
-            'use_remote_cost'   => 'sometimes|boolean',
-            'use_remote_price'  => 'sometimes|boolean',
-            'stop_on_api_change'=> 'sometimes|boolean',
-            'needs_approval'    => 'sometimes|boolean',
-            'reply_expiration'  => 'nullable|integer',
-            'reject_on_missing_reply' => 'sometimes|boolean',
-            'ordering'                => 'nullable|integer',
-
-            'api_provider_id'       => 'nullable|integer',
-            'api_service_remote_id' => 'nullable|integer',
-
-            'group_prices' => 'nullable|array',
-            'group_prices.*' => 'array',
-            'group_prices.*.price' => 'nullable|numeric|min:0',
-            'group_prices.*.discount' => 'nullable|numeric|min:0',
-            'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
-
-            'custom_fields_json' => 'nullable|string',
-        ]);
-
-        $this->validateGroupPrices($v['group_prices'] ?? []);
+        $v['group_prices'] = $this->validatedGroupPrices($v['group_prices'] ?? [], $v);
 
         $alias = $v['alias'] ?? null;
         if (!$alias) $alias = Str::slug($v['name'] ?? '');
@@ -359,12 +304,9 @@ abstract class BaseServiceController extends Controller
         $params = $incomingParams;
         $params['custom_fields'] = $customFields;
 
-        if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
-            $v['supplier_id'] = (int)$v['api_provider_id'];
-            $v['remote_id']   = (int)$v['api_service_remote_id'];
-        }
-
         return DB::transaction(function () use ($request, $v, $name, $time, $info, $main, $params, $customFields) {
+
+            $this->lockWriteReferences($v);
 
             $service = ($this->model)::create([
                 'alias' => $v['alias'],
@@ -429,66 +371,9 @@ abstract class BaseServiceController extends Controller
     {
         $row = ($this->model)::query()->findOrFail($service);
 
-        foreach (['remote_id', 'supplier_id', 'api_provider_id', 'api_service_remote_id'] as $k) {
-            $v = $request->input($k);
-            if ($v === 'undefined' || $v === '') $request->merge([$k => null]);
-        }
+        $v = $this->validatedServiceInput($request, $row);
 
-        $v = $request->validate([
-            'alias'        => ['nullable', 'string', 'max:255', Rule::unique($this->table, 'alias')->ignore($row->getKey())],
-            'group_id'     => ['nullable', 'integer', Rule::exists('service_groups', 'id')
-                ->where(fn ($query) => $query->whereRaw('LOWER(type) = ?', [$this->viewPrefix . '_service']))],
-            'type'         => 'required|string|max:255',
-
-            'source'       => 'nullable|integer',
-            'remote_id'    => 'nullable',
-            'supplier_id'  => 'nullable',
-
-            'name'         => 'required|string',
-            'time'         => 'nullable|string',
-            'info'         => 'nullable|string',
-
-            'main_field_type'    => 'required|string|max:50',
-            'allowed_characters' => 'nullable|string|max:50',
-            'min'                => 'nullable|integer',
-            'max'                => 'nullable|integer',
-            'minimum'            => 'nullable|integer',
-            'maximum'            => 'nullable|integer',
-            'main_field_label'   => 'nullable|string|max:255',
-
-            'cost'        => 'nullable|numeric',
-            'profit'      => 'nullable|numeric',
-            'profit_type' => 'nullable|integer',
-
-            'active'            => 'sometimes|boolean',
-            'allow_bulk'        => 'sometimes|boolean',
-            'allow_duplicates'  => 'sometimes|boolean',
-            'reply_with_latest' => 'sometimes|boolean',
-            'allow_report'      => 'sometimes|boolean',
-            'allow_report_time' => 'nullable|integer',
-            'allow_cancel'      => 'sometimes|boolean',
-            'allow_cancel_time' => 'nullable|integer',
-            'use_remote_cost'   => 'sometimes|boolean',
-            'use_remote_price'  => 'sometimes|boolean',
-            'stop_on_api_change'=> 'sometimes|boolean',
-            'needs_approval'    => 'sometimes|boolean',
-            'reply_expiration'  => 'nullable|integer',
-            'reject_on_missing_reply' => 'sometimes|boolean',
-            'ordering'                => 'nullable|integer',
-
-            'api_provider_id'       => 'nullable|integer',
-            'api_service_remote_id' => 'nullable|integer',
-
-            'group_prices' => 'nullable|array',
-            'group_prices.*' => 'array',
-            'group_prices.*.price' => 'nullable|numeric|min:0',
-            'group_prices.*.discount' => 'nullable|numeric|min:0',
-            'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
-
-            'custom_fields_json' => 'nullable|string',
-        ]);
-
-        $this->validateGroupPrices($v['group_prices'] ?? []);
+        $v['group_prices'] = $this->validatedGroupPrices($v['group_prices'] ?? [], $v);
 
         $customFields = $this->customFieldsForWrite($request);
 
@@ -546,12 +431,9 @@ abstract class BaseServiceController extends Controller
             ? $row->params
             : ($row->hasCast('params', ['array', 'json']) ? $params : $this->serviceJsonValue('params', $params));
 
-        if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
-            $v['supplier_id'] = (int)$v['api_provider_id'];
-            $v['remote_id']   = (int)$v['api_service_remote_id'];
-        }
-
         return DB::transaction(function () use ($request, $row, $v, $name, $time, $info, $main, $paramsValue, $customFields) {
+
+            $this->lockWriteReferences($v, $row);
 
             $row->update([
                 'alias' => $v['alias'] ?? $row->alias,
@@ -695,6 +577,152 @@ abstract class BaseServiceController extends Controller
     // Helpers from your existing Base
     // =========================
     /** Let Eloquent encode cast attributes; encode only raw JSON columns. */
+    /** Shared by all four create/edit forms. Validate before any dependent writes. */
+    private function validatedServiceInput(Request $request, ?Model $row = null): array
+    {
+        foreach (['remote_id', 'supplier_id', 'api_provider_id', 'api_service_remote_id'] as $key) {
+            if (in_array($request->input($key), ['undefined', ''], true)) {
+                $request->merge([$key => null]);
+            }
+        }
+        $aliasRules = ['nullable', 'string', 'max:255'];
+        if ($row !== null) {
+            $aliasRules[] = Rule::unique($this->table, 'alias')->ignore($row->getKey());
+        }
+        $moneyLimit = $this->viewPrefix === 'smm' ? '99999999.9999' : '9999999999.99';
+        // SMM catalogs can use opaque string IDs; the other service tables use unsigned integers.
+        $remoteRules = $this->viewPrefix === 'smm'
+            ? ['nullable', function ($attribute, $value, $fail): void {
+                if ((!is_string($value) && !is_int($value)) || trim((string) $value) === ''
+                    || strlen((string) $value) > 255) {
+                    $fail('Choose a valid remote service identifier.');
+                }
+            }]
+            : ['nullable', 'integer', 'min:1', 'max:4294967295'];
+
+        $v = $request->validate([
+            'alias'        => $aliasRules,
+            'group_id'     => ['nullable', 'integer', Rule::exists('service_groups', 'id')
+                ->where(fn ($query) => $query->whereRaw('LOWER(type) = ?', [$this->viewPrefix . '_service']))],
+            'type'         => 'required|string|max:255',
+
+            'source'       => 'nullable|integer|in:1,2',
+            'remote_id'    => $remoteRules,
+            'supplier_id'  => 'nullable|integer|min:1',
+
+            'name'         => 'required|string',
+            'time'         => 'nullable|string',
+            'info'         => 'nullable|string',
+
+            'main_field_type'    => 'required|string|max:50',
+            'allowed_characters' => 'nullable|string|max:50',
+            'min'                => 'nullable|integer|min:0|max:2147483647',
+            'max'                => 'nullable|integer|min:0|max:2147483647',
+            'minimum'            => 'nullable|integer|min:0|max:2147483647',
+            'maximum'            => 'nullable|integer|min:0|max:2147483647',
+            'main_field_label'   => 'nullable|string|max:255',
+
+            'cost'        => 'nullable|numeric|min:0|max:' . $moneyLimit,
+            'profit'      => 'nullable|numeric|min:0|max:' . $moneyLimit,
+            'profit_type' => 'nullable|integer|in:1,2',
+
+            'active'            => 'sometimes|boolean',
+            'allow_bulk'        => 'sometimes|boolean',
+            'allow_duplicates'  => 'sometimes|boolean',
+            'reply_with_latest' => 'sometimes|boolean',
+            'allow_report'      => 'sometimes|boolean',
+            'allow_report_time' => 'nullable|integer|min:0|max:2147483647',
+            'allow_cancel'      => 'sometimes|boolean',
+            'allow_cancel_time' => 'nullable|integer|min:0|max:2147483647',
+            'use_remote_cost'   => 'sometimes|boolean',
+            'use_remote_price'  => 'sometimes|boolean',
+            'stop_on_api_change'=> 'sometimes|boolean',
+            'needs_approval'    => 'sometimes|boolean',
+            'reply_expiration'  => 'nullable|integer|min:0|max:2147483647',
+            'reject_on_missing_reply' => 'sometimes|boolean',
+            'ordering'                => 'nullable|integer|min:0|max:2147483647',
+
+            'api_provider_id'       => 'nullable|integer|min:1',
+            'api_service_remote_id' => $remoteRules,
+
+            'group_prices' => 'nullable|array',
+            'group_prices.*' => 'array',
+            'group_prices.*.price' => 'nullable|numeric|min:0|max:99999999.9999',
+            'group_prices.*.auto_price' => 'sometimes|boolean',
+            'group_prices.*.discount' => 'nullable|numeric|min:0|max:99999999.9999',
+            'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
+
+            'custom_fields_json' => 'nullable|string',
+        ]);
+
+        $this->validateBounds($v);
+        $v['group_id'] = $request->exists('group_id') ? ($v['group_id'] ?? null) : $row?->group_id;
+        $v['source'] = (int) ($v['source'] ?? $row?->source ?? 1);
+        foreach (['supplier_id' => 'api_provider_id', 'remote_id' => 'api_service_remote_id'] as $column => $alias) {
+            if ($v['source'] === 1) {
+                // Switching to Manual must remove stale routing values from hidden inputs.
+                $v[$column] = null;
+                continue;
+            }
+            if (isset($v[$column], $v[$alias]) && (string) $v[$column] !== (string) $v[$alias]) {
+                throw ValidationException::withMessages([$alias => 'The selected provider/service identifiers disagree.']);
+            }
+            $v[$column] = $v[$alias] ?? $v[$column]
+                ?? (!$request->exists($column) && !$request->exists($alias) ? $row?->{$column} : null);
+        }
+        return $v;
+    }
+
+    /** Zero maximum means unlimited in the shipped editors. */
+    private function validateBounds(array $values, ?string $fieldKey = null): void
+    {
+        $minimum = (int) ($values['min'] ?? $values['minimum'] ?? 0);
+        $maximum = (int) ($values['max'] ?? $values['maximum'] ?? 0);
+        if ($maximum > 0 && $maximum < $minimum) {
+            $key = $fieldKey ?? (array_key_exists('max', $values) ? 'max' : 'maximum');
+            throw ValidationException::withMessages([$key => 'Maximum must be zero (unlimited) or at least the minimum.']);
+        }
+    }
+
+    /** Locks match the group/provider administration locks until the service write commits. */
+    private function lockWriteReferences(array $values, ?Model $existing = null): void
+    {
+        if (!empty($values['group_id'])) {
+            $group = DB::table('service_groups')->where('id', $values['group_id'])->lockForUpdate()->first();
+            if (!$group || strtolower((string) $group->type) !== $this->viewPrefix . '_service') {
+                throw ValidationException::withMessages(['group_id' => 'Choose an existing group of the same service kind.']);
+            }
+        }
+        if ((int) $values['source'] !== 2) {
+            return;
+        }
+        $provider = !empty($values['supplier_id'])
+            ? DB::table('api_providers')->where('id', $values['supplier_id'])->lockForUpdate()->first(['id'])
+            : null;
+        if (!$provider) {
+            throw ValidationException::withMessages(['supplier_id' => 'Choose an existing API provider.']);
+        }
+        if (!isset($values['remote_id']) || trim((string) $values['remote_id']) === '') {
+            throw ValidationException::withMessages(['remote_id' => 'Choose a service from the selected API provider.']);
+        }
+        $unchangedLink = $existing !== null && (int) $existing->source === 2
+            && (int) $existing->supplier_id === (int) $provider->id
+            && (string) $existing->remote_id === (string) $values['remote_id'];
+        // An existing link can survive catalog refresh/removal; a newly selected link must belong to this provider.
+        if (!$unchangedLink && !DB::table('remote_' . $this->viewPrefix . '_services')
+            ->where('api_provider_id', $provider->id)->where('remote_id', $values['remote_id'])
+            ->lockForUpdate()->first(['id'])) {
+            throw ValidationException::withMessages(['remote_id' => 'The selected service does not belong to this provider and service kind.']);
+        }
+        $duplicate = ($this->model)::query()->where('supplier_id', $provider->id)
+            ->where('remote_id', $values['remote_id'])->where('type', $values['type'])
+            ->when($existing, fn ($query) => $query->where('id', '!=', $existing->getKey()))
+            ->exists();
+        if ($duplicate) {
+            throw ValidationException::withMessages(['remote_id' => 'This provider service is already linked to another local service of this type.']);
+        }
+    }
+
     private function serviceJsonValue(string $attribute, array $value): array|string
     {
         $model = new $this->model;
@@ -703,10 +731,10 @@ abstract class BaseServiceController extends Controller
             : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 
-    private function validateGroupPrices(array $groupPrices): void
+    private function validatedGroupPrices(array $groupPrices, array $servicePricing): array
     {
         if ($groupPrices === []) {
-            return;
+            return [];
         }
 
         $existingGroups = DB::table('groups')->whereIn('id', array_keys($groupPrices))
@@ -719,6 +747,14 @@ abstract class BaseServiceController extends Controller
                 $errors[$key . '.group_id'] = 'Select an existing customer group.';
             }
             $price = (float)($priceRow['price'] ?? 0);
+            if (!empty($priceRow['auto_price'])) {
+                // The submitted preview may be stale or tampered with.
+                $price = ServiceGroupPrice::servicePrice($servicePricing);
+                $groupPrices[$groupId]['price'] = $price;
+                if (!is_finite($price) || $price < 0 || $price > 99999999.9999) {
+                    $errors[$key . '.price'] = 'Automatic group price must be between 0 and 99999999.9999.';
+                }
+            }
             $discount = (float)($priceRow['discount'] ?? 0);
             $type = (int)($priceRow['discount_type'] ?? 1);
             if ($type === 2 && $discount > 100) {
@@ -730,6 +766,7 @@ abstract class BaseServiceController extends Controller
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
+        return $groupPrices;
     }
 
     protected function saveGroupPrices(int $serviceId, array $groupPrices): void
@@ -745,6 +782,7 @@ abstract class BaseServiceController extends Controller
                 ],
                 [
                     'price'         => (float)($row['price'] ?? 0),
+                    'auto_price'    => (bool)($row['auto_price'] ?? false),
                     'discount'      => (float)($row['discount'] ?? 0),
                     'discount_type' => (int)($row['discount_type'] ?? 1),
                 ]
@@ -775,6 +813,20 @@ abstract class BaseServiceController extends Controller
                 if (!is_array($field) || !is_string($field['name'] ?? null) || trim($field['name']) === '') {
                     throw ValidationException::withMessages([$key => 'Every custom field must have a name.']);
                 }
+                $fieldValidator = \Illuminate\Support\Facades\Validator::make($field, [
+                    'active' => 'sometimes|boolean', 'required' => 'sometimes|boolean',
+                    'min' => 'nullable|integer|min:0|max:2147483647',
+                    'max' => 'nullable|integer|min:0|max:2147483647',
+                    'minimum' => 'nullable|integer|min:0|max:2147483647',
+                    'maximum' => 'nullable|integer|min:0|max:2147483647',
+                    'input_name' => 'nullable|string|max:255', 'input' => 'nullable|string|max:255',
+                    'field_type' => 'nullable|string|max:50', 'type' => 'nullable|string|max:50',
+                    'validation' => 'nullable|string|max:255',
+                ]);
+                if ($fieldValidator->fails()) {
+                    throw ValidationException::withMessages([$key => $fieldValidator->errors()->first()]);
+                }
+                $this->validateBounds($field, $key);
                 foreach (['input_name', 'input', 'field_type', 'type', 'description', 'validation'] as $attribute) {
                     if (isset($field[$attribute]) && !is_scalar($field[$attribute])) {
                         throw ValidationException::withMessages([$key => 'Custom field attributes must be scalar values.']);

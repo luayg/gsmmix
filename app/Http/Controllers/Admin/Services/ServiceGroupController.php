@@ -88,12 +88,15 @@ class ServiceGroupController extends Controller
 
     public function destroy(ServiceGroup $group)
     {
-        $inUse = $this->countLinkedServices($group->id);
-        if ($inUse > 0) {
-            return back()->with('error', "Can't delete: group is linked to {$inUse} service(s).");
-        }
-        $group->delete();
-        return back()->with('ok', 'Deleted.');
+        return DB::transaction(function () use ($group) {
+            $group = ServiceGroup::query()->lockForUpdate()->findOrFail($group->id);
+            $inUse = $this->countLinkedServices($group->id);
+            if ($inUse > 0) {
+                return back()->with('error', "Can't delete: group is linked to {$inUse} service(s).");
+            }
+            $group->delete();
+            return back()->with('ok', 'Deleted.');
+        }, 3);
     }
 
     protected function normalizeType(?string $type): string

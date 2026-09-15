@@ -90,35 +90,43 @@ class LocalReplyController extends Controller
             'expires_at' => ['nullable', 'string', 'max:100'],
         ]);
 
-        $reply->update([
-            'local_source_id' => $data['local_source_id'] ?? null,
-            'device_based' => $request->boolean('device_based'),
-            'device_identifier' => trim((string) ($data['device_identifier'] ?? '')) ?: null,
-            'reply' => $data['reply'],
-            'expires_at' => $this->parseExpiration($data['expires_at'] ?? null),
-        ]);
-
-        return response()->json(['ok' => true, 'msg' => 'Reply updated']);
+        return DB::transaction(function () use ($request, $reply, $data) {
+            $reply = LocalReply::query()->lockForUpdate()->findOrFail($reply->id);
+            if ($reply->used_at || $reply->used_by_product_order_id || $reply->linkedProductOrders()->exists()) {
+                return response()->json(['ok' => false, 'msg' => 'Used replies retain their source, device and delivery content.'], 409);
+            }
+            $reply->update([
+                'local_source_id' => $data['local_source_id'] ?? null,
+                'device_based' => $request->boolean('device_based'),
+                'device_identifier' => trim((string) ($data['device_identifier'] ?? '')) ?: null,
+                'reply' => $data['reply'],
+                'expires_at' => $this->parseExpiration($data['expires_at'] ?? null),
+            ]);
+            return response()->json(['ok' => true, 'msg' => 'Reply updated']);
+        }, 3);
     }
 
     public function destroy(LocalReply $reply)
     {
-        $linkedOrderCount = Schema::hasTable('product_orders') && Schema::hasColumn('product_orders', 'local_reply_id')
-            ? DB::table('product_orders')->where('local_reply_id', $reply->id)->count()
-            : 0;
+        return DB::transaction(function () use ($reply) {
+            $reply = LocalReply::query()->lockForUpdate()->findOrFail($reply->id);
+            $linkedOrderCount = Schema::hasTable('product_orders') && Schema::hasColumn('product_orders', 'local_reply_id')
+                ? DB::table('product_orders')->where('local_reply_id', $reply->id)->count()
+                : 0;
 
-        if (!empty($reply->used_by_product_order_id) || $linkedOrderCount > 0) {
-            return response()->json([
-                'ok' => false,
-                'msg' => "Can't delete this reply: it is linked to a product order.",
-                'used_by_product_order_id' => $reply->used_by_product_order_id,
-                'linked_product_orders' => $linkedOrderCount,
-            ], 409);
-        }
+            if (!empty($reply->used_at) || !empty($reply->used_by_product_order_id) || $linkedOrderCount > 0) {
+                return response()->json([
+                    'ok' => false,
+                    'msg' => "Can't delete this reply: it is linked to a product order.",
+                    'used_by_product_order_id' => $reply->used_by_product_order_id,
+                    'linked_product_orders' => $linkedOrderCount,
+                ], 409);
+            }
 
-        $reply->delete();
+            $reply->delete();
 
-        return response()->json(['ok' => true, 'msg' => 'Reply deleted']);
+            return response()->json(['ok' => true, 'msg' => 'Reply deleted']);
+        }, 3);
     }
 
     public function modalCreate()

@@ -48,18 +48,9 @@ final class FileOrderGroupPricingObserver
             ->where('group_id', $groupId)
             ->first();
 
-        if (!$groupPrice || !is_numeric($groupPrice->price ?? null) || (float)$groupPrice->price <= 0) {
+        $price = $groupPrice?->finalPrice($groupPrice->auto_price ? $order->service : null);
+        if ($price === null) {
             return;
-        }
-
-        $price = (float)$groupPrice->price;
-        $discount = is_numeric($groupPrice->discount ?? null) ? (float)$groupPrice->discount : 0.0;
-        $discountType = (int)($groupPrice->discount_type ?? 1);
-
-        if ($discount > 0) {
-            $price = $discountType === 2
-                ? $price - ($price * ($discount / 100))
-                : $price - $discount;
         }
 
         $groupSell = $this->money(max(0, $price));

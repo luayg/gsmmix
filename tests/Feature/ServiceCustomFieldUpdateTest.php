@@ -23,6 +23,7 @@ class ServiceCustomFieldUpdateTest extends SecurityTestCase
             $table->unsignedBigInteger('group_id');
             $table->string('service_type');
             $table->decimal('price', 12, 4);
+            $table->boolean('auto_price')->default(false);
             $table->decimal('discount', 12, 4);
             $table->integer('discount_type');
             $table->timestamps();
@@ -160,6 +161,23 @@ class ServiceCustomFieldUpdateTest extends SecurityTestCase
             }
         }
         Http::assertNothingSent();
+    }
+
+    public function test_invalid_custom_field_limits_and_flags_are_rejected_on_create_and_update(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $this->seedService($kind);
+            $before = DB::table($kind . '_services')->first();
+            foreach ([['minimum' => -1], ['maximum' => []], ['min' => 9, 'max' => 3],
+                ['required' => 'yes'], ['active' => []], ['input' => str_repeat('x', 256)]] as $invalid) {
+                $field = array_replace(['name' => 'Unsafe', 'input' => 'field'], $invalid);
+                $payload = $this->payload() + ['custom_fields_json' => json_encode([$field])];
+                $this->postJson(route("admin.services.{$kind}.store"), $payload)->assertUnprocessable()->assertJsonValidationErrors('custom_fields_json');
+                $this->putJson(route("admin.services.{$kind}.update", 1), $payload)->assertUnprocessable()->assertJsonValidationErrors('custom_fields_json');
+                $this->assertEquals($before, DB::table($kind . '_services')->first());
+                $this->assertDatabaseCount($kind . '_services', 1);
+            }
+        }
     }
 
     public function test_legacy_double_encoded_params_survive_field_replacement(): void

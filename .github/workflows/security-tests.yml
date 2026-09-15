@@ -30,6 +30,10 @@ jobs:
           tools: composer:v2
       - name: Test service editor data preservation
         run: node --test tests/js/*.test.mjs
+      - name: Build frontend assets
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
       - name: Prepare isolated test environment
         run: cp .env.example .env
       - name: Install locked dependencies

@@ -10,7 +10,10 @@ echo "READY\n";
 flush();
 try {
     $data = json_decode($argv[1], true, 512, JSON_THROW_ON_ERROR);
-    $order = app(\App\Services\Orders\ProductOrderService::class)->create($data, (int) $argv[2]);
+    $service = app(\App\Services\Orders\ProductOrderService::class);
+    $order = ($data['_action'] ?? 'create') === 'update'
+        ? $service->update((int) $data['id'], $data)
+        : $service->create($data, (int) $argv[2]);
     echo json_encode(['ok' => true, 'id' => $order->id], JSON_THROW_ON_ERROR) . "\n";
 } catch (\Illuminate\Validation\ValidationException $exception) {
     echo json_encode(['ok' => false, 'errors' => array_keys($exception->errors())], JSON_THROW_ON_ERROR) . "\n";

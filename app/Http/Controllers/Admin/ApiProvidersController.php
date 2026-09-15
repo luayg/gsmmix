@@ -1084,6 +1084,7 @@ class ApiProvidersController extends Controller
                 ],
                 [
                     'price' => $price,
+                    'auto_price' => (bool) $auto,
                     'discount' => $discount,
                     'discount_type' => $dtype,
                 ]

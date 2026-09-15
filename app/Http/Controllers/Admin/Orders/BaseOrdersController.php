@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 
 abstract class BaseOrdersController extends Controller
 {
@@ -196,11 +197,12 @@ abstract class BaseOrdersController extends Controller
         if (empty($ids)) return [];
 
         $serviceType = $this->kind;
+        $servicesById = $services->keyBy('id');
 
         $rows = \App\Models\ServiceGroupPrice::query()
             ->where('service_type', $serviceType)
             ->whereIn('service_id', $ids)
-            ->get(['service_id','group_id','price','discount','discount_type']);
+            ->get();
 
         $out = [];
         foreach ($rows as $gp) {
@@ -208,18 +210,8 @@ abstract class BaseOrdersController extends Controller
             $gid = (int)($gp->group_id ?? 0);
             if ($sid <= 0 || $gid <= 0) continue;
 
-            $price = (float)($gp->price ?? 0);
-            if ($price <= 0) continue;
-
-            $discount = (float)($gp->discount ?? 0);
-            $dtype = (int)($gp->discount_type ?? 1);
-
-            if ($discount > 0) {
-                if ($dtype === 2) $price = $price - ($price * ($discount / 100));
-                else $price = $price - $discount;
-            }
-
-            if ($price < 0) $price = 0.0;
+            $price = $gp->finalPrice($servicesById->get($sid));
+            if ($price === null) continue;
 
             $out[$sid] ??= [];
             $out[$sid][$gid] = (float)$price;
@@ -277,26 +269,19 @@ abstract class BaseOrdersController extends Controller
     // =========================
     private function calcServiceSellPriceForUser($service, User $user): float
     {
-        if ($this->kind === 'imei') {
+        if (in_array($this->kind, ['imei', 'server', 'file'], true)) {
             $gid = (int)($user->group_id ?? 0);
 
-            if ($gid > 0 && class_exists(\App\Models\ServiceGroupPrice::class)) {
+            if ($gid > 0 && Schema::hasTable('service_group_prices')) {
                 $gp = \App\Models\ServiceGroupPrice::query()
-                    ->where('service_type', 'imei')
+                    ->where('service_type', $this->kind)
                     ->where('service_id', (int)$service->id)
                     ->where('group_id', $gid)
                     ->first();
 
-                if ($gp && (float)($gp->price ?? 0) > 0) {
-                    $price = (float)$gp->price;
-                    $discount = (float)($gp->discount ?? 0);
-                    $dtype = (int)($gp->discount_type ?? 1);
-
-                    if ($discount > 0) {
-                        if ($dtype === 2) $price = $price - ($price * ($discount / 100));
-                        else $price = $price - $discount;
-                    }
-                    return max(0.0, (float)$price);
+                $price = $gp?->finalPrice($service);
+                if ($price !== null) {
+                    return $price;
                 }
             }
         }

@@ -24,6 +24,9 @@ class ServiceGroupPriceAuditTest extends TestCase
         foreach (['imei', 'server', 'file', 'smm'] as $kind) {
             Schema::create($kind . '_services', function (Blueprint $table): void {
                 $table->id();
+                $table->decimal('cost', 12, 4)->default(0);
+                $table->decimal('profit', 12, 4)->default(0);
+                $table->integer('profit_type')->default(1);
             });
         }
 
@@ -38,6 +41,7 @@ class ServiceGroupPriceAuditTest extends TestCase
             $table->string('service_type');
             $table->unsignedBigInteger('group_id');
             $table->decimal('price', 12, 4)->default(0);
+            $table->boolean('auto_price')->default(false);
             $table->decimal('discount', 12, 4)->default(0);
             $table->tinyInteger('discount_type')->default(1);
         });
@@ -63,6 +67,17 @@ class ServiceGroupPriceAuditTest extends TestCase
         $this->assertSame(0, $exit);
         $this->assertStringContainsString('missing_service', $text);
         $this->assertStringContainsString('effective_price_negative', $text);
+    }
+
+    public function test_audit_uses_the_current_service_price_for_automatic_discount_rows(): void
+    {
+        DB::table('smm_services')->insert(['id' => 10, 'cost' => 35, 'profit' => 5]);
+        DB::table('groups')->insert(['id' => 3, 'name' => 'VIP']);
+        DB::table('service_group_prices')->insert(['service_id' => 10, 'service_type' => 'smm',
+            'group_id' => 3, 'price' => 1, 'auto_price' => true, 'discount' => 30, 'discount_type' => 1]);
+        $this->assertSame(0, Artisan::call('services:group-price-audit'));
+        DB::table('smm_services')->where('id', 10)->update(['cost' => 10]);
+        $this->assertSame(1, Artisan::call('services:group-price-audit'));
     }
 
     public function test_group_price_audit_reports_broken_references_and_invalid_discount(): void

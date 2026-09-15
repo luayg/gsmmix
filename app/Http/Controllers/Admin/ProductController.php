@@ -74,20 +74,23 @@ class ProductController extends Controller
 
     public function destroy(Product $product)
     {
-        $orderCount = Schema::hasTable('product_orders') && Schema::hasColumn('product_orders', 'product_id')
-            ? DB::table('product_orders')->where('product_id', $product->id)->count()
-            : 0;
+        return DB::transaction(function () use ($product) {
+            $product = Product::query()->lockForUpdate()->findOrFail($product->id);
+            $orderCount = Schema::hasTable('product_orders') && Schema::hasColumn('product_orders', 'product_id')
+                ? DB::table('product_orders')->where('product_id', $product->id)->count()
+                : 0;
 
-        if ($orderCount > 0) {
-            return response()->json([
-                'ok' => false,
-                'msg' => "Can't delete this product: {$orderCount} product order(s) still reference it.",
-                'product_orders' => $orderCount,
-            ], 409);
-        }
+            if ($orderCount > 0) {
+                return response()->json([
+                    'ok' => false,
+                    'msg' => "Can't delete this product: {$orderCount} product order(s) still reference it.",
+                    'product_orders' => $orderCount,
+                ], 409);
+            }
 
-        $product->delete();
-        return response()->json(['ok' => true, 'msg' => 'Product deleted']);
+            $product->delete();
+            return response()->json(['ok' => true, 'msg' => 'Product deleted']);
+        }, 3);
     }
 
     public function modalCreate()

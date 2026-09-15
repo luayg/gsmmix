@@ -270,6 +270,79 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->assertSame(1, LocalReply::whereNotNull('used_by_product_order_id')->count());
     }
 
+    public function test_used_reply_content_and_reference_deletions_are_protected(): void
+    {
+        $reply = $this->localStock();
+        $id = $this->postJson(route('admin.orders.product.store'), $this->payload())->assertOk()->json('id');
+        $snapshot = (array) DB::table('local_replies')->where('id', $reply->id)->first();
+        $this->putJson(route('admin.replies.update', $reply->id), [
+            'local_source_id' => $reply->local_source_id, 'reply' => 'Replace delivered stock',
+        ])->assertStatus(409);
+        $this->deleteJson(route('admin.replies.destroy', $reply->id))->assertStatus(409);
+        $this->deleteJson(route('admin.store.products.destroy', $this->product->id))->assertStatus(409);
+        $this->deleteJson(route('admin.sources.destroy', $reply->local_source_id))->assertStatus(409);
+        $this->assertSame($snapshot, (array) DB::table('local_replies')->where('id', $reply->id)->first());
+        $this->assertDatabaseHas('product_orders', ['id' => $id, 'local_reply_id' => $reply->id, 'product_id' => $this->product->id]);
+    }
+
+    public function test_simultaneous_cancellation_and_reactivation_move_credits_once_on_mariadb(): void
+    {
+        $this->requireMysql();
+        $id = $this->postJson(route('admin.orders.product.store'), $this->payload())->assertOk()->json('id');
+        $update = ['_action' => 'update', 'id' => $id, 'user_id' => $this->customer->id, 'status' => 'cancelled'];
+        $this->runTogether([$update, $update]);
+        $this->assertSame('100.1234', $this->balance());
+        $this->assertSame('refunded', ProductOrder::findOrFail($id)->request['financial_state']);
+        $update['status'] = 'waiting';
+        $this->runTogether([$update, $update]);
+        $this->assertSame('87.7834', $this->balance());
+        $this->assertSame('charged', ProductOrder::findOrFail($id)->request['financial_state']);
+    }
+
+    public static function deletionTargets(): array
+    {
+        return [['product'], ['reply']];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('deletionTargets')]
+    public function test_concurrent_stock_deletion_rechecks_the_committed_order_on_mariadb(string $target): void
+    {
+        $this->requireMysql();
+        $reply = $this->localStock();
+        $model = $target === 'product' ? $this->product : $reply;
+        DB::beginTransaction();
+        $worker = null;
+        try {
+            $model->newQuery()->whereKey($model->id)->lockForUpdate()->firstOrFail();
+            $worker = new Process([PHP_BINARY, base_path('tests/Support/product-stock-delete-worker.php'),
+                $target, (string) $model->id], base_path(), ['APP_ENV' => 'testing']);
+            $worker->setTimeout(25);
+            $worker->start();
+            $deadline = microtime(true) + 10;
+            while (!str_contains($worker->getOutput(), 'BARRIER') && $worker->isRunning() && microtime(true) < $deadline) {
+                usleep(20000);
+            }
+            $this->assertStringContainsString('BARRIER', $worker->getOutput(), $worker->getErrorOutput());
+            $order = app(\App\Services\Orders\ProductOrderService::class)->create($this->payload(), $this->admin->id);
+            DB::commit();
+            $worker->wait();
+            $this->assertSame(0, $worker->getExitCode(), $worker->getErrorOutput() . $worker->getOutput());
+            $lines = explode("\n", trim($worker->getOutput()));
+            $this->assertSame(409, json_decode(end($lines), true, 512, JSON_THROW_ON_ERROR)['status']);
+            $this->assertDatabaseHas('product_orders', ['id' => $order->id,
+                'product_id' => $this->product->id, 'local_reply_id' => $reply->id]);
+            $this->assertDatabaseHas($model->getTable(), ['id' => $model->id]);
+            $this->assertSame('87.7834', $this->balance());
+        } finally {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            if ($worker?->isRunning()) {
+                $worker->stop();
+            }
+        }
+    }
+
     private function requireMysql(): void
     {
         if (getenv('PRODUCT_ORDERS_TEST_MYSQL') !== '1') {

@@ -349,9 +349,9 @@
     let gp = {};
     try { gp = JSON.parse(opt.getAttribute('data-group-prices') || '{}'); } catch(e){ gp = {}; }
 
-    let price = gp[String(gid)];
+    let price = gp?.[String(gid)];
     if (typeof price === 'string') price = Number(price);
-    if (typeof price === 'number' && !isNaN(price) && price > 0) return price;
+    if (typeof price === 'number' && Number.isFinite(price) && price >= 0) return price;
 
     const base = Number(opt.getAttribute('data-base-price') || 0);
     return (!isNaN(base) && base > 0) ? base : 0;
@@ -575,10 +575,10 @@
       let gp = {};
       try { gp = JSON.parse(opt.getAttribute('data-group-prices') || '{}'); } catch(e){ gp = {}; }
 
-      let price = gp[String(gid)];
+      let price = gp?.[String(gid)];
       if (typeof price === 'string') price = Number(price);
 
-      if (!(typeof price === 'number' && !isNaN(price) && price > 0)) {
+      if (!(typeof price === 'number' && Number.isFinite(price) && price >= 0)) {
         const base = Number(opt.getAttribute('data-base-price') || 0);
         price = (!isNaN(base) && base > 0) ? base : 0;
       }
@@ -791,13 +791,13 @@
     selectedBalanceEl.textContent = money(balance);
     balanceAfterEl.textContent    = money(balance - price);
 
-    const ok = (userSel.value && serviceSel.value && price > 0 && balance >= price && deviceOk);
+    const ok = (userSel.value && serviceSel.value && price >= 0 && balance >= price && deviceOk);
 
     if (ok) {
       hide(balanceErrorEl);
       btnCreate.disabled = false;
     } else {
-      if (userSel.value && serviceSel.value && price > 0 && balance < price) show(balanceErrorEl);
+      if (userSel.value && serviceSel.value && price >= 0 && balance < price) show(balanceErrorEl);
       else hide(balanceErrorEl);
       btnCreate.disabled = true;
     }
