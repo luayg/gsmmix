@@ -73,8 +73,9 @@ function serviceRate(form, option) {
     groupPrices = {};
   }
 
-  const groupRate = num(groupPrices[String(userGroupId(form))]);
-  if (groupRate > 0) return groupRate;
+  const groupRate = groupPrices?.[String(userGroupId(form))];
+  if (groupRate !== null && groupRate !== undefined && groupRate !== ''
+      && Number.isFinite(Number(groupRate)) && Number(groupRate) >= 0) return Number(groupRate);
   return Math.max(0, num(option.getAttribute('data-base-price')));
 }
 
@@ -207,15 +208,10 @@ function updateQuantityUi(form, current) {
 function relabelServices(form) {
   const service = form.querySelector('.js-service');
   if (!service) return;
-  const gid = userGroupId(form);
-
   Array.from(service.options).forEach(option => {
     if (!option.value) return;
 
-    let groupPrices = {};
-    try { groupPrices = JSON.parse(option.getAttribute('data-group-prices') || '{}'); } catch (_) { groupPrices = {}; }
-    let rate = num(groupPrices[String(gid)]);
-    if (!(rate > 0)) rate = Math.max(0, num(option.getAttribute('data-base-price')));
+    const rate = serviceRate(form, option);
 
     const name = option.getAttribute('data-name') || option.textContent || '';
     const unit = inferMode(option) === 'package' ? ' / order' : ' / 1K';
@@ -250,7 +246,7 @@ function update(form) {
     balanceError.classList.toggle('d-none', !current.valid || enough);
   }
 
-  if (button && button.textContent !== 'Creating...' && (!current.valid || !enough || !(current.total > 0))) {
+  if (button && button.textContent !== 'Creating...' && (!current.valid || !enough || !(current.total >= 0))) {
     button.disabled = true;
   }
 }
@@ -274,7 +270,7 @@ document.addEventListener('submit', event => {
 
   const current = quote(form);
   const enough = userBalance(form) + 0.0000001 >= current.total;
-  if (!current.valid || !enough || !(current.total > 0)) {
+  if (!current.valid || !enough || !(current.total >= 0)) {
     event.preventDefault();
     event.stopImmediatePropagation();
     update(form);

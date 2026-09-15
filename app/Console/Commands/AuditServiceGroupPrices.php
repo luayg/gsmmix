@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\ServiceGroupPrice;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -42,6 +43,15 @@ class AuditServiceGroupPrices extends Command
         $limit = max(0, min(200, (int)$this->option('details')));
 
         $serviceIds = [];
+        $automaticServices = [];
+        if (Schema::hasColumn('service_group_prices', 'auto_price')) {
+            foreach ($maps as $kind => $table) {
+                if (!Schema::hasTable($table)) continue;
+                $ids = DB::table('service_group_prices')->where('service_type', $kind)
+                    ->where('auto_price', true)->pluck('service_id');
+                $automaticServices[$kind] = DB::table($table)->whereIn('id', $ids)->get()->keyBy('id');
+            }
+        }
         foreach ($maps as $kind => $table) {
             $serviceIds[$kind] = Schema::hasTable($table)
                 ? DB::table($table)->pluck('id')->map(fn ($id) => (int)$id)->flip()->all()
@@ -54,7 +64,7 @@ class AuditServiceGroupPrices extends Command
 
         $rows = DB::table('service_group_prices')
             ->orderBy('id')
-            ->get(['id', 'service_id', 'service_type', 'group_id', 'price', 'discount', 'discount_type']);
+            ->get();
 
         $state['rows_scanned'] = $rows->count();
 
@@ -63,6 +73,10 @@ class AuditServiceGroupPrices extends Command
             $serviceId = (int)$row->service_id;
             $groupId = (int)$row->group_id;
             $price = (float)$row->price;
+            $service = $automaticServices[$kind][$serviceId] ?? null;
+            if (!empty($row->auto_price) && $service !== null) {
+                $price = ServiceGroupPrice::servicePrice($service);
+            }
             $discount = (float)$row->discount;
             $discountType = (int)$row->discount_type;
 

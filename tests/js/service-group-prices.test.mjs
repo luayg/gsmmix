@@ -22,6 +22,7 @@ function fixture(saved = []) {
     Object.defineProperty(row, 'innerHTML', { set(html) {
       const price = html.match(/name="group_prices\[[^\]]+\]\[price\]" value="([^"]*)"/)[1];
       row.controls = { '[data-price]': new Element(price), '[data-discount]': new Element('0.0000'),
+        '[data-price-mode]': new Element('1'), '[data-price-mode-label]': new Element(),
         '[data-discount-type]': new Element('1'), '[data-final]': new Element(), '.btn-reset': new Element() };
       row.controls['[data-price]'].dataset.autoPrice = '1';
     } });
@@ -37,6 +38,13 @@ function fixture(saved = []) {
   return { rows, scope, helper, ctx, cost };
 }
 const control = (row, name) => row.querySelector(`[data-${name}]`);
+const serialize = rows => rows.map((row, index) => ({
+  group_id: index + 1,
+  price: Number(control(row, 'price').value),
+  auto_price: Number(control(row, 'price-mode').value),
+  discount: Number(control(row, 'discount').value),
+  discount_type: Number(control(row, 'discount-type').value),
+}));
 
 test('saved fractional and zero prices load immediately and survive service repricing', () => {
   const { rows, helper } = fixture([
@@ -87,4 +95,47 @@ test('edit initialization supplies saved prices synchronously', () => {
   const body = source.slice(start, end);
   assert.ok(body.includes('buildPricingTable(body, userGroups, s.group_prices)'));
   assert.ok(!body.includes('setTimeout'));
+});
+
+test('automatic rows and both discount types survive serialization, reopening and repricing', () => {
+  for (const [discountType, expected] of [[1, '37.0000'], [2, '38.8000']]) {
+    const initial = fixture();
+    control(initial.rows[0], 'discount').value = '3';
+    control(initial.rows[0], 'discount-type').value = String(discountType);
+    const reopened = fixture(serialize(initial.rows));
+    reopened.helper.setCost(35);
+    assert.equal(control(reopened.rows[0], 'price').value, '40.0000');
+    assert.equal(control(reopened.rows[0], 'price-mode').value, '1');
+    assert.equal(control(reopened.rows[0], 'final').textContent, expected);
+  }
+});
+
+test('Reset survives save/reopen and changing profit amount or type', () => {
+  const initial = fixture([{ group_id: 1, price: 7, discount: 2, discount_type: 1 }]);
+  initial.rows[0].querySelector('.btn-reset').dispatchEvent(new Event('click'));
+  const reopened = fixture(serialize(initial.rows));
+  reopened.helper.setCost(40);
+  const profit = reopened.scope.querySelector('[name="profit"]');
+  const type = reopened.scope.querySelector('[name="profit_type"]');
+  profit.value = '10';
+  profit.dispatchEvent(new Event('input'));
+  assert.equal(control(reopened.rows[0], 'price').value, '50.0000');
+  type.value = '2';
+  type.dispatchEvent(new Event('change'));
+  assert.equal(control(reopened.rows[0], 'price').value, '44.0000');
+  assert.equal(control(reopened.rows[0], 'discount').value, '0.0000');
+  assert.equal(control(reopened.rows[0], 'discount-type').value, '1');
+});
+
+test('manual prices equal to the default and zero remain manual after reopening', () => {
+  const initial = fixture();
+  for (const [i, value] of [[0, '25.0000'], [1, '0.0000']]) {
+    control(initial.rows[i], 'price').value = value;
+    control(initial.rows[i], 'price').dispatchEvent(new Event('input'));
+  }
+  const reopened = fixture(serialize(initial.rows));
+  reopened.helper.setCost(100);
+  assert.equal(control(reopened.rows[0], 'price').value, '25.0000');
+  assert.equal(control(reopened.rows[1], 'price').value, '0.0000');
+  assert.ok(serialize(reopened.rows).every(row => row.auto_price === 0));
 });

@@ -20,8 +20,8 @@ final class SmmPricingService
         $providerRate = $this->decimal($service->cost ?? 0);
         $sellRate = $this->sellRateForUser($service, $user);
 
-        if ((float)$sellRate <= 0) {
-            throw new SmmPricingException(['service_id' => 'SMM service sell rate must be greater than zero.']);
+        if (!is_finite((float)$sellRate) || (float)$sellRate < 0) {
+            throw new SmmPricingException(['service_id' => 'SMM service sell rate must be a nonnegative number.']);
         }
 
         $limits = is_array($params['smm_limits'] ?? null) ? $params['smm_limits'] : [];
@@ -183,18 +183,9 @@ final class SmmPricingService
                 ->where('group_id', $groupId)
                 ->first();
 
-            if ($groupPrice && is_numeric($groupPrice->price ?? null) && (float)$groupPrice->price > 0) {
-                $price = (float)$groupPrice->price;
-                $discount = is_numeric($groupPrice->discount ?? null) ? (float)$groupPrice->discount : 0.0;
-                $discountType = (int)($groupPrice->discount_type ?? 1);
-
-                if ($discount > 0) {
-                    $price = $discountType === 2
-                        ? $price - ($price * ($discount / 100))
-                        : $price - $discount;
-                }
-
-                return $this->decimal(max(0, $price));
+            $price = $groupPrice?->finalPrice($service);
+            if ($price !== null) {
+                return $this->decimal($price);
             }
         }
 

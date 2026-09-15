@@ -435,7 +435,8 @@
         <div class="pricing-title">${clean(g.name)}</div>
         <div class="pricing-inputs">
           <div>
-            <label class="form-label">Price</label>
+            <label class="form-label">Price <span class="small text-muted" data-price-mode-label>Automatic</span></label>
+            <input type="hidden" data-price-mode name="group_prices[${g.id}][auto_price]" value="1">
             <div class="input-group">
               <input type="number" step="0.0001" class="form-control" data-price data-auto-price="1"
                      name="group_prices[${g.id}][price]" value="${initialServicePrice.toFixed(4)}">
@@ -466,10 +467,18 @@
       const typeSelect = row.querySelector('[data-discount-type]');
       const outEl      = row.querySelector('[data-final]');
 
+      const setAutoPrice = automatic => {
+        const mode = automatic ? '1' : '0';
+        priceInput.dataset.autoPrice = mode;
+        row.querySelector('[data-price-mode]').value = mode;
+        row.querySelector('[data-price-mode-label]').textContent = automatic ? 'Automatic' : 'Manual';
+      };
+
       const saved = savedByGroup.get(String(g.id));
       if (saved) {
-        priceInput.value = Number(saved.price ?? 0).toFixed(4);
-        priceInput.dataset.autoPrice = '0';
+        const automatic = Number(saved.auto_price ?? 0) === 1;
+        priceInput.value = (automatic ? initialServicePrice : Number(saved.price ?? 0)).toFixed(4);
+        setAutoPrice(automatic);
         discInput.value = Number(saved.discount ?? 0).toFixed(4);
         typeSelect.value = String(saved.discount_type ?? 1);
       }
@@ -486,13 +495,13 @@
       };
 
       row.addEventListener('pricing:refresh', updateFinal);
-      priceInput?.addEventListener('input', ()=>{ priceInput.dataset.autoPrice = '0'; updateFinal(); });
+      priceInput?.addEventListener('input', ()=>{ setAutoPrice(false); updateFinal(); });
       discInput?.addEventListener('input', updateFinal);
       typeSelect?.addEventListener('change', updateFinal);
 
       row.querySelector('.btn-reset')?.addEventListener('click', ()=>{
         const sp = calcServiceFinalPrice(scope);
-        priceInput.dataset.autoPrice = '1';
+        setAutoPrice(true);
         priceInput.value = sp.toFixed(4);
         discInput.value = "0.0000";
         typeSelect.value = "1";

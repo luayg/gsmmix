@@ -118,12 +118,13 @@ abstract class BaseServiceController extends Controller
             ->get();
         foreach ($gpRows as $g) {
             $groupId = (int) $g->group_id;
-            $price = (float) $g->price;
+            $price = $g->basePrice($row) ?? (float) $g->price;
             $discount = (float) $g->discount;
             $discountType = (int) $g->discount_type;
 
             $gp[$groupId] = [
                 'price' => $price,
+                'auto_price' => (bool) $g->auto_price,
                 'discount' => $discount,
                 'discount_type' => $discountType,
             ];
@@ -131,6 +132,7 @@ abstract class BaseServiceController extends Controller
             $gpList[] = [
                 'group_id' => $groupId,
                 'price' => $price,
+                'auto_price' => (bool) $g->auto_price,
                 'discount' => $discount,
                 'discount_type' => $discountType,
             ];
@@ -296,13 +298,14 @@ abstract class BaseServiceController extends Controller
             'group_prices' => 'nullable|array',
             'group_prices.*' => 'array',
             'group_prices.*.price' => 'nullable|numeric|min:0',
+            'group_prices.*.auto_price' => 'sometimes|boolean',
             'group_prices.*.discount' => 'nullable|numeric|min:0',
             'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
 
             'custom_fields_json' => 'nullable|string',
         ]);
 
-        $this->validateGroupPrices($v['group_prices'] ?? []);
+        $v['group_prices'] = $this->validatedGroupPrices($v['group_prices'] ?? [], $v);
 
         $alias = $v['alias'] ?? null;
         if (!$alias) $alias = Str::slug($v['name'] ?? '');
@@ -485,13 +488,14 @@ abstract class BaseServiceController extends Controller
             'group_prices' => 'nullable|array',
             'group_prices.*' => 'array',
             'group_prices.*.price' => 'nullable|numeric|min:0',
+            'group_prices.*.auto_price' => 'sometimes|boolean',
             'group_prices.*.discount' => 'nullable|numeric|min:0',
             'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
 
             'custom_fields_json' => 'nullable|string',
         ]);
 
-        $this->validateGroupPrices($v['group_prices'] ?? []);
+        $v['group_prices'] = $this->validatedGroupPrices($v['group_prices'] ?? [], $v);
 
         $customFields = $this->customFieldsForUpdate($request);
 
@@ -706,10 +710,10 @@ abstract class BaseServiceController extends Controller
             : json_encode($value, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 
-    private function validateGroupPrices(array $groupPrices): void
+    private function validatedGroupPrices(array $groupPrices, array $servicePricing): array
     {
         if ($groupPrices === []) {
-            return;
+            return [];
         }
 
         $existingGroups = DB::table('groups')->whereIn('id', array_keys($groupPrices))
@@ -722,6 +726,14 @@ abstract class BaseServiceController extends Controller
                 $errors[$key . '.group_id'] = 'Select an existing customer group.';
             }
             $price = (float)($priceRow['price'] ?? 0);
+            if (!empty($priceRow['auto_price'])) {
+                // The submitted preview may be stale or tampered with.
+                $price = ServiceGroupPrice::servicePrice($servicePricing);
+                $groupPrices[$groupId]['price'] = $price;
+                if (!is_finite($price) || $price < 0) {
+                    $errors[$key . '.price'] = 'Automatic group price must be a nonnegative number.';
+                }
+            }
             $discount = (float)($priceRow['discount'] ?? 0);
             $type = (int)($priceRow['discount_type'] ?? 1);
             if ($type === 2 && $discount > 100) {
@@ -733,6 +745,7 @@ abstract class BaseServiceController extends Controller
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
+        return $groupPrices;
     }
 
     protected function saveGroupPrices(int $serviceId, array $groupPrices): void
@@ -748,6 +761,7 @@ abstract class BaseServiceController extends Controller
                 ],
                 [
                     'price'         => (float)($row['price'] ?? 0),
+                    'auto_price'    => (bool)($row['auto_price'] ?? false),
                     'discount'      => (float)($row['discount'] ?? 0),
                     'discount_type' => (int)($row['discount_type'] ?? 1),
                 ]

@@ -92,7 +92,7 @@ final class AuditServicePricing extends Command
                     $groupRows = DB::table('service_group_prices')
                         ->where('service_type', $kind)
                         ->whereIn('service_id', $serviceIds)
-                        ->get(['service_id', 'group_id', 'price', 'discount', 'discount_type']);
+                        ->get();
 
                     foreach ($groupRows as $row) {
                         $groupRowsByService[(int)$row->service_id][] = $row;
@@ -149,7 +149,7 @@ final class AuditServicePricing extends Command
                 }
 
                 foreach ($groupRowsByService[$serviceId] ?? [] as $groupRow) {
-                    $effective = $this->effectiveGroupPrice($groupRow);
+                    $effective = $this->effectiveGroupPrice($groupRow, $local);
                     if ($remoteCost > ($effective + $epsilon)) {
                         $state['group_sell_below_remote_cost']++;
                         $this->addRisk(
@@ -226,9 +226,11 @@ final class AuditServicePricing extends Command
         return is_finite($price) ? max(0.0, $price) : 0.0;
     }
 
-    private function effectiveGroupPrice(object $row): float
+    private function effectiveGroupPrice(object $row, object $service): float
     {
-        $price = $this->number($row->price ?? 0);
+        $price = !empty($row->auto_price)
+            ? \App\Models\ServiceGroupPrice::servicePrice($service)
+            : $this->number($row->price ?? 0);
         $discount = max(0.0, $this->number($row->discount ?? 0));
         $discountType = (int)($row->discount_type ?? 1);
 
