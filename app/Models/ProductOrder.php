@@ -8,6 +8,8 @@ class ProductOrder extends Model
 {
     protected $fillable = [
         'product_id',
+        'service_order_type',
+        'service_order_id',
         'status',
         'order_price',
         'user_id',
@@ -15,9 +17,23 @@ class ProductOrder extends Model
         'local_reply_id',
         'email',
         'comments',
+        'request_uid',
+        'device',
+        'request',
+        'response',
+        'replied_at',
     ];
 
-    protected $casts = [];
+    protected $casts = [
+        'order_price' => 'decimal:2',
+        'request' => 'array',
+        'replied_at' => 'datetime',
+    ];
+
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 
     public function product()
     {

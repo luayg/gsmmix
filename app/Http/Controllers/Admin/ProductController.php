@@ -10,6 +10,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use App\Support\ProductService;
+use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
 {
@@ -136,14 +138,18 @@ class ProductController extends Controller
         return [
             'categories' => ProductCategory::query()->orderBy('name')->get(['id', 'name']),
             'sources' => LocalSource::query()->orderBy('name')->get(['id', 'name']),
+            'serviceOptions' => ProductService::options(),
         ];
     }
 
     private function validateProduct(Request $request, ?Product $product = null): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'product_category_id' => ['nullable', 'integer', 'exists:product_categories,id'],
-            'local_source_id' => ['nullable', 'integer', 'exists:local_sources,id'],
+            'source_type' => ['required', Rule::in(['manual', 'service', 'local_source'])],
+            'local_source_id' => ['nullable', 'required_if:source_type,local_source', 'integer', 'exists:local_sources,id'],
+            'service_type' => ['nullable', 'required_if:source_type,service', Rule::in(ProductService::TYPES)],
+            'service_id' => ['nullable', 'required_if:source_type,service', 'integer', 'min:1'],
             'name' => ['required', 'string', 'max:255'],
             'alias' => ['nullable', 'string', 'max:255', Rule::unique('products', 'alias')->ignore($product?->id)],
             'description' => ['nullable', 'string'],
@@ -166,13 +172,27 @@ class ProductController extends Controller
             'meta_keywords' => ['nullable', 'string'],
             'meta_description' => ['nullable', 'string'],
         ]);
+
+        if ($validated['source_type'] === 'service') {
+            $service = ProductService::find((string) $validated['service_type'], (int) $validated['service_id']);
+            if (!$service) {
+                throw ValidationException::withMessages(['service_id' => 'Choose a service that exists in the selected service type.']);
+            }
+        }
+
+        return $validated;
     }
 
     private function payload(Request $request, array $data): array
     {
+        $profitType = $data['profit_type'] ?? 'credits';
+
         return [
             'product_category_id' => $data['product_category_id'] ?? null,
-            'local_source_id' => $data['local_source_id'] ?? null,
+            'source_type' => $data['source_type'],
+            'local_source_id' => $data['source_type'] === 'local_source' ? ($data['local_source_id'] ?? null) : null,
+            'service_type' => $data['source_type'] === 'service' ? ($data['service_type'] ?? null) : null,
+            'service_id' => $data['source_type'] === 'service' ? (int) ($data['service_id'] ?? 0) : null,
             'name' => $data['name'],
             'alias' => trim((string) ($data['alias'] ?? '')) ?: null,
             'main_image' => trim((string) ($data['main_image'] ?? '')) ?: null,
@@ -183,8 +203,8 @@ class ProductController extends Controller
             'converted_price' => (float) ($data['converted_price'] ?? 0),
             'currency' => trim((string) ($data['currency'] ?? 'USD')) ?: 'USD',
             'profit' => (float) ($data['profit'] ?? 0),
-            'profit_type' => in_array(($data['profit_type'] ?? 'credits'), ['credits', 'percent'], true)
-                ? $data['profit_type'] : 'credits',
+            'profit_type' => in_array($profitType, ['credits', 'percent'], true)
+                ? $profitType : 'credits',
             'active' => $request->boolean('active'),
             'device_based' => $request->boolean('device_based'),
             'unlimited' => $request->boolean('unlimited'),

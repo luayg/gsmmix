@@ -10,7 +10,7 @@
   <div class="modal-body">
     <p class="mb-2">Are you sure you want to delete this product?</p>
     <div class="alert alert-warning mb-0">
-      Existing product orders will keep working, but their product link will become empty.
+      Products with order history cannot be deleted; deactivate them instead.
       Current orders: <strong>{{ $product->orders_count }}</strong>
     </div>
   </div>
