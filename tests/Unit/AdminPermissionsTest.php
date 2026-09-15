@@ -38,6 +38,8 @@ class AdminPermissionsTest extends TestCase
         yield 'bulk absent' => ['admin.services.file.bulk', 'POST', '', null, null];
         yield 'import' => ['admin.apis.services.import', 'POST', '', null, ['apis.view', 'services.create']];
         yield 'upload' => ['admin.uploads.summernote', 'POST', '', null, ['uploads.create']];
+        yield 'mail test' => ['admin.settings.mail.test', 'POST', '', null, ['settings.edit']];
+        yield 'mail test wrong method' => ['admin.settings.mail.test', 'GET', '', null, null];
         yield 'unknown module' => ['admin.unknown.index', 'GET', '', null, null];
         yield 'unknown action' => ['admin.users.backdoor', 'GET', '', null, null];
         yield 'unnamed mutation' => [null, 'POST', 'admin', null, null];

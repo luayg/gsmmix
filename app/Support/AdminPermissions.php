@@ -76,6 +76,9 @@ final class AdminPermissions
         if (str_starts_with($name, 'admin.services.clone.')) {
             return $safe ? ['apis.view', 'services.create'] : null;
         }
+        if ($name === 'admin.settings.mail.test') {
+            return $method === 'POST' ? ['settings.edit'] : null;
+        }
         if ($action === 'bulk') {
             if ($safe || !in_array($bulkAction, ['active', 'inactive', 'delete'], true)) {
                 return null;
