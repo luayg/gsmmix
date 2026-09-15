@@ -101,7 +101,15 @@
                 <div class="small text-muted">{{ $product->alias }}</div>
               </td>
               <td>{{ $product->category?->name ?? 'None' }}</td>
-              <td>{{ $product->localSource?->name ?? 'Manual' }}</td>
+              <td>
+                @if(($product->source_type ?? 'manual') === 'service')
+                  Service · {{ strtoupper($product->service_type) }} #{{ $product->service_id }}
+                @elseif($product->source_type === 'local_source')
+                  Local source · {{ $product->localSource?->name ?? 'Missing' }}
+                @else
+                  Manual
+                @endif
+              </td>
               <td class="text-end">{{ number_format((float)$product->price, 2) }}</td>
               <td>
                 @if($product->active)

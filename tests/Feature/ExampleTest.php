@@ -37,12 +37,24 @@ class ExampleTest extends TestCase
         $this->assertTrue(Route::has('admin.services.server.index'));
         $this->assertTrue(Route::has('admin.services.file.index'));
         $this->assertTrue(Route::has('admin.services.smm.index'));
-        $this->assertTrue(Route::has('admin.services.server.syncFields'));
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $this->assertTrue(Route::has("admin.services.{$kind}.show.json"));
+            $this->assertTrue(Route::has("admin.services.{$kind}.update"));
+            $this->assertTrue(Route::has("admin.services.{$kind}.bulk"));
+        }
+    }
 
-        $this->assertSame(
-            '/admin/service-management/server-services/123/sync-fields',
-            route('admin.services.server.syncFields', ['id' => 123], false)
-        );
+    public function test_registered_controller_actions_have_public_implementations(): void
+    {
+        foreach (Route::getRoutes() as $route) {
+            $action = $route->getActionName();
+            if (!str_contains($action, '@')) {
+                continue;
+            }
+            [$controller, $method] = explode('@', $action, 2);
+            $this->assertTrue(method_exists($controller, $method), "Missing action: {$action}");
+            $this->assertTrue((new \ReflectionMethod($controller, $method))->isPublic(), "Non-public action: {$action}");
+        }
     }
 
     public function test_local_sources_and_replies_routes_are_registered(): void

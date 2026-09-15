@@ -58,6 +58,50 @@
               </div>
             </div>
 
+            <div class="mb-2">
+              <label class="form-label small mb-1">Source</label>
+              <select name="source_type" id="productSourceTypeCreate" class="form-select form-select-sm" required>
+                <option value="manual" selected>Manual</option>
+                <option value="service">Service</option>
+                <option value="local_source">Local source</option>
+              </select>
+            </div>
+
+            <div class="row g-2 mb-2 d-none" id="productServiceFieldsCreate">
+              <div class="col-md-5">
+                <label class="form-label small mb-1">Service type</label>
+                <select name="service_type" id="productServiceTypeCreate" class="form-select form-select-sm" disabled>
+                  <option value="">Choose type</option>
+                  @foreach(['imei' => 'IMEI', 'server' => 'Server', 'file' => 'File', 'smm' => 'SMM'] as $value => $label)
+                    <option value="{{ $value }}">{{ $label }}</option>
+                  @endforeach
+                </select>
+              </div>
+              <div class="col-md-7">
+                <label class="form-label small mb-1">Linked service</label>
+                <select name="service_id" id="productServiceIdCreate" class="form-select form-select-sm" disabled>
+                  <option value="">Choose service</option>
+                  @foreach($serviceOptions as $type => $services)
+                    @foreach($services as $service)
+                      <option value="{{ $service['id'] }}" data-service-type="{{ $type }}" hidden>
+                        {{ $service['name'] ?: ('#' . $service['id']) }}{{ $service['active'] ? '' : ' (inactive)' }}
+                      </option>
+                    @endforeach
+                  @endforeach
+                </select>
+              </div>
+            </div>
+
+            <div class="mb-2 d-none" id="productLocalSourceFieldCreate">
+              <label class="form-label small mb-1">Local source</label>
+              <select name="local_source_id" id="productLocalSourceCreate" class="form-select form-select-sm" disabled>
+                <option value="">Choose local source</option>
+                @foreach($sources as $source)
+                  <option value="{{ $source->id }}">{{ $source->name }}</option>
+                @endforeach
+              </select>
+            </div>
+
             <div class="row g-2 mb-2">
               <div class="col-md-6">
                 <label class="form-label small mb-1">Price</label>
@@ -99,16 +143,6 @@
                   </select>
                 </div>
               </div>
-            </div>
-
-            <div class="mb-2">
-              <label class="form-label small mb-1">Source</label>
-              <select name="local_source_id" class="form-select form-select-sm">
-                <option value="">Manual</option>
-                @foreach($sources as $source)
-                  <option value="{{ $source->id }}">{{ $source->name }}</option>
-                @endforeach
-              </select>
             </div>
 
             <div class="store-product-toggle">
@@ -208,5 +242,32 @@
   if (window.initModalEditors) {
     window.initModalEditors(document.currentScript.closest('.modal-content') || document);
   }
+
+  const typeSelect = document.getElementById('productServiceTypeCreate');
+  const serviceSelect = document.getElementById('productServiceIdCreate');
+  const sourceSelect = document.getElementById('productSourceTypeCreate');
+  const serviceFields = document.getElementById('productServiceFieldsCreate');
+  const localField = document.getElementById('productLocalSourceFieldCreate');
+  const localSelect = document.getElementById('productLocalSourceCreate');
+  sourceSelect?.addEventListener('change', function(){
+    const isService = this.value === 'service';
+    const isLocal = this.value === 'local_source';
+    serviceFields.classList.toggle('d-none', !isService);
+    localField.classList.toggle('d-none', !isLocal);
+    typeSelect.disabled = !isService;
+    serviceSelect.disabled = !isService || !typeSelect.value;
+    localSelect.disabled = !isLocal;
+    if (!isService) { typeSelect.value = ''; serviceSelect.value = ''; }
+    if (!isLocal) localSelect.value = '';
+  });
+  typeSelect?.addEventListener('change', function(){
+    const type = this.value;
+    serviceSelect.value = '';
+    serviceSelect.disabled = !type;
+    serviceSelect.querySelectorAll('option[data-service-type]').forEach(function(option){
+      option.hidden = option.dataset.serviceType !== type;
+      option.disabled = option.hidden;
+    });
+  });
 })();
 </script>

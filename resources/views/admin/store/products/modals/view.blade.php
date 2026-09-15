@@ -18,8 +18,16 @@
       <td>{{ $product->category?->name ?? 'None' }}</td>
     </tr>
     <tr>
-      <th>Local source</th>
-      <td>{{ $product->localSource?->name ?? 'Manual' }}</td>
+      <th>Source</th>
+      <td>
+        @if(($product->source_type ?? 'manual') === 'service')
+          Service · {{ strtoupper($product->service_type) }} #{{ $product->service_id }}
+        @elseif($product->source_type === 'local_source')
+          Local source · {{ $product->localSource?->name ?? 'Missing' }}
+        @else
+          Manual
+        @endif
+      </td>
     </tr>
     <tr>
       <th>Cost</th>

@@ -10,6 +10,9 @@ class Product extends Model
     protected $fillable = [
         'product_category_id',
         'local_source_id',
+        'source_type',
+        'service_type',
+        'service_id',
         'name',
         'alias',
         'main_image',
@@ -69,6 +72,15 @@ class Product extends Model
     public function orders()
     {
         return $this->hasMany(ProductOrder::class);
+    }
+
+    public function linkedService()
+    {
+        if (!$this->service_type || !$this->service_id) {
+            return null;
+        }
+
+        return \App\Support\ProductService::find((string) $this->service_type, (int) $this->service_id);
     }
 
     private static function uniqueAlias(string $name, ?int $ignoreId = null): string
