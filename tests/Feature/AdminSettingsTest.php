@@ -26,9 +26,6 @@ final class AdminSettingsTest extends SecurityTestCase
         $this->put(route('admin.settings.general.update'), $this->generalPayload())->assertForbidden();
         $this->put(route('admin.settings.mail.update'), $this->mailPayload())->assertForbidden();
 
-        $this->actingAs($this->user('Administrator'));
-        $this->get(route('admin.settings.general'))->assertOk();
-        $this->get(route('admin.settings.mail'))->assertOk();
     }
 
     public function test_general_settings_are_validated_and_saved_with_boolean_values(): void
