@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Models\ServiceGroupPrice;
+use Illuminate\Validation\ValidationException;
 
 class ApiProvidersController extends Controller
 {
@@ -307,18 +308,33 @@ class ApiProvidersController extends Controller
             }
         }
 
-        $mode  = (string)($request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed');
-        $mode  = strtolower(trim($mode));
-        if (!in_array($mode, ['fixed', 'percent'], true)) $mode = 'fixed';
-
-        $value = (float)($request->input('profit_value') ?? $request->input('pricing_value') ?? 0);
-
         $groupPrices = $request->input('group_prices', []);
-        if (is_string($groupPrices) && trim($groupPrices) !== '') {
-            $decoded = json_decode($groupPrices, true);
-            if (is_array($decoded)) $groupPrices = $decoded;
+        if (is_string($groupPrices)) {
+            $groupPrices = json_decode($groupPrices, true);
         }
-        if (!is_array($groupPrices)) $groupPrices = [];
+        $request->merge([
+            'profit_mode' => $request->input('profit_mode') ?? $request->input('pricing_mode') ?? 'fixed',
+            'profit_value' => $request->input('profit_value') ?? $request->input('pricing_value') ?? 0,
+            'group_prices' => $groupPrices,
+            'service_ids' => $ids ?? [],
+        ]);
+        $validated = $request->validate([
+            'apply_all' => 'sometimes|boolean',
+            'service_ids' => 'array',
+            'service_ids.*' => 'required|regex:/^[a-zA-Z0-9_-]+$/|max:255',
+            'profit_mode' => 'required|in:fixed,percent',
+            'profit_value' => 'required|numeric|min:0|max:99999999.9999',
+            'group_prices' => 'present|array',
+            'group_prices.*' => 'array',
+            'group_prices.*.group_id' => 'required|integer|distinct|exists:groups,id',
+            'group_prices.*.auto_price' => 'sometimes|boolean',
+            'group_prices.*.price' => 'nullable|numeric|min:0|max:99999999.9999',
+            'group_prices.*.discount' => 'nullable|numeric|min:0|max:99999999.9999',
+            'group_prices.*.discount_type' => 'nullable|integer|in:1,2',
+        ]);
+        $mode = $validated['profit_mode'];
+        $value = (float) $validated['profit_value'];
+        $groupPrices = $validated['group_prices'];
 
         try {
             $result = $this->doBulkImport(
@@ -336,8 +352,11 @@ class ApiProvidersController extends Controller
                 'count' => $result['count'],
                 'added_remote_ids' => $result['added_remote_ids'],
             ]);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Throwable $e) {
-            return response()->json(['ok' => false, 'msg' => $e->getMessage()], 500);
+            report($e);
+            return response()->json(['ok' => false, 'msg' => 'Service import failed. No changes were saved.'], 500);
         }
     }
 
@@ -374,18 +393,6 @@ class ApiProvidersController extends Controller
         ];
 
         return json_encode($cfg, JSON_UNESCAPED_UNICODE);
-    }
-
-    private function mapRemoteFieldType($t): string
-    {
-        $x = strtolower(trim((string)$t));
-        if (in_array($x, ['dropdown', 'select'], true)) return 'select';
-        if (in_array($x, ['textarea', 'text_area'], true)) return 'textarea';
-        if ($x === 'password') return 'password';
-        if ($x === 'email') return 'email';
-        if (in_array($x, ['number', 'numeric', 'int', 'integer'], true)) return 'number';
-
-        return 'text';
     }
 
     private function saveCustomFieldsToTable(string $serviceType, int $serviceId, array $fields): void
@@ -441,91 +448,6 @@ class ApiProvidersController extends Controller
         }
     }
 
-    private function extractRemoteAdditionalFields($r): array
-    {
-        $primary = $this->normalizeAdditionalFieldsPayload($r->additional_fields ?? null);
-        if (!empty($primary)) {
-            return $primary;
-        }
-
-        $ad = $r->additional_data ?? null;
-        if (is_string($ad)) {
-            $ad = json_decode($ad, true);
-        }
-
-        if (!is_array($ad)) {
-            return [];
-        }
-
-        $candidates = [
-            $ad['Requires.Custom'] ?? null,
-            $ad['CustomFields'] ?? null,
-            $ad['custom_fields'] ?? null,
-            $ad['additional_fields'] ?? null,
-            $ad['CUSTOM']['fields'] ?? null,
-            $ad['CUSTOM']['FIELDS'] ?? null,
-            $ad['CUSTOM'] ?? null,
-            $ad['custom']['fields'] ?? null,
-            $ad['custom']['FIELDS'] ?? null,
-            $ad['custom'] ?? null,
-        ];
-
-        foreach ($candidates as $candidate) {
-            $normalized = $this->normalizeAdditionalFieldsPayload($candidate);
-            if (!empty($normalized)) {
-                return $normalized;
-            }
-        }
-
-        return [];
-    }
-
-    private function normalizeAdditionalFieldsPayload($raw): array
-    {
-        if (is_string($raw)) {
-            $raw = json_decode($raw, true);
-        }
-
-        if (!is_array($raw) || $raw === []) {
-            return [];
-        }
-
-        if ($this->isAssociativeArray($raw)) {
-            $isDirectFieldShape = array_key_exists('fieldname', $raw)
-                || array_key_exists('name', $raw)
-                || array_key_exists('label', $raw);
-
-            if ($isDirectFieldShape) {
-                $label = trim((string)($raw['fieldname'] ?? $raw['name'] ?? $raw['label'] ?? ''));
-                return $label !== '' ? [$raw] : [];
-            }
-        }
-
-        $flattened = [];
-        foreach ($raw as $value) {
-            if (is_array($value)) {
-                $sub = $this->normalizeAdditionalFieldsPayload($value);
-                if (!empty($sub)) {
-                    $flattened = array_merge($flattened, $sub);
-                }
-            }
-        }
-
-        $out = [];
-        foreach (($flattened ?: $raw) as $item) {
-            if (!is_array($item) || !$this->isAssociativeArray($item)) {
-                continue;
-            }
-            $label = trim((string)($item['fieldname'] ?? $item['name'] ?? $item['label'] ?? ''));
-            if ($label === '') {
-                continue;
-            }
-            $out[] = $item;
-        }
-
-        return $out;
-    }
-
     private function extractRemoteInfoText($r): string
     {
         $text = trim(strip_tags((string)($r->info ?? '')));
@@ -562,84 +484,6 @@ class ApiProvidersController extends Controller
         }
 
         return '';
-    }
-
-    private function isAssociativeArray(array $arr): bool
-    {
-        if ($arr === []) {
-            return false;
-        }
-
-        return array_keys($arr) !== range(0, count($arr) - 1);
-    }
-
-    private function normalizeRemoteFieldsToLocal(array $remoteFields): array
-    {
-        $out = [];
-        $seen = [];
-        $maxFields = 20;
-
-        foreach ($remoteFields as $rf) {
-            if (!is_array($rf) || !$this->isAssociativeArray($rf)) {
-                continue;
-            }
-
-            $label = trim((string)($rf['fieldname'] ?? $rf['name'] ?? $rf['label'] ?? ''));
-            if ($label === '') {
-                continue;
-            }
-
-            $providedInput = trim((string)($rf['input'] ?? ''));
-            $input = $providedInput !== ''
-                ? Str::snake($providedInput)
-                : 'service_fields_' . (count($out) + 1);
-
-            $dedupeKey = Str::lower($label) . '|' . Str::lower($input);
-            if (isset($seen[$dedupeKey])) {
-                continue;
-            }
-
-            $required = $this->parseStrictRequiredFlag($rf['required'] ?? null);
-            $type = $this->mapRemoteFieldType($rf['fieldtype'] ?? $rf['type'] ?? 'text');
-
-            $optionsRaw = $rf['fieldoptions'] ?? $rf['options'] ?? [];
-            $optionsArr = [];
-            if (is_string($optionsRaw)) {
-                $optionsArr = array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n|,/', $optionsRaw))));
-            } elseif (is_array($optionsRaw)) {
-                $optionsArr = $optionsRaw;
-            }
-
-            $out[] = [
-                'active'      => 1,
-                'name'        => $label,
-                'type'        => $type,
-                'input'       => $input,
-                'description' => (string)($rf['description'] ?? ''),
-                'minimum'     => 0,
-                'maximum'     => 0,
-                'validation'  => null,
-                'required'    => $required,
-                'options'     => $type === 'select' ? $optionsArr : [],
-            ];
-
-            $seen[$dedupeKey] = true;
-            if (count($out) >= $maxFields) {
-                break;
-            }
-        }
-
-        return $out;
-    }
-
-    private function parseStrictRequiredFlag($required): int
-    {
-        if (is_bool($required)) {
-            return $required ? 1 : 0;
-        }
-
-        $value = Str::lower(trim((string)$required));
-        return in_array($value, ['on', '1', 'true', 'yes'], true) ? 1 : 0;
     }
 
     private function smmCustomFieldsFromRemote($r): array
@@ -899,6 +743,8 @@ class ApiProvidersController extends Controller
         $groupPrices = $this->normalizeGroupPrices($groupPrices);
 
         DB::transaction(function () use ($provider, $kind, $remoteRows, $localModel, $profitMode, $profitValue, $groupPrices, &$added, &$count) {
+            // Serialize imports for this provider so concurrent imports cannot duplicate rows.
+            ApiProvider::query()->whereKey($provider->id)->lockForUpdate()->firstOrFail();
             foreach ($remoteRows as $r) {
                 $remoteId = (string)($r->remote_id ?? '');
                 if ($remoteId === '') continue;
@@ -957,10 +803,10 @@ class ApiProvidersController extends Controller
                     $params['supports_refill'] = (bool)($r->refill ?? false);
                     $params['supports_cancel'] = (bool)($r->cancel ?? false);
                 } else {
-                    $remoteFields = $this->extractRemoteAdditionalFields($r);
+                    $remoteFields = app(\App\Services\Providers\RemoteCustomFields::class)->extractRemoteAdditionalFields($r);
                     $remoteFieldsCount = count($remoteFields);
                     $localFields = !empty($remoteFields)
-                        ? $this->normalizeRemoteFieldsToLocal($remoteFields)
+                        ? app(\App\Services\Providers\RemoteCustomFields::class)->normalizeRemoteFieldsToLocal($remoteFields)
                         : [];
 
                     $droppedCount = max(0, $remoteFieldsCount - count($localFields));
@@ -1011,6 +857,24 @@ class ApiProvidersController extends Controller
                     'reply_expiration' => 0,
                 ];
 
+                $finalPrice = $cost + ($profitType === 2 ? $cost * $profitValue / 100 : $profitValue);
+                if (!is_finite($cost) || $cost < 0 || !is_finite($finalPrice) || $finalPrice > 99999999.9999) {
+                    throw ValidationException::withMessages(['profit_value' => 'The imported service must have a valid nonnegative price.']);
+                }
+                foreach ($groupPrices as $priceRow) {
+                    $base = $priceRow['auto_price'] ? $finalPrice : $priceRow['price'];
+                    if (($priceRow['discount_type'] === 2 && $priceRow['discount'] > 100)
+                        || ($priceRow['discount_type'] === 1 && $priceRow['discount'] > $base)) {
+                        throw ValidationException::withMessages(['group_prices' => 'A group discount cannot exceed its base price or 100 percent.']);
+                    }
+                }
+                // Cast attributes receive arrays; raw JSON columns receive encoded text.
+                $model = new $localModel;
+                foreach (['name', 'time', 'info', 'main_field', 'params'] as $attribute) {
+                    $json = is_string($data[$attribute]) ? json_decode($data[$attribute], true) : $data[$attribute];
+                    $data[$attribute] = $model->hasCast($attribute)
+                        ? $json : ($json === null ? null : json_encode($json, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR));
+                }
                 $created = $localModel::query()->create($data);
 
                 if (!empty($localFields) && $created?->id) {

@@ -80,6 +80,24 @@ abstract class BaseServiceController extends Controller
         ]);
     }
 
+    public function modalEdit($service)
+    {
+        $row = ($this->model)::query()->findOrFail($service);
+        return redirect()->route($this->routePrefix . '.index', ['edit_service' => $row->id]);
+    }
+
+    public function toggle(Request $request, $service)
+    {
+        $data = $request->validate(['active' => 'sometimes|required|boolean']);
+        $active = DB::transaction(function () use ($service, $data) {
+            $row = ($this->model)::query()->lockForUpdate()->findOrFail($service);
+            $row->active = array_key_exists('active', $data) ? (bool) $data['active'] : !$row->active;
+            $row->save();
+            return (bool) $row->active;
+        });
+        return response()->json(['ok' => true, 'active' => $active]);
+    }
+
     public function modalCreate()
     {
         return view("admin.services.{$this->viewPrefix}._modal_create");
@@ -150,6 +168,10 @@ abstract class BaseServiceController extends Controller
         foreach ($cf as $c) {
             $nm = json_decode((string)$c->name, true);
             $description = json_decode((string)$c->description, true);
+            $options = $c->field_options ? (json_decode((string)$c->field_options, true) ?? (string)$c->field_options) : '';
+            if (is_array($options) && !array_is_list($options)) {
+                $options = $options['fallback'] ?? $options['en'] ?? $options;
+            }
             $customFields[] = [
                 'active' => (int)($c->active ?? 1),
                 'required' => (int)($c->required ?? 0),
@@ -162,7 +184,7 @@ abstract class BaseServiceController extends Controller
                 'minimum' => (int)($c->minimum ?? 0),
                 'maximum' => (int)($c->maximum ?? 0),
                 'validation' => (string)($c->validation ?? ''),
-                'options' => $c->field_options ? (json_decode((string)$c->field_options, true) ?: (string)$c->field_options) : '',
+                'options' => $options,
             ];
         }
     } catch (\Throwable $e) {
@@ -256,9 +278,9 @@ abstract class BaseServiceController extends Controller
                 ->where(fn ($query) => $query->whereRaw('LOWER(type) = ?', [$this->viewPrefix . '_service']))],
             'type'         => 'required|string|max:255',
 
-            'source'       => 'nullable|integer',
-            'remote_id'    => 'nullable',
-            'supplier_id'  => 'nullable',
+            'source'       => 'nullable|integer|in:1,2',
+            'remote_id'    => $this->viewPrefix === 'smm' ? 'nullable|regex:/^[a-zA-Z0-9_-]+$/|max:255' : 'nullable|integer|min:1|max:4294967295',
+            'supplier_id'  => 'nullable|integer|min:1',
 
             'name'         => 'required|string',
             'time'         => 'nullable|string',
@@ -266,34 +288,34 @@ abstract class BaseServiceController extends Controller
 
             'main_field_type'    => 'required|string|max:50',
             'allowed_characters' => 'nullable|string|max:50',
-            'min'                => 'nullable|integer',
-            'max'                => 'nullable|integer',
-            'minimum'            => 'nullable|integer',
-            'maximum'            => 'nullable|integer',
+            'min'                => 'nullable|integer|min:0|max:2147483647',
+            'max'                => 'nullable|integer|min:0|max:2147483647',
+            'minimum'            => 'nullable|integer|min:0|max:2147483647',
+            'maximum'            => 'nullable|integer|min:0|max:2147483647',
             'main_field_label'   => 'nullable|string|max:255',
 
-            'cost'        => 'nullable|numeric',
-            'profit'      => 'nullable|numeric',
-            'profit_type' => 'nullable|integer',
+            'cost'        => 'nullable|numeric|min:0|max:99999999.9999',
+            'profit'      => 'nullable|numeric|min:0|max:99999999.9999',
+            'profit_type' => 'nullable|integer|in:1,2',
 
             'active'            => 'sometimes|boolean',
             'allow_bulk'        => 'sometimes|boolean',
             'allow_duplicates'  => 'sometimes|boolean',
             'reply_with_latest' => 'sometimes|boolean',
             'allow_report'      => 'sometimes|boolean',
-            'allow_report_time' => 'nullable|integer',
+            'allow_report_time' => 'nullable|integer|min:0|max:2147483647',
             'allow_cancel'      => 'sometimes|boolean',
-            'allow_cancel_time' => 'nullable|integer',
+            'allow_cancel_time' => 'nullable|integer|min:0|max:2147483647',
             'use_remote_cost'   => 'sometimes|boolean',
             'use_remote_price'  => 'sometimes|boolean',
             'stop_on_api_change'=> 'sometimes|boolean',
             'needs_approval'    => 'sometimes|boolean',
-            'reply_expiration'  => 'nullable|integer',
+            'reply_expiration'  => 'nullable|integer|min:0|max:2147483647',
             'reject_on_missing_reply' => 'sometimes|boolean',
-            'ordering'                => 'nullable|integer',
+            'ordering'                => 'nullable|integer|min:0|max:2147483647',
 
-            'api_provider_id'       => 'nullable|integer',
-            'api_service_remote_id' => 'nullable|integer',
+            'api_provider_id'       => 'nullable|integer|min:1',
+            'api_service_remote_id' => $this->viewPrefix === 'smm' ? 'nullable|regex:/^[a-zA-Z0-9_-]+$/|max:255' : 'nullable|integer|min:1|max:4294967295',
 
             'group_prices' => 'nullable|array',
             'group_prices.*' => 'array',
@@ -305,6 +327,7 @@ abstract class BaseServiceController extends Controller
             'custom_fields_json' => 'nullable|string',
         ]);
 
+        $v = $this->validatedServiceValues($v);
         $v['group_prices'] = $this->validatedGroupPrices($v['group_prices'] ?? [], $v);
 
         $alias = $v['alias'] ?? null;
@@ -347,10 +370,7 @@ abstract class BaseServiceController extends Controller
         ];
 
         // custom_fields_json (إن وجد) نحفظه داخل params + داخل جدول custom_fields عبر نفس منطق مشروعك
-        $customFields = $this->normalizeCustomFields(
-            $request->input('custom_fields'),
-            $request->input('custom_fields_json')
-        );
+        $customFields = $this->validatedCustomFields($request) ?? [];
 
         $incomingParams = $request->input('params');
         if (is_string($incomingParams)) {
@@ -364,11 +384,6 @@ abstract class BaseServiceController extends Controller
 
         $params = $incomingParams;
         $params['custom_fields'] = $customFields;
-
-        if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
-            $v['supplier_id'] = (int)$v['api_provider_id'];
-            $v['remote_id']   = (int)$v['api_service_remote_id'];
-        }
 
         return DB::transaction(function () use ($request, $v, $name, $time, $info, $main, $params, $customFields) {
 
@@ -446,9 +461,9 @@ abstract class BaseServiceController extends Controller
                 ->where(fn ($query) => $query->whereRaw('LOWER(type) = ?', [$this->viewPrefix . '_service']))],
             'type'         => 'required|string|max:255',
 
-            'source'       => 'nullable|integer',
-            'remote_id'    => 'nullable',
-            'supplier_id'  => 'nullable',
+            'source'       => 'nullable|integer|in:1,2',
+            'remote_id'    => $this->viewPrefix === 'smm' ? 'nullable|regex:/^[a-zA-Z0-9_-]+$/|max:255' : 'nullable|integer|min:1|max:4294967295',
+            'supplier_id'  => 'nullable|integer|min:1',
 
             'name'         => 'required|string',
             'time'         => 'nullable|string',
@@ -456,34 +471,34 @@ abstract class BaseServiceController extends Controller
 
             'main_field_type'    => 'required|string|max:50',
             'allowed_characters' => 'nullable|string|max:50',
-            'min'                => 'nullable|integer',
-            'max'                => 'nullable|integer',
-            'minimum'            => 'nullable|integer',
-            'maximum'            => 'nullable|integer',
+            'min'                => 'nullable|integer|min:0|max:2147483647',
+            'max'                => 'nullable|integer|min:0|max:2147483647',
+            'minimum'            => 'nullable|integer|min:0|max:2147483647',
+            'maximum'            => 'nullable|integer|min:0|max:2147483647',
             'main_field_label'   => 'nullable|string|max:255',
 
-            'cost'        => 'nullable|numeric',
-            'profit'      => 'nullable|numeric',
-            'profit_type' => 'nullable|integer',
+            'cost'        => 'nullable|numeric|min:0|max:99999999.9999',
+            'profit'      => 'nullable|numeric|min:0|max:99999999.9999',
+            'profit_type' => 'nullable|integer|in:1,2',
 
             'active'            => 'sometimes|boolean',
             'allow_bulk'        => 'sometimes|boolean',
             'allow_duplicates'  => 'sometimes|boolean',
             'reply_with_latest' => 'sometimes|boolean',
             'allow_report'      => 'sometimes|boolean',
-            'allow_report_time' => 'nullable|integer',
+            'allow_report_time' => 'nullable|integer|min:0|max:2147483647',
             'allow_cancel'      => 'sometimes|boolean',
-            'allow_cancel_time' => 'nullable|integer',
+            'allow_cancel_time' => 'nullable|integer|min:0|max:2147483647',
             'use_remote_cost'   => 'sometimes|boolean',
             'use_remote_price'  => 'sometimes|boolean',
             'stop_on_api_change'=> 'sometimes|boolean',
             'needs_approval'    => 'sometimes|boolean',
-            'reply_expiration'  => 'nullable|integer',
+            'reply_expiration'  => 'nullable|integer|min:0|max:2147483647',
             'reject_on_missing_reply' => 'sometimes|boolean',
-            'ordering'                => 'nullable|integer',
+            'ordering'                => 'nullable|integer|min:0|max:2147483647',
 
-            'api_provider_id'       => 'nullable|integer',
-            'api_service_remote_id' => 'nullable|integer',
+            'api_provider_id'       => 'nullable|integer|min:1',
+            'api_service_remote_id' => $this->viewPrefix === 'smm' ? 'nullable|regex:/^[a-zA-Z0-9_-]+$/|max:255' : 'nullable|integer|min:1|max:4294967295',
 
             'group_prices' => 'nullable|array',
             'group_prices.*' => 'array',
@@ -495,9 +510,10 @@ abstract class BaseServiceController extends Controller
             'custom_fields_json' => 'nullable|string',
         ]);
 
+        $v = $this->validatedServiceValues($v, $row);
         $v['group_prices'] = $this->validatedGroupPrices($v['group_prices'] ?? [], $v);
 
-        $customFields = $this->customFieldsForUpdate($request);
+        $customFields = $this->validatedCustomFields($request);
 
         $mainType = strtolower(trim((string)($v['main_field_type'] ?? 'serial')));
 
@@ -552,11 +568,6 @@ abstract class BaseServiceController extends Controller
         $paramsValue = !$request->exists('params') && $customFields === null
             ? $row->params
             : ($row->hasCast('params', ['array', 'json']) ? $params : $this->serviceJsonValue('params', $params));
-
-        if (($v['source'] ?? null) == 2 && !empty($v['api_provider_id']) && !empty($v['api_service_remote_id'])) {
-            $v['supplier_id'] = (int)$v['api_provider_id'];
-            $v['remote_id']   = (int)$v['api_service_remote_id'];
-        }
 
         return DB::transaction(function () use ($request, $row, $v, $name, $time, $info, $main, $paramsValue, $customFields) {
 
@@ -769,8 +780,48 @@ abstract class BaseServiceController extends Controller
         }
     }
 
+    /** Validate the effective values, including legacy field aliases, before writing. */
+    private function validatedServiceValues(array $values, ?Model $existing = null): array
+    {
+        $min = (int) ($values['min'] ?? $values['minimum'] ?? 0);
+        $max = (int) ($values['max'] ?? $values['maximum'] ?? 0);
+        if ($max > 0 && $max < $min) {
+            throw ValidationException::withMessages(['maximum' => 'Maximum must be zero (unlimited) or at least the minimum.']);
+        }
+        $sell = ServiceGroupPrice::servicePrice($values);
+        if (!is_finite($sell) || $sell > 99999999.9999) {
+            throw ValidationException::withMessages(['profit' => 'The resulting service price is too large.']);
+        }
+        $values['source'] = (int) ($values['source'] ?? 1);
+        if ($values['source'] === 1) {
+            $values['supplier_id'] = null;
+            $values['remote_id'] = null;
+            return $values;
+        }
+        $providerId = $values['api_provider_id'] ?? $values['supplier_id'] ?? null;
+        $remoteId = $values['api_service_remote_id'] ?? $values['remote_id'] ?? null;
+        if (!$providerId || !ApiProvider::query()->whereKey($providerId)->exists()) {
+            throw ValidationException::withMessages(['supplier_id' => 'Select an existing API provider.']);
+        }
+        if (!$remoteId || !DB::table('remote_' . $this->table)
+            ->where('api_provider_id', $providerId)->where('remote_id', (string) $remoteId)->exists()) {
+            throw ValidationException::withMessages(['remote_id' => 'Select a service from the selected provider and service kind.']);
+        }
+        $duplicate = ($this->model)::query()->where('supplier_id', $providerId)
+            ->where('remote_id', $remoteId)->where('type', $values['type']);
+        if ($existing) {
+            $duplicate->whereKeyNot($existing->getKey());
+        }
+        if ($duplicate->exists()) {
+            throw ValidationException::withMessages(['remote_id' => 'This provider service is already linked to a local service of this type.']);
+        }
+        $values['supplier_id'] = (int) $providerId;
+        $values['remote_id'] = $remoteId;
+        return $values;
+    }
+
     /** Null means omitted; an explicit empty list means remove all fields. */
-    private function customFieldsForUpdate(Request $request): ?array
+    private function validatedCustomFields(Request $request): ?array
     {
         $inputs = [];
         foreach (['custom_fields', 'custom_fields_json'] as $key) {
@@ -795,6 +846,23 @@ abstract class BaseServiceController extends Controller
                 foreach (['input_name', 'input', 'field_type', 'type', 'description', 'validation'] as $attribute) {
                     if (isset($field[$attribute]) && !is_scalar($field[$attribute])) {
                         throw ValidationException::withMessages([$key => 'Custom field attributes must be scalar values.']);
+                    }
+                }
+                foreach (['min', 'minimum', 'max', 'maximum'] as $attribute) {
+                    if (isset($field[$attribute]) && $field[$attribute] !== ''
+                        && (filter_var($field[$attribute], FILTER_VALIDATE_INT) === false
+                            || $field[$attribute] < 0 || $field[$attribute] > 2147483647)) {
+                        throw ValidationException::withMessages([$key => 'Custom field limits must be nonnegative integers.']);
+                    }
+                }
+                $min = (int) ($field['min'] ?? $field['minimum'] ?? 0);
+                $max = (int) ($field['max'] ?? $field['maximum'] ?? 0);
+                if ($max > 0 && $max < $min) {
+                    throw ValidationException::withMessages([$key => 'Custom field maximum must be zero or at least the minimum.']);
+                }
+                foreach (['active', 'required'] as $attribute) {
+                    if (isset($field[$attribute]) && !in_array($field[$attribute], [true, false, 0, 1, '0', '1'], true)) {
+                        throw ValidationException::withMessages([$key => 'Custom field flags must be boolean values.']);
                     }
                 }
                 foreach (['options', 'field_options'] as $attribute) {

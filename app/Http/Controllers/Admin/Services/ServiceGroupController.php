@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\ServiceGroup;
+use Illuminate\Validation\ValidationException;
 
 class ServiceGroupController extends Controller
 {
@@ -13,6 +14,7 @@ class ServiceGroupController extends Controller
     {
         $q       = trim((string) $request->input('q', ''));
         $typeIn  = $request->input('type');
+        $request->validate(['per_page' => 'sometimes|integer|min:1|max:100']);
         $perPage = (int) $request->input('per_page', 20);
 
         $query = ServiceGroup::query()
@@ -43,13 +45,13 @@ class ServiceGroupController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate([
-            'name'     => ['required','string'],
+            'name'     => ['required','string','max:255'],
             'type'     => ['required','in:imei,server,file,smm,imei_service,file_service,server_service,smm_service'],
             'ordering' => ['nullable','integer','min:1'],
         ]);
 
         $data['type']     = $this->normalizeType($data['type']);
-        $data['ordering'] = 1;
+        $data['ordering'] = $data['ordering'] ?? 1;
 
         ServiceGroup::create($data);
 
@@ -64,7 +66,7 @@ class ServiceGroupController extends Controller
     public function update(Request $request, ServiceGroup $group)
     {
         $data = $request->validate([
-            'name'     => ['required','string'],
+            'name'     => ['required','string','max:255'],
             'type'     => ['required','in:imei,server,file,smm,imei_service,file_service,server_service,smm_service'],
             'ordering' => ['nullable','integer','min:1'],
         ]);
@@ -72,6 +74,12 @@ class ServiceGroupController extends Controller
         $data['type']     = $this->normalizeType($data['type']);
         $data['ordering'] = $data['ordering'] ?? $group->ordering ?? 1;
 
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            if ($data['type'] !== $kind . '_service'
+                && DB::table($kind . '_services')->where('group_id', $group->id)->exists()) {
+                throw ValidationException::withMessages(['type' => 'This group contains services of another kind. Move them before changing its type.']);
+            }
+        }
         $group->update($data);
 
         return back()->with('ok', 'Saved.');

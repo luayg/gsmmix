@@ -721,7 +721,7 @@
 
     const activeToggle = scope.querySelector('[name="active"]');
     if (activeToggle) {
-      activeToggle.checked = true;
+      activeToggle.checked = readInt(['active'], 1) === 1;
     }
     
     const numberMap = {
@@ -1075,6 +1075,7 @@
 
     form.querySelector('[name="name"]') && (form.querySelector('[name="name"]').value = nameText);
     form.querySelector('[name="alias"]') && (form.querySelector('[name="alias"]').value = s.alias || '');
+    form.querySelector('[name="type"]') && (form.querySelector('[name="type"]').value = s.type || '');
     form.querySelector('[name="time"]') && (form.querySelector('[name="time"]').value = timeText);
 
     const infoHidden = form.querySelector('#infoHidden');
@@ -1137,6 +1138,18 @@
       }
     } catch (_) {}
 
+    const editProviderSelect = body.querySelector('#apiProviderSelect');
+    const editServiceSelect = body.querySelector('#apiServiceSelect');
+    editProviderSelect?.addEventListener('change', async () => {
+      form.querySelector('[name="supplier_id"]').value = editProviderSelect.value;
+      form.querySelector('[name="remote_id"]').value = '';
+      await loadProviderServices(body, editProviderSelect.value, serviceType);
+    });
+    editServiceSelect?.addEventListener('change', () => {
+      form.querySelector('[name="supplier_id"]').value = editProviderSelect?.value || '';
+      form.querySelector('[name="remote_id"]').value = editServiceSelect.value;
+    });
+
         // Keep saved local service options in Edit mode.
     // API service auto-selection can temporarily override toggles with remote defaults.
     applyRemoteServiceSettings(body, editSource);
@@ -1194,6 +1207,9 @@
 
     modal.show();
   }
+
+  const editLink = document.querySelector('[data-service-edit-link]');
+  if (editLink) openEditService(editLink);
 
   document.addEventListener('click', async (e)=>{
     const btn = e.target.closest('[data-edit-service]');
