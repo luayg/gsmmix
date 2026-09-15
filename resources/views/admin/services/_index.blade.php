@@ -2,6 +2,12 @@
 @php use Illuminate\Support\Str; @endphp
 
 @if(isset($viewPrefix))
+  @if(request()->filled('edit_service') && ctype_digit((string) request('edit_service')))
+    <span hidden data-service-edit-link
+          data-service-type="{{ $viewPrefix }}"
+          data-json-url="{{ route($routePrefix.'.show.json', (int) request('edit_service')) }}"
+          data-update-url="{{ route($routePrefix.'.update', (int) request('edit_service')) }}"></span>
+  @endif
   <style>
     .svc-page-toolbar{display:flex;align-items:end;justify-content:space-between;gap:1rem;flex-wrap:wrap;margin-bottom:1rem}
     .svc-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:.75rem;align-items:end}

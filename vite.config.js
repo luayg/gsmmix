@@ -3,6 +3,10 @@ import laravel from 'laravel-vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
+  // Summernote's UMD bundle requests "jQuery"; npm exposes "jquery".
+  resolve: {
+    alias: { jQuery: 'jquery' },
+  },
   plugins: [
     laravel({
       input: [
