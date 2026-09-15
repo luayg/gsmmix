@@ -185,6 +185,8 @@ class ProductController extends Controller
 
     private function payload(Request $request, array $data): array
     {
+        $profitType = $data['profit_type'] ?? 'credits';
+
         return [
             'product_category_id' => $data['product_category_id'] ?? null,
             'source_type' => $data['source_type'],
@@ -201,8 +203,8 @@ class ProductController extends Controller
             'converted_price' => (float) ($data['converted_price'] ?? 0),
             'currency' => trim((string) ($data['currency'] ?? 'USD')) ?: 'USD',
             'profit' => (float) ($data['profit'] ?? 0),
-            'profit_type' => in_array(($data['profit_type'] ?? 'credits'), ['credits', 'percent'], true)
-                ? $data['profit_type'] : 'credits',
+            'profit_type' => in_array($profitType, ['credits', 'percent'], true)
+                ? $profitType : 'credits',
             'active' => $request->boolean('active'),
             'device_based' => $request->boolean('device_based'),
             'unlimited' => $request->boolean('unlimited'),

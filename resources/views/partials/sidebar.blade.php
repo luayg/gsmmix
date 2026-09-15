@@ -119,35 +119,35 @@
         <ul class="nav flex-column">
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/services-groups*','admin.services.groups.*']) }}"
+            <a class="nav-link {{ request()->is('admin/service-management/services-groups*') || request()->routeIs('admin.services.groups.*') ? 'active' : '' }}"
                href="{{ $groupsHref }}">
               <i class="fas fa-layer-group"></i> Services groups
             </a>
           </li>
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/imei-services*','admin.services.imei.*']) }}"
+            <a class="nav-link {{ request()->is('admin/service-management/imei-services*') || request()->routeIs('admin.services.imei.*') ? 'active' : '' }}"
                href="{{ $imeiHref }}">
               <i class="fas fa-mobile-alt"></i> IMEI Service
             </a>
           </li>
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/server-services*','admin.services.server.*']) }}"
+            <a class="nav-link {{ request()->is('admin/service-management/server-services*') || request()->routeIs('admin.services.server.*') ? 'active' : '' }}"
                href="{{ $serverHref }}">
               <i class="fas fa-server"></i> Server Service
             </a>
           </li>
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/file-services*','admin.services.file.*']) }}"
+            <a class="nav-link {{ request()->is('admin/service-management/file-services*') || request()->routeIs('admin.services.file.*') ? 'active' : '' }}"
                href="{{ $fileHref }}">
               <i class="fas fa-file-alt"></i> File Service
             </a>
           </li>
 
           <li>
-            <a class="nav-link {{ nav_active(['admin/service-management/smm-services*','admin.services.smm.*']) }}"
+            <a class="nav-link {{ request()->is('admin/service-management/smm-services*') || request()->routeIs('admin.services.smm.*') ? 'active' : '' }}"
                href="{{ $smmHref }}">
               <i class="fas fa-share-alt"></i> SMM Service
             </a>

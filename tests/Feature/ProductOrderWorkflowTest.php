@@ -278,8 +278,8 @@ class ProductOrderWorkflowTest extends SecurityTestCase
     {
         $id = $this->postJson(route('admin.orders.product.store'), $this->payload())->assertOk()->json('id');
         $staff = $this->user();
-        $staff->givePermissionTo(['admin.access', 'orders.view']);
-        $this->actingAs($staff);
+        $staff->givePermissionTo(['admin.access', 'dashboard.view', 'orders.view']);
+        $this->actingAs($staff, 'web');
         $this->get(route('admin.orders.product.index'))->assertOk()->assertDontSee('Create order');
         $this->get(route('admin.orders.product.show', $id))->assertOk()->assertDontSee('Save changes');
         $this->get(route('admin.orders.product.create'))->assertForbidden();
