@@ -107,6 +107,7 @@ final class AdminPermissions
             'file', 'smm', 'provider_services', 'services_json', 'users', 'products',
             'access', 'activity', 'error', 'general', 'mail', 'payment', 'languages',
             'currencies', 'filemanager', 'update', 'maintenance', 'backups',
+            'translations',
         ];
         return in_array($action, $readActions, true) ? [$module . '.view'] : null;
     }

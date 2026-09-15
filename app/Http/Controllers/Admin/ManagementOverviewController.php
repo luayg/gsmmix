@@ -117,8 +117,6 @@ class ManagementOverviewController extends Controller
             'admin.settings.general' => 'General settings',
             'admin.settings.mail' => 'Mail settings',
             'admin.settings.payment' => 'Payment settings',
-            'admin.settings.languages' => 'Languages',
-            'admin.settings.currencies' => 'Currencies',
             'admin.system.filemanager' => 'File manager',
             'admin.system.update' => 'System update',
             'admin.system.maintenance' => 'Maintenance',
