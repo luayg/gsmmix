@@ -14,7 +14,7 @@
   <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
 </div>
 
-<form class="js-ajax-form" method="POST" action="{{ route('admin.store.products.store') }}">
+<form class="js-ajax-form" method="POST" action="{{ route('admin.store.products.store') }}" enctype="multipart/form-data">
   @csrf
 
   <style>
@@ -83,7 +83,7 @@
                   <option value="">Choose service</option>
                   @foreach($serviceOptions as $type => $services)
                     @foreach($services as $service)
-                      <option value="{{ $service['id'] }}" data-service-type="{{ $type }}" hidden>
+                      <option value="{{ $service['id'] }}" data-service-type="{{ $type }}" data-service-cost="{{ $service['cost'] }}" hidden>
                         {{ $service['name'] ?: ('#' . $service['id']) }}{{ $service['active'] ? '' : ' (inactive)' }}
                       </option>
                     @endforeach
@@ -170,21 +170,27 @@
           <div class="col-lg-6">
             <div class="mb-2">
               <label class="form-label small mb-1">Main Image</label>
-              <input type="text" name="main_image" id="mainImageCreate" class="form-control form-control-sm" placeholder="Image URL or path">
-            </div>
-
-            <div class="mb-3">
-              <button type="button" class="btn btn-light btn-sm border" id="selectMainImageCreate">Select image</button>
+              <input type="hidden" name="main_image" value="">
+              <input type="file" name="main_image_file" id="mainImageFileCreate" class="d-none" accept="image/jpeg,image/png,image/webp,image/gif">
+              <div class="border rounded bg-light p-3 text-center">
+                <img id="mainImagePreviewCreate" class="img-fluid rounded d-none mb-2" style="max-height:160px" alt="Product image preview">
+                <div id="mainImageNameCreate" class="small text-muted mb-2">No image selected</div>
+                <button type="button" class="btn btn-outline-success btn-sm" id="selectMainImageCreate">
+                  <i class="fas fa-upload me-1"></i> Choose image from computer
+                </button>
+              </div>
             </div>
 
             <div class="store-product-info-editor">
               <label class="form-label small mb-1">Info</label>
               <textarea id="infoEditor"
+                        class="form-control summernote"
                         data-editor="summernote"
                         data-summernote="1"
+                        data-summernote-hidden="#infoHidden"
                         data-summernote-height="260"
                         data-upload-url="{{ route('admin.uploads.summernote') }}"
-                        class="form-control"></textarea>
+                        ></textarea>
             </div>
           </div>
         </div>
@@ -230,13 +236,18 @@
 
 <script>
 (function(){
-  const imageInput = document.getElementById('mainImageCreate');
+  const imageInput = document.getElementById('mainImageFileCreate');
+  const imagePreview = document.getElementById('mainImagePreviewCreate');
+  const imageName = document.getElementById('mainImageNameCreate');
   document.getElementById('selectMainImageCreate')?.addEventListener('click', function(){
-    const current = imageInput?.value || '';
-    const value = window.prompt('Image URL or path', current);
-    if (value !== null && imageInput) {
-      imageInput.value = value;
-    }
+    imageInput?.click();
+  });
+  imageInput?.addEventListener('change', function(){
+    const file = this.files?.[0];
+    if (!file) return;
+    imageName.textContent = file.name;
+    imagePreview.src = URL.createObjectURL(file);
+    imagePreview.classList.remove('d-none');
   });
 
   if (window.initModalEditors) {
@@ -249,6 +260,24 @@
   const serviceFields = document.getElementById('productServiceFieldsCreate');
   const localField = document.getElementById('productLocalSourceFieldCreate');
   const localSelect = document.getElementById('productLocalSourceCreate');
+  const form = sourceSelect?.closest('form');
+  const costInput = form?.querySelector('[name="cost"]');
+  const priceInput = form?.querySelector('[name="price"]');
+  const profitInput = form?.querySelector('[name="profit"]');
+  const profitType = form?.querySelector('[name="profit_type"]');
+  const calculatePrice = function(){
+    if (sourceSelect?.value !== 'service') return;
+    const cost = Number.parseFloat(costInput?.value || '0') || 0;
+    const profit = Number.parseFloat(profitInput?.value || '0') || 0;
+    const price = profitType?.value === 'percent' ? cost + (cost * profit / 100) : cost + profit;
+    if (priceInput) priceInput.value = price.toFixed(2);
+  };
+  const applyServiceCost = function(){
+    const option = serviceSelect?.selectedOptions?.[0];
+    if (!option?.dataset.serviceCost) return;
+    if (costInput) costInput.value = (Number.parseFloat(option.dataset.serviceCost) || 0).toFixed(2);
+    calculatePrice();
+  };
   sourceSelect?.addEventListener('change', function(){
     const isService = this.value === 'service';
     const isLocal = this.value === 'local_source';
@@ -269,5 +298,8 @@
       option.disabled = option.hidden;
     });
   });
+  serviceSelect?.addEventListener('change', applyServiceCost);
+  profitInput?.addEventListener('input', calculatePrice);
+  profitType?.addEventListener('change', calculatePrice);
 })();
 </script>

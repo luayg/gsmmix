@@ -72,6 +72,7 @@ final class ProductService
             $options[$type] = $model::query()->orderBy('id')->get()->map(fn (Model $service) => [
                 'id' => (int) $service->getKey(),
                 'name' => self::displayName($service),
+                'cost' => round((float) ($service->cost ?? 0), 4),
                 'active' => (bool) $service->active,
             ])->all();
         }

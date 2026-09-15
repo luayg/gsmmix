@@ -11,7 +11,9 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Http\UploadedFile;
 use Tests\Support\SecurityTestCase;
 use Tests\Support\ProductOrderMysqlDatabase;
 use Symfony\Component\Process\Process;
@@ -140,23 +142,26 @@ class ProductOrderWorkflowTest extends SecurityTestCase
 
     public function test_product_creation_accepts_only_a_valid_source_configuration(): void
     {
+        Storage::fake('public');
         $source = LocalSource::create(['name' => 'Codes']);
         $serviceId = DB::table('imei_services')->insertGetId([
             'active' => true,
-            'cost' => 1,
+            'cost' => 7.25,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
 
         $this->postJson(route('admin.store.products.store'), [
             'name' => 'Manual product', 'price' => 3, 'source_type' => 'manual', 'active' => 1,
+            'main_image_file' => UploadedFile::fake()->image('product.png', 120, 120),
         ])->assertOk();
         $this->postJson(route('admin.store.products.store'), [
             'name' => 'Stock product', 'price' => 4, 'source_type' => 'local_source',
             'local_source_id' => $source->id, 'active' => 1,
         ])->assertOk();
         $this->postJson(route('admin.store.products.store'), [
-            'name' => 'Service product', 'price' => 5, 'source_type' => 'service',
+            'name' => 'Service product', 'price' => 999, 'cost' => 0, 'profit' => 2,
+            'profit_type' => 'credits', 'source_type' => 'service',
             'service_type' => 'imei', 'service_id' => $serviceId, 'active' => 1,
         ])->assertOk();
 
@@ -164,13 +169,23 @@ class ProductOrderWorkflowTest extends SecurityTestCase
             'name' => 'Manual product', 'source_type' => 'manual',
             'local_source_id' => null, 'service_type' => null, 'service_id' => null,
         ]);
+        $manualImage = Product::where('name', 'Manual product')->value('main_image');
+        $this->assertStringStartsWith('/storage/products/', $manualImage);
+        Storage::disk('public')->assertExists(str_replace('/storage/', '', $manualImage));
         $this->assertDatabaseHas('products', [
             'name' => 'Stock product', 'source_type' => 'local_source', 'local_source_id' => $source->id,
         ]);
         $this->assertDatabaseHas('products', [
             'name' => 'Service product', 'source_type' => 'service',
             'service_type' => 'imei', 'service_id' => $serviceId,
+            'cost' => 7.25, 'profit' => 2, 'price' => 9.25,
         ]);
+        $this->get(route('admin.store.products.modal.create'))
+            ->assertOk()
+            ->assertSee('data-service-cost="7.25"', false)
+            ->assertSee('name="main_image_file"', false)
+            ->assertSee('class="form-control summernote"', false)
+            ->assertSee('data-summernote-hidden="#infoHidden"', false);
         $this->postJson(route('admin.store.products.store'), [
             'name' => 'Broken product', 'price' => 1, 'source_type' => 'service',
             'service_type' => 'imei', 'service_id' => 999999,

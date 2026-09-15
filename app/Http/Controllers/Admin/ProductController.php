@@ -9,6 +9,7 @@ use App\Models\ProductCategory;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use App\Support\ProductService;
 use Illuminate\Validation\ValidationException;
@@ -154,6 +155,7 @@ class ProductController extends Controller
             'alias' => ['nullable', 'string', 'max:255', Rule::unique('products', 'alias')->ignore($product?->id)],
             'description' => ['nullable', 'string'],
             'main_image' => ['nullable', 'string', 'max:255'],
+            'main_image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
             'delivery_time' => ['nullable', 'string', 'max:255'],
             'cost' => ['nullable', 'numeric', 'min:0'],
             'price' => ['required', 'numeric', 'min:0'],
@@ -186,6 +188,22 @@ class ProductController extends Controller
     private function payload(Request $request, array $data): array
     {
         $profitType = $data['profit_type'] ?? 'credits';
+        $cost = (float) ($data['cost'] ?? 0);
+        $profit = (float) ($data['profit'] ?? 0);
+        $mainImage = trim((string) ($data['main_image'] ?? '')) ?: null;
+
+        if ($request->hasFile('main_image_file')) {
+            $path = $request->file('main_image_file')->store('products', 'public');
+            $mainImage = Storage::disk('public')->url($path);
+        }
+
+        if ($data['source_type'] === 'service') {
+            $service = ProductService::find((string) $data['service_type'], (int) $data['service_id']);
+            $cost = (float) ($service?->cost ?? 0);
+            $data['price'] = $profitType === 'percent'
+                ? $cost + ($cost * $profit / 100)
+                : $cost + $profit;
+        }
 
         return [
             'product_category_id' => $data['product_category_id'] ?? null,
@@ -195,14 +213,14 @@ class ProductController extends Controller
             'service_id' => $data['source_type'] === 'service' ? (int) ($data['service_id'] ?? 0) : null,
             'name' => $data['name'],
             'alias' => trim((string) ($data['alias'] ?? '')) ?: null,
-            'main_image' => trim((string) ($data['main_image'] ?? '')) ?: null,
+            'main_image' => $mainImage,
             'description' => $data['description'] ?? null,
             'delivery_time' => trim((string) ($data['delivery_time'] ?? '')) ?: null,
-            'cost' => (float) ($data['cost'] ?? 0),
+            'cost' => $cost,
             'price' => (float) ($data['price'] ?? 0),
             'converted_price' => (float) ($data['converted_price'] ?? 0),
             'currency' => trim((string) ($data['currency'] ?? 'USD')) ?: 'USD',
-            'profit' => (float) ($data['profit'] ?? 0),
+            'profit' => $profit,
             'profit_type' => in_array($profitType, ['credits', 'percent'], true)
                 ? $profitType : 'credits',
             'active' => $request->boolean('active'),
