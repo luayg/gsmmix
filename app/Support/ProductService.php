@@ -11,6 +11,7 @@ use App\Models\ServerService;
 use App\Models\SmmOrder;
 use App\Models\SmmService;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
 final class ProductService
@@ -69,6 +70,11 @@ final class ProductService
         $options = [];
         foreach (self::TYPES as $type) {
             $model = self::serviceModel($type);
+            $instance = new $model;
+            if (!Schema::hasTable($instance->getTable())) {
+                $options[$type] = [];
+                continue;
+            }
             $options[$type] = $model::query()->orderBy('id')->get()->map(fn (Model $service) => [
                 'id' => (int) $service->getKey(),
                 'name' => self::displayName($service),
