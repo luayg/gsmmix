@@ -24,7 +24,8 @@ class ServiceGroupPrice extends Model
     {
         $cost = (float) data_get($service, 'cost', 0);
         $profit = (float) data_get($service, 'profit', 0);
-        $percent = (int) data_get($service, 'profit_type', 1) === 2;
+        $profitType = data_get($service, 'profit_type', 1);
+        $percent = (int) $profitType === 2 || $profitType === 'percent';
 
         return round($cost + ($percent ? $cost * $profit / 100 : $profit), 4);
     }

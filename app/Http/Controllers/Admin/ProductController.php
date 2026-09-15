@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\LocalSource;
 use App\Models\Product;
 use App\Models\ProductCategory;
+use App\Models\Group;
+use App\Models\ServiceGroupPrice;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -64,14 +66,22 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         $data = $this->validateProduct($request);
-        Product::create($this->payload($request, $data));
+        DB::transaction(function () use ($request, $data): void {
+            $product = Product::create($this->payload($request, $data));
+            $this->saveGroupPrices($product, $data['group_prices'] ?? []);
+        });
         return response()->json(['ok' => true, 'msg' => 'Product created']);
     }
 
     public function update(Request $request, Product $product)
     {
         $data = $this->validateProduct($request, $product);
-        $product->update($this->payload($request, $data));
+        DB::transaction(function () use ($request, $data, $product): void {
+            $product->update($this->payload($request, $data));
+            if (array_key_exists('group_prices', $data)) {
+                $this->saveGroupPrices($product, $data['group_prices']);
+            }
+        });
         return response()->json(['ok' => true, 'msg' => 'Product updated']);
     }
 
@@ -89,6 +99,9 @@ class ProductController extends Controller
             ], 409);
         }
 
+        if (Schema::hasTable('service_group_prices')) {
+            ServiceGroupPrice::query()->where('service_type', 'product')->where('service_id', $product->id)->delete();
+        }
         $product->delete();
         return response()->json(['ok' => true, 'msg' => 'Product deleted']);
     }
@@ -106,7 +119,7 @@ class ProductController extends Controller
 
     public function modalEdit(Product $product)
     {
-        $data = $this->formData();
+        $data = $this->formData($product);
         $data['product'] = $product;
         return view('admin.store.products.modals.edit', $data);
     }
@@ -134,12 +147,22 @@ class ProductController extends Controller
         );
     }
 
-    private function formData(): array
+    private function formData(?Product $product = null): array
     {
+        $customerGroups = Schema::hasTable('groups')
+            ? Group::query()->orderBy('id')->get(['id', 'name'])
+            : collect();
+        $productGroupPrices = $product && Schema::hasTable('service_group_prices')
+            ? ServiceGroupPrice::query()->where('service_type', 'product')->where('service_id', $product->id)
+                ->get()->keyBy('group_id')
+            : collect();
+
         return [
             'categories' => ProductCategory::query()->orderBy('name')->get(['id', 'name']),
             'sources' => LocalSource::query()->orderBy('name')->get(['id', 'name']),
             'serviceOptions' => ProductService::options(),
+            'customerGroups' => $customerGroups,
+            'productGroupPrices' => $productGroupPrices,
         ];
     }
 
@@ -173,6 +196,12 @@ class ProductController extends Controller
             'meta_title' => ['nullable', 'string', 'max:255'],
             'meta_keywords' => ['nullable', 'string'],
             'meta_description' => ['nullable', 'string'],
+            'group_prices' => ['nullable', 'array'],
+            'group_prices.*' => ['array'],
+            'group_prices.*.price' => ['nullable', 'numeric', 'min:0', 'max:99999999.9999'],
+            'group_prices.*.auto_price' => ['sometimes', 'boolean'],
+            'group_prices.*.discount' => ['nullable', 'numeric', 'min:0', 'max:99999999.9999'],
+            'group_prices.*.discount_type' => ['nullable', 'integer', 'in:1,2'],
         ]);
 
         if ($validated['source_type'] === 'service') {
@@ -183,6 +212,34 @@ class ProductController extends Controller
         }
 
         return $validated;
+    }
+
+    private function saveGroupPrices(Product $product, array $rows): void
+    {
+        if (!Schema::hasTable('service_group_prices') || !Schema::hasTable('groups')) {
+            return;
+        }
+        $validGroups = Group::query()->whereIn('id', array_keys($rows))->pluck('id')->map(fn ($id) => (int) $id)->all();
+        ServiceGroupPrice::query()->where('service_type', 'product')->where('service_id', $product->id)
+            ->whereNotIn('group_id', $validGroups ?: [0])->delete();
+
+        foreach ($rows as $groupId => $row) {
+            $groupId = (int) $groupId;
+            if ($groupId < 1 || !in_array($groupId, $validGroups, true)) {
+                throw ValidationException::withMessages(["group_prices.{$groupId}" => 'Choose an existing customer group.']);
+            }
+            $automatic = (bool) ($row['auto_price'] ?? false);
+            $price = $automatic ? (float) $product->price : (float) ($row['price'] ?? 0);
+            $discount = (float) ($row['discount'] ?? 0);
+            $discountType = (int) ($row['discount_type'] ?? 1);
+            if (($discountType === 2 && $discount > 100) || ($discountType === 1 && $discount > $price)) {
+                throw ValidationException::withMessages(["group_prices.{$groupId}.discount" => 'The discount cannot exceed the group price.']);
+            }
+            ServiceGroupPrice::updateOrCreate(
+                ['service_type' => 'product', 'service_id' => $product->id, 'group_id' => $groupId],
+                ['price' => $price, 'auto_price' => $automatic, 'discount' => $discount, 'discount_type' => $discountType]
+            );
+        }
     }
 
     private function payload(Request $request, array $data): array

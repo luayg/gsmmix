@@ -6,6 +6,8 @@ use App\Models\LocalReply;
 use App\Models\LocalSource;
 use App\Models\Product;
 use App\Models\ProductOrder;
+use App\Models\Group;
+use App\Models\ServiceGroupPrice;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +40,10 @@ class ProductOrderWorkflowTest extends SecurityTestCase
     protected function setUp(): void
     {
         parent::setUp();
-        Schema::table('users', fn (Blueprint $table) => $table->decimal('balance', 14, 4)->default(0));
+        Schema::table('users', function (Blueprint $table): void {
+            $table->decimal('balance', 14, 4)->default(0);
+            $table->unsignedBigInteger('group_id')->nullable();
+        });
         foreach ([
             '2026_01_31_000010_create_order_tables.php',
             '2026_05_14_000100_create_local_sources_and_replies_tables.php',
@@ -58,6 +63,23 @@ class ProductOrderWorkflowTest extends SecurityTestCase
             $table->unsignedBigInteger('supplier_id')->nullable();
             $table->unsignedBigInteger('remote_id')->nullable();
             $table->timestamps();
+        });
+        Schema::create('groups', function (Blueprint $table): void {
+            $table->id();
+            $table->string('name');
+            $table->timestamps();
+        });
+        Schema::create('service_group_prices', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('service_id');
+            $table->string('service_type');
+            $table->unsignedBigInteger('group_id');
+            $table->decimal('price', 12, 4)->default(0);
+            $table->boolean('auto_price')->default(false);
+            $table->decimal('discount', 12, 4)->default(0);
+            $table->unsignedTinyInteger('discount_type')->default(1);
+            $table->timestamps();
+            $table->unique(['service_type', 'service_id', 'group_id']);
         });
         $this->admin = $this->user('Administrator');
         $this->customer = $this->user();
@@ -140,9 +162,24 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->assertSame('87.7834', $this->balance());
     }
 
+    public function test_product_order_uses_the_customer_group_price(): void
+    {
+        $group = Group::create(['name' => 'VIP']);
+        $this->customer->update(['group_id' => $group->id]);
+        ServiceGroupPrice::create([
+            'service_type' => 'product', 'service_id' => $this->product->id, 'group_id' => $group->id,
+            'price' => 10, 'auto_price' => false, 'discount' => 2, 'discount_type' => 1,
+        ]);
+
+        $response = $this->postJson(route('admin.orders.product.store'), $this->payload())->assertOk();
+        $this->assertDatabaseHas('product_orders', ['id' => $response->json('id'), 'order_price' => 8]);
+        $this->assertSame('92.1234', $this->balance());
+    }
+
     public function test_product_creation_accepts_only_a_valid_source_configuration(): void
     {
         Storage::fake('public');
+        $group = Group::create(['name' => 'VIP']);
         $source = LocalSource::create(['name' => 'Codes']);
         $serviceId = DB::table('imei_services')->insertGetId([
             'active' => true,
@@ -163,11 +200,17 @@ class ProductOrderWorkflowTest extends SecurityTestCase
             'name' => 'Service product', 'price' => 999, 'cost' => 0, 'profit' => 2,
             'profit_type' => 'credits', 'source_type' => 'service',
             'service_type' => 'imei', 'service_id' => $serviceId, 'active' => 1,
+            'group_prices' => [$group->id => ['price' => 0, 'auto_price' => 1, 'discount' => 1, 'discount_type' => 1]],
         ])->assertOk();
 
         $this->assertDatabaseHas('products', [
             'name' => 'Manual product', 'source_type' => 'manual',
             'local_source_id' => null, 'service_type' => null, 'service_id' => null,
+        ]);
+        $serviceProductId = Product::where('name', 'Service product')->value('id');
+        $this->assertDatabaseHas('service_group_prices', [
+            'service_type' => 'product', 'service_id' => $serviceProductId, 'group_id' => $group->id,
+            'price' => 9.25, 'auto_price' => 1, 'discount' => 1,
         ]);
         $manualImage = Product::where('name', 'Manual product')->value('main_image');
         $this->assertStringStartsWith('/storage/products/', $manualImage);
@@ -185,7 +228,9 @@ class ProductOrderWorkflowTest extends SecurityTestCase
             ->assertSee('data-service-cost="7.25"', false)
             ->assertSee('name="main_image_file"', false)
             ->assertSee('class="form-control summernote"', false)
-            ->assertSee('data-summernote-hidden="#infoHidden"', false);
+            ->assertSee('data-summernote-hidden="#infoHidden"', false)
+            ->assertSee('data-product-group-price', false)
+            ->assertSee('VIP');
         $this->postJson(route('admin.store.products.store'), [
             'name' => 'Broken product', 'price' => 1, 'source_type' => 'service',
             'service_type' => 'imei', 'service_id' => 999999,
