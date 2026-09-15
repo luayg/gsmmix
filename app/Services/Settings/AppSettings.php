@@ -27,6 +27,13 @@ final class AppSettings
                     'app.timezone' => $general['general.timezone'] ?? config('app.timezone'),
                 ]);
             }
+            if (Schema::hasTable('languages')) {
+                $locale = DB::table('languages')->where('is_default', true)->where('active', true)->value('locale');
+                if (is_string($locale) && $locale !== '') {
+                    config(['app.locale' => $locale]);
+                    app()->setLocale($locale);
+                }
+            }
             if ($mail !== []) {
                 config([
                     'mail.default' => $mail['mail.mailer'] ?? config('mail.default'),

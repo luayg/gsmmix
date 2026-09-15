@@ -17,6 +17,8 @@ use App\Http\Controllers\Admin\ProductCategoryController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ManagementOverviewController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\LanguageController;
+use App\Http\Controllers\Admin\CurrencyController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -342,8 +344,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::put('/mail', [SettingsController::class, 'updateMail'])->name('mail.update');
         Route::post('/mail/test', [SettingsController::class, 'testMail'])->middleware('throttle:3,1')->name('mail.test');
         Route::get('/payment',    [ManagementOverviewController::class, 'unavailable'])->name('payment');
-        Route::get('/languages',  [ManagementOverviewController::class, 'unavailable'])->name('languages');
-        Route::get('/currencies', [ManagementOverviewController::class, 'unavailable'])->name('currencies');
+        Route::get('/languages', [LanguageController::class, 'index'])->name('languages');
+        Route::post('/languages', [LanguageController::class, 'store'])->name('languages.store');
+        Route::put('/languages/{language}', [LanguageController::class, 'update'])->name('languages.update');
+        Route::delete('/languages/{language}', [LanguageController::class, 'destroy'])->name('languages.destroy');
+        Route::get('/languages/{language}/translations', [LanguageController::class, 'translations'])->name('languages.translations');
+        Route::put('/languages/{language}/translations', [LanguageController::class, 'updateTranslations'])->name('languages.translations.update');
+        Route::get('/currencies', [CurrencyController::class, 'index'])->name('currencies');
+        Route::post('/currencies', [CurrencyController::class, 'store'])->name('currencies.store');
+        Route::put('/currencies/{currency}', [CurrencyController::class, 'update'])->name('currencies.update');
+        Route::delete('/currencies/{currency}', [CurrencyController::class, 'destroy'])->name('currencies.destroy');
     });
 
     Route::prefix('system')->name('system.')->group(function () {

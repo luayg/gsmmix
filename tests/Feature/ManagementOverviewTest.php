@@ -70,7 +70,7 @@ class ManagementOverviewTest extends SecurityTestCase
     {
         foreach ([
             'finances.invoices.index', 'pages.index', 'downloads.index', 'downloads.categories.index',
-            'settings.payment', 'settings.languages', 'settings.currencies',
+            'settings.payment',
             'system.filemanager', 'system.update', 'system.maintenance', 'system.backups',
             'logs.access', 'logs.activity', 'logs.error',
         ] as $name) {
