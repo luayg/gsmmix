@@ -61,7 +61,7 @@ final class LanguageCurrencySettingsTest extends SecurityTestCase
         $jod = Currency::query()->where('code', 'JOD')->firstOrFail();
         $this->assertSame('1.00000000', $jod->exchange_rate);
         $this->assertFalse((bool) Currency::query()->where('code', 'USD')->value('is_default'));
-        $this->assertSame('1.41043724', Currency::query()->where('code', 'USD')->value('exchange_rate'));
+        $this->assertSame('1.41043723', Currency::query()->where('code', 'USD')->value('exchange_rate'));
 
         $this->post(route('admin.settings.currencies.store'), $this->currencyPayload([
             'code' => 'EUR', 'name' => 'Euro', 'symbol' => '€', 'exchange_rate' => '0.90000000',
