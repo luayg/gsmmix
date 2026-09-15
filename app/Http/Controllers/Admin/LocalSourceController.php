@@ -58,31 +58,34 @@ class LocalSourceController extends Controller
 
     public function destroy(LocalSource $source)
     {
-        $replyCount = Schema::hasTable('local_replies')
-            ? DB::table('local_replies')->where('local_source_id', $source->id)->count()
-            : 0;
+        return DB::transaction(function () use ($source) {
+            $source = LocalSource::query()->lockForUpdate()->findOrFail($source->id);
+            $replyCount = Schema::hasTable('local_replies')
+                ? DB::table('local_replies')->where('local_source_id', $source->id)->count()
+                : 0;
 
-        $orderCount = Schema::hasTable('product_orders') && Schema::hasColumn('product_orders', 'local_source_id')
-            ? DB::table('product_orders')->where('local_source_id', $source->id)->count()
-            : 0;
+            $orderCount = Schema::hasTable('product_orders') && Schema::hasColumn('product_orders', 'local_source_id')
+                ? DB::table('product_orders')->where('local_source_id', $source->id)->count()
+                : 0;
 
-        $productCount = Schema::hasTable('products') && Schema::hasColumn('products', 'local_source_id')
-            ? DB::table('products')->where('local_source_id', $source->id)->count()
-            : 0;
+            $productCount = Schema::hasTable('products') && Schema::hasColumn('products', 'local_source_id')
+                ? DB::table('products')->where('local_source_id', $source->id)->count()
+                : 0;
 
-        if ($replyCount > 0 || $orderCount > 0 || $productCount > 0) {
-            return response()->json([
-                'ok' => false,
-                'msg' => "Can't delete this source: {$replyCount} reply/replies, {$productCount} product(s), and {$orderCount} product order(s) still reference it.",
-                'replies' => $replyCount,
-                'products' => $productCount,
-                'product_orders' => $orderCount,
-            ], 409);
-        }
+            if ($replyCount > 0 || $orderCount > 0 || $productCount > 0) {
+                return response()->json([
+                    'ok' => false,
+                    'msg' => "Can't delete this source: {$replyCount} reply/replies, {$productCount} product(s), and {$orderCount} product order(s) still reference it.",
+                    'replies' => $replyCount,
+                    'products' => $productCount,
+                    'product_orders' => $orderCount,
+                ], 409);
+            }
 
-        $source->delete();
+            $source->delete();
 
-        return response()->json(['ok' => true, 'msg' => 'Source deleted']);
+            return response()->json(['ok' => true, 'msg' => 'Source deleted']);
+        }, 3);
     }
 
     public function modalCreate()

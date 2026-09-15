@@ -2,40 +2,81 @@
 
 namespace App\Http\Controllers\Admin\Orders;
 
+use App\Http\Controllers\Controller;
+use App\Models\Product;
+use App\Models\ProductOrder;
+use App\Models\User;
+use App\Services\Orders\ProductOrderService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Validation\ValidationException;
 
-class ProductOrdersController extends BaseOrdersController
+class ProductOrdersController extends Controller
 {
-    // مؤقت: Product orders نظام منفصل لاحقاً
-    // نخليه يشتغل بدون أخطاء
-    protected string $orderModel   = \App\Models\ImeiOrder::class;  // placeholder
-    protected string $serviceModel = \App\Models\ImeiService::class; // placeholder
-
-    protected string $kind        = 'product';
-    protected string $title       = 'Product Orders';
-    protected string $routePrefix = 'admin.orders.product';
-
     public function index(Request $request)
     {
-        return view("admin.orders.product.index", [
-            'title'       => $this->title,
-            'kind'        => $this->kind,
-            'routePrefix' => $this->routePrefix,
-            'rows'        => collect([]),
-            'providers'   => collect([]),
-        ]);
+        $data = $request->validate(['q' => 'nullable|string|max:255', 'status' => 'nullable|in:waiting,inprogress,success,rejected,cancelled']);
+        $rows = ProductOrder::query()->with(['product', 'user'])->orderByDesc('id')
+            ->when($data['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
+            ->when($data['q'] ?? null, fn ($query, $q) => $query->where(function ($query) use ($q): void {
+                $query->where('email', 'like', '%' . $q . '%')->orWhere('device', 'like', '%' . $q . '%')
+                    ->orWhereHas('product', fn ($product) => $product->where('name', 'like', '%' . $q . '%'));
+            }))->paginate(25)->withQueryString();
+        return view('admin.orders.product.index', compact('rows'));
+    }
+
+    private function formData(): array
+    {
+        return [
+            'users' => User::query()->where('status', 'active')->orderBy('name')->get(['id', 'name', 'email']),
+            'products' => Product::query()->where('active', true)->orderBy('name')->get(),
+            'requestUid' => (string) Str::uuid(),
+        ];
+    }
+
+    public function create()
+    {
+        return view('admin.orders.product.create', $this->formData());
     }
 
     public function modalCreate()
     {
-        return view('admin.orders.modals.create', [
-            'title'       => "Create {$this->title}",
-            'kind'        => $this->kind,
-            'routePrefix' => $this->routePrefix,
-            'deviceLabel' => 'Product info',
-            'supportsQty' => true,
-            'users'       => \App\Models\User::query()->orderByDesc('id')->limit(200)->get(),
-            'services'    => collect([]),
+        return view('admin.orders.product._form', $this->formData());
+    }
+
+    public function store(Request $request, ProductOrderService $orders)
+    {
+        $data = $request->validate([
+            'request_uid' => 'required|uuid', 'user_id' => 'required|integer|exists:users,id',
+            'product_id' => 'required|integer|exists:products,id',
+            'device' => 'nullable|string|max:255', 'comments' => 'nullable|string|max:5000',
         ]);
+        try {
+            $order = $orders->create($data, (int) $request->user()->id);
+        } catch (UniqueConstraintViolationException $exception) {
+            throw ValidationException::withMessages(['request_uid' => 'This submission was already used. Reopen the order form for a new order.']);
+        }
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => true, 'id' => $order->id, 'status' => $order->status]);
+        }
+        return redirect()->route('admin.orders.product.show', $order)->with('ok', 'Product order saved.');
+    }
+
+    public function show(ProductOrder $order)
+    {
+        $order->load(['product', 'user', 'localSource']);
+        return view('admin.orders.product.show', compact('order'));
+    }
+
+    public function update(Request $request, ProductOrder $order, ProductOrderService $orders)
+    {
+        $data = $request->validate([
+            'status' => 'required|in:waiting,inprogress,success,rejected,cancelled',
+            'comments' => 'sometimes|nullable|string|max:5000',
+            'response' => 'sometimes|nullable|string|max:20000',
+        ]);
+        $orders->update($order->id, $data);
+        return $request->expectsJson() ? response()->json(['ok' => true]) : back()->with('ok', 'Product order updated.');
     }
 }

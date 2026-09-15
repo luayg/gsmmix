@@ -63,6 +63,35 @@ class ServiceCustomFieldUpdateTest extends SecurityTestCase
         $this->actingAs($this->user('Administrator'));
     }
 
+    public function test_malformed_create_fields_are_rejected_before_any_rows_are_written(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            foreach (['custom_fields', 'custom_fields_json'] as $key) {
+                foreach (['{broken', '{}', 'null', '["invalid"]', '[{}]', '[{"name":"X","options":[{}]}]'] as $value) {
+                    $this->postJson(route("admin.services.{$kind}.store"), $this->payload() + [$key => $value])
+                        ->assertUnprocessable()->assertJsonValidationErrors($key);
+                    $this->assertDatabaseCount($kind . '_services', 0);
+                    $this->assertDatabaseCount('custom_fields', 0);
+                    $this->assertDatabaseCount('service_group_prices', 0);
+                }
+            }
+        }
+        Http::assertNothingSent();
+    }
+
+    public function test_create_explicit_empty_list_wins_over_alternate_json_fields(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $response = $this->postJson(route("admin.services.{$kind}.store"), $this->payload() + [
+                'custom_fields' => [],
+                'custom_fields_json' => '[{"name":"Ignored","input":"ignored"}]',
+            ])->assertSuccessful();
+            $this->assertDatabaseCount('custom_fields', 0);
+            $raw = DB::table($kind . '_services')->where('id', $response->json('id'))->value('params');
+            $this->assertSame([], json_decode($raw, true)['custom_fields']);
+        }
+    }
+
     public function test_omission_preserves_fields_and_params_even_with_empty_params_input(): void
     {
         foreach (['imei', 'server', 'file', 'smm'] as $kind) {
@@ -132,6 +161,23 @@ class ServiceCustomFieldUpdateTest extends SecurityTestCase
             }
         }
         Http::assertNothingSent();
+    }
+
+    public function test_invalid_custom_field_limits_and_flags_are_rejected_on_create_and_update(): void
+    {
+        foreach (['imei', 'server', 'file', 'smm'] as $kind) {
+            $this->seedService($kind);
+            $before = DB::table($kind . '_services')->first();
+            foreach ([['minimum' => -1], ['maximum' => []], ['min' => 9, 'max' => 3],
+                ['required' => 'yes'], ['active' => []], ['input' => str_repeat('x', 256)]] as $invalid) {
+                $field = array_replace(['name' => 'Unsafe', 'input' => 'field'], $invalid);
+                $payload = $this->payload() + ['custom_fields_json' => json_encode([$field])];
+                $this->postJson(route("admin.services.{$kind}.store"), $payload)->assertUnprocessable()->assertJsonValidationErrors('custom_fields_json');
+                $this->putJson(route("admin.services.{$kind}.update", 1), $payload)->assertUnprocessable()->assertJsonValidationErrors('custom_fields_json');
+                $this->assertEquals($before, DB::table($kind . '_services')->first());
+                $this->assertDatabaseCount($kind . '_services', 1);
+            }
+        }
     }
 
     public function test_legacy_double_encoded_params_survive_field_replacement(): void

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use App\Models\ServiceGroup;
+use Illuminate\Validation\ValidationException;
 
 class ServiceGroupController extends Controller
 {
@@ -49,7 +50,7 @@ class ServiceGroupController extends Controller
         ]);
 
         $data['type']     = $this->normalizeType($data['type']);
-        $data['ordering'] = 1;
+        $data['ordering'] = $data['ordering'] ?? 1;
 
         ServiceGroup::create($data);
 
@@ -70,21 +71,32 @@ class ServiceGroupController extends Controller
         ]);
 
         $data['type']     = $this->normalizeType($data['type']);
-        $data['ordering'] = $data['ordering'] ?? $group->ordering ?? 1;
-
-        $group->update($data);
+        DB::transaction(function () use ($group, $data): void {
+            $locked = ServiceGroup::query()->lockForUpdate()->findOrFail($group->id);
+            if ($data['type'] !== $this->normalizeType($locked->type)
+                && $this->countLinkedServices($locked->id) > 0) {
+                throw ValidationException::withMessages([
+                    'type' => 'Move the linked services to a matching group before changing this group type.',
+                ]);
+            }
+            $data['ordering'] = $data['ordering'] ?? $locked->ordering ?? 1;
+            $locked->update($data);
+        });
 
         return back()->with('ok', 'Saved.');
     }
 
     public function destroy(ServiceGroup $group)
     {
-        $inUse = $this->countLinkedServices($group->id);
-        if ($inUse > 0) {
-            return back()->with('error', "Can't delete: group is linked to {$inUse} service(s).");
-        }
-        $group->delete();
-        return back()->with('ok', 'Deleted.');
+        return DB::transaction(function () use ($group) {
+            $group = ServiceGroup::query()->lockForUpdate()->findOrFail($group->id);
+            $inUse = $this->countLinkedServices($group->id);
+            if ($inUse > 0) {
+                return back()->with('error', "Can't delete: group is linked to {$inUse} service(s).");
+            }
+            $group->delete();
+            return back()->with('ok', 'Deleted.');
+        }, 3);
     }
 
     protected function normalizeType(?string $type): string

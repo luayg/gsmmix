@@ -15,6 +15,7 @@ use App\Http\Controllers\Admin\LocalSourceController;
 use App\Http\Controllers\Admin\LocalReplyController;
 use App\Http\Controllers\Admin\ProductCategoryController;
 use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\ManagementOverviewController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -154,9 +155,6 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Ajax: groups filtered by type (imei/server/file/smm)
         Route::get('groups/options', [ServiceGroupController::class, 'options'])->name('groups.options');
 
-        Route::post('server-services/{id}/sync-fields', [ServerServiceController::class, 'syncFields'])
-            ->name('server.syncFields');
-
         // ===== IMEI services =====
         Route::resource('imei-services', ImeiServiceController::class)
             ->only(['index', 'store', 'update', 'destroy'])
@@ -164,9 +162,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::post('imei-services/bulk', [ImeiServiceController::class, 'bulk'])->name('imei.bulk');
         Route::get('imei-services/{service}/json', [ImeiServiceController::class, 'showJson'])->name('imei.show.json');
-        Route::post('imei-services/{service}/toggle', [ImeiServiceController::class, 'toggle'])->name('imei.toggle');
         Route::get('imei-services/modal/create', [ImeiServiceController::class, 'modalCreate'])->name('imei.modal.create');
-        Route::get('imei-services/{service}/modal/edit', [ImeiServiceController::class, 'modalEdit'])->name('imei.modal.edit');
 
         // ===== Server services =====
         Route::resource('server-services', ServerServiceController::class)
@@ -175,9 +171,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::post('server-services/bulk', [ServerServiceController::class, 'bulk'])->name('server.bulk');
         Route::get('server-services/{service}/json', [ServerServiceController::class, 'showJson'])->name('server.show.json');
-        Route::post('server-services/{service}/toggle', [ServerServiceController::class, 'toggle'])->name('server.toggle');
         Route::get('server-services/modal/create', [ServerServiceController::class, 'modalCreate'])->name('server.modal.create');
-        Route::get('server-services/{service}/modal/edit', [ServerServiceController::class, 'modalEdit'])->name('server.modal.edit');
 
         // ===== File services =====
         Route::resource('file-services', FileServiceController::class)
@@ -186,9 +180,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::post('file-services/bulk', [FileServiceController::class, 'bulk'])->name('file.bulk');
         Route::get('file-services/{service}/json', [FileServiceController::class, 'showJson'])->name('file.show.json');
-        Route::post('file-services/{service}/toggle', [FileServiceController::class, 'toggle'])->name('file.toggle');
         Route::get('file-services/modal/create', [FileServiceController::class, 'modalCreate'])->name('file.modal.create');
-        Route::get('file-services/{service}/modal/edit', [FileServiceController::class, 'modalEdit'])->name('file.modal.edit');
 
         // ===== SMM services =====
         Route::resource('smm-services', SmmServiceController::class)
@@ -197,9 +189,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
         Route::post('smm-services/bulk', [SmmServiceController::class, 'bulk'])->name('smm.bulk');
         Route::get('smm-services/{service}/json', [SmmServiceController::class, 'showJson'])->name('smm.show.json');
-        Route::post('smm-services/{service}/toggle', [SmmServiceController::class, 'toggle'])->name('smm.toggle');
         Route::get('smm-services/modal/create', [SmmServiceController::class, 'modalCreate'])->name('smm.modal.create');
-        Route::get('smm-services/{service}/modal/edit', [SmmServiceController::class, 'modalEdit'])->name('smm.modal.edit');
 
         // ✅ Service Groups Modals
         Route::get('groups/modal/create', [ServiceGroupController::class, 'modalCreate'])->name('groups.modal.create');
@@ -256,14 +246,18 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Product placeholder
         Route::get('/product', [ProductOrdersController::class, 'index'])->name('product.index');
         Route::get('/product/modal/create', [ProductOrdersController::class, 'modalCreate'])->name('product.modal.create');
+        Route::get('/product/create', [ProductOrdersController::class, 'create'])->name('product.create');
+        Route::post('/product', [ProductOrdersController::class, 'store'])->name('product.store');
+        Route::get('/product/{order}', [ProductOrdersController::class, 'show'])->whereNumber('order')->name('product.show');
+        Route::put('/product/{order}', [ProductOrdersController::class, 'update'])->whereNumber('order')->name('product.update');
     });
 
-    /* ================== placeholders ==================== */
+    /* ================== Finance ==================== */
     Route::prefix('finances')->name('finances.')->group(function () {
-        Route::get('/', fn () => 'Finances home')->name('index');
-        Route::get('/invoices',     fn () => 'Invoices')->name('invoices.index');
-        Route::get('/statements',   fn () => 'Statements')->name('statements.index');
-        Route::get('/transactions', fn () => 'Transactions')->name('transactions.index');
+        Route::get('/', [ManagementOverviewController::class, 'finances'])->name('index');
+        Route::get('/invoices',     [ManagementOverviewController::class, 'unavailable'])->name('invoices.index');
+        Route::get('/statements',   [ManagementOverviewController::class, 'statements'])->name('statements.index');
+        Route::get('/transactions', [ManagementOverviewController::class, 'transactions'])->name('transactions.index');
     });
 
     Route::prefix('store')->name('store.')->group(function () {
@@ -295,7 +289,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('pages')->name('pages.')->group(function () {
-        Route::get('/', fn () => 'Pages')->name('index');
+        Route::get('/', [ManagementOverviewController::class, 'unavailable'])->name('index');
     });
 
     Route::prefix('sources')->name('sources.')->group(function () {
@@ -325,35 +319,35 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     /* ================== Downloads placeholders ==================== */
     Route::prefix('downloads')->name('downloads.')->group(function () {
-        Route::get('/', fn () => 'Downloads')->name('index');
-        Route::get('/categories', fn () => 'Download categories')->name('categories.index');
+        Route::get('/', [ManagementOverviewController::class, 'unavailable'])->name('index');
+        Route::get('/categories', [ManagementOverviewController::class, 'unavailable'])->name('categories.index');
     });
 
     Route::prefix('settings')->name('settings.')->group(function () {
-        Route::get('/general',    fn () => 'General settings')->name('general');
-        Route::get('/mail',       fn () => 'Mail settings')->name('mail');
-        Route::get('/payment',    fn () => 'Payment settings')->name('payment');
-        Route::get('/languages',  fn () => 'Languages')->name('languages');
-        Route::get('/currencies', fn () => 'Currencies')->name('currencies');
+        Route::get('/general',    [ManagementOverviewController::class, 'unavailable'])->name('general');
+        Route::get('/mail',       [ManagementOverviewController::class, 'unavailable'])->name('mail');
+        Route::get('/payment',    [ManagementOverviewController::class, 'unavailable'])->name('payment');
+        Route::get('/languages',  [ManagementOverviewController::class, 'unavailable'])->name('languages');
+        Route::get('/currencies', [ManagementOverviewController::class, 'unavailable'])->name('currencies');
     });
 
     Route::prefix('system')->name('system.')->group(function () {
-        Route::get('/filemanager', fn () => 'File manager')->name('filemanager');
-        Route::get('/update',      fn () => 'Update')->name('update');
-        Route::get('/maintenance', fn () => 'Maintenance')->name('maintenance');
-        Route::get('/backups',     fn () => 'Backups')->name('backups');
+        Route::get('/filemanager', [ManagementOverviewController::class, 'unavailable'])->name('filemanager');
+        Route::get('/update',      [ManagementOverviewController::class, 'unavailable'])->name('update');
+        Route::get('/maintenance', [ManagementOverviewController::class, 'unavailable'])->name('maintenance');
+        Route::get('/backups',     [ManagementOverviewController::class, 'unavailable'])->name('backups');
     });
 
     Route::prefix('reports')->name('reports.')->group(function () {
-        Route::get('/users',    fn () => 'User reports')->name('users');
-        Route::get('/services', fn () => 'Service reports')->name('services');
-        Route::get('/products', fn () => 'Product reports')->name('products');
+        Route::get('/users',    [ManagementOverviewController::class, 'users'])->name('users');
+        Route::get('/services', [ManagementOverviewController::class, 'services'])->name('services');
+        Route::get('/products', [ManagementOverviewController::class, 'products'])->name('products');
     });
 
     Route::prefix('logs')->name('logs.')->group(function () {
-        Route::get('/access',   fn () => 'Access logs')->name('access');
-        Route::get('/activity', fn () => 'Activity logs')->name('activity');
-        Route::get('/error',    fn () => 'Error logs')->name('error');
+        Route::get('/access',   [ManagementOverviewController::class, 'unavailable'])->name('access');
+        Route::get('/activity', [ManagementOverviewController::class, 'unavailable'])->name('activity');
+        Route::get('/error',    [ManagementOverviewController::class, 'unavailable'])->name('error');
     });
 
 });
