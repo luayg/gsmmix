@@ -1,0 +1,20 @@
+@extends('layouts.admin')
+@section('title', 'Payment settings')
+@section('content')
+<div class="card"><div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"><span><i class="fas fa-credit-card me-1"></i> Payment gateways</span><button class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#createGateway">Add gateway</button></div><div class="card-body">
+  @if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+  <div class="alert alert-warning small">Manual gateways can be used for reviewed transfers. Stripe, PayPal and Custom entries store configuration securely, but processing remains unavailable until their dedicated driver is implemented.</div>
+  <div class="table-responsive"><table class="table table-striped align-middle"><thead><tr><th>Gateway</th><th>Driver</th><th>Currencies</th><th>Fees</th><th>Limits</th><th>Status</th><th>Payments</th><th class="text-end">Actions</th></tr></thead><tbody>
+  @forelse($gateways as $gateway)<tr>
+    <td>@if($gateway->logo_path)<img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($gateway->logo_path) }}" alt="" style="width:36px;height:36px;object-fit:contain" class="me-2">@endif<strong>{{ $gateway->name }}</strong><div class="small text-muted">{{ $gateway->slug }}</div></td>
+    <td><span class="badge bg-dark">{{ strtoupper($gateway->driver) }}</span>@if($gateway->sandbox)<span class="badge bg-warning text-dark ms-1">Sandbox</span>@endif</td>
+    <td>@foreach($gateway->currencies as $currency)<span class="badge bg-secondary me-1">{{ $currency->code }}</span>@endforeach</td>
+    <td>{{ $gateway->fixed_fee }} + {{ $gateway->percent_fee }}%</td><td>{{ $gateway->minimum_amount ?? '—' }} / {{ $gateway->maximum_amount ?? '—' }}</td>
+    <td><span class="badge {{ $gateway->active ? 'bg-success' : 'bg-secondary' }}">{{ $gateway->active ? 'Active' : 'Inactive' }}</span></td><td>{{ $gateway->transactions_count }}</td>
+    <td class="text-end text-nowrap"><button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#editGateway{{ $gateway->id }}">Edit</button> @if($gateway->transactions_count === 0)<form method="POST" class="d-inline" action="{{ route('admin.settings.payment.destroy', $gateway) }}" onsubmit="return confirm('Delete this gateway?')">@csrf @method('DELETE')<button class="btn btn-danger btn-sm">Delete</button></form>@endif</td>
+  </tr>@empty<tr><td colspan="8" class="text-center text-muted py-4">No payment gateways configured.</td></tr>@endforelse
+  </tbody></table></div>
+</div></div>
+<div class="modal fade" id="createGateway" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><form class="modal-content" method="POST" enctype="multipart/form-data" action="{{ route('admin.settings.payment.store') }}">@csrf<div class="modal-header"><h5 class="modal-title">Add payment gateway</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">@include('admin.settings.payment.partials.form', ['gateway' => null])</div><div class="modal-footer"><button class="btn btn-primary">Create</button></div></form></div></div>
+@foreach($gateways as $gateway)<div class="modal fade" id="editGateway{{ $gateway->id }}" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><form class="modal-content" method="POST" enctype="multipart/form-data" action="{{ route('admin.settings.payment.update', $gateway) }}">@csrf @method('PUT')<div class="modal-header"><h5 class="modal-title">Edit {{ $gateway->name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body">@include('admin.settings.payment.partials.form', ['gateway' => $gateway])</div><div class="modal-footer"><button class="btn btn-primary">Save</button></div></form></div></div>@endforeach
+@endsection

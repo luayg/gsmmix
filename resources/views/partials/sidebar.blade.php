@@ -237,7 +237,7 @@
     </li>
 
     {{-- Settings --}}
-    @php $open = $routeIsAny(['admin.settings.general','admin.settings.mail','admin.settings.payment','admin.settings.languages*','admin.settings.currencies*']); @endphp
+    @php $open = $routeIsAny(['admin.settings.general','admin.settings.mail','admin.settings.payment*','admin.settings.languages*','admin.settings.currencies*']); @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -250,7 +250,7 @@
         <ul class="nav flex-column">
           <li><a class="nav-link {{ request()->routeIs('admin.settings.general') ? 'active' : '' }}" href="{{ route('admin.settings.general') }}"><i class="fas fa-sliders-h"></i> General settings</a></li>
           <li><a class="nav-link {{ request()->routeIs('admin.settings.mail') ? 'active' : '' }}" href="{{ route('admin.settings.mail') }}"><i class="fas fa-envelope"></i> Mail settings</a></li>
-          <li><a class="nav-link {{ request()->routeIs('admin.settings.payment') ? 'active' : '' }}" href="{{ route('admin.settings.payment') }}"><i class="fas fa-credit-card"></i> Payment settings</a></li>
+          <li><a class="nav-link {{ request()->routeIs('admin.settings.payment*') ? 'active' : '' }}" href="{{ route('admin.settings.payment') }}"><i class="fas fa-credit-card"></i> Payment settings</a></li>
           <li><a class="nav-link {{ request()->routeIs('admin.settings.languages*') ? 'active' : '' }}" href="{{ route('admin.settings.languages') }}"><i class="fas fa-language"></i> Languages</a></li>
           <li><a class="nav-link {{ request()->routeIs('admin.settings.currencies*') ? 'active' : '' }}" href="{{ route('admin.settings.currencies') }}"><i class="fas fa-coins"></i> Currencies</a></li>
         </ul>

@@ -19,6 +19,7 @@ use App\Http\Controllers\Admin\ManagementOverviewController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\LanguageController;
 use App\Http\Controllers\Admin\CurrencyController;
+use App\Http\Controllers\Admin\PaymentGatewayController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -343,7 +344,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/mail', [SettingsController::class, 'mail'])->name('mail');
         Route::put('/mail', [SettingsController::class, 'updateMail'])->name('mail.update');
         Route::post('/mail/test', [SettingsController::class, 'testMail'])->middleware('throttle:3,1')->name('mail.test');
-        Route::get('/payment',    [ManagementOverviewController::class, 'unavailable'])->name('payment');
+        Route::get('/payment', [PaymentGatewayController::class, 'index'])->name('payment');
+        Route::post('/payment', [PaymentGatewayController::class, 'store'])->name('payment.store');
+        Route::put('/payment/{gateway}', [PaymentGatewayController::class, 'update'])->name('payment.update');
+        Route::delete('/payment/{gateway}', [PaymentGatewayController::class, 'destroy'])->name('payment.destroy');
         Route::get('/languages', [LanguageController::class, 'index'])->name('languages');
         Route::post('/languages', [LanguageController::class, 'store'])->name('languages.store');
         Route::put('/languages/{language}', [LanguageController::class, 'update'])->name('languages.update');
