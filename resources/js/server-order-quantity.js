@@ -31,8 +31,9 @@ function priceForUser(form) {
     groupPrices = {};
   }
 
-  const groupPrice = number(groupPrices[String(groupId)]);
-  if (groupPrice > 0) return groupPrice;
+  const groupPrice = groupPrices?.[String(groupId)];
+  if (groupPrice !== null && groupPrice !== undefined && groupPrice !== ''
+      && Number.isFinite(Number(groupPrice)) && Number(groupPrice) >= 0) return Number(groupPrice);
 
   return Math.max(0, number(option.getAttribute('data-base-price')));
 }
@@ -60,7 +61,7 @@ function updateServerOrderSummary(form) {
   if (price) price.textContent = '$' + current.total.toFixed(2);
   if (after) after.textContent = '$' + (current.balance - current.total).toFixed(2);
 
-  const selected = Boolean(current.user?.value && current.service?.value && current.unitPrice > 0);
+  const selected = Boolean(current.user?.value && current.service?.value && current.unitPrice >= 0);
   const enough = current.balance >= current.total;
 
   if (error) {
@@ -92,7 +93,7 @@ document.addEventListener('submit', (event) => {
   if (!form) return;
 
   const current = state(form);
-  if (current.user?.value && current.service?.value && current.unitPrice > 0 && current.balance < current.total) {
+  if (current.user?.value && current.service?.value && current.unitPrice >= 0 && current.balance < current.total) {
     event.preventDefault();
     event.stopImmediatePropagation();
     updateServerOrderSummary(form);

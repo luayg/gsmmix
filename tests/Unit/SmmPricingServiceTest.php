@@ -26,6 +26,7 @@ class SmmPricingServiceTest extends TestCase
             $table->string('service_type');
             $table->unsignedBigInteger('group_id');
             $table->decimal('price', 12, 4)->default(0);
+            $table->boolean('auto_price')->default(false);
             $table->decimal('discount', 12, 4)->default(0);
             $table->tinyInteger('discount_type')->default(1);
             $table->timestamps();
@@ -125,6 +126,28 @@ class SmmPricingServiceTest extends TestCase
             ['min' => 100, 'max' => 150, 'posts' => 5],
             1
         );
+    }
+
+    public function test_zero_group_rate_and_automatic_discounts_are_used_by_the_quote(): void
+    {
+        $row = ServiceGroupPrice::create(['service_id' => 10, 'service_type' => 'smm',
+            'group_id' => 7, 'price' => 0, 'auto_price' => false, 'discount' => 0, 'discount_type' => 1]);
+        $pricing = app(SmmPricingService::class);
+        $quote = $pricing->quote($this->service('Default'), $this->user(7), ['quantity' => 1000], 1);
+        $this->assertSame('0.0000', $quote['sell_rate']);
+        $this->assertSame('0.0000', $quote['sell_total']);
+        $this->assertSame('2.0000', $quote['provider_total']);
+        $this->assertSame('-2.0000', $quote['profit_total']);
+
+        $row->update(['price' => 999, 'auto_price' => true, 'discount' => 10, 'discount_type' => 2]);
+        $quote = $pricing->quote($this->service('Default', 20, 5), $this->user(7), ['quantity' => 500], 1);
+        $this->assertSame('22.5000', $quote['sell_rate']);
+        $this->assertSame('11.2500', $quote['sell_total']);
+        $quote = $pricing->quote($this->service('Default', 100, 10, 2), $this->user(7), ['quantity' => 1000], 1);
+        $this->assertSame('99.0000', $quote['sell_total']);
+        $row->update(['discount' => 100]);
+        $quote = $pricing->quote($this->service('Package'), $this->user(7), [], 1);
+        $this->assertSame('0.0000', $quote['sell_total']);
     }
 
     public function test_smm_group_price_is_used_by_backend_quote(): void

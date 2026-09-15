@@ -23,6 +23,7 @@ class ServiceIdentityValidationTest extends SecurityTestCase
             $table->unsignedBigInteger('group_id');
             $table->string('service_type');
             $table->decimal('price', 12, 4);
+            $table->boolean('auto_price')->default(false);
             $table->decimal('discount', 12, 4);
             $table->integer('discount_type');
             $table->timestamps();
