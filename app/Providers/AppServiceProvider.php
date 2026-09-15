@@ -19,6 +19,7 @@ use App\Observers\ProviderDeletionFallbackObserver;
 use App\Observers\ServerOrderQuantityBillingObserver;
 use App\Observers\ServiceDeletionGuardObserver;
 use App\Support\AdminPermissions;
+use App\Services\Settings\AppSettings;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -35,6 +36,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        app(AppSettings::class)->applyRuntimeConfiguration();
+
         Route::aliasMiddleware('role', RoleMiddleware::class);
         Route::aliasMiddleware('permission', PermissionMiddleware::class);
         Route::aliasMiddleware('role_or_permission', RoleOrPermissionMiddleware::class);

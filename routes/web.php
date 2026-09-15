@@ -16,6 +16,7 @@ use App\Http\Controllers\Admin\LocalReplyController;
 use App\Http\Controllers\Admin\ProductCategoryController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ManagementOverviewController;
+use App\Http\Controllers\Admin\SettingsController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -335,8 +336,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('settings')->name('settings.')->group(function () {
-        Route::get('/general',    [ManagementOverviewController::class, 'unavailable'])->name('general');
-        Route::get('/mail',       [ManagementOverviewController::class, 'unavailable'])->name('mail');
+        Route::get('/general', [SettingsController::class, 'general'])->name('general');
+        Route::put('/general', [SettingsController::class, 'updateGeneral'])->name('general.update');
+        Route::get('/mail', [SettingsController::class, 'mail'])->name('mail');
+        Route::put('/mail', [SettingsController::class, 'updateMail'])->name('mail.update');
+        Route::post('/mail/test', [SettingsController::class, 'testMail'])->middleware('throttle:3,1')->name('mail.test');
         Route::get('/payment',    [ManagementOverviewController::class, 'unavailable'])->name('payment');
         Route::get('/languages',  [ManagementOverviewController::class, 'unavailable'])->name('languages');
         Route::get('/currencies', [ManagementOverviewController::class, 'unavailable'])->name('currencies');
