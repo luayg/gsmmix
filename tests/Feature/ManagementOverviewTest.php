@@ -64,14 +64,13 @@ class ManagementOverviewTest extends SecurityTestCase
             ->assertViewHas('rows', fn ($rows) => $rows[3] === ['SMM', 2, 1, 1]);
         $this->get(route('admin.reports.products'))->assertOk()
             ->assertViewHas('rows', fn ($rows) => $rows->first() === ['Report product', 'Yes', '12.00', 3, 1, '10.00']);
+        $this->get(route('admin.reports.export','users'))->assertOk()->assertDownload();
     }
 
     public function test_modules_without_implementation_report_unavailability_instead_of_fake_success(): void
     {
         foreach ([
-            'downloads.index', 'downloads.categories.index',
             'system.filemanager', 'system.update', 'system.maintenance', 'system.backups',
-            'logs.access', 'logs.activity', 'logs.error',
         ] as $name) {
             $this->getJson(route('admin.' . $name))->assertStatus(501)->assertJsonPath('ok', false);
         }

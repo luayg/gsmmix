@@ -107,6 +107,18 @@ class ManagementOverviewController extends Controller
         return view('admin.management.table', compact('title', 'description', 'columns', 'rows', 'pagination'));
     }
 
+    public function export(string $type)
+    {
+        abort_unless(in_array($type, ['users','services','products'], true), 404);
+        return response()->streamDownload(function () use ($type): void {
+            $out=fopen('php://output','wb');
+            if($type==='users'){fputcsv($out,['status','accounts']);foreach(DB::table('users')->select('status')->selectRaw('COUNT(*) accounts')->groupBy('status')->orderBy('status')->get() as $r)fputcsv($out,[$r->status,$r->accounts]);}
+            elseif($type==='services'){fputcsv($out,['kind','total','active','inactive']);foreach(['imei','server','file','smm'] as $kind){$q=DB::table($kind.'_services');$total=(clone $q)->count();$active=(clone $q)->where('active',1)->count();fputcsv($out,[strtoupper($kind),$total,$active,$total-$active]);}}
+            else{fputcsv($out,['product','active','catalog_price','orders','successful_sales']);foreach(Product::query()->withCount('orders')->withSum(['orders as sales'=>fn($q)=>$q->where('status','success')],'order_price')->orderBy('id')->cursor() as $p)fputcsv($out,[$p->name,$p->active?1:0,$p->price,$p->orders_count,$p->sales??0]);}
+            fclose($out);
+        },$type.'-report-'.now()->format('Ymd-His').'.csv',['Content-Type'=>'text/csv']);
+    }
+
     public function unavailable(Request $request)
     {
         $titles = [

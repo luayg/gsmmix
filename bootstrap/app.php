@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ProtectAdminRoutes;
+use App\Http\Middleware\RecordAdminActivity;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -15,7 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         // Never run session authentication in the global, pre-session stack.
-        $middleware->web(append: [AuthenticateSession::class, ProtectAdminRoutes::class]);
+        $middleware->web(append: [AuthenticateSession::class, ProtectAdminRoutes::class, RecordAdminActivity::class]);
         // Deny unauthorized access before route model binding can disclose records.
         $middleware->prependToPriorityList(SubstituteBindings::class, ProtectAdminRoutes::class);
         $middleware->redirectGuestsTo(fn () => route('login'));
