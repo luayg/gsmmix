@@ -106,7 +106,7 @@ final class ManualPaymentReviewTest extends SecurityTestCase
             'reason' => 'The receipt could not be verified.',
         ])->assertRedirect(route('admin.finances.payment-reviews.show', $payment));
 
-        $this->assertSame('0.0000', $customer->fresh()->balance);
+        $this->assertSame(0.0, (float) $customer->fresh()->balance);
         $this->assertDatabaseCount('finance_transactions', 0);
         $this->actingAs($customer)->get(route('customer.payments.show', $payment))
             ->assertOk()

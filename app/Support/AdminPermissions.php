@@ -116,6 +116,7 @@ final class AdminPermissions
             'translations', 'preview', 'export',
             'print',
             'download',
+            'proof',
         ];
         return in_array($action, $readActions, true) ? [$module . '.view'] : null;
     }

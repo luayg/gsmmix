@@ -105,7 +105,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
     // Dashboard
     Route::get('/', fn () => redirect()->route('admin.dashboard'));
     Route::get('/dashboard', fn () => view('admin.dashboard', [
-        'manualPaymentsReview' => \Illuminate\Support\Facades\Schema::hasTable('payment_transactions') ? \App\Models\PaymentTransaction::query()
+        'manualPaymentsReview' => \Illuminate\Support\Facades\Schema::hasTable('payment_transactions')
+            && \Illuminate\Support\Facades\Schema::hasTable('payment_gateways')
+            && \Illuminate\Support\Facades\Schema::hasColumn('payment_gateways', 'is_system') ? \App\Models\PaymentTransaction::query()
             ->where('status', 'review')
             ->whereHas('gateway', fn ($query) => $query->where('is_system', false))
             ->count() : 0,

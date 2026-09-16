@@ -213,7 +213,9 @@
     {{-- Finances --}}
     @php
       $open = $routeIsAny(['admin.finances.invoices.*','admin.finances.payment-reviews.*','admin.finances.statements.*','admin.finances.transactions.*']);
-      $manualPaymentReviewCount = \Illuminate\Support\Facades\Schema::hasTable('payment_transactions') ? \App\Models\PaymentTransaction::query()
+      $manualPaymentReviewCount = \Illuminate\Support\Facades\Schema::hasTable('payment_transactions')
+          && \Illuminate\Support\Facades\Schema::hasTable('payment_gateways')
+          && \Illuminate\Support\Facades\Schema::hasColumn('payment_gateways', 'is_system') ? \App\Models\PaymentTransaction::query()
           ->where('status', 'review')
           ->whereHas('gateway', fn ($query) => $query->where('is_system', false))
           ->count() : 0;
