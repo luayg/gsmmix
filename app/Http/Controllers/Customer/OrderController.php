@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use App\Services\Content\HtmlSanitizer;
 use App\Support\CustomerOrderResultPresenter;
+use App\Support\ServiceDescriptionPresenter;
 
 final class OrderController extends Controller
 {
@@ -50,7 +51,7 @@ final class OrderController extends Controller
                 'id' => $service->id,
                 'name' => $this->text($service->name ?? ''),
                 'time' => $this->text($service->time ?? ''),
-                'info_html' => app(HtmlSanitizer::class)->clean($this->text($service->info ?? '')),
+                'info_html' => ServiceDescriptionPresenter::format(app(HtmlSanitizer::class)->clean($this->text($service->info ?? ''))),
                 'price' => $this->price($service, $type, (int) $user->group_id),
                 'allow_bulk' => (bool) ($service->allow_bulk ?? false),
                 'main_field' => $service->main_field,
