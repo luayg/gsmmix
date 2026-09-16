@@ -417,7 +417,10 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->get(route('admin.orders.product.modal.edit', $id))->assertOk()
             ->assertSee('Product Order #'.$id)->assertSee('js-ajax-form', false);
 
-        $this->actingAs($this->customer)->get(route('customer.orders'))->assertOk()
+        auth()->guard('web')->logout();
+        $this->flushSession();
+        $this->resetSessionRuntime();
+        $this->actingAs($this->customer, 'web')->get(route('customer.orders'))->assertOk()
             ->assertSee('Local product')->assertSee('PRODUCT-TARGET')->assertSee('Waiting')
             ->assertSee('Product orders');
     }
