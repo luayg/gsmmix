@@ -2,7 +2,7 @@
   $viewUrl = route('admin.users.modal.view',$u);
   $editUrl = route('admin.users.modal.edit',$u);
   $delUrl  = route('admin.users.modal.delete',$u);
-  $finUrl  = route('admin.users.modal.finances',$u);
+  $finUrl  = route('admin.users.finances.modal',$u);
   $srvUrl  = route('admin.users.modal.services',$u);
 @endphp
 

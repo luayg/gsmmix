@@ -4,7 +4,7 @@
 @section('content')
 <div class="card"><div class="card-body">
   <h5 class="mb-3">Role: {{ $role->name }}</h5>
-  <form method="POST" action="{{ route('admin.roles.syncPerms',$role) }}">
+  <form method="POST" action="{{ route('admin.roles.perms.sync',$role) }}">
     @csrf
     <div class="form-group">
       <label>Permissions</label>

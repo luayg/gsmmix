@@ -48,7 +48,7 @@ class UserDataController extends Controller
 
             $data = $rows->map(function($u){
                 $viewBtn = '<button type="button" class="btn btn-primary btn-sm js-open-modal" data-url="'.route('admin.users.modal.view',$u).'"><i class="fas fa-eye"></i> View</button>';
-                $finBtn  = '<button type="button" class="btn btn-info btn-sm js-open-modal" data-url="'.route('admin.users.modal.finances',$u).'"><i class="fas fa-wallet"></i> Finances</button>';
+                $finBtn  = '<button type="button" class="btn btn-info btn-sm js-open-modal" data-url="'.route('admin.users.finances.modal',$u).'"><i class="fas fa-wallet"></i> Finances</button>';
 
                 $svcBtn  = '
                   <div class="btn-group">
