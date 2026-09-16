@@ -119,27 +119,4 @@ class ManagementOverviewController extends Controller
         },$type.'-report-'.now()->format('Ymd-His').'.csv',['Content-Type'=>'text/csv']);
     }
 
-    public function unavailable(Request $request)
-    {
-        $titles = [
-            'admin.finances.invoices.index' => 'Invoices',
-            'admin.pages.index' => 'Content pages',
-            'admin.downloads.index' => 'Downloads',
-            'admin.downloads.categories.index' => 'Download categories',
-            'admin.settings.general' => 'General settings',
-            'admin.settings.mail' => 'Mail settings',
-            'admin.system.filemanager' => 'File manager',
-            'admin.system.update' => 'System update',
-            'admin.system.maintenance' => 'Maintenance',
-            'admin.system.backups' => 'Backups',
-            'admin.logs.access' => 'Access logs',
-            'admin.logs.activity' => 'Activity logs',
-            'admin.logs.error' => 'Error logs',
-        ];
-        $title = $titles[$request->route()->getName()] ?? abort(404);
-        $message = 'This module is not implemented in this version. No operation is available from this page.';
-        return $request->expectsJson()
-            ? response()->json(['ok' => false, 'module' => $title, 'message' => $message], 501)
-            : response()->view('admin.management.unavailable', compact('title', 'message'), 501);
-    }
 }
