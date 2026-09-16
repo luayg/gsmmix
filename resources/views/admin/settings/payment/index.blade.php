@@ -1,10 +1,49 @@
 @extends('layouts.admin')
 @section('title', 'Payment settings')
 @section('content')
-<div class="card"><div class="card-header bg-primary text-white d-flex justify-content-between align-items-center"><span><i class="fas fa-credit-card me-1"></i> Payment gateways</span><a class="btn btn-light btn-sm" href="{{ route('admin.settings.payment.create') }}"><i class="fas fa-plus me-1"></i> Add gateway</a></div><div class="card-body">
-@if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
-<div class="alert alert-warning small">Manual gateways are ready for reviewed transfers. Electronic configurations remain disabled until a verified processor driver and webhook handler are implemented.</div>
-<form class="row g-2 mb-3"><div class="col-md-5"><input name="q" class="form-control" value="{{ request('q') }}" placeholder="Search name or slug"></div><div class="col-md-2"><select name="driver" class="form-select"><option value="">All drivers</option>@foreach(['manual','stripe','paypal','custom'] as $driver)<option value="{{ $driver }}" @selected(request('driver')===$driver)>{{ ucfirst($driver) }}</option>@endforeach</select></div><div class="col-md-2"><select name="status" class="form-select"><option value="">All statuses</option><option value="active" @selected(request('status')==='active')>Active</option><option value="inactive" @selected(request('status')==='inactive')>Inactive</option></select></div><div class="col-md-3"><button class="btn btn-outline-primary">Filter</button> <a class="btn btn-outline-secondary" href="{{ route('admin.settings.payment') }}">Reset</a></div></form>
-<div class="table-responsive"><table class="table table-striped align-middle"><thead><tr><th>Logo / gateway</th><th>Driver</th><th>Tax</th><th>Fee</th><th>Currencies</th><th>Status</th><th>Updated</th><th class="text-end">Actions</th></tr></thead><tbody>@forelse($gateways as $gateway)<tr><td>@if($gateway->logo_path)<img src="{{ Storage::disk('public')->url($gateway->logo_path) }}" alt="" style="width:52px;height:34px;object-fit:contain" class="me-2">@endif<strong>{{ $gateway->name }}</strong><div class="small text-muted">{{ $gateway->slug }} · {{ $gateway->transactions_count }} payments</div></td><td><span class="badge bg-dark">{{ strtoupper($gateway->driver) }}</span>@if($gateway->sandbox)<span class="badge bg-warning text-dark">Sandbox</span>@endif</td><td>{{ $gateway->tax_percent }}%</td><td>{{ $gateway->fixed_fee }} + {{ $gateway->percent_fee }}%</td><td>@foreach($gateway->currencies as $currency)<span class="badge bg-secondary me-1">{{ $currency->code }}</span>@endforeach</td><td><span class="badge {{ $gateway->active?'bg-success':'bg-danger' }}">{{ $gateway->active?'Active':'Inactive' }}</span></td><td>{{ $gateway->updated_at->format('Y-m-d H:i') }}</td><td class="text-end text-nowrap"><a class="btn btn-warning btn-sm" href="{{ route('admin.settings.payment.edit',$gateway) }}">Edit settings</a> @if($gateway->transactions_count===0)<form method="POST" class="d-inline" action="{{ route('admin.settings.payment.destroy',$gateway) }}" onsubmit="return confirm('Delete this gateway?')">@csrf @method('DELETE')<button class="btn btn-danger btn-sm">Delete</button></form>@endif</td></tr>@empty<tr><td colspan="8" class="text-center text-muted py-5">No gateways match the selected filters.</td></tr>@endforelse</tbody></table></div>{{ $gateways->links() }}
-</div></div>
+@if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif
+@if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+
+@php
+$logos = ['paypal' => ['fab fa-paypal','text-primary'], 'binance_pay' => ['fas fa-coins','text-warning'], 'usdt' => ['fas fa-dollar-sign','text-success']];
+@endphp
+<div class="card mb-4">
+  <div class="card-header bg-primary text-white"><i class="fas fa-bolt me-1"></i> Automatic payment gateways</div>
+  <div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-striped align-middle mb-0">
+      <thead><tr><th>Logo</th><th>Name</th><th>Tax</th><th>Fee</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+      <tbody>@foreach($automaticGateways as $gateway)
+        <tr>
+          <td style="width:90px"><i class="{{ $logos[$gateway->driver][0] ?? 'fas fa-credit-card' }} {{ $logos[$gateway->driver][1] ?? '' }} fa-2x"></i></td>
+          <td><strong>{{ $gateway->name }}</strong><div class="small text-muted">{{ strtoupper(str_replace('_',' ', $gateway->driver)) }}</div></td>
+          <td>{{ $gateway->tax_percent }}%</td><td>{{ $gateway->fixed_fee }} + {{ $gateway->percent_fee }}%</td>
+          <td><span class="badge {{ $gateway->active ? 'bg-success' : 'bg-danger' }}">{{ $gateway->active ? 'Active' : 'Inactive' }}</span></td>
+          <td class="text-end"><a class="btn btn-warning btn-sm" href="{{ route('admin.settings.payment.edit',$gateway) }}">Edit settings</a></td>
+        </tr>
+      @endforeach</tbody>
+    </table></div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+    <span><i class="fas fa-hand-holding-usd me-1"></i> Manual payment methods</span>
+    <a class="btn btn-light btn-sm" href="{{ route('admin.settings.payment.create') }}"><i class="fas fa-plus me-1"></i> Add manual method</a>
+  </div>
+  <div class="card-body p-0">
+    <div class="table-responsive"><table class="table table-striped align-middle mb-0">
+      <thead><tr><th>Logo</th><th>Name</th><th>Tax</th><th>Fee</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+      <tbody>@forelse($manualGateways as $gateway)<tr>
+        <td style="width:90px">@if($gateway->logo_path)<img src="{{ Storage::disk('public')->url($gateway->logo_path) }}" alt="" style="width:58px;height:36px;object-fit:contain">@else<i class="fas fa-university fa-2x text-secondary"></i>@endif</td>
+        <td><strong>{{ $gateway->name }}</strong><div class="small text-muted">{{ $gateway->slug }} · {{ $gateway->transactions_count }} payments</div></td>
+        <td>{{ $gateway->tax_percent }}%</td><td>{{ $gateway->fixed_fee }} + {{ $gateway->percent_fee }}%</td>
+        <td><span class="badge {{ $gateway->active ? 'bg-success' : 'bg-danger' }}">{{ $gateway->active ? 'Active' : 'Inactive' }}</span></td>
+        <td class="text-end text-nowrap"><a class="btn btn-warning btn-sm" href="{{ route('admin.settings.payment.edit',$gateway) }}">Edit settings</a>
+          @if($gateway->transactions_count===0)<form method="POST" class="d-inline" action="{{ route('admin.settings.payment.destroy',$gateway) }}" onsubmit="return confirm('Delete this manual payment method?')">@csrf @method('DELETE')<button class="btn btn-outline-danger btn-sm">Delete</button></form>@endif
+        </td>
+      </tr>@empty<tr><td colspan="6" class="text-center text-muted py-4">No manual payment methods. Use “Add manual method” to create one.</td></tr>@endforelse</tbody>
+    </table></div>
+  </div>
+  @if($manualGateways->hasPages())<div class="card-footer">{{ $manualGateways->links() }}</div>@endif
+</div>
 @endsection
