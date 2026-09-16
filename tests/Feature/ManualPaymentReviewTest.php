@@ -87,12 +87,12 @@ final class ManualPaymentReviewTest extends SecurityTestCase
 
         $this->post(route('admin.finances.payment-reviews.approve', $payment), ['reference' => 'BANK-123'])
             ->assertRedirect(route('admin.finances.payment-reviews.show', $payment));
-        $this->assertSame('25.0000', $customer->fresh()->balance);
+        $this->assertSame(25.0, (float) $customer->fresh()->balance);
         $this->assertDatabaseHas('payment_transactions', ['id' => $payment->id, 'status' => 'paid', 'approved_by' => $admin->id]);
         $this->assertDatabaseCount('finance_transactions', 1);
 
         $this->post(route('admin.finances.payment-reviews.approve', $payment));
-        $this->assertSame('25.0000', $customer->fresh()->balance);
+        $this->assertSame(25.0, (float) $customer->fresh()->balance);
         $this->assertDatabaseCount('finance_transactions', 1);
     }
 
@@ -108,6 +108,7 @@ final class ManualPaymentReviewTest extends SecurityTestCase
 
         $this->assertSame(0.0, (float) $customer->fresh()->balance);
         $this->assertDatabaseCount('finance_transactions', 0);
+        $this->resetSessionRuntime();
         $this->actingAs($customer)->get(route('customer.payments.show', $payment))
             ->assertOk()
             ->assertSee('The receipt could not be verified.');
