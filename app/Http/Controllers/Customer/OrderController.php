@@ -108,7 +108,7 @@ final class OrderController extends Controller
         return ['id' => $order->id, 'type' => $type, 'service' => $this->text($order->service?->name ?? $order->product?->name ?? ucfirst($type).' service'),
             'device' => $order->device ?: '—', 'status' => $order->status, 'amount' => $order->price ?? $order->order_price ?? 0,
             'quantity' => $order->quantity ?? null, 'created_at' => $order->created_at,
-            'result' => CustomerOrderResultPresenter::present($order->response ?? null), 'reference' => $order->remote_id ?? data_get($order->response, 'reference_id')];
+            'result' => CustomerOrderResultPresenter::present($order->response ?? null, $type, (string) $order->status)];
     }
 
     private function price(Model $service, string $type, int $groupId): float

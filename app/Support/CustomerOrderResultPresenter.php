@@ -4,8 +4,11 @@ namespace App\Support;
 
 final class CustomerOrderResultPresenter
 {
-    public static function present(mixed $response): array
+    public static function present(mixed $response, ?string $orderType = null, ?string $orderStatus = null): array
     {
+        if (strtolower((string) $orderType) === 'smm') {
+            return self::presentSmm($response, $orderStatus);
+        }
         if (is_string($response)) {
             $decoded = json_decode($response, true);
             if (!is_array($decoded)) {
@@ -28,6 +31,26 @@ final class CustomerOrderResultPresenter
         }
         if ($items === [] && $text) $items = self::parseItems($text);
         return ['image' => $image, 'items' => $items, 'text' => $items === [] ? $text : null];
+    }
+
+    private static function presentSmm(mixed $response, ?string $orderStatus): array
+    {
+        if (is_string($response)) {
+            $decoded = json_decode($response, true);
+            $response = is_array($decoded) ? $decoded : [];
+        }
+        $response = is_array($response) ? $response : [];
+        $status = strtolower(trim((string) $orderStatus));
+        $complete = in_array($status, ['success', 'completed', 'complete', 'done'], true);
+        if (!$complete) return ['image' => null, 'items' => [], 'text' => null];
+        $items = [];
+        $startCount = data_get($response, 'start_count') ?? data_get($response, 'startCount')
+            ?? data_get($response, 'response_raw.start_count') ?? data_get($response, 'raw.start_count');
+        if ($startCount !== null && $startCount !== '') {
+            $items[] = ['label' => 'Start count', 'value' => self::stringValue($startCount)];
+        }
+        $items[] = ['label' => 'Status', 'value' => 'Complete'];
+        return ['image' => null, 'items' => $items, 'text' => null];
     }
 
     private static function parseItems(string $text): array
