@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->validateCsrfTokens(except: ['payment/webhooks/*']);
         // Never run session authentication in the global, pre-session stack.
         $middleware->web(append: [AuthenticateSession::class, ProtectAdminRoutes::class, RecordAdminActivity::class]);
         // Deny unauthorized access before route model binding can disclose records.

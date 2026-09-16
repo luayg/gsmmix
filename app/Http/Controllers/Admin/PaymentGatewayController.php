@@ -10,18 +10,14 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Http\Request;
 
 final class PaymentGatewayController extends Controller
 {
-    public function index(Request $request)
+    public function index()
     {
-        $gateways = PaymentGateway::query()->with('currencies')->withCount('transactions')
-            ->when($request->filled('q'), fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$request->string('q').'%')->orWhere('slug', 'like', '%'.$request->string('q').'%')))
-            ->when($request->filled('status'), fn ($q) => $q->where('active', $request->input('status') === 'active'))
-            ->when($request->filled('driver'), fn ($q) => $q->where('driver', $request->input('driver')))
-            ->orderBy('ordering')->orderBy('id')->paginate(15)->withQueryString();
-        return view('admin.settings.payment.index', compact('gateways'));
+        $automaticGateways = PaymentGateway::query()->where('is_system', true)->with('currencies')->withCount('transactions')->orderBy('ordering')->get();
+        $manualGateways = PaymentGateway::query()->where('is_system', false)->with('currencies')->withCount('transactions')->orderBy('ordering')->orderBy('id')->paginate(15);
+        return view('admin.settings.payment.index', compact('automaticGateways', 'manualGateways'));
     }
 
     public function create() { return view('admin.settings.payment.edit', ['gateway' => null, 'currencies' => $this->currencies()]); }
@@ -34,7 +30,7 @@ final class PaymentGatewayController extends Controller
             $gateway = PaymentGateway::create($this->payload($request));
             $gateway->currencies()->sync($request->validated('currency_ids'));
         });
-        return redirect()->route('admin.settings.payment')->with('ok', 'Payment gateway created.');
+        return redirect()->route('admin.settings.payment')->with('ok', 'Manual payment method created.');
     }
 
     public function update(SavePaymentGatewayRequest $request, PaymentGateway $gateway): RedirectResponse
@@ -45,62 +41,57 @@ final class PaymentGatewayController extends Controller
             $gateway->update($this->payload($request, $gateway));
             $gateway->currencies()->sync($request->validated('currency_ids'));
         });
-        if ($oldLogo && $oldLogo !== $gateway->logo_path && str_starts_with($oldLogo, 'payments/')) {
-            Storage::disk('public')->delete($oldLogo);
-        }
+        if ($oldLogo && $oldLogo !== $gateway->logo_path && str_starts_with($oldLogo, 'payments/')) Storage::disk('public')->delete($oldLogo);
         return redirect()->route('admin.settings.payment')->with('ok', 'Payment gateway updated.');
     }
 
     public function destroy(PaymentGateway $gateway): RedirectResponse
     {
-        if ($gateway->transactions()->exists()) {
-            return back()->withErrors(['gateway' => 'This gateway has payment history. Disable it instead of deleting it.']);
-        }
+        if ($gateway->is_system) return back()->withErrors(['gateway' => 'Built-in electronic gateways cannot be deleted.']);
+        if ($gateway->transactions()->exists()) return back()->withErrors(['gateway' => 'This gateway has payment history. Disable it instead of deleting it.']);
         $logo = $gateway->logo_path;
         $gateway->delete();
-        if ($logo && str_starts_with($logo, 'payments/')) {
-            Storage::disk('public')->delete($logo);
-        }
-        return back()->with('ok', 'Payment gateway deleted.');
+        if ($logo && str_starts_with($logo, 'payments/')) Storage::disk('public')->delete($logo);
+        return back()->with('ok', 'Manual payment method deleted.');
     }
 
     private function payload(SavePaymentGatewayRequest $request, ?PaymentGateway $gateway = null): array
     {
-        $data = $request->safe()->except(['currency_ids', 'logo', 'client_id', 'api_key', 'api_secret', 'webhook_secret', 'payment_details']);
+        $system = $gateway?->is_system === true;
+        $data = $request->safe()->except(['currency_ids','logo','payment_details','client_id','client_secret','paypal_webhook_id','binance_api_key','binance_secret_key','binance_webhook_public_key','usdt_network','wallet_address','provider_url','provider_api_key','contract_address','confirmations']);
+        if ($system) unset($data['name'], $data['slug'], $data['driver'], $data['ordering']);
+        else { $data['driver'] = 'manual'; $data['is_system'] = false; }
         $data['active'] = $request->boolean('active');
         $data['sandbox'] = $request->boolean('sandbox');
-        $data['ordering'] = (int) ($data['ordering'] ?? 0);
         $data['tax_percent'] = $data['tax_percent'] ?? '0';
-        $data['config'] = ['payment_details' => trim((string) $request->input('payment_details'))];
         $data['logo_path'] = $gateway?->logo_path;
-        if ($request->hasFile('logo')) {
-            $data['logo_path'] = $request->file('logo')->store('payments', 'public');
-        }
-
-        if ($data['driver'] === 'manual') {
+        if (!$system) {
+            $data['config'] = ['payment_details' => trim((string) $request->input('payment_details'))];
             $data['credentials'] = null;
-        } else {
-            $keys = ['client_id', 'api_key', 'api_secret', 'webhook_secret'];
-            $hasReplacement = collect($keys)->contains(fn (string $key) => $request->filled($key));
-            if (!$gateway || $gateway->driver !== $data['driver'] || $hasReplacement) {
-                $credentials = $gateway && $gateway->driver === $data['driver'] ? ($gateway->credentials ?? []) : [];
-                foreach ($keys as $key) {
-                    if ($request->filled($key)) {
-                        $credentials[$key] = (string) $request->input($key);
-                    }
-                }
-                $data['credentials'] = $credentials ?: null;
-            }
+            if ($request->hasFile('logo')) $data['logo_path'] = $request->file('logo')->store('payments', 'public');
+            return $data;
         }
+        $config = $gateway->config ?? [];
+        if ($gateway->driver === 'usdt') {
+            $config['network'] = $request->input('usdt_network', $config['network'] ?? null);
+            $config['confirmations'] = (int) $request->input('confirmations', $config['confirmations'] ?? 12);
+        }
+        $data['config'] = $config;
+        $fields = match ($gateway->driver) {
+            'paypal' => ['client_id','client_secret','paypal_webhook_id'],
+            'binance_pay' => ['binance_api_key','binance_secret_key','binance_webhook_public_key'],
+            'usdt' => ['wallet_address','provider_url','provider_api_key','contract_address'],
+            default => [],
+        };
+        $credentials = $gateway->credentials ?? [];
+        foreach ($fields as $field) if ($request->filled($field)) $credentials[$field] = trim((string) $request->input($field));
+        $data['credentials'] = $credentials ?: null;
         return $data;
     }
 
     private function ensureActiveCurrencies(array $ids): void
     {
-        if (Currency::query()->where('active', true)->whereIn('id', $ids)->count() !== count($ids)) {
-            throw ValidationException::withMessages(['currency_ids' => 'Select active currencies only.']);
-        }
+        if (Currency::query()->where('active', true)->whereIn('id', $ids)->count() !== count($ids)) throw ValidationException::withMessages(['currency_ids' => 'Select active currencies only.']);
     }
-
     private function currencies() { return Currency::query()->where('active', true)->orderBy('ordering')->orderBy('code')->get(); }
 }

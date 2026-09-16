@@ -45,6 +45,7 @@ use App\Http\Controllers\Admin\Orders\SmmOrdersController;
 use App\Http\Controllers\Admin\Orders\ProductOrdersController;
 
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\PaymentWebhookController;
 
 /*
 |--------------------------------------------------------------------------
@@ -53,6 +54,10 @@ use App\Http\Controllers\Auth\LoginController;
 */
 
 Route::get('/', fn () => redirect()->route('admin.dashboard'));
+Route::post('/payment/webhooks/{slug}', PaymentWebhookController::class)
+    ->whereIn('slug', ['paypal', 'binance-pay'])
+    ->middleware('throttle:120,1')
+    ->name('payment.webhook');
 Route::view('/login', 'auth.login')->name('login');
 
 Route::middleware('guest')->group(function () {

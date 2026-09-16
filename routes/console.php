@@ -76,3 +76,8 @@ Schedule::command('orders:sync-smm --limit=50')
     ->everyMinute()
     ->withoutOverlapping()
     ->onOneServer();
+
+Schedule::command('payments:scan-usdt')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onOneServer();
