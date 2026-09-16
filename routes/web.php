@@ -20,6 +20,11 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\LanguageController;
 use App\Http\Controllers\Admin\CurrencyController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
+use App\Http\Controllers\Admin\TransactionController;
+use App\Http\Controllers\Admin\StatementController;
+use App\Http\Controllers\Admin\InvoiceController;
+use App\Http\Controllers\Admin\PageController;
+use App\Http\Controllers\Admin\MenuController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -270,9 +275,23 @@ Route::prefix('admin')->name('admin.')->group(function () {
     /* ================== Finance ==================== */
     Route::prefix('finances')->name('finances.')->group(function () {
         Route::get('/', [ManagementOverviewController::class, 'finances'])->name('index');
-        Route::get('/invoices',     [ManagementOverviewController::class, 'unavailable'])->name('invoices.index');
-        Route::get('/statements',   [ManagementOverviewController::class, 'statements'])->name('statements.index');
-        Route::get('/transactions', [ManagementOverviewController::class, 'transactions'])->name('transactions.index');
+        Route::get('/invoices', [InvoiceController::class, 'index'])->name('invoices.index');
+        Route::get('/invoices/create', [InvoiceController::class, 'create'])->name('invoices.create');
+        Route::post('/invoices', [InvoiceController::class, 'store'])->name('invoices.store');
+        Route::get('/invoices/{invoice}', [InvoiceController::class, 'show'])->name('invoices.show');
+        Route::get('/invoices/{invoice}/edit', [InvoiceController::class, 'edit'])->name('invoices.edit');
+        Route::put('/invoices/{invoice}', [InvoiceController::class, 'update'])->name('invoices.update');
+        Route::delete('/invoices/{invoice}', [InvoiceController::class, 'destroy'])->name('invoices.destroy');
+        Route::get('/invoices/{invoice}/print', [InvoiceController::class, 'print'])->name('invoices.print');
+        Route::post('/invoices/{invoice}/payments', [InvoiceController::class, 'addPayment'])->name('invoices.payments.store');
+        Route::post('/invoices/{invoice}/cancel', [InvoiceController::class, 'cancel'])->name('invoices.cancel');
+        Route::get('/statements', [StatementController::class, 'index'])->name('statements.index');
+        Route::get('/statements/{user}', [StatementController::class, 'show'])->name('statements.show');
+        Route::get('/statements/{user}/print', [StatementController::class, 'print'])->name('statements.print');
+        Route::get('/statements/{user}/export', [StatementController::class, 'export'])->name('statements.export');
+        Route::get('/transactions', [TransactionController::class, 'index'])->name('transactions.index');
+        Route::get('/transactions/export', [TransactionController::class, 'export'])->name('transactions.export');
+        Route::get('/transactions/{transaction}', [TransactionController::class, 'show'])->name('transactions.show');
     });
 
     Route::prefix('store')->name('store.')->group(function () {
@@ -304,7 +323,18 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('pages')->name('pages.')->group(function () {
-        Route::get('/', [ManagementOverviewController::class, 'unavailable'])->name('index');
+        Route::get('/', [PageController::class, 'index'])->name('index');
+        Route::get('/create', [PageController::class, 'create'])->name('create');
+        Route::post('/', [PageController::class, 'store'])->name('store');
+        Route::get('/{page}/edit', [PageController::class, 'edit'])->name('edit');
+        Route::put('/{page}', [PageController::class, 'update'])->name('update');
+        Route::delete('/{page}', [PageController::class, 'destroy'])->name('destroy');
+        Route::get('/{page}/preview', [PageController::class, 'preview'])->name('preview');
+        Route::post('/menus', [MenuController::class, 'store'])->name('menus.store');
+        Route::put('/menus/{menu}', [MenuController::class, 'update'])->name('menus.update');
+        Route::delete('/menus/{menu}', [MenuController::class, 'destroy'])->name('menus.destroy');
+        Route::post('/menus/{menu}/items', [MenuController::class, 'storeItem'])->name('menus.items.store');
+        Route::delete('/menus/{menu}/items/{item}', [MenuController::class, 'destroyItem'])->name('menus.items.destroy');
     });
 
     Route::prefix('sources')->name('sources.')->group(function () {
