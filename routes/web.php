@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\LanguageController;
 use App\Http\Controllers\Admin\CurrencyController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
+use App\Http\Controllers\Admin\PaymentReviewController;
 use App\Http\Controllers\Admin\TransactionController;
 use App\Http\Controllers\Admin\StatementController;
 use App\Http\Controllers\Admin\InvoiceController;
@@ -103,7 +104,12 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     // Dashboard
     Route::get('/', fn () => redirect()->route('admin.dashboard'));
-    Route::get('/dashboard', fn () => view('admin.dashboard'))->name('dashboard');
+    Route::get('/dashboard', fn () => view('admin.dashboard', [
+        'manualPaymentsReview' => \Illuminate\Support\Facades\Schema::hasTable('payment_transactions') ? \App\Models\PaymentTransaction::query()
+            ->where('status', 'review')
+            ->whereHas('gateway', fn ($query) => $query->where('is_system', false))
+            ->count() : 0,
+    ]))->name('dashboard');
 
     // Summernote image upload
     Route::post('/uploads/summernote-image', [UploadController::class, 'summernote'])
@@ -314,6 +320,11 @@ Route::prefix('admin')->name('admin.')->group(function () {
     /* ================== Finance ==================== */
     Route::prefix('finances')->name('finances.')->group(function () {
         Route::get('/', [ManagementOverviewController::class, 'finances'])->name('index');
+        Route::get('/payment-reviews', [PaymentReviewController::class, 'index'])->name('payment-reviews.index');
+        Route::get('/payment-reviews/{payment}', [PaymentReviewController::class, 'show'])->name('payment-reviews.show');
+        Route::get('/payment-reviews/{payment}/proof', [PaymentReviewController::class, 'proof'])->name('payment-reviews.proof');
+        Route::post('/payment-reviews/{payment}/approve', [PaymentReviewController::class, 'approve'])->middleware('throttle:20,1')->name('payment-reviews.approve');
+        Route::post('/payment-reviews/{payment}/reject', [PaymentReviewController::class, 'reject'])->middleware('throttle:20,1')->name('payment-reviews.reject');
         Route::get('/invoices', [InvoiceController::class, 'index'])->name('invoices.index');
         Route::get('/invoices/create', [InvoiceController::class, 'create'])->name('invoices.create');
         Route::post('/invoices', [InvoiceController::class, 'store'])->name('invoices.store');

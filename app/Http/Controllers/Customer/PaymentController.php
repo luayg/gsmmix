@@ -12,6 +12,7 @@ use App\Services\Payments\PaymentQuote;
 use App\Services\Payments\PaymentSettlement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use App\Rules\SafeRasterImage;
 
 final class PaymentController extends Controller
@@ -34,6 +35,9 @@ final class PaymentController extends Controller
             $result=$initiator->create($request->user(),$gateway,$currency,$data['amount'],route('customer.payments.paypal.return'),route('customer.payments.create'));
             if($url=data_get($result,'provider.checkout_url')) return redirect()->away($url);
             return redirect()->route('customer.payments.show',$result['payment']);
+        }
+        if (!$request->hasFile('proof')) {
+            throw ValidationException::withMessages(['proof' => 'A transfer receipt image is required for manual payments.']);
         }
         $calculated=$quote->calculate($data['amount'],$gateway,$currency);
         $proof=$request->hasFile('proof')?$request->file('proof')->store('payment-proofs','local'):null;

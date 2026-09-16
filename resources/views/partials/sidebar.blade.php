@@ -211,7 +211,13 @@
     </li>
 
     {{-- Finances --}}
-    @php $open = $routeIsAny(['admin.finances.invoices.*','admin.finances.statements.*','admin.finances.transactions.*']); @endphp
+    @php
+      $open = $routeIsAny(['admin.finances.invoices.*','admin.finances.payment-reviews.*','admin.finances.statements.*','admin.finances.transactions.*']);
+      $manualPaymentReviewCount = \Illuminate\Support\Facades\Schema::hasTable('payment_transactions') ? \App\Models\PaymentTransaction::query()
+          ->where('status', 'review')
+          ->whereHas('gateway', fn ($query) => $query->where('is_system', false))
+          ->count() : 0;
+    @endphp
     <li class="nav-item">
       <a class="nav-link d-flex align-items-center justify-content-between"
          href="javascript:void(0)"
@@ -223,6 +229,7 @@
       <div id="mFin" class="collapse {{ $open ? 'show' : '' }}" data-bs-parent="#sidebarAccordion">
         <ul class="nav flex-column">
           <li><a class="nav-link {{ request()->routeIs('admin.finances.invoices.*') ? 'active' : '' }}" href="{{ route('admin.finances.invoices.index') }}"><i class="fas fa-file-invoice-dollar"></i> Invoices</a></li>
+          <li><a class="nav-link d-flex align-items-center {{ request()->routeIs('admin.finances.payment-reviews.*') ? 'active' : '' }}" href="{{ route('admin.finances.payment-reviews.index') }}"><i class="fas fa-receipt"></i> <span>Payment reviews</span>@if($manualPaymentReviewCount)<span class="badge bg-warning text-dark ms-auto">{{ $manualPaymentReviewCount }}</span>@endif</a></li>
           <li><a class="nav-link {{ request()->routeIs('admin.finances.statements.*') ? 'active' : '' }}" href="{{ route('admin.finances.statements.index') }}"><i class="fas fa-receipt"></i> Statements</a></li>
           <li><a class="nav-link {{ request()->routeIs('admin.finances.transactions.*') ? 'active' : '' }}" href="{{ route('admin.finances.transactions.index') }}"><i class="fas fa-exchange-alt"></i> Transactions</a></li>
         </ul>
