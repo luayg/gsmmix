@@ -6,6 +6,7 @@ use App\Models\Setting;
 use App\Services\Settings\AppSettings;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use App\Models\MailTemplate;
 use Tests\Support\SecurityTestCase;
 
 final class AdminSettingsTest extends SecurityTestCase
@@ -14,6 +15,9 @@ final class AdminSettingsTest extends SecurityTestCase
     {
         parent::setUp();
         (require database_path('migrations/2026_09_16_000100_create_settings_table.php'))->up();
+        (require database_path('migrations/2026_09_16_000200_create_languages_and_currencies_tables.php'))->up();
+        (require database_path('migrations/2026_09_16_000300_create_payment_tables.php'))->up();
+        (require database_path('migrations/2026_09_16_000400_expand_admin_settings.php'))->up();
     }
 
     public function test_settings_are_restricted_to_administrators(): void
@@ -66,6 +70,17 @@ final class AdminSettingsTest extends SecurityTestCase
         $before = DB::table('settings')->where('setting_key', 'mail.password')->value('value');
         $this->put(route('admin.settings.mail.update'), $this->mailPayload(['password' => '']))->assertRedirect();
         $this->assertSame($before, DB::table('settings')->where('setting_key', 'mail.password')->value('value'));
+    }
+
+    public function test_mail_templates_can_be_managed_and_preview_strips_scripts(): void
+    {
+        $this->actingAs($this->user('Administrator'));
+        $this->post(route('admin.settings.mail.templates.store'), [
+            'key' => 'orders.status', 'name' => 'Order status', 'subject' => 'Order {{order_id}}',
+            'body' => '<p onclick="bad()">Updated</p><script>alert(1)</script>', 'audience' => 'user', 'active' => '1',
+        ])->assertRedirect()->assertSessionHas('ok');
+        $template = MailTemplate::query()->firstOrFail();
+        $this->get(route('admin.settings.mail.templates.preview', $template))->assertOk()->assertSee('Updated')->assertDontSee('onclick')->assertDontSee('alert(1)');
     }
 
     private function generalPayload(array $overrides = []): array

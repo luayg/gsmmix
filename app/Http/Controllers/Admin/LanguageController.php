@@ -15,9 +15,12 @@ final class LanguageController extends Controller
 {
     public function __construct(private readonly ContentTranslator $translator) {}
 
-    public function index()
+    public function index(Request $request)
     {
-        $languages = Language::query()->withCount('translations')->orderBy('ordering')->orderBy('id')->get();
+        $languages = Language::query()->withCount('translations')
+            ->when($request->filled('q'), fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$request->string('q').'%')->orWhere('native_name', 'like', '%'.$request->string('q').'%')->orWhere('locale', 'like', '%'.$request->string('q').'%')))
+            ->when($request->filled('status'), fn ($q) => $q->where('active', $request->input('status') === 'active'))
+            ->orderBy('ordering')->orderBy('id')->paginate(15)->withQueryString();
         return view('admin.settings.languages.index', compact('languages'));
     }
 
@@ -99,6 +102,34 @@ final class LanguageController extends Controller
         });
         $this->translator->forget($language);
         return back()->with('ok', 'Translations updated.');
+    }
+
+    public function export(Language $language)
+    {
+        return response()->streamDownload(function () use ($language): void {
+            echo json_encode(['locale' => $language->locale, 'name' => $language->name, 'translations' => $language->translations()->orderBy('translation_key')->pluck('value', 'translation_key')], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        }, $language->locale.'.json', ['Content-Type' => 'application/json']);
+    }
+
+    public function import(Request $request, Language $language): RedirectResponse
+    {
+        abort_unless($request->user('web')?->can('settings.edit'), 403);
+        $request->validate(['translation_file' => ['required', 'file', 'mimes:json,txt', 'max:2048']]);
+        try {
+            $decoded = json_decode($request->file('translation_file')->get(), true, 512, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw ValidationException::withMessages(['translation_file' => 'The uploaded file is not valid JSON.']);
+        }
+        $rows = $decoded['translations'] ?? $decoded;
+        if (!is_array($rows) || count($rows) > 5000) throw ValidationException::withMessages(['translation_file' => 'The translation file must contain a JSON object with no more than 5,000 entries.']);
+        DB::transaction(function () use ($language, $rows): void {
+            foreach ($rows as $key => $value) {
+                if (!is_string($key) || !preg_match('/^[A-Za-z0-9_.-]{1,191}$/', $key) || !is_scalar($value) || mb_strlen((string)$value) > 10000) continue;
+                $language->translations()->updateOrCreate(['translation_key' => $key], ['value' => (string)$value]);
+            }
+        });
+        $this->translator->forget($language);
+        return back()->with('ok', 'Translations imported.');
     }
 
     private function payload(SaveLanguageRequest $request): array

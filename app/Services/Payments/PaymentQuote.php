@@ -24,7 +24,8 @@ final class PaymentQuote
             throw new DomainException('Payment amount exceeds the gateway maximum.');
         }
         $percent = bcdiv((string) $gateway->percent_fee, '100', 12);
-        $fee = bcadd((string) $gateway->fixed_fee, bcmul($amountBase, $percent, 12), 8);
+        $tax = bcdiv((string) ($gateway->tax_percent ?? '0'), '100', 12);
+        $fee = bcadd((string) $gateway->fixed_fee, bcadd(bcmul($amountBase, $percent, 12), bcmul($amountBase, $tax, 12), 12), 8);
         $payable = bcadd($amountBase, $fee, 8);
         return [
             'amount_base' => $this->decimal($amountBase), 'fee_base' => $fee, 'payable_base' => $payable,

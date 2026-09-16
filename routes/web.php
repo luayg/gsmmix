@@ -344,8 +344,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/mail', [SettingsController::class, 'mail'])->name('mail');
         Route::put('/mail', [SettingsController::class, 'updateMail'])->name('mail.update');
         Route::post('/mail/test', [SettingsController::class, 'testMail'])->middleware('throttle:3,1')->name('mail.test');
+        Route::post('/mail/templates', [SettingsController::class, 'storeMailTemplate'])->name('mail.templates.store');
+        Route::put('/mail/templates/{template}', [SettingsController::class, 'updateMailTemplate'])->name('mail.templates.update');
+        Route::delete('/mail/templates/{template}', [SettingsController::class, 'destroyMailTemplate'])->name('mail.templates.destroy');
+        Route::get('/mail/templates/{template}/preview', [SettingsController::class, 'previewMailTemplate'])->name('mail.templates.preview');
         Route::get('/payment', [PaymentGatewayController::class, 'index'])->name('payment');
+        Route::get('/payment/create', [PaymentGatewayController::class, 'create'])->name('payment.create');
         Route::post('/payment', [PaymentGatewayController::class, 'store'])->name('payment.store');
+        Route::get('/payment/{gateway}/edit', [PaymentGatewayController::class, 'edit'])->name('payment.edit');
         Route::put('/payment/{gateway}', [PaymentGatewayController::class, 'update'])->name('payment.update');
         Route::delete('/payment/{gateway}', [PaymentGatewayController::class, 'destroy'])->name('payment.destroy');
         Route::get('/languages', [LanguageController::class, 'index'])->name('languages');
@@ -354,10 +360,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::delete('/languages/{language}', [LanguageController::class, 'destroy'])->name('languages.destroy');
         Route::get('/languages/{language}/translations', [LanguageController::class, 'translations'])->name('languages.translations');
         Route::put('/languages/{language}/translations', [LanguageController::class, 'updateTranslations'])->name('languages.translations.update');
+        Route::get('/languages/{language}/export', [LanguageController::class, 'export'])->name('languages.export');
+        Route::post('/languages/{language}/import', [LanguageController::class, 'import'])->name('languages.import');
         Route::get('/currencies', [CurrencyController::class, 'index'])->name('currencies');
         Route::post('/currencies', [CurrencyController::class, 'store'])->name('currencies.store');
         Route::put('/currencies/{currency}', [CurrencyController::class, 'update'])->name('currencies.update');
         Route::delete('/currencies/{currency}', [CurrencyController::class, 'destroy'])->name('currencies.destroy');
+        Route::put('/currencies/rates/bulk', [CurrencyController::class, 'bulkRates'])->name('currencies.rates.update');
+        Route::get('/currencies/export/csv', [CurrencyController::class, 'export'])->name('currencies.export');
     });
 
     Route::prefix('system')->name('system.')->group(function () {

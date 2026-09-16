@@ -23,6 +23,7 @@ final class SavePaymentGatewayRequest extends FormRequest
             'payment_details' => ['nullable', 'string', 'max:5000'],
             'fixed_fee' => ['required', 'decimal:0,8', 'min:0', 'max:999999999999.99999999'],
             'percent_fee' => ['required', 'decimal:0,4', 'between:0,100'],
+            'tax_percent' => ['nullable', 'decimal:0,4', 'between:0,100'],
             'minimum_amount' => ['nullable', 'decimal:0,8', 'gt:0'], 'maximum_amount' => ['nullable', 'decimal:0,8', 'gt:0'],
             'sandbox' => ['sometimes', 'boolean'], 'active' => ['sometimes', 'boolean'], 'ordering' => ['nullable', 'integer', 'min:0', 'max:999999'],
             'currency_ids' => ['required', 'array', 'min:1'], 'currency_ids.*' => ['integer', 'distinct', 'exists:currencies,id'],

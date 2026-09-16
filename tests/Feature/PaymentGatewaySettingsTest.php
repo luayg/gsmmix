@@ -16,6 +16,7 @@ final class PaymentGatewaySettingsTest extends SecurityTestCase
         parent::setUp();
         (require database_path('migrations/2026_09_16_000200_create_languages_and_currencies_tables.php'))->up();
         (require database_path('migrations/2026_09_16_000300_create_payment_tables.php'))->up();
+        (require database_path('migrations/2026_09_16_000400_expand_admin_settings.php'))->up();
         $this->actingAs($this->user('Administrator'));
     }
 
@@ -65,6 +66,17 @@ final class PaymentGatewaySettingsTest extends SecurityTestCase
         $this->assertDatabaseMissing('payment_gateways', ['slug' => 'unsafe-live']);
     }
 
+    public function test_tax_is_included_in_the_payment_quote(): void
+    {
+        $currency = Currency::query()->firstOrFail();
+        $this->post(route('admin.settings.payment.store'), $this->payload([
+            'currency_ids' => [$currency->id], 'active' => '1', 'tax_percent' => '10',
+        ]))->assertRedirect();
+        $quote = app(PaymentQuote::class)->calculate('100', PaymentGateway::query()->firstOrFail(), $currency);
+        $this->assertSame('10.00000000', $quote['fee_base']);
+        $this->assertSame('110.00000000', $quote['payable_base']);
+    }
+
     public function test_gateway_with_financial_history_cannot_be_deleted(): void
     {
         $currency = Currency::query()->firstOrFail();
@@ -92,7 +104,7 @@ final class PaymentGatewaySettingsTest extends SecurityTestCase
         return array_replace([
             'name' => 'Bank transfer', 'slug' => 'bank-transfer', 'driver' => 'manual',
             'description' => 'Manual transfer', 'instructions' => 'Upload proof for review.',
-            'payment_details' => 'Bank: Test bank; IBAN: TEST123', 'fixed_fee' => '0', 'percent_fee' => '0',
+            'payment_details' => 'Bank: Test bank; IBAN: TEST123', 'fixed_fee' => '0', 'percent_fee' => '0', 'tax_percent' => '0',
             'minimum_amount' => '1', 'maximum_amount' => '10000', 'sandbox' => '1', 'active' => '0',
             'ordering' => 0, 'currency_ids' => [], 'client_id' => '', 'api_key' => '', 'api_secret' => '', 'webhook_secret' => '',
         ], $overrides);

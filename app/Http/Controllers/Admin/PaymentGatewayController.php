@@ -10,15 +10,22 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Http\Request;
 
 final class PaymentGatewayController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $gateways = PaymentGateway::query()->with('currencies')->withCount('transactions')->orderBy('ordering')->orderBy('id')->get();
-        $currencies = Currency::query()->where('active', true)->orderBy('ordering')->orderBy('code')->get();
-        return view('admin.settings.payment.index', compact('gateways', 'currencies'));
+        $gateways = PaymentGateway::query()->with('currencies')->withCount('transactions')
+            ->when($request->filled('q'), fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$request->string('q').'%')->orWhere('slug', 'like', '%'.$request->string('q').'%')))
+            ->when($request->filled('status'), fn ($q) => $q->where('active', $request->input('status') === 'active'))
+            ->when($request->filled('driver'), fn ($q) => $q->where('driver', $request->input('driver')))
+            ->orderBy('ordering')->orderBy('id')->paginate(15)->withQueryString();
+        return view('admin.settings.payment.index', compact('gateways'));
     }
+
+    public function create() { return view('admin.settings.payment.edit', ['gateway' => null, 'currencies' => $this->currencies()]); }
+    public function edit(PaymentGateway $gateway) { $gateway->load('currencies'); return view('admin.settings.payment.edit', ['gateway' => $gateway, 'currencies' => $this->currencies()]); }
 
     public function store(SavePaymentGatewayRequest $request): RedirectResponse
     {
@@ -27,7 +34,7 @@ final class PaymentGatewayController extends Controller
             $gateway = PaymentGateway::create($this->payload($request));
             $gateway->currencies()->sync($request->validated('currency_ids'));
         });
-        return back()->with('ok', 'Payment gateway created.');
+        return redirect()->route('admin.settings.payment')->with('ok', 'Payment gateway created.');
     }
 
     public function update(SavePaymentGatewayRequest $request, PaymentGateway $gateway): RedirectResponse
@@ -41,7 +48,7 @@ final class PaymentGatewayController extends Controller
         if ($oldLogo && $oldLogo !== $gateway->logo_path && str_starts_with($oldLogo, 'payments/')) {
             Storage::disk('public')->delete($oldLogo);
         }
-        return back()->with('ok', 'Payment gateway updated.');
+        return redirect()->route('admin.settings.payment')->with('ok', 'Payment gateway updated.');
     }
 
     public function destroy(PaymentGateway $gateway): RedirectResponse
@@ -63,6 +70,7 @@ final class PaymentGatewayController extends Controller
         $data['active'] = $request->boolean('active');
         $data['sandbox'] = $request->boolean('sandbox');
         $data['ordering'] = (int) ($data['ordering'] ?? 0);
+        $data['tax_percent'] = $data['tax_percent'] ?? '0';
         $data['config'] = ['payment_details' => trim((string) $request->input('payment_details'))];
         $data['logo_path'] = $gateway?->logo_path;
         if ($request->hasFile('logo')) {
@@ -93,4 +101,6 @@ final class PaymentGatewayController extends Controller
             throw ValidationException::withMessages(['currency_ids' => 'Select active currencies only.']);
         }
     }
+
+    private function currencies() { return Currency::query()->where('active', true)->orderBy('ordering')->orderBy('code')->get(); }
 }

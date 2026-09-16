@@ -6,6 +6,7 @@ use App\Models\Currency;
 use App\Models\Language;
 use App\Services\Settings\CurrencyConverter;
 use Tests\Support\SecurityTestCase;
+use Illuminate\Http\UploadedFile;
 
 final class LanguageCurrencySettingsTest extends SecurityTestCase
 {
@@ -80,6 +81,24 @@ final class LanguageCurrencySettingsTest extends SecurityTestCase
         ]))->assertRedirect();
         $this->assertSame('1.00000000', $usd->fresh()->exchange_rate);
         $this->delete(route('admin.settings.currencies.destroy', $usd))->assertSessionHasErrors('currency');
+    }
+
+    public function test_translations_can_be_imported_and_exported(): void
+    {
+        $english = Language::query()->where('code', 'en')->firstOrFail();
+        $file = UploadedFile::fake()->createWithContent('en.json', json_encode(['translations' => ['navigation.home' => 'Home']]));
+        $this->post(route('admin.settings.languages.import', $english), ['translation_file' => $file])->assertRedirect()->assertSessionHas('ok');
+        $this->get(route('admin.settings.languages.export', $english))->assertOk()->assertHeader('content-type', 'application/json')->assertSee('navigation.home');
+    }
+
+    public function test_exchange_rates_can_be_updated_in_bulk_without_changing_base_rate(): void
+    {
+        $usd = Currency::query()->where('code', 'USD')->firstOrFail();
+        $this->post(route('admin.settings.currencies.store'), $this->currencyPayload(['code' => 'EUR', 'name' => 'Euro', 'symbol' => '€', 'exchange_rate' => '0.9']))->assertRedirect();
+        $eur = Currency::query()->where('code', 'EUR')->firstOrFail();
+        $this->put(route('admin.settings.currencies.rates.update'), ['rates' => [$usd->id => '9', $eur->id => '0.92']])->assertRedirect()->assertSessionHas('ok');
+        $this->assertSame('1.00000000', $usd->fresh()->exchange_rate);
+        $this->assertSame('0.92000000', $eur->fresh()->exchange_rate);
     }
 
     private function languagePayload(array $overrides = []): array

@@ -96,7 +96,7 @@ final class AdminPermissions
             return [$module . '.edit'];
         }
         if (!$safe) {
-            return in_array($action, ['update', 'toggle', 'sync', 'syncFields', 'set_overdraft', 'add_remove', 'add_payment'], true)
+            return in_array($action, ['update', 'import', 'toggle', 'sync', 'syncFields', 'set_overdraft', 'add_remove', 'add_payment'], true)
                 ? [$module . '.edit']
                 : null;
         }
@@ -107,7 +107,7 @@ final class AdminPermissions
             'file', 'smm', 'provider_services', 'services_json', 'users', 'products',
             'access', 'activity', 'error', 'general', 'mail', 'payment', 'languages',
             'currencies', 'filemanager', 'update', 'maintenance', 'backups',
-            'translations',
+            'translations', 'preview', 'export',
         ];
         return in_array($action, $readActions, true) ? [$module . '.view'] : null;
     }
