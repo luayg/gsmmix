@@ -7,6 +7,7 @@
   @if(request()->routeIs('admin.finances.*'))
   <nav class="d-flex gap-3 mb-3" aria-label="Finance pages">
     <a href="{{ route('admin.finances.index') }}">Overview</a>
+    <a href="{{ route('admin.finances.payment-reviews.index') }}">Payment reviews</a>
     <a href="{{ route('admin.finances.statements.index') }}">Statements</a>
     <a href="{{ route('admin.finances.transactions.index') }}">Transactions</a>
   </nav>

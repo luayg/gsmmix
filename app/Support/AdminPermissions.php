@@ -82,6 +82,9 @@ final class AdminPermissions
         if ($name === 'admin.finances.invoices.payments.store') {
             return $method === 'POST' ? ['finances.edit'] : null;
         }
+        if (in_array($name, ['admin.finances.payment-reviews.approve', 'admin.finances.payment-reviews.reject'], true)) {
+            return $method === 'POST' ? ['finances.edit'] : null;
+        }
         if ($action === 'bulk') {
             if ($safe || !in_array($bulkAction, ['active', 'inactive', 'delete'], true)) {
                 return null;
@@ -113,6 +116,7 @@ final class AdminPermissions
             'translations', 'preview', 'export',
             'print',
             'download',
+            'proof',
         ];
         return in_array($action, $readActions, true) ? [$module . '.view'] : null;
     }
