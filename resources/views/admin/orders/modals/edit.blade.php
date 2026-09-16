@@ -178,6 +178,7 @@
   $requestMeta = is_array($row?->request ?? null) ? $row->request : [];
   $requestUid = $requestMeta['request_uid'] ?? null;
   $dispatchError = $requestMeta['dispatch_error'] ?? null;
+  $internalDispatchNote = $requestMeta['internal_dispatch_note'] ?? ($requestMeta['internal_provider_note'] ?? null);
 @endphp
 
 <div class="modal-header border-0" style="background:#f39c12; color:#fff;">
@@ -286,13 +287,16 @@
           </div>
         </div>
 
-        @if($requestUid || $dispatchError)
+        @if($requestUid || $dispatchError || $internalDispatchNote)
           <div class="mt-3">
             @if($requestUid)
               <span class="order-edit-meta"><strong>Request UID:</strong> {{ $requestUid }}</span>
             @endif
             @if($dispatchError)
               <span class="order-edit-meta"><strong>Dispatch Error:</strong> {{ $dispatchError }}</span>
+            @endif
+            @if($internalDispatchNote)
+              <span class="order-edit-meta"><strong>Provider Error:</strong> {{ $internalDispatchNote }}</span>
             @endif
           </div>
         @endif
@@ -305,6 +309,13 @@
             <div class="order-edit-preview mb-3">
               {!! $providerReplyHtml !!}
             </div>
+
+            @if($internalDispatchNote)
+              <div class="alert alert-warning">
+                <div class="fw-bold mb-1">Why this order is waiting</div>
+                <div style="white-space:pre-wrap;">{{ $internalDispatchNote }}</div>
+              </div>
+            @endif
 
             @if($resultText !== '')
               <details class="mb-3">

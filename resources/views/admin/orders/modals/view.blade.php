@@ -366,6 +366,13 @@
               {{ $resultMessage !== '' ? $resultMessage : '—' }}
             </div>
           @endif
+
+          @if($internalDispatchNote)
+            <div class="alert alert-warning mt-3 mb-0" role="alert">
+              <div class="fw-bold mb-1">Why this order is waiting</div>
+              <div style="white-space:pre-wrap;">{{ $internalDispatchNote }}</div>
+            </div>
+          @endif
         </div>
       </div>
     </div>

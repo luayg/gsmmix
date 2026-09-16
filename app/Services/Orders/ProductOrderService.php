@@ -223,6 +223,16 @@ class ProductOrderService
         $productOrder->response = is_array($linked->response)
             ? json_encode($linked->response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
             : $linked->response;
+        $metadata = (array) $productOrder->request;
+        $linkedRequest = (array) ($linked->request ?? []);
+        unset($metadata['internal_dispatch_note'], $metadata['internal_provider_note']);
+        if (!empty($linkedRequest['internal_dispatch_note'])) {
+            $metadata['internal_dispatch_note'] = $linkedRequest['internal_dispatch_note'];
+        }
+        if (!empty($linkedRequest['internal_provider_note'])) {
+            $metadata['internal_provider_note'] = $linkedRequest['internal_provider_note'];
+        }
+        $productOrder->request = $metadata;
         $productOrder->replied_at = $linked->replied_at;
         $productOrder->save();
         if (in_array($productOrder->status, ['rejected', 'cancelled'], true)) {
