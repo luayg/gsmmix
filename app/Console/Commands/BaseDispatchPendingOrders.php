@@ -57,6 +57,7 @@ abstract class BaseDispatchPendingOrders extends Command
             data_get($response, 'dhru_comments'),
             data_get($response, 'result_text'),
             data_get($request, 'dispatch_error'),
+            data_get($request, 'internal_dispatch_note'),
             data_get($request, 'response_raw.ERROR.0.MESSAGE'),
             data_get($request, 'response_raw.message'),
             data_get($request, 'response_raw.raw'),

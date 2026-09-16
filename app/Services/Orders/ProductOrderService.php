@@ -159,7 +159,10 @@ class ProductOrderService
         $type = (string) $product->service_type;
         $orderModel = ProductService::orderModel($type);
         $provider = $service->supplier_id ? ApiProvider::find((int) $service->supplier_id) : null;
-        $isApi = $provider && $provider->active && trim((string) $service->remote_id) !== '';
+        $hasRemote = trim((string) $service->remote_id) !== '';
+        $isApi = (int) ($service->source ?? 0) === 2 || (int) ($service->supplier_id ?? 0) > 0 || $hasRemote;
+        $shouldDispatch = $isApi && $provider && (int) $provider->active === 1
+            && $hasRemote && !(bool) ($service->needs_approval ?? false);
         $quantity = in_array($type, ['server', 'smm'], true) ? max(1, (int) ($data['quantity'] ?? 1)) : 1;
         $sellPrice = (string) $productOrder->order_price;
         $cost = number_format(max(0, (float) ($service->cost ?? 0)) * $quantity, 4, '.', '');
@@ -168,8 +171,8 @@ class ProductOrderService
         $serviceOrder = new $orderModel();
         $serviceOrder->forceFill([
             'device' => trim((string) ($data['device'] ?? '')),
-            'status' => $isApi ? 'inprogress' : 'waiting',
-            'processing' => $isApi,
+            'status' => $shouldDispatch ? 'inprogress' : 'waiting',
+            'processing' => $shouldDispatch,
             'api_order' => $isApi,
             'price' => $sellPrice,
             'order_price' => $cost,
@@ -206,7 +209,7 @@ class ProductOrderService
         }
         $serviceOrder->save();
 
-        return [$serviceOrder, (bool) $isApi];
+        return [$serviceOrder, (bool) $shouldDispatch];
     }
 
     private function syncFromLinkedOrder(ProductOrder $productOrder): void
@@ -225,6 +228,21 @@ class ProductOrderService
         if (in_array($productOrder->status, ['rejected', 'cancelled'], true)) {
             app(OrderFinanceService::class)->refundOrderIfNeeded($productOrder, 'linked_service_' . $productOrder->status);
         }
+    }
+
+    public function syncFromServiceOrder(Model $serviceOrder): void
+    {
+        $productOrderId = (int) data_get($serviceOrder->request, 'product_order_id', 0);
+        if ($productOrderId <= 0) {
+            return;
+        }
+
+        $productOrder = ProductOrder::find($productOrderId);
+        if (!$productOrder) {
+            return;
+        }
+
+        $this->syncFromLinkedOrder($productOrder);
     }
 
     public function update(int $id, array $data): ProductOrder

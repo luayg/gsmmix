@@ -33,6 +33,8 @@ class OrderDispatcher
                 'smm'    => $this->dispatchSmm($order),
                 default  => null,
             };
+
+            app(ProductOrderService::class)->syncFromServiceOrder($order->fresh());
         } catch (\Throwable $e) {
             Log::error('OrderDispatcher send failed', [
                 'kind' => $kind,
@@ -88,33 +90,18 @@ class OrderDispatcher
         $order->load(['service', 'provider']);
 
         if (!$order->service || !$order->service->supplier_id || !$order->service->remote_id) {
-            $order->status = 'rejected';
-            $order->response = ['type' => 'error', 'message' => 'SERVICE NOT LINKED TO PROVIDER'];
-            $order->replied_at = now();
-            $order->processing = false;
-            $order->save();
-
-            $this->finance->refundOrderIfNeeded($order, 'dispatch_rejected_service_not_linked');
+            $this->queueForRetry($order, 'SERVICE NOT LINKED TO PROVIDER');
             return null;
         }
 
         $provider = ApiProvider::find((int)$order->service->supplier_id);
         if (!$provider) {
-            $order->status = 'rejected';
-            $order->response = ['type' => 'error', 'message' => 'PROVIDER MISSING'];
-            $order->replied_at = now();
-            $order->processing = false;
-            $order->save();
-
-            $this->finance->refundOrderIfNeeded($order, 'dispatch_rejected_provider_missing');
+            $this->queueForRetry($order, 'PROVIDER MISSING');
             return null;
         }
 
         if ((int)$provider->active !== 1) {
-            $order->status = 'waiting';
-            $order->processing = false;
-            $order->response = ['type' => 'queued', 'message' => 'PROVIDER DISABLED'];
-            $order->save();
+            $this->queueForRetry($order, 'PROVIDER DISABLED');
             return null;
         }
 
@@ -122,6 +109,34 @@ class OrderDispatcher
         $order->save();
 
         return $provider;
+    }
+
+    private function queueForRetry($order, string $internalNote): void
+    {
+        $request = (array)($order->request ?? []);
+        $request['internal_dispatch_note'] = $internalNote;
+        $request['last_dispatch_error_at'] = now()->toDateTimeString();
+        $request['dispatch_retry'] = ((int)($request['dispatch_retry'] ?? 0)) + 1;
+
+        $order->request = $request;
+        $order->status = 'waiting';
+        $order->processing = false;
+        $order->replied_at = null;
+        $order->response = ['type' => 'queued', 'message' => 'Waiting'];
+        $order->save();
+    }
+
+    private function clearInternalDispatchNote($order): void
+    {
+        $request = (array)($order->request ?? []);
+        unset(
+            $request['internal_dispatch_note'],
+            $request['internal_provider_note'],
+            $request['dispatch_error'],
+            $request['last_dispatch_error_at']
+        );
+        $request['last_dispatch_succeeded_at'] = now()->toDateTimeString();
+        $order->request = $request;
     }
 
     private function saveGatewayResult($order, array $result): void
@@ -322,44 +337,24 @@ class OrderDispatcher
             $baseMsg = 'PROVIDER ERROR';
         }
 
-        [$classStatus, $shortMsg, $strictReject] = ['waiting', 'PROVIDER ERROR', false];
+        $shortMsg = 'PROVIDER ERROR';
 
         if (($result['ok'] ?? false) !== true) {
-            [$classStatus, $shortMsg, $strictReject] = $this->classifyFailure($baseMsg, $httpStatus, $contentType);
+            [, $shortMsg] = $this->classifyFailure($baseMsg, $httpStatus, $contentType);
         }
 
-        $retryable = (bool)($result['retryable'] ?? false);
-
-        if ($retryable && $strictReject) {
-            $order->status = 'rejected';
-            $order->processing = false;
-            $order->replied_at = now();
-
-            $resp = is_array($order->response) ? $order->response : [];
-            $resp['type'] = 'error';
-            $resp['message'] = $shortMsg;
-            $order->response = $resp;
-
-            $order->save();
-            $this->finance->refundOrderIfNeeded($order, 'dispatch_rejected');
-            return;
-        }
-
-        if ($retryable) {
-            $order->status = 'waiting';
-            $order->processing = false;
-
-            $resp = is_array($order->response) ? $order->response : [];
-            $resp['type'] = 'queued';
-            $resp['message'] = $shortMsg;
-            $order->response = $resp;
-
-            $order->save();
+        // Until the provider accepts an order and supplies a reference, every
+        // provider/configuration failure remains retryable. Credentials,
+        // balance, mapping and connectivity can all be repaired by an operator.
+        if (($result['ok'] ?? false) !== true) {
+            $this->queueForRetry($order, $shortMsg);
             return;
         }
 
         if (($result['ok'] ?? false) === true) {
             $finalStatus = $this->normalizeStatus((string)($result['status'] ?? 'inprogress'));
+
+            $this->clearInternalDispatchNote($order);
 
             $order->remote_id = $result['remote_id'] ?? $order->remote_id;
             $order->status = $finalStatus;
@@ -370,7 +365,12 @@ class OrderDispatcher
             }
 
             $resp = is_array($order->response) ? $order->response : [];
-            if (!isset($resp['message']) || trim((string)$resp['message']) === '') {
+            if ($finalStatus === 'rejected') {
+                $request = (array)($order->request ?? []);
+                $request['internal_provider_note'] = $gatewayUiMessage !== '' ? $gatewayUiMessage : $shortMsg;
+                $order->request = $request;
+                $resp = ['type' => 'error', 'message' => 'Rejected'];
+            } elseif (!isset($resp['message']) || trim((string)$resp['message']) === '') {
                 $resp['message'] = $finalStatus === 'success' ? 'OK' : ucfirst($finalStatus);
             }
             $resp['type'] = $finalStatus === 'success'
@@ -387,36 +387,7 @@ class OrderDispatcher
             return;
         }
 
-        $finalStatus = $this->normalizeStatus((string)($result['status'] ?? $classStatus ?? 'rejected'));
-
-        $order->status = $finalStatus;
-        $order->processing = false;
-
-        if ($this->isTerminalStatus($finalStatus)) {
-            $order->replied_at = now();
-        }
-
-        $resp = is_array($order->response) ? $order->response : [];
-        $resp['type'] = $finalStatus === 'waiting'
-            ? 'queued'
-            : ($finalStatus === 'success' ? 'success' : 'error');
-
-        if ($finalStatus === 'waiting') {
-            $resp['message'] = $shortMsg;
-        } elseif ($gatewayUiMessage !== '') {
-            $resp['message'] = $gatewayUiMessage;
-        } elseif ($finalStatus === 'success') {
-            $resp['message'] = 'OK';
-        } else {
-            $resp['message'] = $shortMsg;
-        }
-
-        $order->response = $resp;
-        $order->save();
-
-        if (in_array($finalStatus, ['rejected', 'cancelled'], true)) {
-            $this->finance->refundOrderIfNeeded($order, 'dispatch_' . $finalStatus);
-        }
+        $this->queueForRetry($order, $shortMsg);
     }
 
     private function applyDispatchException($order, \Throwable $e): void
@@ -426,22 +397,9 @@ class OrderDispatcher
         if (preg_match('/\bhttp\s*([0-9]{3})\b/i', $msg, $mm)) $httpStatus = (int)$mm[1];
         if ($httpStatus === 0 && preg_match('/\bstatus\s*code\s*([0-9]{3})\b/i', $msg, $mm)) $httpStatus = (int)$mm[1];
 
-        [$status, $shortMsg, $strictReject] = $this->classifyFailure($msg, $httpStatus, null);
+        [, $shortMsg] = $this->classifyFailure($msg, $httpStatus, null);
 
-        if ($strictReject) {
-            $order->status = 'rejected';
-            $order->processing = false;
-            $order->replied_at = now();
-            $order->response = ['type' => 'error', 'message' => $shortMsg];
-            $order->save();
-            $this->finance->refundOrderIfNeeded($order, 'dispatch_rejected');
-            return;
-        }
-
-        $order->status = 'waiting';
-        $order->processing = false;
-        $order->response = ['type' => 'queued', 'message' => $shortMsg];
-        $order->save();
+        $this->queueForRetry($order, $shortMsg);
     }
 
     public function dispatchImei(ImeiOrder $order): void

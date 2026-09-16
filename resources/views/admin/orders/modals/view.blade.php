@@ -154,6 +154,7 @@
   $requestMeta = is_array($row->request ?? null) ? $row->request : [];
   $requestUid = $requestMeta['request_uid'] ?? null;
   $dispatchError = $requestMeta['dispatch_error'] ?? null;
+  $internalDispatchNote = $requestMeta['internal_dispatch_note'] ?? ($requestMeta['internal_provider_note'] ?? null);
   $refundReason = $requestMeta['refunded_reason'] ?? null;
   $refundedAt = $requestMeta['refunded_at'] ?? null;
   $rechargedAt = $requestMeta['recharged_at'] ?? null;
@@ -369,7 +370,7 @@
       </div>
     </div>
 
-    @if($requestUid || $dispatchError || $refundReason || $refundedAt || $rechargedAt || $rechargedReason)
+    @if($requestUid || $dispatchError || $internalDispatchNote || $refundReason || $refundedAt || $rechargedAt || $rechargedReason)
       <div class="col-12">
         <div class="order-result-box">
           <div class="order-result-header">Order Meta</div>
@@ -379,6 +380,9 @@
             @endif
             @if($dispatchError)
               <span class="order-meta-badge"><strong>Dispatch Error:</strong> {{ $dispatchError }}</span>
+            @endif
+            @if($internalDispatchNote)
+              <span class="order-meta-badge"><strong>Internal Provider Note:</strong> {{ $internalDispatchNote }}</span>
             @endif
             @if($refundReason)
               <span class="order-meta-badge"><strong>Refund Reason:</strong> {{ $refundReason }}</span>
