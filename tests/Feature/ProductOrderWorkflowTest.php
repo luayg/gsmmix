@@ -403,6 +403,25 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->get(route('admin.orders.product.index', ['status' => 'success']))->assertOk()->assertSee('No product orders');
     }
 
+    public function test_product_order_admin_actions_open_modals_and_customer_sees_it_in_all_orders(): void
+    {
+        $id = $this->postJson(route('admin.orders.product.store'), $this->payload(['device' => 'PRODUCT-TARGET']))
+            ->assertOk()->json('id');
+
+        $this->get(route('admin.orders.product.index'))->assertOk()
+            ->assertSee(route('admin.orders.product.modal.view', $id), false)
+            ->assertSee(route('admin.orders.product.modal.edit', $id), false)
+            ->assertSee('js-open-modal', false);
+        $this->get(route('admin.orders.product.modal.view', $id))->assertOk()
+            ->assertSee('View Product Order #'.$id)->assertSee('PRODUCT-TARGET');
+        $this->get(route('admin.orders.product.modal.edit', $id))->assertOk()
+            ->assertSee('Product Order #'.$id)->assertSee('js-ajax-form', false);
+
+        $this->actingAs($this->customer)->get(route('customer.orders'))->assertOk()
+            ->assertSee('Local product')->assertSee('PRODUCT-TARGET')->assertSee('Waiting')
+            ->assertSee('Product orders');
+    }
+
     public function test_submission_key_cannot_be_reused_for_a_different_product_or_customer(): void
     {
         $data = $this->payload();

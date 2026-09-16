@@ -313,6 +313,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         // Product orders
         Route::get('/product', [ProductOrdersController::class, 'index'])->name('product.index');
         Route::get('/product/modal/create', [ProductOrdersController::class, 'modalCreate'])->name('product.modal.create');
+        Route::get('/product/{order}/modal/view', [ProductOrdersController::class, 'modalView'])->whereNumber('order')->name('product.modal.view');
+        Route::get('/product/{order}/modal/edit', [ProductOrdersController::class, 'modalEdit'])->whereNumber('order')->name('product.modal.edit');
         Route::get('/product/create', [ProductOrdersController::class, 'create'])->name('product.create');
         Route::post('/product', [ProductOrdersController::class, 'store'])->name('product.store');
         Route::get('/product/{order}', [ProductOrdersController::class, 'show'])->whereNumber('order')->name('product.show');
