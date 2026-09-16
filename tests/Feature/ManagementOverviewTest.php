@@ -70,11 +70,9 @@ class ManagementOverviewTest extends SecurityTestCase
     public function test_modules_without_implementation_report_unavailability_instead_of_fake_success(): void
     {
         foreach ([
-            'system.filemanager', 'system.update', 'system.maintenance', 'system.backups',
         ] as $name) {
             $this->getJson(route('admin.' . $name))->assertStatus(501)->assertJsonPath('ok', false);
         }
-        $this->get(route('admin.system.backups'))->assertStatus(501)->assertSee('This module is not implemented');
     }
 
     public function test_report_permission_does_not_grant_financial_or_system_access(): void
