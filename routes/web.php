@@ -25,6 +25,9 @@ use App\Http\Controllers\Admin\StatementController;
 use App\Http\Controllers\Admin\InvoiceController;
 use App\Http\Controllers\Admin\PageController;
 use App\Http\Controllers\Admin\MenuController;
+use App\Http\Controllers\Admin\DownloadController;
+use App\Http\Controllers\Admin\DownloadCategoryController;
+use App\Http\Controllers\Admin\LogController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -362,10 +365,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/{reply}/modal/delete', [LocalReplyController::class, 'modalDelete'])->name('modal.delete');
     });
 
-    /* ================== Downloads placeholders ==================== */
     Route::prefix('downloads')->name('downloads.')->group(function () {
-        Route::get('/', [ManagementOverviewController::class, 'unavailable'])->name('index');
-        Route::get('/categories', [ManagementOverviewController::class, 'unavailable'])->name('categories.index');
+        Route::get('/', [DownloadController::class, 'index'])->name('index');
+        Route::post('/', [DownloadController::class, 'store'])->name('store');
+        Route::put('/{download}', [DownloadController::class, 'update'])->name('update');
+        Route::delete('/{download}', [DownloadController::class, 'destroy'])->name('destroy');
+        Route::get('/{download}/download', [DownloadController::class, 'deliver'])->middleware('throttle:30,1')->name('download');
+        Route::get('/categories', [DownloadCategoryController::class, 'index'])->name('categories.index');
+        Route::post('/categories', [DownloadCategoryController::class, 'store'])->name('categories.store');
+        Route::put('/categories/{category}', [DownloadCategoryController::class, 'update'])->name('categories.update');
+        Route::delete('/categories/{category}', [DownloadCategoryController::class, 'destroy'])->name('categories.destroy');
     });
 
     Route::prefix('settings')->name('settings.')->group(function () {
@@ -411,12 +420,13 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/users',    [ManagementOverviewController::class, 'users'])->name('users');
         Route::get('/services', [ManagementOverviewController::class, 'services'])->name('services');
         Route::get('/products', [ManagementOverviewController::class, 'products'])->name('products');
+        Route::get('/export/{type}', [ManagementOverviewController::class, 'export'])->whereIn('type',['users','services','products'])->name('export');
     });
 
     Route::prefix('logs')->name('logs.')->group(function () {
-        Route::get('/access',   [ManagementOverviewController::class, 'unavailable'])->name('access');
-        Route::get('/activity', [ManagementOverviewController::class, 'unavailable'])->name('activity');
-        Route::get('/error',    [ManagementOverviewController::class, 'unavailable'])->name('error');
+        Route::get('/access',   [LogController::class, 'access'])->name('access');
+        Route::get('/activity', [LogController::class, 'activity'])->name('activity');
+        Route::get('/error',    [LogController::class, 'error'])->name('error');
     });
 
 });

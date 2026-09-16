@@ -112,6 +112,7 @@ final class AdminPermissions
             'currencies', 'filemanager', 'update', 'maintenance', 'backups',
             'translations', 'preview', 'export',
             'print',
+            'download',
         ];
         return in_array($action, $readActions, true) ? [$module . '.view'] : null;
     }

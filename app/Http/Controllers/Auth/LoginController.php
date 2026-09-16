@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class LoginController extends Controller
 {
@@ -44,11 +46,13 @@ class LoginController extends Controller
                 RateLimiter::clear($key);
                 $request->session()->regenerate();
                 $request->session()->put('password_hash_web', Auth::guard('web')->user()->getAuthPassword());
+                $this->logAccess($request,'login',true,$login,Auth::guard('web')->id());
                 return redirect()->intended(route('admin.dashboard'));
             }
         }
 
         // Do not reveal whether the account exists or is inactive.
+        $this->logAccess($request,'login',false,$login,null,'invalid_credentials_or_inactive');
         throw ValidationException::withMessages(['login' => __('auth.failed')]);
     }
 
@@ -64,9 +68,11 @@ class LoginController extends Controller
 
     public function destroy(Request $request)
     {
+        $this->logAccess($request,'logout',true,'',$request->user()?->id);
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
         return redirect()->route('login');
     }
+    private function logAccess(Request $r,string $event,bool $ok,string $identity,?int $userId,?string $reason=null):void{if(!Schema::hasTable('access_logs'))return;DB::table('access_logs')->insert(['user_id'=>$userId,'event'=>$event,'successful'=>$ok,'identity_hash'=>$identity!==''?hash('sha256',Str::lower($identity).config('app.key')):null,'ip_hash'=>hash('sha256',(string)$r->ip().config('app.key')),'user_agent'=>Str::limit((string)$r->userAgent(),1000),'session_hash'=>$r->hasSession()?hash('sha256',$r->session()->getId().config('app.key')):null,'reason'=>$reason,'occurred_at'=>now()]);}
 }

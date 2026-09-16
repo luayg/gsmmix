@@ -1,0 +1,4 @@
+<?php
+namespace App\Models;
+use Illuminate\Database\Eloquent\Model;
+final class Download extends Model {protected $fillable=['download_category_id','name','description','source_type','storage_path','original_name','mime_type','size','external_url','version','active','is_free','expires_at','download_count'];protected function casts():array{return ['active'=>'boolean','is_free'=>'boolean','expires_at'=>'datetime','size'=>'integer','download_count'=>'integer'];}public function category(){return $this->belongsTo(DownloadCategory::class,'download_category_id');}public function users(){return $this->belongsToMany(User::class);}public function groups(){return $this->belongsToMany(Group::class);}public function logs(){return $this->hasMany(DownloadLog::class);}}
