@@ -137,6 +137,7 @@ class ProductOrdersController extends Controller
             'status' => 'required|in:waiting,inprogress,success,rejected,cancelled',
             'comments' => 'sometimes|nullable|string|max:5000',
             'response' => 'sometimes|nullable|string|max:20000',
+            'provider_reply_html' => 'sometimes|nullable|string|max:20000',
         ]);
         $orders->update($order->id, $data);
         return $request->expectsJson() ? response()->json(['ok' => true]) : back()->with('ok', 'Product order updated.');

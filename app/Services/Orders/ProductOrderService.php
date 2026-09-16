@@ -293,7 +293,7 @@ class ProductOrderService
             $status = $data['status'];
             $oldStatus = $order->status;
             $metadata = $order->request ?? [];
-            if (!in_array(($metadata['pipeline'] ?? null), ['manual_product_v1', 'local_source_product_v1'], true)
+            if (!in_array(($metadata['pipeline'] ?? null), ['manual_product_v1', 'local_source_product_v1', 'service_product_v1'], true)
                 && $status !== $oldStatus) {
                 throw ValidationException::withMessages(['status' => 'Historical orders need a financial review before their status can change.']);
             }
@@ -301,8 +301,9 @@ class ProductOrderService
                 || (array_key_exists('response', $data) && (string) $data['response'] !== (string) $order->response))) {
                 throw ValidationException::withMessages(['status' => 'Delivered orders retain their result and charge. Use a separate reviewed financial adjustment if required.']);
             }
-            if ($status === 'success' && $oldStatus !== 'success') {
-                if (($metadata['source_type'] ?? null) !== 'manual' || trim((string) ($data['response'] ?? '')) === '') {
+            if ($status === 'success' && $oldStatus !== 'success' && ($metadata['source_type'] ?? null) === 'manual') {
+                $deliveryResult = trim((string) ($data['provider_reply_html'] ?? $data['response'] ?? ''));
+                if ($deliveryResult === '') {
                     throw ValidationException::withMessages(['response' => 'Manual completion requires a manual-source order and a delivery result.']);
                 }
             }
@@ -328,13 +329,36 @@ class ProductOrderService
                 $order->status = $status;
                 $order->replied_at = in_array($status, ['success', 'cancelled', 'rejected'], true) ? now() : null;
             }
-            if ($status === 'success' && $oldStatus !== 'success') {
-                $order->response = trim($data['response']);
+            if (array_key_exists('provider_reply_html', $data) && trim((string) $data['provider_reply_html']) !== '') {
+                $response = $order->response;
+                if (is_string($response)) {
+                    $decoded = json_decode($response, true);
+                    $response = is_array($decoded) ? $decoded : ['result_text' => $response];
+                }
+                if (!is_array($response)) $response = [];
+                $response['provider_reply_html'] = $data['provider_reply_html'];
+                $response['provider_reply_updated_at'] = now()->toDateTimeString();
+                $order->response = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            } elseif (array_key_exists('response', $data) && trim((string) $data['response']) !== '') {
+                $order->response = trim((string) $data['response']);
             }
             if (array_key_exists('comments', $data)) {
                 $order->comments = $data['comments'];
             }
             $order->save();
+            if ($order->service_order_type && $order->service_order_id) {
+                $linkedModel = ProductService::orderModel((string) $order->service_order_type);
+                $linked = $linkedModel::query()->lockForUpdate()->find($order->service_order_id);
+                if ($linked) {
+                    $linked->status = $order->status;
+                    $linked->comments = $order->comments;
+                    $linkedResponse = json_decode((string) $order->response, true);
+                    $linked->response = is_array($linkedResponse) ? $linkedResponse : ['result_text' => (string) $order->response];
+                    $linked->processing = $order->status === 'inprogress';
+                    $linked->replied_at = in_array($order->status, ['success', 'rejected', 'cancelled'], true) ? ($order->replied_at ?: now()) : null;
+                    $linked->save();
+                }
+            }
             return $order;
         }, 3);
     }

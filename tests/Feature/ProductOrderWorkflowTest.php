@@ -177,6 +177,29 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->assertSame('87.7834', $this->balance());
     }
 
+    public function test_admin_can_reject_a_service_product_and_linked_order_from_the_product_editor(): void
+    {
+        $serviceId = DB::table('imei_services')->insertGetId([
+            'active' => true, 'cost' => 4.25, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $this->product->update(['source_type' => 'service', 'service_type' => 'imei', 'service_id' => $serviceId]);
+        $id = $this->postJson(route('admin.orders.product.store'), $this->payload(['device' => '123456789012345']))
+            ->assertOk()->json('id');
+        $order = ProductOrder::findOrFail($id);
+
+        $this->get(route('admin.orders.product.modal.edit', $id))->assertOk()
+            ->assertSee('Reply HTML')->assertSee('data-editor="summernote"', false)
+            ->assertSee('<option value="rejected"', false)->assertSee('<option value="success"', false);
+        $this->putJson(route('admin.orders.product.update', $id), [
+            'status' => 'rejected', 'provider_reply_html' => '<p>Rejected by administrator</p>',
+        ])->assertOk();
+
+        $this->assertSame('100.1234', $this->balance());
+        $this->assertDatabaseHas('product_orders', ['id' => $id, 'status' => 'rejected']);
+        $this->assertDatabaseHas('imei_orders', ['id' => $order->service_order_id, 'status' => 'rejected']);
+        $this->assertStringContainsString('Rejected by administrator', ProductOrder::findOrFail($id)->response);
+    }
+
     public function test_service_product_uses_and_validates_the_linked_service_fields(): void
     {
         $serviceId = DB::table('imei_services')->insertGetId([
