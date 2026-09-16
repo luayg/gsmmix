@@ -81,6 +81,21 @@ class ProductOrderWorkflowTest extends SecurityTestCase
             $table->timestamps();
             $table->unique(['service_type', 'service_id', 'group_id']);
         });
+        Schema::create('custom_fields', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('service_id');
+            $table->string('service_type');
+            $table->string('name');
+            $table->string('input')->nullable();
+            $table->string('field_type')->default('text');
+            $table->text('field_options')->nullable();
+            $table->string('description')->nullable();
+            $table->unsignedInteger('minimum')->default(0);
+            $table->unsignedInteger('maximum')->default(0);
+            $table->boolean('required')->default(false);
+            $table->boolean('active')->default(true);
+            $table->unsignedInteger('ordering')->default(0);
+        });
         $this->admin = $this->user('Administrator');
         $this->customer = $this->user();
         $this->customer->forceFill(['balance' => '100.1234'])->save();
@@ -160,6 +175,32 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->assertSame(0, $request['charged_amount']);
         $this->assertSame($order->id, $request['product_order_id']);
         $this->assertSame('87.7834', $this->balance());
+    }
+
+    public function test_service_product_uses_and_validates_the_linked_service_fields(): void
+    {
+        $serviceId = DB::table('imei_services')->insertGetId([
+            'active' => true, 'cost' => 4.25, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('custom_fields')->insert([
+            'service_id' => $serviceId, 'service_type' => 'imei_service', 'name' => 'Account email',
+            'input' => 'account_email', 'field_type' => 'email', 'required' => true, 'active' => true,
+        ]);
+        $this->product->update(['source_type' => 'service', 'service_type' => 'imei', 'service_id' => $serviceId]);
+
+        $this->actingAs($this->customer)->get(route('site.store'))
+            ->assertOk()->assertSee('Account email')->assertSee('account_email');
+        $this->postJson(route('customer.product-orders.store'), $this->payload(['device' => '123456789012345']))
+            ->assertUnprocessable()->assertJsonValidationErrors('required.account_email');
+        $this->postJson(route('customer.product-orders.store'), $this->payload([
+            'device' => '123456789012345', 'required' => ['account_email' => 'not-an-email'],
+        ]))->assertUnprocessable()->assertJsonValidationErrors('required.account_email');
+        $this->postJson(route('customer.product-orders.store'), $this->payload([
+            'device' => '123456789012345', 'required' => ['account_email' => 'buyer@example.test'],
+        ]))->assertOk();
+
+        $linked = DB::table('imei_orders')->latest('id')->first();
+        $this->assertSame('buyer@example.test', json_decode($linked->params, true)['fields']['account_email']);
     }
 
     public function test_product_order_uses_the_customer_group_price(): void

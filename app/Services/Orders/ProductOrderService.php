@@ -53,6 +53,7 @@ class ProductOrderService
                 if (!$service) {
                     throw ValidationException::withMessages(['product_id' => 'The product linked service is missing or inactive.']);
                 }
+                $this->validateServiceInputs($serviceType, $service, $data);
             }
             if (($product->device_based || $serviceType === 'imei') && $device === '') {
                 throw ValidationException::withMessages(['device' => 'A device identifier is required for this product.']);
@@ -148,6 +149,36 @@ class ProductOrderService
         }
 
         return $order->fresh();
+    }
+
+    private function validateServiceInputs(string $type, Model $service, array $data): void
+    {
+        $schema = ProductService::inputSchema($type, $service);
+        $errors = [];
+        if ($schema['main']) {
+            $value = trim((string)($data['device'] ?? ''));
+            $field = $schema['main'];
+            if ($value === '') $errors['device'] = $field['name'].' is required.';
+            elseif (($field['type'] ?? '') === 'email' && !filter_var($value, FILTER_VALIDATE_EMAIL)) $errors['device'] = 'Enter a valid email address.';
+            elseif (($field['type'] ?? '') === 'number' && !preg_match('/^\d+$/', $value)) $errors['device'] = $field['name'].' must contain numbers only.';
+            elseif (!empty($field['minimum']) && mb_strlen($value) < $field['minimum']) $errors['device'] = $field['name'].' must be at least '.$field['minimum'].' characters.';
+            elseif (!empty($field['maximum']) && mb_strlen($value) > $field['maximum']) $errors['device'] = $field['name'].' may not exceed '.$field['maximum'].' characters.';
+        }
+        $submitted = is_array($data['required'] ?? null) ? $data['required'] : [];
+        foreach ($schema['fields'] as $field) {
+            $value = trim((string)($submitted[$field['input']] ?? ''));
+            $key = 'required.'.$field['input'];
+            if ($field['required'] && $value === '') {$errors[$key] = $field['name'].' is required.'; continue;}
+            if ($value === '') continue;
+            if ($field['type'] === 'email' && !filter_var($value, FILTER_VALIDATE_EMAIL)) $errors[$key] = 'Enter a valid email address.';
+            elseif ($field['minimum'] && mb_strlen($value) < $field['minimum']) $errors[$key] = $field['name'].' must be at least '.$field['minimum'].' characters.';
+            elseif ($field['maximum'] && mb_strlen($value) > $field['maximum']) $errors[$key] = $field['name'].' may not exceed '.$field['maximum'].' characters.';
+            elseif (in_array($field['type'], ['dropdown','select','radio'], true) && $field['options']) {
+                $allowed = collect($field['options'])->map(fn($option) => (string)(is_array($option) ? ($option['value'] ?? $option['name'] ?? '') : $option))->all();
+                if (!in_array($value, $allowed, true)) $errors[$key] = 'Choose a valid '.$field['name'].'.';
+            }
+        }
+        if ($errors) throw ValidationException::withMessages($errors);
     }
 
     private function createLinkedServiceOrder(

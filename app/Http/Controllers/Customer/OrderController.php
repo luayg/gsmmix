@@ -105,8 +105,27 @@ final class OrderController extends Controller
     private function row(Model $order, string $type): array
     {
         return ['id' => $order->id, 'type' => $type, 'service' => $this->text($order->service?->name ?? $order->product?->name ?? ucfirst($type).' service'),
-            'device' => $order->device ?: '—', 'status' => $order->status, 'amount' => $order->price ?? 0,
-            'quantity' => $order->quantity ?? null, 'created_at' => $order->created_at];
+            'device' => $order->device ?: '—', 'status' => $order->status, 'amount' => $order->price ?? $order->order_price ?? 0,
+            'quantity' => $order->quantity ?? null, 'created_at' => $order->created_at,
+            'result' => $this->result($order->response ?? null), 'reference' => $order->remote_id ?? data_get($order->response, 'reference_id')];
+    }
+
+    private function result(mixed $response): ?string
+    {
+        if (is_string($response)) {
+            $decoded=json_decode($response,true);
+            if(!is_array($decoded)) return trim($response) !== '' ? trim($response) : null;
+            $response=$decoded;
+        }
+        if(!is_array($response)) return null;
+        foreach(['result_text','result','code','codes','reply','answer','response'] as $key){
+            $value=data_get($response,$key);
+            if(is_scalar($value)&&trim((string)$value)!=='') return trim((string)$value);
+            if(is_array($value)&&$value!==[]) return json_encode($value,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_PRETTY_PRINT);
+        }
+        $items=$response['result_items']??[];
+        if(is_array($items)&&$items!==[]) return collect($items)->map(fn($item)=>trim((string)($item['label']??'')).(isset($item['value'])?': '.trim((string)$item['value']):''))->filter()->implode("\n");
+        return null;
     }
 
     private function price(Model $service, string $type, int $groupId): float
