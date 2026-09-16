@@ -117,6 +117,20 @@ class ProductOrdersController extends Controller
         return view('admin.orders.product.show', compact('order'));
     }
 
+    public function modalView(ProductOrder $order)
+    {
+        $order->load(['product', 'user', 'localSource']);
+
+        return view('admin.orders.product.modals.view', compact('order'));
+    }
+
+    public function modalEdit(ProductOrder $order)
+    {
+        $order->load(['product', 'user', 'localSource']);
+
+        return view('admin.orders.product.modals.edit', compact('order'));
+    }
+
     public function update(Request $request, ProductOrder $order, ProductOrderService $orders)
     {
         $data = $request->validate([

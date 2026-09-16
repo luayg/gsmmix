@@ -32,7 +32,7 @@
       <td>{{ $order->id }}</td><td>{{ optional($order->created_at)->format('Y-m-d H:i') }}</td><td>{{ $order->device ?: '—' }}</td>
       <td>{{ data_get($order->request,'product_name') ?: $order->product?->name ?: 'Historical product' }}</td><td>{{ $order->provider_name }}</td><td>{{ $order->user?->name ?: $order->email }}</td>
       <td><span class="badge {{ $badge($order->status) }}">{{ strtoupper($order->status ?: 'waiting') }}</span></td><td>{{ number_format((float)$order->order_price,2) }}</td>
-      <td class="text-nowrap"><a class="btn btn-sm btn-primary" href="{{ route('admin.orders.product.show',$order) }}">View</a> @can('orders.edit')<a class="btn btn-sm btn-warning" href="{{ route('admin.orders.product.show',$order) }}#manage-order">Edit</a>@endcan</td>
+      <td class="text-nowrap"><button type="button" class="btn btn-sm btn-primary js-open-modal" data-url="{{ route('admin.orders.product.modal.view',$order) }}">View</button> @can('orders.edit')<button type="button" class="btn btn-sm btn-warning js-open-modal" data-url="{{ route('admin.orders.product.modal.edit',$order) }}">Edit</button>@endcan</td>
     </tr>@empty<tr><td colspan="9" class="text-center text-muted py-4">No product orders</td></tr>@endforelse</tbody>
   </table></div><div class="mt-3 d-flex justify-content-center">{!! $rows->links('pagination::bootstrap-5') !!}</div></div></div>
 </div>
