@@ -12,6 +12,7 @@ use App\Services\Payments\PaymentQuote;
 use App\Services\Payments\PaymentSettlement;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
+use App\Rules\SafeRasterImage;
 
 final class PaymentController extends Controller
 {
@@ -25,7 +26,7 @@ final class PaymentController extends Controller
     }
     public function store(Request $request, PaymentInitiator $initiator, PaymentQuote $quote)
     {
-        $data=$request->validate(['amount'=>'required|decimal:0,8|gt:0','gateway_id'=>'required|exists:payment_gateways,id','currency_id'=>'required|exists:currencies,id','proof'=>'nullable|file|mimes:jpg,jpeg,png,pdf|max:5120']);
+        $data=$request->validate(['amount'=>'required|decimal:0,8|gt:0','gateway_id'=>'required|exists:payment_gateways,id','currency_id'=>'required|exists:currencies,id','proof'=>['nullable','file','max:5120',new SafeRasterImage]]);
         $gateway=PaymentGateway::query()->where('active',true)->findOrFail($data['gateway_id']);
         $currency=Currency::query()->where('active',true)->findOrFail($data['currency_id']);
         abort_unless($gateway->currencies()->whereKey($currency->id)->exists(),422,'Currency is not supported by this payment method.');

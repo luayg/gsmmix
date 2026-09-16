@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use App\Support\ProductService;
+use App\Rules\SafeRasterImage;
 use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
@@ -178,7 +179,7 @@ class ProductController extends Controller
             'alias' => ['nullable', 'string', 'max:255', Rule::unique('products', 'alias')->ignore($product?->id)],
             'description' => ['nullable', 'string'],
             'main_image' => ['nullable', 'string', 'max:255'],
-            'main_image_file' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp,gif', 'max:4096'],
+            'main_image_file' => ['nullable', 'file', 'max:4096', new SafeRasterImage],
             'delivery_time' => ['nullable', 'string', 'max:255'],
             'cost' => ['nullable', 'numeric', 'min:0'],
             'price' => ['required', 'numeric', 'min:0'],
