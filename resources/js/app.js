@@ -2,7 +2,8 @@
 import $ from 'jquery';
 window.$ = window.jQuery = $;        // ← اجعل jQuery عالميًا مرة واحدة
 
-import 'bootstrap';
+import * as bootstrap from 'bootstrap';
+window.bootstrap = bootstrap;
 import 'summernote/dist/summernote-lite.min.js';
 import 'summernote/dist/summernote-lite.min.css';
 // DataTables (مرة واحدة هنا)
