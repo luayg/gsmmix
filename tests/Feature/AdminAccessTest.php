@@ -8,6 +8,7 @@ use Database\Seeders\AssignAdminRoleSeeder;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\RbacSeeder;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Spatie\Permission\Models\Permission;
 use Tests\Support\SecurityTestCase;
@@ -228,6 +229,48 @@ class AdminAccessTest extends SecurityTestCase
             }
         }
         $this->assertGreaterThan(100, $checked);
+    }
+
+    public function test_every_literal_admin_route_reference_exists(): void
+    {
+        $files = array_merge(
+            File::allFiles(resource_path('views/admin')),
+            File::allFiles(app_path('Http/Controllers/Admin')),
+        );
+        $references = [];
+        foreach ($files as $file) {
+            preg_match_all("/route\\(\\s*['\"](admin\\.[^'\"]+)['\"]/", $file->getContents(), $matches);
+            foreach ($matches[1] as $name) {
+                $references[$name][] = $file->getRelativePathname();
+            }
+        }
+
+        $this->assertNotEmpty($references);
+        foreach ($references as $name => $locations) {
+            $this->assertTrue(Route::has($name), $name . ' referenced by ' . implode(', ', $locations));
+        }
+    }
+
+    public function test_sensitive_system_mutations_are_rate_limited(): void
+    {
+        foreach ([
+            'admin.system.filemanager.store',
+            'admin.system.filemanager.destroy',
+            'admin.system.update.cache',
+            'admin.system.maintenance.update',
+            'admin.system.backups.store',
+            'admin.system.backups.download',
+            'admin.system.backups.destroy',
+            'admin.users.finances.set_overdraft',
+            'admin.users.finances.add_remove',
+            'admin.users.finances.add_payment',
+        ] as $name) {
+            $middleware = Route::getRoutes()->getByName($name)?->gatherMiddleware() ?? [];
+            $this->assertTrue(
+                collect($middleware)->contains(fn (string $entry): bool => str_starts_with($entry, 'throttle:')),
+                $name . ' must be rate limited',
+            );
+        }
     }
 
     public function test_unknown_admin_routes_are_denied_even_for_administrators(): void

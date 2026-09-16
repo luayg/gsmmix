@@ -113,9 +113,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
             Route::get('/form/gateways',    [UserFinanceController::class, 'formGateways'])->name('form.gateways');
 
             // actions
-            Route::post('/set-overdraft', [UserFinanceController::class, 'setOverdraft'])->name('set_overdraft');
-            Route::post('/add-remove',    [UserFinanceController::class, 'addRemoveCredits'])->name('add_remove');
-            Route::post('/add-payment',   [UserFinanceController::class, 'addPayment'])->name('add_payment');
+            Route::post('/set-overdraft', [UserFinanceController::class, 'setOverdraft'])->middleware('throttle:10,1')->name('set_overdraft');
+            Route::post('/add-remove',    [UserFinanceController::class, 'addRemoveCredits'])->middleware('throttle:10,1')->name('add_remove');
+            Route::post('/add-payment',   [UserFinanceController::class, 'addPayment'])->middleware('throttle:10,1')->name('add_payment');
         });
         /* ======== End finances ======== */
     });
@@ -411,10 +411,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('system')->name('system.')->group(function () {
-        Route::get('/filemanager',[SystemController::class,'files'])->name('filemanager');Route::post('/filemanager',[SystemController::class,'upload'])->name('filemanager.store');Route::get('/filemanager/{name}',[SystemController::class,'download'])->name('filemanager.download');Route::delete('/filemanager/{name}',[SystemController::class,'delete'])->name('filemanager.destroy');
-        Route::get('/update',[SystemController::class,'update'])->name('update');Route::post('/update/cache',[SystemController::class,'clearCaches'])->name('update.cache');
-        Route::get('/maintenance',[SystemController::class,'maintenance'])->name('maintenance');Route::put('/maintenance',[SystemController::class,'maintenanceUpdate'])->name('maintenance.update');
-        Route::get('/backups',[SystemController::class,'backups'])->name('backups');Route::post('/backups',[SystemController::class,'backupCreate'])->name('backups.store');Route::get('/backups/{name}',[SystemController::class,'backupDownload'])->name('backups.download');Route::delete('/backups/{name}',[SystemController::class,'backupDelete'])->name('backups.destroy');
+        Route::get('/filemanager',[SystemController::class,'files'])->name('filemanager');Route::post('/filemanager',[SystemController::class,'upload'])->middleware('throttle:10,1')->name('filemanager.store');Route::get('/filemanager/{name}',[SystemController::class,'download'])->middleware('throttle:30,1')->name('filemanager.download');Route::delete('/filemanager/{name}',[SystemController::class,'delete'])->middleware('throttle:10,1')->name('filemanager.destroy');
+        Route::get('/update',[SystemController::class,'update'])->name('update');Route::post('/update/cache',[SystemController::class,'clearCaches'])->middleware('throttle:3,1')->name('update.cache');
+        Route::get('/maintenance',[SystemController::class,'maintenance'])->name('maintenance');Route::put('/maintenance',[SystemController::class,'maintenanceUpdate'])->middleware('throttle:5,1')->name('maintenance.update');
+        Route::get('/backups',[SystemController::class,'backups'])->name('backups');Route::post('/backups',[SystemController::class,'backupCreate'])->middleware('throttle:2,1')->name('backups.store');Route::get('/backups/{name}',[SystemController::class,'backupDownload'])->middleware('throttle:10,1')->name('backups.download');Route::delete('/backups/{name}',[SystemController::class,'backupDelete'])->middleware('throttle:5,1')->name('backups.destroy');
     });
 
     Route::prefix('reports')->name('reports.')->group(function () {

@@ -67,11 +67,17 @@ class ManagementOverviewTest extends SecurityTestCase
         $this->get(route('admin.reports.export','users'))->assertOk()->assertDownload();
     }
 
-    public function test_modules_without_implementation_report_unavailability_instead_of_fake_success(): void
+    public function test_no_admin_route_uses_the_unavailable_placeholder(): void
     {
-        foreach ([
-        ] as $name) {
-            $this->getJson(route('admin.' . $name))->assertStatus(501)->assertJsonPath('ok', false);
+        foreach (app('router')->getRoutes() as $route) {
+            if ($route->uri() !== 'admin' && !str_starts_with($route->uri(), 'admin/')) {
+                continue;
+            }
+            $this->assertStringNotContainsString(
+                'ManagementOverviewController@unavailable',
+                $route->getActionName(),
+                $route->uri(),
+            );
         }
     }
 
