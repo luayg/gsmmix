@@ -106,9 +106,8 @@ final class LanguageController extends Controller
 
     public function export(Language $language)
     {
-        return response()->streamDownload(function () use ($language): void {
-            echo json_encode(['locale' => $language->locale, 'name' => $language->name, 'translations' => $language->translations()->orderBy('translation_key')->pluck('value', 'translation_key')], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
-        }, $language->locale.'.json', ['Content-Type' => 'application/json']);
+        $json = json_encode(['locale' => $language->locale, 'name' => $language->name, 'translations' => $language->translations()->orderBy('translation_key')->pluck('value', 'translation_key')], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        return response($json, 200, ['Content-Type' => 'application/json', 'Content-Disposition' => 'attachment; filename="'.$language->locale.'.json"']);
     }
 
     public function import(Request $request, Language $language): RedirectResponse
