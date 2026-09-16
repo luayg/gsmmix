@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductOrder;
 use App\Models\User;
+use App\Models\ApiProvider;
+use App\Models\LocalSource;
 use App\Services\Orders\ProductOrderService;
+use App\Support\ProductService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -17,14 +20,69 @@ class ProductOrdersController extends Controller
 {
     public function index(Request $request)
     {
-        $data = $request->validate(['q' => 'nullable|string|max:255', 'status' => 'nullable|in:waiting,inprogress,success,rejected,cancelled']);
-        $rows = ProductOrder::query()->with(['product', 'user'])->orderByDesc('id')
+        $data = $request->validate([
+            'q' => 'nullable|string|max:255',
+            'status' => 'nullable|in:waiting,inprogress,success,rejected,cancelled',
+            'provider' => ['nullable', 'string', 'max:80', 'regex:/^(manual|local:\d+|api:\d+)$/'],
+            'per_page' => 'nullable|integer|in:10,25,50,75,100,500,1000',
+        ]);
+        $provider = $data['provider'] ?? null;
+        $query = ProductOrder::query()->with(['product', 'user', 'localSource'])->orderByDesc('id')
             ->when($data['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->when($data['q'] ?? null, fn ($query, $q) => $query->where(function ($query) use ($q): void {
                 $query->where('email', 'like', '%' . $q . '%')->orWhere('device', 'like', '%' . $q . '%')
+                    ->when(ctype_digit((string) $q), fn ($query) => $query->orWhereKey((int) $q))
                     ->orWhereHas('product', fn ($product) => $product->where('name', 'like', '%' . $q . '%'));
-            }))->paginate(25)->withQueryString();
-        return view('admin.orders.product.index', compact('rows'));
+            }));
+
+        if ($provider === 'manual') {
+            $query->whereNull('local_source_id')->where(function ($query): void {
+                $query->whereNull('service_order_type')->orWhereNull('service_order_id');
+            });
+        } elseif (str_starts_with((string) $provider, 'local:')) {
+            $query->where('local_source_id', (int) substr($provider, 6));
+        } elseif (str_starts_with((string) $provider, 'api:')) {
+            $providerId = (int) substr($provider, 4);
+            $query->where(function ($query) use ($providerId): void {
+                foreach (ProductService::TYPES as $type) {
+                    $orderModel = ProductService::orderModel($type);
+                    $query->orWhere(function ($query) use ($type, $orderModel, $providerId): void {
+                        $query->where('service_order_type', $type)
+                            ->whereIn('service_order_id', $orderModel::query()->where('supplier_id', $providerId)->select('id'));
+                    });
+                }
+            });
+        }
+
+        $perPage = (int) ($data['per_page'] ?? 25);
+        $rows = $query->paginate($perPage)->withQueryString();
+        $this->attachProviderLabels($rows->items());
+
+        $apiProviders = ApiProvider::query()->orderBy('name')->get(['id', 'name']);
+        $localSources = LocalSource::query()->orderBy('name')->get(['id', 'name']);
+
+        return view('admin.orders.product.index', compact('rows', 'apiProviders', 'localSources', 'perPage'));
+    }
+
+    private function attachProviderLabels(array $orders): void
+    {
+        $linked = [];
+        foreach (ProductService::TYPES as $type) {
+            $ids = collect($orders)->where('service_order_type', $type)->pluck('service_order_id')->filter()->unique();
+            if ($ids->isEmpty()) continue;
+            $model = ProductService::orderModel($type);
+            foreach ($model::query()->with('provider')->whereKey($ids)->get() as $serviceOrder) {
+                $linked[$type.':'.$serviceOrder->getKey()] = $serviceOrder->provider?->name ?: 'Manual';
+            }
+        }
+
+        foreach ($orders as $order) {
+            $label = $order->localSource?->name;
+            if (!$label && $order->service_order_type && $order->service_order_id) {
+                $label = $linked[$order->service_order_type.':'.$order->service_order_id] ?? 'Manual';
+            }
+            $order->setAttribute('admin_provider_label', $label ?: 'Manual');
+        }
     }
 
     private function formData(): array

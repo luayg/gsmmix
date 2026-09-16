@@ -27,7 +27,7 @@
     <h2 class="h6">Comments</h2><p class="text-break">{{ $order->comments ?: '—' }}</p>
   </div></div>
   @can('orders.edit')
-  <form method="POST" action="{{ route('admin.orders.product.update', $order) }}" class="card"><div class="card-body">
+  <form id="update-order" method="POST" action="{{ route('admin.orders.product.update', $order) }}" class="card"><div class="card-body">
     @csrf @method('PUT')
     <h2 class="h5">Update order</h2>
     <label class="form-label" for="productOrderStatus">Status</label>

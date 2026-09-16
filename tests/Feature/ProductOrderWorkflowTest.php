@@ -402,6 +402,23 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->get(route('admin.orders.product.index', ['status' => 'success']))->assertOk()->assertSee('No product orders match');
     }
 
+    public function test_product_order_index_matches_the_other_order_management_tables(): void
+    {
+        $orderId = $this->postJson(route('admin.orders.product.store'), $this->payload(['device' => 'DEVICE-100']))
+            ->assertOk()->json('id');
+
+        $this->get(route('admin.orders.product.index', ['provider' => 'manual', 'per_page' => 10]))
+            ->assertOk()
+            ->assertSeeInOrder(['Show', 'Export', 'Reload (Manual)', 'New order'])
+            ->assertSeeInOrder(['ID', 'Date', 'Device', 'Product', 'Provider', 'Status', 'Credits', 'Actions'])
+            ->assertSee('Manual')
+            ->assertSee('WAITING')
+            ->assertSee('View')
+            ->assertSee('Edit')
+            ->assertSee(route('admin.orders.product.show', $orderId), false)
+            ->assertSee('DEVICE-100');
+    }
+
     public function test_submission_key_cannot_be_reused_for_a_different_product_or_customer(): void
     {
         $data = $this->payload();
