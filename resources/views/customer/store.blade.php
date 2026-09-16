@@ -8,7 +8,6 @@
       @php
         $groupPrice = auth()->check() ? $product->groupPrices->first() : null;
         $price = $groupPrice?->finalPrice($product) ?? $product->price;
-        $needsFile = $product->source_type === 'service' && $product->service_type === 'file';
       @endphp
       <div class="col-sm-6 col-xl-4"><article class="product-card h-100">
         @if($product->main_image)<img class="product-image" src="{{ asset($product->main_image) }}" alt="{{ $product->name }}">@else<div class="product-image product-placeholder"><i class="fas fa-toolbox"></i></div>@endif
@@ -17,7 +16,7 @@
           <h2 class="h5 fw-bold">{{ $product->name }}</h2><p class="text-muted small">{{ Str::limit(strip_tags($product->description),120) }}</p>
           <div class="product-meta"><div><small>PRICE</small><strong>${{ number_format($price,2) }}</strong></div><div><small>DELIVERY</small><strong>{{ $product->delivery_time ?: 'Fast delivery' }}</strong></div></div>
           @auth
-            <button class="btn btn-gsm w-100 mt-3 js-buy-product" type="button" data-id="{{ $product->id }}" data-name="{{ $product->name }}" data-price="{{ $price }}" data-device="{{ $product->device_based ? 1 : 0 }}" data-file="{{ $needsFile ? 1 : 0 }}">Order now</button>
+            <button class="btn btn-gsm w-100 mt-3 js-buy-product" type="button" data-id="{{ $product->id }}" data-name="{{ $product->name }}" data-price="{{ $price }}" data-device="{{ $product->device_based ? 1 : 0 }}">Order now</button>
           @else<a class="btn btn-gsm w-100 mt-3" href="{{ route('login') }}">Login to order</a>@endauth
         </div>
       </article></div>
@@ -32,19 +31,20 @@
   <form id="productOrderForm" enctype="multipart/form-data"><div class="modal-body">@csrf
     <input type="hidden" name="product_id" id="productId"><input type="hidden" name="request_uid" id="productRequestUid">
     <div class="product-checkout-price"><span>Total from balance</span><strong id="productPrice"></strong></div>
-    <div class="mb-3" id="productDeviceWrap"><label class="form-label fw-bold">Device / IMEI / target</label><input class="form-control" name="device" id="productDevice"></div>
-    <div class="mb-3 d-none" id="productFileWrap"><label class="form-label fw-bold">Required file</label><input class="form-control" type="file" name="file" id="productFile"></div>
+    <div id="productServiceFields"></div>
     <div><label class="form-label fw-bold">Comments (optional)</label><textarea class="form-control" name="comments" rows="3"></textarea></div><div class="alert alert-danger d-none mt-3" id="productOrderError"></div>
   </div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button class="btn btn-gsm" id="productOrderSubmit">Confirm & pay</button></div></form>
 </div></div></div>
 @push('scripts')
 <script>
-const productModal=document.getElementById('productOrderModal'),productForm=document.getElementById('productOrderForm');
+const productModal=document.getElementById('productOrderModal'),productForm=document.getElementById('productOrderForm'),productSchemas=@json($schemas ?? []);
+const productEscape=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+function productInput(f){const req=f.required?'required':'',name=f.input==='device'?'device':`required[${productEscape(f.input)}]`;if(['dropdown','select','radio'].includes(f.type)){return `<select class="form-select" name="${name}" ${req}><option value="">Choose…</option>${(f.options||[]).map(o=>{const value=typeof o==='object'?(o.value??o.name):o,label=typeof o==='object'?(o.label??o.name??o.value):o;return `<option value="${productEscape(value)}">${productEscape(label)}</option>`}).join('')}</select>`}if(f.type==='textarea')return `<textarea class="form-control" name="${name}" rows="3" ${req}></textarea>`;const type=['email','number','url','password'].includes(f.type)?f.type:'text';return `<input class="form-control" type="${type}" name="${name}" ${f.minimum?`minlength="${f.minimum}"`:''} ${f.maximum?`maxlength="${f.maximum}"`:''} ${req}>`}
+function renderProductFields(button){const schema=productSchemas[button.dataset.id]||{},all=[...(schema.main?[schema.main]:[]),...(schema.fields||[])];let html=all.map(f=>`<div class="mb-3"><label class="form-label fw-bold">${productEscape(f.name)}${f.required?' *':''}</label>${productInput(f)}${f.description?`<div class="form-text">${productEscape(f.description)}</div>`:''}</div>`).join('');if(schema.file)html+='<div class="mb-3"><label class="form-label fw-bold">Required file *</label><input class="form-control" type="file" name="file" required></div>';if(schema.quantity)html+='<div class="mb-3"><label class="form-label fw-bold">Quantity *</label><input class="form-control" type="number" name="quantity" value="1" min="1" required></div>';if(!schema.main&&!schema.file&&button.dataset.device==='1')html+='<div class="mb-3"><label class="form-label fw-bold">Device / target *</label><input class="form-control" name="device" required></div>';document.getElementById('productServiceFields').innerHTML=html}
 document.querySelectorAll('.js-buy-product').forEach(button=>button.addEventListener('click',()=>{
   document.getElementById('productId').value=button.dataset.id; document.getElementById('productRequestUid').value=crypto.randomUUID();
   document.getElementById('productOrderTitle').textContent=button.dataset.name; document.getElementById('productPrice').textContent='$'+Number(button.dataset.price).toFixed(2);
-  const needsDevice=button.dataset.device==='1',needsFile=button.dataset.file==='1'; document.getElementById('productDevice').required=needsDevice; document.getElementById('productDeviceWrap').classList.toggle('d-none',!needsDevice);
-  document.getElementById('productFile').required=needsFile; document.getElementById('productFileWrap').classList.toggle('d-none',!needsFile); document.getElementById('productOrderError').classList.add('d-none');
+  renderProductFields(button); document.getElementById('productOrderError').classList.add('d-none');
   window.bootstrap.Modal.getOrCreateInstance(productModal).show();
 }));
 productForm.addEventListener('submit',async event=>{event.preventDefault();const button=document.getElementById('productOrderSubmit'),error=document.getElementById('productOrderError');button.disabled=true;const response=await fetch(@json(route('customer.product-orders.store')),{method:'POST',body:new FormData(productForm),headers:{Accept:'application/json'}}),json=await response.json().catch(()=>({}));button.disabled=false;if(response.ok){location.href=@json(route('customer.orders.type','product'));return}error.textContent=json.message||Object.values(json.errors||{}).flat().join(' ');error.classList.remove('d-none');});
