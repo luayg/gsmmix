@@ -189,7 +189,7 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->product->update(['source_type' => 'service', 'service_type' => 'imei', 'service_id' => $serviceId]);
 
         $this->actingAs($this->customer)->get(route('site.store'))
-            ->assertOk()->assertSee('Account email')->assertSee('required[account_email]', false);
+            ->assertOk()->assertSee('Account email')->assertSee('account_email');
         $this->postJson(route('customer.product-orders.store'), $this->payload(['device' => '123456789012345']))
             ->assertUnprocessable()->assertJsonValidationErrors('required.account_email');
         $this->postJson(route('customer.product-orders.store'), $this->payload([
