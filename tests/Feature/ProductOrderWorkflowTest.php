@@ -384,7 +384,7 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->flushSession();
         $this->resetSessionRuntime();
         $this->actingAs($staff, 'web');
-        $this->get(route('admin.orders.product.index'))->assertOk()->assertDontSee('Create order');
+        $this->get(route('admin.orders.product.index'))->assertOk()->assertDontSee('New order');
         $this->get(route('admin.orders.product.show', $id))->assertOk()->assertDontSee('Save changes');
         $this->get(route('admin.orders.product.create'))->assertForbidden();
         $this->get(route('admin.orders.product.modal.create'))->assertForbidden();
@@ -398,8 +398,9 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->get(route('admin.orders.product.create'))->assertOk()->assertSee('Local product')->assertSee('12.34 credits');
         $this->get(route('admin.orders.product.modal.create'))->assertOk()->assertSee('name="request_uid"', false);
         $this->postJson(route('admin.orders.product.store'), $this->payload())->assertOk();
-        $this->get(route('admin.orders.product.index', ['q' => 'Local product', 'status' => 'waiting']))->assertOk()->assertSee('Local product');
-        $this->get(route('admin.orders.product.index', ['status' => 'success']))->assertOk()->assertSee('No product orders match');
+        $this->get(route('admin.orders.product.index', ['q' => 'Local product', 'status' => 'waiting']))
+            ->assertOk()->assertSee('Local product')->assertSee('Provider')->assertSee('Actions')->assertSee('WAITING');
+        $this->get(route('admin.orders.product.index', ['status' => 'success']))->assertOk()->assertSee('No product orders');
     }
 
     public function test_submission_key_cannot_be_reused_for_a_different_product_or_customer(): void

@@ -6,25 +6,67 @@ use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\ProductOrder;
 use App\Models\User;
+use App\Models\ApiProvider;
 use App\Services\Orders\ProductOrderService;
+use App\Support\ProductService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Schema;
 use App\Rules\SafeOrderFile;
 
 class ProductOrdersController extends Controller
 {
     public function index(Request $request)
     {
-        $data = $request->validate(['q' => 'nullable|string|max:255', 'status' => 'nullable|in:waiting,inprogress,success,rejected,cancelled']);
-        $rows = ProductOrder::query()->with(['product', 'user'])->orderByDesc('id')
+        $data = $request->validate([
+            'q' => 'nullable|string|max:255',
+            'status' => 'nullable|in:waiting,inprogress,success,rejected,cancelled',
+            'provider' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|in:10,25,50,75,100,500,1000',
+        ]);
+        $perPage = (int) ($data['per_page'] ?? 10);
+        $query = ProductOrder::query()->with(['product', 'user'])->orderByDesc('id')
             ->when($data['status'] ?? null, fn ($query, $status) => $query->where('status', $status))
             ->when($data['q'] ?? null, fn ($query, $q) => $query->where(function ($query) use ($q): void {
                 $query->where('email', 'like', '%' . $q . '%')->orWhere('device', 'like', '%' . $q . '%')
+                    ->when(ctype_digit((string) $q), fn ($query) => $query->orWhere('id', (int) $q))
                     ->orWhereHas('product', fn ($product) => $product->where('name', 'like', '%' . $q . '%'));
-            }))->paginate(25)->withQueryString();
-        return view('admin.orders.product.index', compact('rows'));
+            }));
+
+        if (!empty($data['provider'])) {
+            $providerId = (int) $data['provider'];
+            $query->where(function ($where) use ($providerId): void {
+                foreach (ProductService::TYPES as $type) {
+                    $orderModel = ProductService::orderModel($type);
+                    $ids = $orderModel::query()->where('supplier_id', $providerId)->select('id');
+                    $where->orWhere(fn ($part) => $part->where('service_order_type', $type)
+                        ->whereIn('service_order_id', $ids));
+                }
+            });
+        }
+
+        $rows = $query->paginate($perPage)->withQueryString();
+        $providerNames = Schema::hasTable('api_providers') ? ApiProvider::query()->pluck('name', 'id') : collect();
+        foreach ($rows->getCollection()->groupBy('service_order_type') as $type => $orders) {
+            if (!in_array($type, ProductService::TYPES, true)) continue;
+            $orderModel = ProductService::orderModel($type);
+            $linked = $orderModel::query()->whereIn('id', $orders->pluck('service_order_id')->filter())
+                ->get(['id', 'supplier_id', 'remote_id'])->keyBy('id');
+            foreach ($orders as $order) {
+                $serviceOrder = $linked->get($order->service_order_id);
+                $order->setAttribute('provider_name', $serviceOrder?->supplier_id
+                    ? ($providerNames[$serviceOrder->supplier_id] ?? '—') : 'Manual');
+                $order->setAttribute('remote_reference', $serviceOrder?->remote_id);
+            }
+        }
+        foreach ($rows as $order) {
+            if (!$order->getAttribute('provider_name')) $order->setAttribute('provider_name', 'Manual');
+        }
+        $providers = Schema::hasTable('api_providers')
+            ? ApiProvider::query()->orderBy('name')->get(['id', 'name']) : collect();
+        return view('admin.orders.product.index', compact('rows', 'providers', 'perPage'));
     }
 
     private function formData(): array
