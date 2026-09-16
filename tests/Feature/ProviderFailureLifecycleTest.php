@@ -231,6 +231,10 @@ class ProviderFailureLifecycleTest extends TestCase
         $this->assertSame('Waiting', data_get($fresh->response, 'message'));
         $this->assertSame('AUTH FAILED - Check username/api_key/auth_mode', data_get($fresh->request, 'internal_dispatch_note'));
 
+        $adminView = view('admin.orders.modals.view', ['row' => $fresh, 'kind' => 'imei'])->render();
+        $this->assertStringContainsString('Why this order is waiting', $adminView);
+        $this->assertStringContainsString('AUTH FAILED - Check username/api_key/auth_mode', $adminView);
+
         $claimed = app(OrderDispatchClaimService::class)->claim(ImeiOrder::class, $fresh->id);
         $this->assertNotNull($claimed);
 

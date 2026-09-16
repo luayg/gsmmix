@@ -18,6 +18,12 @@
       <dt class="col-sm-3">Delivered / closed</dt><dd class="col-sm-9">{{ $order->replied_at ?? '—' }}</dd>
     </dl>
     <h2 class="h6">Delivery result</h2><pre class="text-wrap">{{ $order->response ?: 'Awaiting delivery' }}</pre>
+    @if(!empty($order->request['internal_dispatch_note']) || !empty($order->request['internal_provider_note']))
+      <div class="alert alert-warning">
+        <strong>Provider error:</strong>
+        {{ $order->request['internal_dispatch_note'] ?? $order->request['internal_provider_note'] }}
+      </div>
+    @endif
     <h2 class="h6">Comments</h2><p class="text-break">{{ $order->comments ?: '—' }}</p>
   </div></div>
   @can('orders.edit')
