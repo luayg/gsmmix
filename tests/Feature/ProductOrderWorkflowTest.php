@@ -417,6 +417,13 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->get(route('admin.orders.product.modal.edit', $id))->assertOk()
             ->assertSee('Product Order #'.$id)->assertSee('js-ajax-form', false);
 
+        if (!Schema::hasTable('smm_orders')) {
+            Schema::create('smm_orders', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('user_id');
+                $table->timestamps();
+            });
+        }
         auth()->guard('web')->logout();
         $this->flushSession();
         $this->resetSessionRuntime();
