@@ -8,14 +8,20 @@ use App\Models\ImeiService;
 use App\Models\ServerService;
 use App\Models\FileService;
 use App\Models\SmmService;
+use Illuminate\Support\Facades\Schema;
 
 final class PublicSiteController extends Controller
 {
     public function home()
     {
-        $page=$this->findPage('home');
-        $products=Product::query()->where('active',true)->orderByDesc('new')->orderBy('ordering')->limit(8)->get();
-        $counts=['imei'=>ImeiService::where('active',true)->count(),'server'=>ServerService::where('active',true)->count(),'file'=>FileService::where('active',true)->count(),'smm'=>SmmService::where('active',true)->count()];
+        $page=Schema::hasTable('pages') ? $this->findPage('home') : null;
+        $products=Schema::hasTable('products') ? Product::query()->where('active',true)->orderByDesc('new')->orderBy('ordering')->limit(8)->get() : collect();
+        $counts=[
+            'imei'=>Schema::hasTable('imei_services') ? ImeiService::where('active',true)->count() : 0,
+            'server'=>Schema::hasTable('server_services') ? ServerService::where('active',true)->count() : 0,
+            'file'=>Schema::hasTable('file_services') ? FileService::where('active',true)->count() : 0,
+            'smm'=>Schema::hasTable('smm_services') ? SmmService::where('active',true)->count() : 0,
+        ];
         return view('site.home',compact('page','products','counts'));
     }
     public function page(Page $page)

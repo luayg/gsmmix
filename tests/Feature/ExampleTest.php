@@ -7,10 +7,10 @@ use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
-    public function test_root_redirects_to_admin_dashboard(): void
+    public function test_root_renders_public_homepage(): void
     {
         $response = $this->get('/');
-        $response->assertRedirect(route('admin.dashboard'));
+        $response->assertOk()->assertViewIs('site.home');
     }
 
     public function test_admin_dashboard_requires_authentication(): void
