@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Validation\ValidationException;
+use App\Rules\SafeOrderFile;
 
 class ProductOrdersController extends Controller
 {
@@ -53,7 +54,7 @@ class ProductOrdersController extends Controller
             'device' => 'nullable|string|max:2000',
             'quantity' => 'nullable|integer|min:1|max:1000000000',
             'required' => 'nullable|array',
-            'file' => 'nullable|file|max:51200',
+            'file' => ['nullable','file','max:51200',new SafeOrderFile],
             'comments' => 'nullable|string|max:5000',
         ]);
         $data['ip'] = $request->ip();

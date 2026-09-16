@@ -6,6 +6,7 @@ use App\Models\PaymentGateway;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
+use App\Rules\SafeRasterImage;
 
 final class SavePaymentGatewayRequest extends FormRequest
 {
@@ -39,7 +40,7 @@ final class SavePaymentGatewayRequest extends FormRequest
             'wallet_address' => ['nullable', 'string', 'max:255'], 'provider_url' => ['nullable', 'url', 'max:2000'],
             'provider_api_key' => ['nullable', 'string', 'max:2000'], 'contract_address' => ['nullable', 'string', 'max:255'],
             'confirmations' => ['nullable', 'integer', 'min:1', 'max:1000'],
-            'logo' => [$system ? 'prohibited' : 'nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
+            'logo' => [$system ? 'prohibited' : 'nullable', 'file', 'max:2048', new SafeRasterImage],
         ];
     }
 

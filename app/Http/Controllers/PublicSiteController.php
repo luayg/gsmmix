@@ -9,6 +9,7 @@ use App\Models\ServerService;
 use App\Models\FileService;
 use App\Models\SmmService;
 use Illuminate\Support\Facades\Schema;
+use App\Services\Settings\AppSettings;
 
 final class PublicSiteController extends Controller
 {
@@ -22,7 +23,8 @@ final class PublicSiteController extends Controller
             'file'=>Schema::hasTable('file_services') ? FileService::where('active',true)->count() : 0,
             'smm'=>Schema::hasTable('smm_services') ? SmmService::where('active',true)->count() : 0,
         ];
-        return view('site.home',compact('page','products','counts'));
+        $homeSettings=Schema::hasTable('settings')?app(AppSettings::class)->group('general'):[];
+        return view('site.home',compact('page','products','counts','homeSettings'));
     }
     public function page(Page $page)
     {

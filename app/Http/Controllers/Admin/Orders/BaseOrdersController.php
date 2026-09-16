@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Schema;
+use App\Rules\SafeOrderFile;
 
 abstract class BaseOrdersController extends Controller
 {
@@ -723,7 +724,7 @@ abstract class BaseOrdersController extends Controller
         ];
 
         if ($this->kind === 'file') {
-            $rules['file'] = ['required','file','max:51200'];
+            $rules['file'] = ['required','file','max:51200',new SafeOrderFile];
         } else {
             $rules['device'] = ['nullable','string','max:255'];
         }

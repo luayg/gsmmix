@@ -51,6 +51,7 @@ use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Customer\PortalController;
 use App\Http\Controllers\Customer\PaymentController as CustomerPaymentController;
 use App\Http\Controllers\Customer\OrderController as CustomerOrderController;
+use App\Http\Controllers\Customer\ProductOrderController as CustomerProductOrderController;
 
 /*
 |--------------------------------------------------------------------------
@@ -80,8 +81,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/place-order', [CustomerOrderController::class,'create'])->name('orders.create');
         Route::post('/place-order/{type}', [CustomerOrderController::class,'store'])->whereIn('type',['imei','server','file','smm'])->middleware('throttle:20,1')->name('orders.store');
         Route::get('/orders', [CustomerOrderController::class,'index'])->name('orders');
-        Route::get('/orders/{type}', [CustomerOrderController::class,'index'])->whereIn('type',['imei','server','file','smm'])->name('orders.type');
-        Route::get('/orders/{type}/{order}', [CustomerOrderController::class,'show'])->whereIn('type',['imei','server','file','smm'])->whereNumber('order')->name('orders.show');
+        Route::post('/product-orders', [CustomerProductOrderController::class,'store'])->middleware('throttle:20,1')->name('product-orders.store');
+        Route::get('/orders/{type}', [CustomerOrderController::class,'index'])->whereIn('type',['imei','server','file','smm','product'])->name('orders.type');
+        Route::get('/orders/{type}/{order}', [CustomerOrderController::class,'show'])->whereIn('type',['imei','server','file','smm','product'])->whereNumber('order')->name('orders.show');
         Route::get('/payments', [CustomerPaymentController::class,'index'])->name('payments.index');
         Route::get('/add-funds', [CustomerPaymentController::class,'create'])->name('payments.create');
         Route::post('/add-funds', [CustomerPaymentController::class,'store'])->middleware('throttle:10,1')->name('payments.store');

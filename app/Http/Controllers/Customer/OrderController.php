@@ -16,10 +16,12 @@ use App\Models\ServerService;
 use App\Models\ServiceGroupPrice;
 use App\Models\SmmOrder;
 use App\Models\SmmService;
+use App\Models\ProductOrder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Services\Content\HtmlSanitizer;
 
 final class OrderController extends Controller
 {
@@ -28,11 +30,13 @@ final class OrderController extends Controller
         'server' => [ServerService::class, ServerOrder::class, ServerOrdersController::class],
         'file' => [FileService::class, FileOrder::class, FileOrdersController::class],
         'smm' => [SmmService::class, SmmOrder::class, SmmOrdersController::class],
+        'product' => [null, ProductOrder::class, null],
     ];
 
     public function create(Request $request)
     {
         $type = $this->type($request->input('type', 'imei'));
+        abort_if($type==='product',404);
         $serviceModel = self::TYPES[$type][0];
         $services = $serviceModel::query()->where('active', true)->orderBy('ordering')->orderBy('id')->get();
         $fields = DB::table('custom_fields')->where('service_type', $type.'_service')
@@ -45,7 +49,7 @@ final class OrderController extends Controller
                 'id' => $service->id,
                 'name' => $this->text($service->name ?? ''),
                 'time' => $this->text($service->time ?? ''),
-                'info' => $this->text($service->info ?? ''),
+                'info_html' => app(HtmlSanitizer::class)->clean($this->text($service->info ?? '')),
                 'price' => $this->price($service, $type, (int) $user->group_id),
                 'allow_bulk' => (bool) ($service->allow_bulk ?? false),
                 'main_field' => $service->main_field,
@@ -74,7 +78,8 @@ final class OrderController extends Controller
         $type = $type ? $this->type($type) : null;
         $types = $type ? [$type => self::TYPES[$type]] : self::TYPES;
         $orders = collect($types)->flatMap(function (array $classes, string $kind) use ($request) {
-            return $classes[1]::query()->where('user_id', $request->user()->id)->with('service')
+            $relation=$kind==='product'?'product':'service';
+            return $classes[1]::query()->where('user_id', $request->user()->id)->with($relation)
                 ->latest()->limit(250)->get()->map(fn ($order) => $this->row($order, $kind));
         })->sortByDesc('created_at')->values();
 
@@ -84,9 +89,12 @@ final class OrderController extends Controller
     public function show(Request $request, string $type, int $order)
     {
         $type = $this->type($type);
+        $relation=$type==='product'?'product':'service';
         $row = self::TYPES[$type][1]::query()->where('user_id', $request->user()->id)
-            ->with('service')->findOrFail($order);
-        return view('customer.orders.show', ['order' => $this->row($row, $type), 'model' => $row]);
+            ->with($relation)->findOrFail($order);
+        $data=['order' => $this->row($row, $type), 'model' => $row];
+        if($request->expectsJson()) return response()->json(['html'=>view('customer.orders._details',$data)->render()]);
+        return view('customer.orders.show', $data);
     }
 
     private function type(mixed $type): string
@@ -96,7 +104,7 @@ final class OrderController extends Controller
 
     private function row(Model $order, string $type): array
     {
-        return ['id' => $order->id, 'type' => $type, 'service' => $this->text($order->service?->name ?? ucfirst($type).' service'),
+        return ['id' => $order->id, 'type' => $type, 'service' => $this->text($order->service?->name ?? $order->product?->name ?? ucfirst($type).' service'),
             'device' => $order->device ?: '—', 'status' => $order->status, 'amount' => $order->price ?? 0,
             'quantity' => $order->quantity ?? null, 'created_at' => $order->created_at];
     }

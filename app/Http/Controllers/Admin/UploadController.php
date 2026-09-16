@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use App\Rules\SafeRasterImage;
 
 class UploadController extends Controller
 {
@@ -11,7 +12,7 @@ class UploadController extends Controller
     {
         $field = $request->hasFile('image') ? 'image' : 'file';
         $request->validate([
-            $field => ['required','image','mimes:jpg,jpeg,png,webp,gif','max:4096'], // 4MB
+            $field => ['required','file','max:4096',new SafeRasterImage],
         ]);
 
         // public disk -> storage/app/public/editor/xxx.png

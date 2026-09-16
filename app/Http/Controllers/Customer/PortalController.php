@@ -41,7 +41,7 @@ final class PortalController extends Controller
         }
         return view('customer.services',compact('services','q','selectedType'));
     }
-    public function store() { return view('customer.store',['products'=>Product::query()->where('active',true)->with('category')->orderByDesc('hot')->orderBy('ordering')->paginate(20)]); }
+    public function store() { $groupId=auth()->user()?->group_id; return view('customer.store',['products'=>Product::query()->where('active',true)->with(['category','groupPrices'=>fn($q)=>$q->when($groupId,fn($x)=>$x->where('group_id',$groupId))])->orderByDesc('hot')->orderBy('ordering')->paginate(20)]); }
     public function downloads() { return view('customer.downloads',['downloads'=>Download::query()->where('active',true)->with('category')->orderByDesc('created_at')->paginate(20)]); }
     public function profile(Request $request) { return view('customer.profile',['user'=>$request->user()]); }
     public function updateProfile(Request $request)

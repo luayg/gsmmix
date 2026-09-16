@@ -4,6 +4,7 @@ namespace App\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
+use App\Rules\SafeRasterImage;
 
 final class UpdateGeneralSettingsRequest extends FormRequest
 {
@@ -46,8 +47,14 @@ final class UpdateGeneralSettingsRequest extends FormRequest
             'service_file_enabled' => ['sometimes', 'boolean'],
             'service_smm_enabled' => ['sometimes', 'boolean'],
             'store_enabled' => ['sometimes', 'boolean'],
-            'logo' => ['nullable', 'image', 'mimes:png,jpg,jpeg,webp', 'max:2048'],
-            'favicon' => ['nullable', 'image', 'mimes:png,ico', 'max:512'],
+            'logo' => ['nullable', 'file', 'max:2048', new SafeRasterImage],
+            'favicon' => ['nullable', 'file', 'max:512', new SafeRasterImage],
+            'home_banner' => ['nullable', 'file', 'max:6144', new SafeRasterImage],
+            'home_banner_enabled' => ['sometimes','boolean'],
+            'home_banner_title' => ['nullable','string','max:120'],
+            'home_banner_text' => ['nullable','string','max:500'],
+            'home_banner_button' => ['nullable','string','max:50'],
+            'home_banner_url' => ['nullable','url:http,https','max:1000'],
         ];
     }
 }
