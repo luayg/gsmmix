@@ -47,7 +47,9 @@ class LoginController extends Controller
                 $request->session()->regenerate();
                 $request->session()->put('password_hash_web', Auth::guard('web')->user()->getAuthPassword());
                 $this->logAccess($request,'login',true,$login,Auth::guard('web')->id());
-                return redirect()->intended(route('admin.dashboard'));
+                $user = Auth::guard('web')->user();
+                $destination = $user->can('admin.access') ? route('admin.dashboard') : route('customer.dashboard');
+                return redirect()->intended($destination);
             }
         }
 

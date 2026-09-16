@@ -23,6 +23,9 @@ use App\Services\Settings\AppSettings;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\View;
+use Illuminate\Support\Facades\Schema;
+use App\Models\Page;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -37,6 +40,15 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         app(AppSettings::class)->applyRuntimeConfiguration();
+
+        View::composer(['layouts.site','layouts.customer'], function ($view): void {
+            if (!Schema::hasTable('pages')) {
+                $view->with('headerPages', collect())->with('footerPages', collect());
+                return;
+            }
+            $pages = Page::query()->where('status','published')->where(function($q){$q->whereNull('published_at')->orWhere('published_at','<=',now());})->with('translations')->orderBy('ordering')->get();
+            $view->with('headerPages',$pages->where('placement','header'))->with('footerPages',$pages->where('placement','footer'));
+        });
 
         Route::aliasMiddleware('role', RoleMiddleware::class);
         Route::aliasMiddleware('permission', PermissionMiddleware::class);
