@@ -28,6 +28,7 @@ use App\Http\Controllers\Admin\MenuController;
 use App\Http\Controllers\Admin\DownloadController;
 use App\Http\Controllers\Admin\DownloadCategoryController;
 use App\Http\Controllers\Admin\LogController;
+use App\Http\Controllers\Admin\SystemController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -410,10 +411,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
     });
 
     Route::prefix('system')->name('system.')->group(function () {
-        Route::get('/filemanager', [ManagementOverviewController::class, 'unavailable'])->name('filemanager');
-        Route::get('/update',      [ManagementOverviewController::class, 'unavailable'])->name('update');
-        Route::get('/maintenance', [ManagementOverviewController::class, 'unavailable'])->name('maintenance');
-        Route::get('/backups',     [ManagementOverviewController::class, 'unavailable'])->name('backups');
+        Route::get('/filemanager',[SystemController::class,'files'])->name('filemanager');Route::post('/filemanager',[SystemController::class,'upload'])->name('filemanager.store');Route::get('/filemanager/{name}',[SystemController::class,'download'])->name('filemanager.download');Route::delete('/filemanager/{name}',[SystemController::class,'delete'])->name('filemanager.destroy');
+        Route::get('/update',[SystemController::class,'update'])->name('update');Route::post('/update/cache',[SystemController::class,'clearCaches'])->name('update.cache');
+        Route::get('/maintenance',[SystemController::class,'maintenance'])->name('maintenance');Route::put('/maintenance',[SystemController::class,'maintenanceUpdate'])->name('maintenance.update');
+        Route::get('/backups',[SystemController::class,'backups'])->name('backups');Route::post('/backups',[SystemController::class,'backupCreate'])->name('backups.store');Route::get('/backups/{name}',[SystemController::class,'backupDownload'])->name('backups.download');Route::delete('/backups/{name}',[SystemController::class,'backupDelete'])->name('backups.destroy');
     });
 
     Route::prefix('reports')->name('reports.')->group(function () {
