@@ -794,7 +794,9 @@ abstract class BaseOrdersController extends Controller
             $provider   = $supplierId ? ApiProvider::find($supplierId) : null;
 
             $hasRemote = !empty($service->remote_id);
-            $isApi = $provider && (int)$provider->active === 1 && $hasRemote;
+            $isApi = (int)($service->source ?? 0) === 2 || $supplierId > 0 || $hasRemote;
+            $shouldDispatch = $isApi && $provider && (int)$provider->active === 1
+                && $hasRemote && !(bool)($service->needs_approval ?? false);
 
             $sellPrice = (float)$this->calcServiceSellPriceForUser($service, $user);
             $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
@@ -834,7 +836,7 @@ abstract class BaseOrdersController extends Controller
             $totalCharge = $sellPrice * $countOrders;
 
             DB::transaction(function () use (
-                $request, $data, $userId, $service, $provider, $isApi,
+                $request, $data, $userId, $service, $provider, $isApi, $shouldDispatch,
                 $sellPrice, $costPrice, $profitOne, $params, $devices, $totalCharge, $requestUid
             ) {
                 $u = User::query()->lockForUpdate()->findOrFail($userId);
@@ -850,7 +852,7 @@ abstract class BaseOrdersController extends Controller
                 }
 
                 $createOne = function (string $deviceValue = '') use (
-                    $request, $data, $u, $service, $provider, $isApi,
+                    $request, $data, $u, $service, $provider, $isApi, $shouldDispatch,
                     $sellPrice, $costPrice, $profitOne, $params, $requestUid
                 ) {
                     /** @var Model $order */
@@ -896,7 +898,7 @@ abstract class BaseOrdersController extends Controller
 
                     $order->save();
 
-                    if ($isApi) {
+                    if ($shouldDispatch) {
                         try {
                             $order->processing = 1;
                             $order->status = 'inprogress';

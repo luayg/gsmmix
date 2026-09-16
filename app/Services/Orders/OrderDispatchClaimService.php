@@ -4,6 +4,7 @@ namespace App\Services\Orders;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 final class OrderDispatchClaimService
 {
@@ -36,6 +37,14 @@ final class OrderDispatchClaimService
 
             if (trim((string)($order->remote_id ?? '')) !== '') {
                 return null;
+            }
+
+            $serviceRelation = $order->service();
+            if (Schema::hasTable($serviceRelation->getRelated()->getTable())) {
+                $order->loadMissing('service');
+                if ((bool)($order->service?->needs_approval ?? false) && !(bool)($order->approved ?? false)) {
+                    return null;
+                }
             }
 
             $request = $this->requestMeta($order);

@@ -6,6 +6,7 @@ use App\Models\ApiProvider;
 use App\Models\ImeiOrder;
 use App\Models\ImeiService;
 use App\Models\User;
+use App\Services\Orders\OrderDispatchClaimService;
 use App\Services\Orders\OrderDispatcher;
 use App\Services\Orders\OrderSender;
 use Illuminate\Database\Schema\Blueprint;
@@ -155,7 +156,8 @@ class ProviderFailureLifecycleTest extends TestCase
         $this->assertFalse((bool)$fresh->processing);
         $this->assertSame('80.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
         $this->assertSame('charged', data_get($fresh->request, 'financial_state'));
-        $this->assertSame('TIMEOUT - Provider not responding', data_get($fresh->response, 'message'));
+        $this->assertSame('Waiting', data_get($fresh->response, 'message'));
+        $this->assertSame('TIMEOUT - Provider not responding', data_get($fresh->request, 'internal_dispatch_note'));
     }
 
     public function test_provider_low_balance_waits_without_refunding_customer(): void
@@ -174,7 +176,8 @@ class ProviderFailureLifecycleTest extends TestCase
         $this->assertFalse((bool)$fresh->processing);
         $this->assertSame('80.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
         $this->assertSame('charged', data_get($fresh->request, 'financial_state'));
-        $this->assertSame('NO ENOUGH BALANCE AT PROVIDER', data_get($fresh->response, 'message'));
+        $this->assertSame('Waiting', data_get($fresh->response, 'message'));
+        $this->assertSame('NO ENOUGH BALANCE AT PROVIDER', data_get($fresh->request, 'internal_dispatch_note'));
     }
 
     public function test_explicit_provider_rejection_refunds_exactly_once(): void
@@ -200,6 +203,8 @@ class ProviderFailureLifecycleTest extends TestCase
         $this->assertFalse((bool)$fresh->processing);
         $this->assertSame('100.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
         $this->assertSame('refunded', data_get($fresh->request, 'financial_state'));
+        $this->assertSame('Rejected', data_get($fresh->response, 'message'));
+        $this->assertSame('Rejected by provider', data_get($fresh->request, 'internal_provider_note'));
 
         // A repeated save/status observation must not refund the same order twice.
         $fresh->comments = 'Reviewed after rejection';
@@ -207,7 +212,7 @@ class ProviderFailureLifecycleTest extends TestCase
         $this->assertSame('100.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
     }
 
-    public function test_authentication_failure_is_terminal_and_refunds_customer(): void
+    public function test_authentication_failure_waits_for_automatic_retry_without_refund(): void
     {
         [$user, , , $order] = $this->setupClaimedOrder();
 
@@ -219,11 +224,29 @@ class ProviderFailureLifecycleTest extends TestCase
         $this->dispatcherWithSender($sender)->send('imei', $order->id);
 
         $fresh = $order->fresh();
-        $this->assertSame('rejected', $fresh->status);
+        $this->assertSame('waiting', $fresh->status);
         $this->assertFalse((bool)$fresh->processing);
-        $this->assertSame('100.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
-        $this->assertSame('refunded', data_get($fresh->request, 'financial_state'));
-        $this->assertSame('AUTH FAILED - Check username/api_key/auth_mode', data_get($fresh->response, 'message'));
+        $this->assertSame('80.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
+        $this->assertSame('charged', data_get($fresh->request, 'financial_state'));
+        $this->assertSame('Waiting', data_get($fresh->response, 'message'));
+        $this->assertSame('AUTH FAILED - Check username/api_key/auth_mode', data_get($fresh->request, 'internal_dispatch_note'));
+
+        $claimed = app(OrderDispatchClaimService::class)->claim(ImeiOrder::class, $fresh->id);
+        $this->assertNotNull($claimed);
+
+        $recoveredSender = Mockery::mock(OrderSender::class);
+        $recoveredSender->shouldReceive('sendImei')->once()->andReturn([
+            'ok' => true,
+            'status' => 'inprogress',
+            'remote_id' => 'REMOTE-AFTER-FIX-1',
+            'response_ui' => ['type' => 'info', 'message' => 'In Progress'],
+        ]);
+        $this->dispatcherWithSender($recoveredSender)->send('imei', $fresh->id);
+
+        $retried = $fresh->fresh();
+        $this->assertSame('inprogress', $retried->status);
+        $this->assertSame('REMOTE-AFTER-FIX-1', $retried->remote_id);
+        $this->assertNull(data_get($retried->request, 'internal_dispatch_note'));
     }
 
     public function test_http_503_is_retryable_and_does_not_refund(): void
@@ -242,6 +265,29 @@ class ProviderFailureLifecycleTest extends TestCase
         $this->assertFalse((bool)$fresh->processing);
         $this->assertSame('80.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
         $this->assertSame('charged', data_get($fresh->request, 'financial_state'));
-        $this->assertSame('PROVIDER MAINTENANCE / DOWN', data_get($fresh->response, 'message'));
+        $this->assertSame('Waiting', data_get($fresh->response, 'message'));
+        $this->assertSame('PROVIDER MAINTENANCE / DOWN', data_get($fresh->request, 'internal_dispatch_note'));
+    }
+
+    public function test_failed_gateway_result_waits_even_when_gateway_labels_it_rejected(): void
+    {
+        [$user, , , $order] = $this->setupClaimedOrder();
+
+        $sender = Mockery::mock(OrderSender::class);
+        $sender->shouldReceive('sendImei')->once()->andReturn([
+            'ok' => false,
+            'retryable' => false,
+            'status' => 'rejected',
+            'response_ui' => ['type' => 'error', 'message' => 'Invalid API key'],
+            'response_raw' => ['ERROR' => [['MESSAGE' => 'Invalid API key']]],
+        ]);
+
+        $this->dispatcherWithSender($sender)->send('imei', $order->id);
+
+        $fresh = $order->fresh();
+        $this->assertSame('waiting', $fresh->status);
+        $this->assertSame('80.0000', number_format((float)$user->fresh()->balance, 4, '.', ''));
+        $this->assertSame('Waiting', data_get($fresh->response, 'message'));
+        $this->assertSame('AUTH FAILED - Check username/api_key/auth_mode', data_get($fresh->request, 'internal_dispatch_note'));
     }
 }
