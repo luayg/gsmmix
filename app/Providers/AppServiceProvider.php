@@ -46,7 +46,8 @@ class AppServiceProvider extends ServiceProvider
                 $view->with('headerPages', collect())->with('footerPages', collect());
                 return;
             }
-            $pages = Page::query()->where('status','published')->where(function($q){$q->whereNull('published_at')->orWhere('published_at','<=',now());})->with('translations')->orderBy('ordering')->get();
+            $pages = Page::query()->where('status','published')->where(function($q){$q->whereNull('published_at')->orWhere('published_at','<=',now());})
+                ->when(!auth()->check(),fn($q)=>$q->where('authenticated_only',false))->with('translations')->orderBy('ordering')->get();
             $view->with('headerPages',$pages->where('placement','header'))->with('footerPages',$pages->where('placement','footer'));
         });
 

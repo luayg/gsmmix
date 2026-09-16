@@ -2,13 +2,13 @@
 @section('title', $page ? 'Edit page' : 'Create page')
 @section('content')
 <div class="card"><div class="card-header bg-primary text-white">{{ $page ? 'Edit '.$page->slug : 'Create page' }}</div><div class="card-body">
-@if($page?->system)<div class="alert alert-info"><i class="fa-solid fa-shield-halved me-2"></i>Core customer page: route, visibility and placement are protected. Content and SEO remain editable.</div>@endif
+@if($page?->system)<div class="alert alert-info"><i class="fa-solid fa-shield-halved me-2"></i>Core page: its route and placement are protected, but you can publish or hide it and edit its content and SEO.</div>@endif
 @if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif
 @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 <form method="POST" action="{{ $page ? route('admin.pages.update',$page) : route('admin.pages.store') }}">@csrf @if($page) @method('PUT') @endif
 <div class="row g-3">
 <div class="col-md-4"><label class="form-label">Slug</label><input class="form-control" name="slug" value="{{ old('slug',$page?->slug) }}" @readonly($page?->system) required></div>
-<div class="col-md-2"><label class="form-label">Status</label><select class="form-select" name="status" @disabled($page?->system)><option value="draft" @selected(old('status',$page?->status)==='draft')>Draft</option><option value="published" @selected(old('status',$page?->status)==='published')>Published</option></select></div>
+<div class="col-md-2"><label class="form-label">Status</label><select class="form-select" name="status"><option value="draft" @selected(old('status',$page?->status)==='draft')>Hidden</option><option value="published" @selected(old('status',$page?->status)==='published')>Visible</option></select></div>
 <div class="col-md-2"><label class="form-label">Placement</label><select class="form-select" name="placement" @disabled($page?->system)>@foreach(['header','footer','home','standalone'] as $place)<option @selected(old('placement',$page?->placement)===$place)>{{ $place }}</option>@endforeach</select></div>
 <div class="col-md-2"><label class="form-label">Order</label><input class="form-control" type="number" name="ordering" value="{{ old('ordering',$page?->ordering??0) }}" @readonly($page?->system)></div>
 <div class="col-md-2"><label class="form-label">Publish at</label><input class="form-control" type="datetime-local" name="published_at" value="{{ old('published_at',$page?->published_at?->format('Y-m-d\TH:i')) }}" @readonly($page?->system)></div>
