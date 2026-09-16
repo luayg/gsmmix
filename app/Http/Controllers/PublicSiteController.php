@@ -13,7 +13,7 @@ final class PublicSiteController extends Controller
 {
     public function home()
     {
-        $page=$this->page('home');
+        $page=$this->findPage('home');
         $products=Product::query()->where('active',true)->orderByDesc('new')->orderBy('ordering')->limit(8)->get();
         $counts=['imei'=>ImeiService::where('active',true)->count(),'server'=>ServerService::where('active',true)->count(),'file'=>FileService::where('active',true)->count(),'smm'=>SmmService::where('active',true)->count()];
         return view('site.home',compact('page','products','counts'));
@@ -25,5 +25,5 @@ final class PublicSiteController extends Controller
         $page->load('translations.language');
         return view('site.page',compact('page'));
     }
-    private function page(string $slug): ?Page { return Page::query()->where('slug',$slug)->with('translations.language')->first(); }
+    private function findPage(string $slug): ?Page { return Page::query()->where('slug',$slug)->with('translations.language')->first(); }
 }
