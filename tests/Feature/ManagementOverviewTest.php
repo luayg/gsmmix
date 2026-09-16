@@ -69,7 +69,7 @@ class ManagementOverviewTest extends SecurityTestCase
     public function test_modules_without_implementation_report_unavailability_instead_of_fake_success(): void
     {
         foreach ([
-            'finances.invoices.index', 'pages.index', 'downloads.index', 'downloads.categories.index',
+            'downloads.index', 'downloads.categories.index',
             'system.filemanager', 'system.update', 'system.maintenance', 'system.backups',
             'logs.access', 'logs.activity', 'logs.error',
         ] as $name) {

@@ -79,6 +79,9 @@ final class AdminPermissions
         if ($name === 'admin.settings.mail.test') {
             return $method === 'POST' ? ['settings.edit'] : null;
         }
+        if ($name === 'admin.finances.invoices.payments.store') {
+            return $method === 'POST' ? ['finances.edit'] : null;
+        }
         if ($action === 'bulk') {
             if ($safe || !in_array($bulkAction, ['active', 'inactive', 'delete'], true)) {
                 return null;
@@ -96,7 +99,7 @@ final class AdminPermissions
             return [$module . '.edit'];
         }
         if (!$safe) {
-            return in_array($action, ['update', 'import', 'toggle', 'sync', 'syncFields', 'set_overdraft', 'add_remove', 'add_payment'], true)
+            return in_array($action, ['update', 'import', 'toggle', 'sync', 'syncFields', 'set_overdraft', 'add_remove', 'add_payment', 'cancel'], true)
                 ? [$module . '.edit']
                 : null;
         }
@@ -108,6 +111,7 @@ final class AdminPermissions
             'access', 'activity', 'error', 'general', 'mail', 'payment', 'languages',
             'currencies', 'filemanager', 'update', 'maintenance', 'backups',
             'translations', 'preview', 'export',
+            'print',
         ];
         return in_array($action, $readActions, true) ? [$module . '.view'] : null;
     }

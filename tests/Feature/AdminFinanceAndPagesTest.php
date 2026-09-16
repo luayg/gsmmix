@@ -1,0 +1,67 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Invoice;
+use App\Models\Page;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+use Tests\Support\SecurityTestCase;
+
+class AdminFinanceAndPagesTest extends SecurityTestCase
+{
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Schema::table('users', fn(Blueprint $t)=>$t->decimal('balance',14,4)->default(0));
+        (require database_path('migrations/2025_10_06_000000_create_finances_tables.php'))->up();
+        Schema::create('settings', function(Blueprint $t){ $t->id(); $t->string('setting_key')->unique(); $t->string('group_name'); $t->text('value')->nullable(); $t->string('value_type')->default('string'); $t->boolean('is_encrypted')->default(false); $t->timestamps(); });
+        (require database_path('migrations/2026_09_16_000200_create_languages_and_currencies_tables.php'))->up();
+        Schema::create('payment_transactions', function(Blueprint $t){ $t->id(); });
+        (require database_path('migrations/2026_09_16_000500_create_invoices_and_content_pages.php'))->up();
+    }
+
+    public function test_transaction_filters_statement_and_exports_are_read_only(): void
+    {
+        $admin=$this->user('Administrator'); $admin->update(['balance'=>'75.0000']);
+        DB::table('finance_accounts')->insert(['user_id'=>$admin->id,'locked_amount'=>0,'total_receipts'=>100,'paid_credits'=>25,'overdraft_limit'=>0]);
+        DB::table('finance_transactions')->insert(['user_id'=>$admin->id,'kind'=>'payment','direction'=>'income','paid'=>1,'amount'=>25,'reference'=>'PAY-100','balance_before'=>50,'balance_after'=>75,'created_at'=>now(),'updated_at'=>now()]);
+        $this->actingAs($admin);
+        $this->get(route('admin.finances.transactions.index',['q'=>'PAY-100']))->assertOk()->assertSee('PAY-100');
+        $this->get(route('admin.finances.transactions.show',1))->assertOk()->assertSee('Balance before')->assertSee('50.0000');
+        $this->get(route('admin.finances.transactions.export'))->assertOk()->assertDownload();
+        $this->get(route('admin.finances.statements.show',$admin))->assertOk()->assertSee('PAY-100')->assertSee('Credits');
+        $this->assertDatabaseCount('finance_transactions',1);
+    }
+
+    public function test_invoice_totals_snapshots_and_issued_record_guards(): void
+    {
+        $admin=$this->user('Administrator'); $customer=$this->user(); $this->actingAs($admin);
+        $response=$this->post(route('admin.finances.invoices.store'),['user_id'=>$customer->id,'status'=>'pending','currency_code'=>'USD','exchange_rate'=>'1','issued_at'=>'2026-09-16','due_at'=>'2026-09-30','discount_total'=>'2','fee_total'=>'1','items'=>[['description'=>'Service','quantity'=>'2','unit_price'=>'10','discount'=>'1','tax_rate'=>'10']]]);
+        $invoice=Invoice::firstOrFail(); $response->assertRedirect(route('admin.finances.invoices.show',$invoice));
+        $this->assertSame('pending',$invoice->status); $this->assertSame($customer->email,$invoice->customer_snapshot['email']); $this->assertSame('20.9000',$invoice->total);
+        $this->get(route('admin.finances.invoices.show',$invoice))->assertOk()->assertSee($invoice->number)->assertSee('20.9000');
+        $this->post(route('admin.finances.invoices.payments.store',$invoice),['amount'=>'20.9','reference'=>'BANK-1','paid_at'=>'2026-09-16 10:00:00'])->assertRedirect();
+        $this->assertSame('paid',$invoice->fresh()->status);
+        $this->get(route('admin.finances.invoices.edit',$invoice))->assertStatus(409);
+        $this->delete(route('admin.finances.invoices.destroy',$invoice))->assertStatus(409);
+    }
+
+    public function test_multilingual_pages_are_sanitized_and_system_pages_are_protected(): void
+    {
+        $admin=$this->user('Administrator'); $this->actingAs($admin); $language=DB::table('languages')->first();
+        $response=$this->post(route('admin.pages.store'),['slug'=>'about-us','status'=>'published','placement'=>'footer','ordering'=>2,'translations'=>[['language_id'=>$language->id,'title'=>'About','content'=>'<p onclick="bad()">Safe</p><script>alert(1)</script>','seo_title'=>'About us','seo_description'=>'Company profile']]]);
+        $page=Page::firstOrFail(); $response->assertRedirect(route('admin.pages.edit',$page));
+        $this->assertStringNotContainsString('script',$page->translations()->first()->content); $this->assertStringNotContainsString('onclick',$page->translations()->first()->content);
+        $this->get(route('admin.pages.preview',$page))->assertOk()->assertSee('Safe');
+        $page->update(['system'=>true]); $this->delete(route('admin.pages.destroy',$page))->assertSessionHasErrors('page');
+    }
+
+    public function test_page_editor_and_finance_mutations_require_separate_permissions(): void
+    {
+        $staff=$this->user(); $staff->givePermissionTo(['admin.access','pages.view','finances.view']); $this->actingAs($staff);
+        $this->get(route('admin.pages.index'))->assertOk(); $this->get(route('admin.finances.invoices.index'))->assertOk();
+        $this->post(route('admin.pages.store'),[])->assertForbidden(); $this->post(route('admin.finances.invoices.store'),[])->assertForbidden();
+    }
+}

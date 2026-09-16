@@ -14,13 +14,26 @@ class FinanceTransaction extends Model
         'direction',      // income | expense
         'paid',           // 0/1
         'amount',
+        'currency_code',
+        'original_amount',
+        'exchange_rate',
         'reference',
         'note',
+        'balance_before',
         'balance_after',
+        'source_type',
+        'source_id',
     ];
+
+    protected function casts(): array
+    {
+        return ['paid' => 'boolean', 'amount' => 'decimal:4', 'original_amount' => 'decimal:4', 'exchange_rate' => 'decimal:8', 'balance_before' => 'decimal:4', 'balance_after' => 'decimal:4'];
+    }
 
     public function user()
     {
         return $this->belongsTo(User::class);
     }
+
+    public function source() { return $this->morphTo(); }
 }
