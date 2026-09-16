@@ -8,12 +8,16 @@ use App\Models\Currency;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Http\Request;
 
 final class CurrencyController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $currencies = Currency::query()->orderBy('ordering')->orderBy('code')->get();
+        $currencies = Currency::query()
+            ->when($request->filled('q'), fn ($q) => $q->where(fn ($q) => $q->where('name', 'like', '%'.$request->string('q').'%')->orWhere('code', 'like', '%'.$request->string('q').'%')))
+            ->when($request->filled('status'), fn ($q) => $q->where('active', $request->input('status') === 'active'))
+            ->orderBy('ordering')->orderBy('code')->paginate(15)->withQueryString();
         return view('admin.settings.currencies.index', compact('currencies'));
     }
 
@@ -64,6 +68,29 @@ final class CurrencyController extends Controller
         }
         $currency->delete();
         return back()->with('ok', 'Currency deleted.');
+    }
+
+    public function bulkRates(Request $request): RedirectResponse
+    {
+        abort_unless($request->user('web')?->can('settings.edit'), 403);
+        $data = $request->validate(['rates' => ['required', 'array', 'max:250'], 'rates.*' => ['required', 'decimal:0,8', 'between:0.00000001,999999999999.99999999']]);
+        DB::transaction(function () use ($data): void {
+            $currencies = Currency::query()->whereIn('id', array_keys($data['rates']))->lockForUpdate()->get();
+            if ($currencies->count() !== count($data['rates'])) throw ValidationException::withMessages(['rates' => 'One or more currencies no longer exist.']);
+            foreach ($currencies as $currency) {
+                $rate = $currency->is_default ? '1' : (string)$data['rates'][$currency->id];
+                $currency->update(['exchange_rate' => $rate, 'rate_updated_at' => now()]);
+            }
+        });
+        return back()->with('ok', 'Exchange rates updated.');
+    }
+
+    public function export()
+    {
+        return response()->streamDownload(function (): void {
+            $out = fopen('php://output', 'w'); fputcsv($out, ['code', 'name', 'exchange_rate', 'active', 'updated_at']);
+            Currency::query()->orderBy('code')->each(fn (Currency $c) => fputcsv($out, [$c->code, $c->name, $c->exchange_rate, $c->active ? 1 : 0, $c->rate_updated_at?->toIso8601String()])); fclose($out);
+        }, 'currencies.csv', ['Content-Type' => 'text/csv']);
     }
 
     private function payload(SaveCurrencyRequest $request): array

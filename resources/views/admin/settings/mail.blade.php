@@ -1,40 +1,18 @@
 @extends('layouts.admin')
-
 @section('title', 'Mail settings')
-
 @section('content')
-<div class="card mb-4">
-  <div class="card-header bg-primary text-white"><i class="fas fa-envelope me-1"></i> Mail settings</div>
-  <div class="card-body">
-    @if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif
-    @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
-    <form method="POST" action="{{ route('admin.settings.mail.update') }}">
-      @csrf @method('PUT')
-      <div class="row g-3">
-        <div class="col-md-4"><label class="form-label">Mailer</label><select name="mailer" class="form-select" id="mailer">@foreach(['smtp'=>'SMTP','sendmail'=>'Sendmail','log'=>'Log (testing)'] as $value=>$label)<option value="{{ $value }}" @selected(old('mailer', $settings['mail.mailer']) === $value)>{{ $label }}</option>@endforeach</select></div>
-        <div class="col-md-5"><label class="form-label">SMTP host</label><input name="host" class="form-control" maxlength="255" value="{{ old('host', $settings['mail.host']) }}"></div>
-        <div class="col-md-3"><label class="form-label">Port</label><input type="number" min="1" max="65535" name="port" class="form-control" value="{{ old('port', $settings['mail.port']) }}"></div>
-        <div class="col-md-4"><label class="form-label">Encryption</label><select name="encryption" class="form-select"><option value="">None</option><option value="tls" @selected(old('encryption', $settings['mail.encryption']) === 'tls')>TLS</option><option value="ssl" @selected(old('encryption', $settings['mail.encryption']) === 'ssl')>SSL</option></select></div>
-        <div class="col-md-4"><label class="form-label">Username</label><input name="username" autocomplete="off" class="form-control" value="{{ old('username', $settings['mail.username']) }}"></div>
-        <div class="col-md-4"><label class="form-label">Password</label><input type="password" name="password" autocomplete="new-password" class="form-control" value="" placeholder="{{ $passwordConfigured ? 'Leave blank to keep current password' : 'Enter SMTP password' }}"><div class="form-text">{{ $passwordConfigured ? 'A password is securely stored.' : 'No saved password.' }}</div></div>
-        <div class="col-md-5"><label class="form-label">From address</label><input type="email" name="from_address" required class="form-control" value="{{ old('from_address', $settings['mail.from_address']) }}"></div>
-        <div class="col-md-5"><label class="form-label">From name</label><input name="from_name" required maxlength="120" class="form-control" value="{{ old('from_name', $settings['mail.from_name']) }}"></div>
-        <div class="col-md-2"><label class="form-label">Timeout</label><input type="number" name="timeout" min="1" max="60" required class="form-control" value="{{ old('timeout', $settings['mail.timeout']) }}"></div>
-      </div>
-      <div class="mt-4 text-end"><button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i> Save mail settings</button></div>
-    </form>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-header"><i class="fas fa-paper-plane me-1"></i> Send test email</div>
-  <div class="card-body">
-    <p class="text-muted small">Save the settings first. Test sending is limited to three attempts per minute.</p>
-    <form method="POST" action="{{ route('admin.settings.mail.test') }}" class="row g-2 align-items-end">
-      @csrf
-      <div class="col-md-8"><label class="form-label">Recipient</label><input type="email" name="test_email" required class="form-control" value="{{ old('test_email', auth()->user()->email) }}"></div>
-      <div class="col-md-4"><button class="btn btn-outline-primary w-100" type="submit">Send test email</button></div>
-    </form>
-  </div>
-</div>
+@if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif
+@if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+<ul class="nav nav-tabs mb-3" role="tablist"><li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#mail-server">Mail server</button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mail-templates">Message templates <span class="badge bg-secondary">{{ $templates->total() }}</span></button></li><li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#mail-test">Test delivery</button></li></ul>
+<div class="tab-content"><div class="tab-pane fade show active" id="mail-server"><div class="card"><div class="card-header"><i class="fas fa-server me-1"></i> Outgoing mail server</div><div class="card-body">
+<form method="POST" action="{{ route('admin.settings.mail.update') }}">@csrf @method('PUT')<div class="row g-3">
+ <div class="col-md-3"><label class="form-label">Mailer</label><select name="mailer" class="form-select">@foreach(['smtp'=>'SMTP','sendmail'=>'Sendmail','log'=>'Log (testing)'] as $value=>$label)<option value="{{ $value }}" @selected(old('mailer',$settings['mail.mailer'])===$value)>{{ $label }}</option>@endforeach</select></div><div class="col-md-6"><label class="form-label">SMTP host</label><input name="host" class="form-control" value="{{ old('host',$settings['mail.host']) }}"></div><div class="col-md-3"><label class="form-label">Port</label><input type="number" name="port" min="1" max="65535" class="form-control" value="{{ old('port',$settings['mail.port']) }}"></div>
+ <div class="col-md-3"><label class="form-label">Encryption</label><select name="encryption" class="form-select"><option value="">None</option><option value="tls" @selected(old('encryption',$settings['mail.encryption'])==='tls')>TLS</option><option value="ssl" @selected(old('encryption',$settings['mail.encryption'])==='ssl')>SSL</option></select></div><div class="col-md-4"><label class="form-label">Username</label><input name="username" autocomplete="off" class="form-control" value="{{ old('username',$settings['mail.username']) }}"></div><div class="col-md-5"><label class="form-label">Password</label><input type="password" name="password" autocomplete="new-password" class="form-control" placeholder="{{ $passwordConfigured?'Leave blank to keep saved password':'Enter SMTP password' }}"></div>
+ <div class="col-md-5"><label class="form-label">From address</label><input type="email" name="from_address" required class="form-control" value="{{ old('from_address',$settings['mail.from_address']) }}"></div><div class="col-md-5"><label class="form-label">From name</label><input name="from_name" required class="form-control" value="{{ old('from_name',$settings['mail.from_name']) }}"></div><div class="col-md-2"><label class="form-label">Timeout</label><input type="number" name="timeout" min="1" max="60" class="form-control" value="{{ old('timeout',$settings['mail.timeout']) }}"></div>
+</div><div class="text-end mt-4"><button class="btn btn-primary"><i class="fas fa-save me-1"></i> Save server settings</button></div></form></div></div></div>
+<div class="tab-pane fade" id="mail-templates"><div class="card"><div class="card-header d-flex justify-content-between"><span><i class="fas fa-file-alt me-1"></i> Notification templates</span><button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#newTemplate">Add template</button></div><div class="card-body"><div class="alert alert-info small">Use placeholders such as <code>@{{user_name}}</code>, <code>@{{order_id}}</code> and <code>@{{site_name}}</code>. Available placeholders depend on the notification that sends the template.</div><div class="table-responsive"><table class="table table-striped align-middle"><thead><tr><th>Name</th><th>Key</th><th>Subject</th><th>Audience</th><th>Status</th><th class="text-end">Actions</th></tr></thead><tbody>@forelse($templates as $template)<tr><td>{{ $template->name }}</td><td><code>{{ $template->key }}</code></td><td>{{ $template->subject }}</td><td>{{ ucfirst($template->audience) }}</td><td><span class="badge {{ $template->active?'bg-success':'bg-secondary' }}">{{ $template->active?'Active':'Inactive' }}</span></td><td class="text-end text-nowrap"><a target="_blank" class="btn btn-info btn-sm" href="{{ route('admin.settings.mail.templates.preview',$template) }}">Preview</a> <button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#template{{ $template->id }}">Edit</button> <form class="d-inline" method="POST" action="{{ route('admin.settings.mail.templates.destroy',$template) }}" onsubmit="return confirm('Delete this template?')">@csrf @method('DELETE')<button class="btn btn-danger btn-sm">Delete</button></form></td></tr>@empty<tr><td colspan="6" class="text-center text-muted py-4">No templates yet. Add the templates needed by customer notifications.</td></tr>@endforelse</tbody></table></div>{{ $templates->links() }}</div></div></div>
+<div class="tab-pane fade" id="mail-test"><div class="card"><div class="card-header"><i class="fas fa-paper-plane me-1"></i> Test saved configuration</div><div class="card-body"><p class="text-muted">Save server settings first. Sending is limited to three attempts per minute.</p><form method="POST" action="{{ route('admin.settings.mail.test') }}" class="row g-2 align-items-end">@csrf<div class="col-md-8"><label class="form-label">Recipient</label><input type="email" name="test_email" required class="form-control" value="{{ old('test_email',auth()->user()->email) }}"></div><div class="col-md-4"><button class="btn btn-outline-primary w-100">Send test email</button></div></form></div></div></div></div>
+@php($blank = new \App\Models\MailTemplate(['audience'=>'user','active'=>true]))
+@include('admin.settings.mail-template-modal',['template'=>$blank,'modalId'=>'newTemplate','action'=>route('admin.settings.mail.templates.store'),'method'=>'POST'])
+@foreach($templates as $template)@include('admin.settings.mail-template-modal',['template'=>$template,'modalId'=>'template'.$template->id,'action'=>route('admin.settings.mail.templates.update',$template),'method'=>'PUT'])@endforeach
 @endsection

@@ -25,6 +25,8 @@ final class AppSettings
                 config([
                     'app.name' => $general['general.site_name'] ?? config('app.name'),
                     'app.timezone' => $general['general.timezone'] ?? config('app.timezone'),
+                    'session.lifetime' => $general['general.session_lifetime'] ?? config('session.lifetime'),
+                    'session.expire_on_close' => $general['general.session_expire_on_close'] ?? config('session.expire_on_close'),
                 ]);
             }
             if (Schema::hasTable('languages')) {

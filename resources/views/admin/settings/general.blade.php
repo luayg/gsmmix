@@ -1,34 +1,28 @@
 @extends('layouts.admin')
-
 @section('title', 'General settings')
-
 @section('content')
-<div class="card">
-  <div class="card-header bg-primary text-white"><i class="fas fa-sliders-h me-1"></i> General settings</div>
-  <div class="card-body">
-    @if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif
-    @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
-
-    <form method="POST" action="{{ route('admin.settings.general.update') }}" enctype="multipart/form-data">
-      @csrf @method('PUT')
-      <div class="row g-3">
-        <div class="col-md-6"><label class="form-label">Site name</label><input name="site_name" class="form-control" maxlength="120" required value="{{ old('site_name', $settings['general.site_name']) }}"></div>
-        <div class="col-md-6"><label class="form-label">Tagline</label><input name="site_tagline" class="form-control" maxlength="255" value="{{ old('site_tagline', $settings['general.site_tagline']) }}"></div>
-        <div class="col-md-6"><label class="form-label">Contact email</label><input type="email" name="contact_email" class="form-control" value="{{ old('contact_email', $settings['general.contact_email']) }}"></div>
-        <div class="col-md-6"><label class="form-label">Contact phone</label><input name="contact_phone" class="form-control" maxlength="50" value="{{ old('contact_phone', $settings['general.contact_phone']) }}"></div>
-        <div class="col-md-6"><label class="form-label">Timezone</label><select name="timezone" class="form-select" required>@foreach(timezone_identifiers_list() as $timezone)<option value="{{ $timezone }}" @selected(old('timezone', $settings['general.timezone']) === $timezone)>{{ $timezone }}</option>@endforeach</select></div>
-        <div class="col-md-6"><label class="form-label">Date format</label><select name="date_format" class="form-select">@foreach(['Y-m-d','d/m/Y','m/d/Y','d M Y'] as $format)<option value="{{ $format }}" @selected(old('date_format', $settings['general.date_format']) === $format)>{{ now()->format($format) }} ({{ $format }})</option>@endforeach</select></div>
-        <div class="col-md-6">
-          <label class="form-label">Site logo</label><input type="file" name="logo" class="form-control" accept=".png,.jpg,.jpeg,.webp">
-          @if($settings['general.logo'])<div class="mt-2"><img src="{{ \Illuminate\Support\Facades\Storage::disk('public')->url($settings['general.logo']) }}" alt="Current logo" style="max-height:72px;max-width:240px"></div>@endif
-        </div>
-        <div class="col-12"><hr><h6>Enabled modules</h6></div>
-        @foreach(['registration_enabled'=>'Public registration','service_imei_enabled'=>'IMEI services','service_server_enabled'=>'Server services','service_file_enabled'=>'File services','service_smm_enabled'=>'SMM services','store_enabled'=>'Retail store'] as $key => $label)
-          <div class="col-md-4"><div class="form-check form-switch"><input type="hidden" name="{{ $key }}" value="0"><input class="form-check-input" type="checkbox" name="{{ $key }}" value="1" id="{{ $key }}" @checked(old($key, $settings['general.'.$key]))><label class="form-check-label" for="{{ $key }}">{{ $label }}</label></div></div>
-        @endforeach
-      </div>
-      <div class="mt-4 text-end"><button class="btn btn-primary" type="submit"><i class="fas fa-save me-1"></i> Save settings</button></div>
-    </form>
-  </div>
-</div>
+@php($v = fn($key, $default = '') => old($key, $settings['general.'.$key] ?? $default))
+@if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif
+@if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+<form method="POST" action="{{ route('admin.settings.general.update') }}" enctype="multipart/form-data">@csrf @method('PUT')
+<div class="row g-4"><div class="col-xl-6">
+ <div class="card mb-4"><div class="card-header"><i class="fas fa-building me-1"></i> Site information</div><div class="card-body"><div class="row g-3">
+  <div class="col-md-7"><label class="form-label">Site name</label><input name="site_name" class="form-control" required maxlength="120" value="{{ $v('site_name') }}"></div><div class="col-md-5"><label class="form-label">Tagline</label><input name="site_tagline" class="form-control" maxlength="255" value="{{ $v('site_tagline') }}"></div>
+  <div class="col-md-6"><label class="form-label">Contact email</label><input type="email" name="contact_email" class="form-control" value="{{ $v('contact_email') }}"></div><div class="col-md-6"><label class="form-label">Contact phone</label><input name="contact_phone" class="form-control" maxlength="50" value="{{ $v('contact_phone') }}"></div>
+  <div class="col-12"><label class="form-label">Address</label><textarea name="contact_address" maxlength="500" rows="2" class="form-control">{{ $v('contact_address') }}</textarea></div><div class="col-md-6"><label class="form-label">Site logo</label><input type="file" name="logo" class="form-control" accept=".png,.jpg,.jpeg,.webp"></div><div class="col-md-6"><label class="form-label">Favicon</label><input type="file" name="favicon" class="form-control" accept=".png,.ico"></div>
+ </div></div></div>
+ <div class="card mb-4"><div class="card-header"><i class="fas fa-users-cog me-1"></i> User defaults</div><div class="card-body"><div class="row g-3">
+  <div class="col-md-4"><label class="form-label">Registration activation</label><select name="registration_activation" class="form-select">@foreach(['automatic'=>'Automatic','email'=>'Email verification','admin'=>'Admin approval'] as $key=>$label)<option value="{{ $key }}" @selected($v('registration_activation')===$key)>{{ $label }}</option>@endforeach</select></div><div class="col-md-4"><label class="form-label">Default group</label><select name="default_group_id" class="form-select"><option value="">No default</option>@foreach($groups as $group)<option value="{{ $group->id }}" @selected((string)$v('default_group_id')===(string)$group->id)>{{ $group->name }}</option>@endforeach</select></div><div class="col-md-4"><label class="form-label">Default overdraft</label><input type="number" min="0" step="0.00000001" name="default_overdraft" class="form-control" value="{{ $v('default_overdraft','0') }}"></div>
+  @foreach(['registration_enabled'=>'Public registration','show_prices_to_guests'=>'Show prices to guests','show_original_prices'=>'Show original prices','allow_credit_transfers'=>'Allow credit transfers'] as $key=>$label)<div class="col-md-6"><input type="hidden" name="{{ $key }}" value="0"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="{{ $key }}" name="{{ $key }}" value="1" @checked($v($key))><label class="form-check-label" for="{{ $key }}">{{ $label }}</label></div></div>@endforeach
+ </div></div></div>
+ <div class="card"><div class="card-header"><i class="fas fa-share-alt me-1"></i> Social links</div><div class="card-body"><div class="row g-3">@foreach(['facebook_url'=>'Facebook','instagram_url'=>'Instagram','x_url'=>'X / Twitter','linkedin_url'=>'LinkedIn','telegram_url'=>'Telegram'] as $key=>$label)<div class="col-md-6"><label class="form-label">{{ $label }}</label><input type="url" name="{{ $key }}" class="form-control" placeholder="https://" value="{{ $v($key) }}"></div>@endforeach</div></div></div>
+</div><div class="col-xl-6">
+ <div class="card mb-4"><div class="card-header"><i class="fas fa-toggle-on me-1"></i> Modules and display</div><div class="card-body"><div class="row g-3">@foreach(['service_imei_enabled'=>'IMEI services','service_server_enabled'=>'Server services','service_file_enabled'=>'File services','service_smm_enabled'=>'SMM services','store_enabled'=>'Retail store','use_24_hour_time'=>'24-hour time format'] as $key=>$label)<div class="col-md-6"><input type="hidden" name="{{ $key }}" value="0"><div class="form-check form-switch"><input class="form-check-input" id="{{ $key }}" type="checkbox" name="{{ $key }}" value="1" @checked($v($key))><label class="form-check-label" for="{{ $key }}">{{ $label }}</label></div></div>@endforeach</div></div></div>
+ <div class="card mb-4"><div class="card-header"><i class="fas fa-clock me-1"></i> Locale and session</div><div class="card-body"><div class="row g-3">
+  <div class="col-md-6"><label class="form-label">Timezone</label><select name="timezone" class="form-select">@foreach(timezone_identifiers_list() as $timezone)<option value="{{ $timezone }}" @selected($v('timezone')===$timezone)>{{ $timezone }}</option>@endforeach</select></div><div class="col-md-6"><label class="form-label">Date format</label><select name="date_format" class="form-select">@foreach(['Y-m-d','d/m/Y','m/d/Y','d M Y'] as $format)<option value="{{ $format }}" @selected($v('date_format')===$format)>{{ now()->format($format) }} ({{ $format }})</option>@endforeach</select></div>
+  <div class="col-md-6"><label class="form-label">Session lifetime (minutes)</label><input type="number" min="5" max="43200" name="session_lifetime" class="form-control" value="{{ $v('session_lifetime',120) }}"></div><div class="col-md-6 d-flex align-items-end"><input type="hidden" name="session_expire_on_close" value="0"><div class="form-check form-switch mb-2"><input class="form-check-input" id="session_expire_on_close" type="checkbox" name="session_expire_on_close" value="1" @checked($v('session_expire_on_close'))><label class="form-check-label" for="session_expire_on_close">Expire when browser closes</label></div></div>
+  <div class="col-12"><label class="form-label">API low-balance warning threshold</label><div class="input-group"><input type="number" min="0" step="0.00000001" name="api_low_balance_threshold" class="form-control" value="{{ $v('api_low_balance_threshold','0') }}"><span class="input-group-text">Credits</span></div></div>
+ </div></div></div>
+ <div class="card"><div class="card-header"><i class="fas fa-search me-1"></i> Search metadata</div><div class="card-body"><div class="row g-3"><div class="col-12"><label class="form-label">Meta title</label><input name="meta_title" maxlength="70" class="form-control" value="{{ $v('meta_title') }}"></div><div class="col-12"><label class="form-label">Meta description</label><textarea name="meta_description" maxlength="170" rows="3" class="form-control">{{ $v('meta_description') }}</textarea></div><div class="col-12"><label class="form-label">Keywords</label><input name="meta_keywords" maxlength="500" class="form-control" value="{{ $v('meta_keywords') }}"><div class="form-text">Comma-separated. Arbitrary code injection is intentionally not allowed.</div></div></div></div></div>
+</div></div><div class="sticky-bottom bg-white border-top mt-4 py-3 text-end"><button class="btn btn-primary px-4"><i class="fas fa-save me-1"></i> Save all settings</button></div></form>
 @endsection
