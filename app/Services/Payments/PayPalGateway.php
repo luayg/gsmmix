@@ -10,6 +10,11 @@ use RuntimeException;
 
 final class PayPalGateway
 {
+    public function captureOrder(PaymentGateway $gateway, string $orderId): array
+    {
+        return $this->client($gateway)->withHeaders(['PayPal-Request-Id'=>'capture-'.$orderId])->withBody('{}','application/json')->post('/v2/checkout/orders/'.$orderId.'/capture')->throw()->json();
+    }
+
     public function createOrder(PaymentGateway $gateway, string $reference, string $amount, string $currency, string $returnUrl, string $cancelUrl): array
     {
         $response = $this->client($gateway)->withHeaders(['PayPal-Request-Id'=>$reference])->post('/v2/checkout/orders', [

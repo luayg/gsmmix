@@ -25,7 +25,7 @@ final class PaymentInitiator
         ]);
         try {
             $provider = match ($gateway->driver) {
-                'paypal' => $this->paypal->createOrder($gateway, $uuid, $quote['payable_currency'], $currency->code, $returnUrl, $cancelUrl),
+                'paypal' => $this->paypal->createOrder($gateway, $uuid, $quote['payable_currency'], $currency->code, $returnUrl.(str_contains($returnUrl,'?')?'&':'?').'payment='.urlencode($uuid), $cancelUrl),
                 'binance_pay' => $this->binance->createOrder($gateway, $uuid, $quote['payable_currency'], $currency->code, route('payment.webhook','binance-pay')),
                 'usdt' => $this->usdtInstructions($gateway, $payment),
             };

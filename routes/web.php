@@ -46,6 +46,10 @@ use App\Http\Controllers\Admin\Orders\ProductOrdersController;
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\PaymentWebhookController;
+use App\Http\Controllers\PublicSiteController;
+use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Customer\PortalController;
+use App\Http\Controllers\Customer\PaymentController as CustomerPaymentController;
 
 /*
 |--------------------------------------------------------------------------
@@ -53,7 +57,7 @@ use App\Http\Controllers\PaymentWebhookController;
 |--------------------------------------------------------------------------
 */
 
-Route::get('/', fn () => redirect()->route('admin.dashboard'));
+Route::get('/', [PublicSiteController::class,'home'])->name('home');
 Route::post('/payment/webhooks/{slug}', PaymentWebhookController::class)
     ->whereIn('slug', ['paypal', 'binance-pay'])
     ->middleware('throttle:120,1')
@@ -63,11 +67,30 @@ Route::view('/login', 'auth.login')->name('login');
 Route::middleware('guest')->group(function () {
     Route::get('/login', [LoginController::class, 'create'])->name('login');
     Route::post('/login', [LoginController::class, 'store']);
+    Route::get('/register', [RegisterController::class, 'create'])->name('register');
+    Route::post('/register', [RegisterController::class, 'store'])->middleware('throttle:5,1');
 });
 
 Route::middleware('auth')->group(function () {
     Route::post('/logout', [LoginController::class, 'destroy'])->name('logout');
+
+    Route::prefix('account')->name('customer.')->group(function () {
+        Route::get('/', [PortalController::class,'dashboard'])->name('dashboard');
+        Route::get('/orders', [PortalController::class,'ordersIndex'])->name('orders');
+        Route::get('/payments', [CustomerPaymentController::class,'index'])->name('payments.index');
+        Route::get('/add-funds', [CustomerPaymentController::class,'create'])->name('payments.create');
+        Route::post('/add-funds', [CustomerPaymentController::class,'store'])->middleware('throttle:10,1')->name('payments.store');
+        Route::get('/payments/paypal/return', [CustomerPaymentController::class,'paypalReturn'])->name('payments.paypal.return');
+        Route::get('/payments/{payment}', [CustomerPaymentController::class,'show'])->name('payments.show');
+        Route::get('/payments/{payment}/status', [CustomerPaymentController::class,'status'])->middleware('throttle:60,1')->name('payments.status');
+        Route::get('/profile', [PortalController::class,'profile'])->name('profile');
+        Route::put('/profile', [PortalController::class,'updateProfile'])->name('profile.update');
+    });
 });
+
+Route::get('/services', [PortalController::class,'services'])->name('site.services');
+Route::get('/store', [PortalController::class,'store'])->name('site.store');
+Route::get('/downloads', [PortalController::class,'downloads'])->name('site.downloads');
 
 Route::prefix('admin')->name('admin.')->group(function () {
 
@@ -438,4 +461,5 @@ Route::prefix('admin')->name('admin.')->group(function () {
 });
 
 require __DIR__ . '/admin_apis.php';
-require __DIR__ . '/auth.php';
+
+Route::get('/pages/{page:slug}', [PublicSiteController::class,'page'])->name('site.page');
