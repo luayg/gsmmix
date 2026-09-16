@@ -84,6 +84,10 @@ final class ManualPaymentReviewTest extends SecurityTestCase
             ->assertOk()
             ->assertSee($payment->uuid);
         $this->get(route('admin.finances.payment-reviews.proof', $payment))->assertOk();
+        $this->get(route('admin.finances.payment-reviews.show', $payment))
+            ->assertOk()
+            ->assertSee('paymentConfirmModal')
+            ->assertDontSee("return confirm(", false);
 
         $this->post(route('admin.finances.payment-reviews.approve', $payment), ['reference' => 'BANK-123'])
             ->assertRedirect(route('admin.finances.payment-reviews.show', $payment));
