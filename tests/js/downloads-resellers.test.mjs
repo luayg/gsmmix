@@ -8,6 +8,9 @@ test('download admin uses a modal with paid visibility and credit price', () => 
   assert.match(view, /option value="paid"/);
   assert.match(view, /name="price"/);
   assert.match(view, /data-editor="summernote"/);
+  assert.match(view, /class="[^"]*js-edit-download/);
+  assert.match(view, /id="editDownload"/);
+  assert.match(view, /admin\.downloads\.update/);
 });
 
 test('paid downloads use authenticated purchase and delivery endpoints', () => {
