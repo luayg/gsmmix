@@ -24,6 +24,7 @@ use Illuminate\Validation\Rule;
 use App\Services\Content\HtmlSanitizer;
 use App\Support\CustomerOrderResultPresenter;
 use App\Support\ServiceDescriptionPresenter;
+use App\Services\Settings\AppSettings;
 
 final class OrderController extends Controller
 {
@@ -39,6 +40,7 @@ final class OrderController extends Controller
     {
         $type = $this->type($request->input('type', 'imei'));
         abort_if($type==='product',404);
+        abort_unless((bool)app(AppSettings::class)->get('general.service_'.$type.'_enabled',true),404);
         $serviceModel = self::TYPES[$type][0];
         $services = $serviceModel::query()->where('active', true)->orderBy('ordering')->orderBy('id')->get();
         $fields = DB::table('custom_fields')->where('service_type', $type.'_service')
@@ -71,6 +73,7 @@ final class OrderController extends Controller
     public function store(Request $request, string $type)
     {
         $type = $this->type($type);
+        abort_unless((bool)app(AppSettings::class)->get('general.service_'.$type.'_enabled',true),404);
         $request->merge(['user_id' => $request->user()->id]);
         return app(self::TYPES[$type][2])->store($request);
     }

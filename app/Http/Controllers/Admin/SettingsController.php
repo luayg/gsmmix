@@ -22,8 +22,11 @@ final class SettingsController extends Controller
     public function general()
     {
         $settings = array_replace($this->generalDefaults(), $this->settings->group('general'));
+        $auth = $this->settings->group('auth');
+        $settings['auth.google_client_id'] = $auth['auth.google_client_id'] ?? '';
+        $googleSecretConfigured = filled($auth['auth.google_client_secret'] ?? null);
         $groups = Group::query()->orderBy('name')->get(['id', 'name']);
-        return view('admin.settings.general', compact('settings', 'groups'));
+        return view('admin.settings.general', compact('settings', 'groups', 'googleSecretConfigured'));
     }
 
     public function updateGeneral(UpdateGeneralSettingsRequest $request): RedirectResponse
@@ -51,7 +54,7 @@ final class SettingsController extends Controller
         foreach (['site_name', 'site_tagline', 'contact_email', 'contact_phone', 'contact_address', 'facebook_url', 'instagram_url', 'x_url', 'linkedin_url', 'telegram_url', 'meta_title', 'meta_description', 'meta_keywords', 'timezone', 'date_format', 'registration_activation','home_banner_title','home_banner_text','home_banner_button','home_banner_url'] as $key) {
             $values['general.'.$key] = ['value' => array_key_exists($key, $data) ? $data[$key] : ($current['general.'.$key] ?? $this->generalDefaults()['general.'.$key])];
         }
-        foreach (['registration_enabled', 'show_prices_to_guests', 'show_original_prices', 'allow_credit_transfers', 'use_24_hour_time', 'session_expire_on_close', 'service_imei_enabled', 'service_server_enabled', 'service_file_enabled', 'service_smm_enabled', 'store_enabled','home_banner_enabled'] as $key) {
+        foreach (['registration_enabled', 'show_prices_to_guests', 'show_original_prices', 'allow_credit_transfers', 'use_24_hour_time', 'session_expire_on_close', 'service_imei_enabled', 'service_server_enabled', 'service_file_enabled', 'service_smm_enabled', 'store_enabled','home_banner_enabled', 'two_factor_enabled', 'google_login_enabled'] as $key) {
             $values['general.'.$key] = ['value' => $request->boolean($key), 'type' => 'boolean'];
         }
         foreach (['default_group_id', 'session_lifetime'] as $key) $values['general.'.$key] = ['value' => $data[$key] ?? ($current['general.'.$key] ?? $this->generalDefaults()['general.'.$key]), 'type' => 'integer'];
@@ -60,6 +63,11 @@ final class SettingsController extends Controller
         $values['general.favicon'] = ['value' => $favicon];
         $values['general.home_banner'] = ['value' => $homeBanner];
         $this->settings->putMany('general', $values);
+        $authValues = ['auth.google_client_id' => ['value' => $data['google_client_id'] ?? null]];
+        if (filled($data['google_client_secret'] ?? null)) {
+            $authValues['auth.google_client_secret'] = ['value' => $data['google_client_secret'], 'encrypted' => true];
+        }
+        $this->settings->putMany('auth', $authValues);
 
         return back()->with('ok', 'General settings updated.');
     }
@@ -85,6 +93,8 @@ final class SettingsController extends Controller
             'mail.from_address' => ['value' => $data['from_address']],
             'mail.from_name' => ['value' => $data['from_name']],
             'mail.timeout' => ['value' => $data['timeout'], 'type' => 'integer'],
+            'mail.sendmail_path' => ['value' => $data['sendmail_path'] ?? null],
+            'mail.log_channel' => ['value' => $data['log_channel'] ?? null],
         ];
         if (filled($data['password'] ?? null)) {
             $values['mail.password'] = ['value' => $data['password'], 'encrypted' => true];
@@ -164,6 +174,8 @@ final class SettingsController extends Controller
             'mail.mailers.smtp.username' => $mail['mail.username'],
             'mail.mailers.smtp.password' => $mail['mail.password'],
             'mail.mailers.smtp.timeout' => $mail['mail.timeout'],
+            'mail.mailers.sendmail.path' => $mail['mail.sendmail_path'],
+            'mail.mailers.log.channel' => $mail['mail.log_channel'],
             'mail.from.address' => $mail['mail.from_address'],
             'mail.from.name' => $mail['mail.from_name'],
         ]);
@@ -189,6 +201,7 @@ final class SettingsController extends Controller
             'general.service_server_enabled' => true, 'general.service_file_enabled' => true,
             'general.service_smm_enabled' => true, 'general.store_enabled' => true, 'general.logo' => null, 'general.favicon' => null,
             'general.home_banner'=>null,'general.home_banner_enabled'=>false,'general.home_banner_title'=>'','general.home_banner_text'=>'','general.home_banner_button'=>'','general.home_banner_url'=>'',
+            'general.two_factor_enabled'=>false, 'general.google_login_enabled'=>false,
         ];
     }
 
@@ -200,6 +213,8 @@ final class SettingsController extends Controller
             'mail.username' => config('mail.mailers.smtp.username'), 'mail.password' => config('mail.mailers.smtp.password'),
             'mail.from_address' => config('mail.from.address', 'hello@example.com'),
             'mail.from_name' => config('mail.from.name', config('app.name')), 'mail.timeout' => (int) (config('mail.mailers.smtp.timeout') ?: 10),
+            'mail.sendmail_path' => config('mail.mailers.sendmail.path', '/usr/sbin/sendmail -bs -i'),
+            'mail.log_channel' => config('mail.mailers.log.channel'),
         ];
     }
 }

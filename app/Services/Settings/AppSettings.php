@@ -45,6 +45,8 @@ final class AppSettings
                     'mail.mailers.smtp.username' => $mail['mail.username'] ?? null,
                     'mail.mailers.smtp.password' => $mail['mail.password'] ?? null,
                     'mail.mailers.smtp.timeout' => $mail['mail.timeout'] ?? null,
+                    'mail.mailers.sendmail.path' => $mail['mail.sendmail_path'] ?? config('mail.mailers.sendmail.path'),
+                    'mail.mailers.log.channel' => $mail['mail.log_channel'] ?? config('mail.mailers.log.channel'),
                     'mail.from.address' => $mail['mail.from_address'] ?? config('mail.from.address'),
                     'mail.from.name' => $mail['mail.from_name'] ?? config('mail.from.name'),
                 ]);
@@ -65,13 +67,22 @@ final class AppSettings
             )->all();
         };
         // Never persist decrypted credentials in a shared cache backend.
-        return $group === 'mail' ? $load() : Cache::rememberForever(self::CACHE_PREFIX.$group, $load);
+        // Authentication and mail groups may contain decrypted credentials.
+        return in_array($group, ['mail', 'auth'], true) ? $load() : Cache::rememberForever(self::CACHE_PREFIX.$group, $load);
     }
 
     public function get(string $key, mixed $default = null): mixed
     {
-        $setting = Setting::query()->where('setting_key', $key)->first();
-        return $setting ? $this->decode($setting) : $default;
+        try {
+            if (!Schema::hasTable('settings')) {
+                return $default;
+            }
+            $setting = Setting::query()->where('setting_key', $key)->first();
+            return $setting ? $this->decode($setting) : $default;
+        } catch (Throwable $exception) {
+            report($exception);
+            return $default;
+        }
     }
 
     /** @param array<string, array{value:mixed,type?:string,encrypted?:bool}> $values */
@@ -91,7 +102,7 @@ final class AppSettings
                 );
             }
         });
-        if ($group !== 'mail') {
+        if (!in_array($group, ['mail', 'auth'], true)) {
             Cache::forget(self::CACHE_PREFIX.$group);
         }
     }

@@ -11,6 +11,7 @@ use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Services\Auth\LoginFlow;
 
 class LoginController extends Controller
 {
@@ -19,7 +20,7 @@ class LoginController extends Controller
         return response()->view('auth.login')->header('Cache-Control', 'no-store, private');
     }
 
-    public function store(Request $request)
+    public function store(Request $request, LoginFlow $flow)
     {
         // An IP limit also covers invalid forms and attempts across many usernames.
         $ipKey = 'login:ip:' . hash('sha256', (string) $request->ip());
@@ -44,12 +45,9 @@ class LoginController extends Controller
                 'status' => 'active',
             ], $request->boolean('remember'))) {
                 RateLimiter::clear($key);
-                $request->session()->regenerate();
-                $request->session()->put('password_hash_web', Auth::guard('web')->user()->getAuthPassword());
                 $this->logAccess($request,'login',true,$login,Auth::guard('web')->id());
                 $user = Auth::guard('web')->user();
-                $destination = $user->can('admin.access') ? route('admin.dashboard') : route('customer.dashboard');
-                return redirect()->intended($destination);
+                return $flow->completeOrChallenge($request, $user, $request->boolean('remember'));
             }
         }
 
