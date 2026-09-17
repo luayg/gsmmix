@@ -53,12 +53,6 @@ final class UpdateGeneralSettingsRequest extends FormRequest
             'google_client_secret' => ['nullable', 'string', 'max:1000'],
             'logo' => ['nullable', 'file', 'max:2048', new SafeRasterImage],
             'favicon' => ['nullable', 'file', 'max:512', new SafeRasterImage],
-            'home_banner' => ['nullable', 'file', 'max:6144', new SafeRasterImage],
-            'home_banner_enabled' => ['sometimes','boolean'],
-            'home_banner_title' => ['nullable','string','max:120'],
-            'home_banner_text' => ['nullable','string','max:500'],
-            'home_banner_button' => ['nullable','string','max:50'],
-            'home_banner_url' => ['nullable','url:http,https','max:1000'],
         ];
     }
 }

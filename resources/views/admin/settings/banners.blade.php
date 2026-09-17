@@ -1,0 +1,11 @@
+@extends('layouts.admin')
+@section('title','Home banners')
+@section('content')
+@if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif
+@if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
+<div class="d-flex justify-content-between align-items-center mb-3"><div><h1 class="h3 mb-1">Home banners</h1><p class="text-muted mb-0">Create multiple slides for the animated homepage carousel.</p></div><button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newBanner"><i class="fas fa-plus me-1"></i> Add banner</button></div>
+<div class="row g-4">@forelse($banners as $banner)<div class="col-lg-6"><div class="card h-100"><img src="{{ asset('storage/'.$banner->image_path) }}" class="card-img-top" style="height:220px;object-fit:cover" alt="{{ $banner->title }}"><div class="card-body"><div class="d-flex justify-content-between"><h2 class="h5">{{ $banner->title ?: 'Untitled banner' }}</h2><span class="badge {{ $banner->active?'bg-success':'bg-secondary' }}">{{ $banner->active?'Active':'Hidden' }}</span></div><p class="text-muted">{{ $banner->text }}</p><div class="small">Order: {{ $banner->ordering }}</div></div><div class="card-footer text-end"><button class="btn btn-warning btn-sm" data-bs-toggle="modal" data-bs-target="#banner{{ $banner->id }}">Edit</button> <form class="d-inline" method="POST" action="{{ route('admin.settings.banners.destroy',$banner) }}" onsubmit="return confirm('Delete this banner?')">@csrf @method('DELETE')<button class="btn btn-danger btn-sm">Delete</button></form></div></div></div>@empty<div class="col-12"><div class="card"><div class="card-body text-center text-muted py-5">No banners yet. Add the first slide.</div></div></div>@endforelse</div>
+@php($empty=new \App\Models\HomeBanner(['active'=>true,'ordering'=>0]))
+@include('admin.settings.banner-modal',['banner'=>$empty,'modalId'=>'newBanner','action'=>route('admin.settings.banners.store'),'method'=>'POST','requiresImage'=>true])
+@foreach($banners as $banner)@include('admin.settings.banner-modal',['banner'=>$banner,'modalId'=>'banner'.$banner->id,'action'=>route('admin.settings.banners.update',$banner),'method'=>'PUT','requiresImage'=>false])@endforeach
+@endsection

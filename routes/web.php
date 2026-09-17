@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\ProductCategoryController;
 use App\Http\Controllers\Admin\ProductController;
 use App\Http\Controllers\Admin\ManagementOverviewController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\HomeBannerController;
 use App\Http\Controllers\Admin\LanguageController;
 use App\Http\Controllers\Admin\CurrencyController;
 use App\Http\Controllers\Admin\PaymentGatewayController;
@@ -439,6 +440,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::prefix('settings')->name('settings.')->group(function () {
         Route::get('/general', [SettingsController::class, 'general'])->name('general');
         Route::put('/general', [SettingsController::class, 'updateGeneral'])->name('general.update');
+        Route::get('/banners', [HomeBannerController::class, 'index'])->name('banners');
+        Route::post('/banners', [HomeBannerController::class, 'store'])->name('banners.store');
+        Route::put('/banners/{banner}', [HomeBannerController::class, 'update'])->name('banners.update');
+        Route::delete('/banners/{banner}', [HomeBannerController::class, 'destroy'])->name('banners.destroy');
         Route::get('/mail', [SettingsController::class, 'mail'])->name('mail');
         Route::put('/mail', [SettingsController::class, 'updateMail'])->name('mail.update');
         Route::post('/mail/test', [SettingsController::class, 'testMail'])->middleware('throttle:3,1')->name('mail.test');

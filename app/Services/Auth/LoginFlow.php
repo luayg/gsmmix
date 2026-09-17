@@ -15,8 +15,8 @@ final class LoginFlow
 
     public function completeOrChallenge(Request $request, User $user, bool $remember = false)
     {
-        $enabled = (bool) $this->settings->get('general.two_factor_enabled', false);
-        if ($enabled && $user->two_factor_enabled) {
+        $mandatory = (bool) $this->settings->get('general.two_factor_enabled', false);
+        if ($mandatory || $user->two_factor_enabled) {
             Auth::guard('web')->logout();
             $code = (string) random_int(100000, 999999);
             $request->session()->put('two_factor', [
