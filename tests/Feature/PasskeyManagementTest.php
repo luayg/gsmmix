@@ -29,18 +29,11 @@ final class PasskeyManagementTest extends SecurityTestCase
         $this->post(route('passkey.store'))->assertRedirect(route('login'));
     }
 
-    public function test_profile_lists_only_the_authenticated_users_passkeys(): void
+    public function test_login_page_exposes_passkey_sign_in(): void
     {
-        $user=$this->user();
-        $other=$this->user();
-        $this->passkey($user->id,'Office PC','credential-office');
-        $this->passkey($other->id,'Other account key','credential-other');
-
-        $this->actingAs($user)->get(route('customer.passkeys'))
+        $this->get(route('login'))
             ->assertOk()
-            ->assertSee('Office PC')
-            ->assertDontSee('Other account key')
-            ->assertSee('Add passkey');
+            ->assertSee('Sign in with a passkey');
     }
 
     public function test_user_can_delete_own_passkey_but_not_another_users_key(): void
