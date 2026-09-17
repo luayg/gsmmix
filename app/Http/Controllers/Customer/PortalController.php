@@ -18,15 +18,17 @@ use App\Models\SmmService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
+use App\Support\CustomerOverview;
 
 final class PortalController extends Controller
 {
-    public function dashboard(Request $request)
+    public function dashboard(Request $request, CustomerOverview $overview)
     {
         $orders=$this->orders($request->user()->id);
         $payments=PaymentTransaction::query()->where('user_id',$request->user()->id)->latest()->limit(5)->get();
-        $stats=['progress'=>$orders->whereIn('status',['In Progress','in progress','processing'])->count(),'completed'=>$orders->whereIn('status',['Completed','completed'])->count(),'waiting'=>$orders->whereIn('status',['Waiting','waiting'])->count(),'total'=>$orders->count()];
-        return view('customer.dashboard',['recentOrders'=>$orders->take(6),'payments'=>$payments,'stats'=>$stats]);
+        $stats=['progress'=>$orders->whereIn('status',['inprogress','In Progress','in progress','processing'])->count(),'completed'=>$orders->whereIn('status',['success','Success','Completed','completed'])->count(),'waiting'=>$orders->whereIn('status',['Waiting','waiting'])->count(),'total'=>$orders->count()];
+        $financial=['locked'=>$overview->lockedAmount((int)$request->user()->id),'receipts'=>$overview->totalReceipts((int)$request->user()->id)];
+        return view('customer.dashboard',['recentOrders'=>$orders->take(6),'payments'=>$payments,'stats'=>$stats,'financial'=>$financial]);
     }
     public function ordersIndex(Request $request) { return view('customer.orders',['orders'=>$this->orders($request->user()->id)]); }
     public function services(Request $request)
@@ -52,7 +54,8 @@ final class PortalController extends Controller
     }
     private function orders(int $userId): Collection
     {
+        $overview=app(CustomerOverview::class);
         $sets=[['imei',ImeiOrder::class],['server',ServerOrder::class],['file',FileOrder::class],['smm',SmmOrder::class],['product',ProductOrder::class]];
-        return collect($sets)->flatMap(fn($set)=>$set[1]::query()->where('user_id',$userId)->latest()->limit(100)->get()->map(fn($o)=>['id'=>$o->id,'type'=>$set[0],'service'=>$o->service?->name ?? $o->product?->name ?? ucfirst($set[0]).' order','device'=>$o->device ?? '—','status'=>$o->status,'amount'=>$o->order_price ?? $o->price ?? 0,'created_at'=>$o->created_at]))->sortByDesc('created_at')->values();
+        return collect($sets)->flatMap(fn($set)=>$set[1]::query()->where('user_id',$userId)->latest()->limit(100)->get()->map(fn($o)=>['id'=>$o->id,'type'=>$set[0],'service'=>$overview->serviceName($o,$set[0]),'device'=>$o->device ?? '—','status'=>$o->status,'amount'=>$overview->orderAmount($o),'created_at'=>$o->created_at]))->sortByDesc('created_at')->values();
     }
 }
