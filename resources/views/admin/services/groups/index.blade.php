@@ -4,26 +4,23 @@
 @section('title', 'Service groups')
 
 @section('content')
-<div class="container py-4">
-  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+<div>
+  <div class="admin-page-head">
     <div>
-      <h1 class="h4 mb-1">Service groups</h1>
-      <p class="text-muted mb-0 small">Manage your service groups quickly from one clean view.</p>
+      <span class="admin-kicker">SERVICE MANAGEMENT</span><h1>Service groups</h1>
+      <p>Manage and organize every service group from one consistent workspace.</p>
     </div>
 
     <button type="button" class="btn btn-primary" id="btnNewGroup">
-      + New group
+      <i class="fas fa-plus me-1"></i> New group
     </button>
   </div>
 
-  <div class="card shadow-sm border-0">
-    <div class="card-header bg-white border-0 pb-0">
-      <div class="fw-semibold">Groups list</div>
-    </div>
+  <div class="card admin-panel">
 
     <div class="table-responsive">
-      <table class="table table-sm table-hover align-middle mb-0">
-        <thead class="table-light">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
           <tr>
             <th style="width:70px">ID</th>
             <th>Name</th>
