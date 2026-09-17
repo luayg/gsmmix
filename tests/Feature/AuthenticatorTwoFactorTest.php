@@ -4,19 +4,32 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Services\Settings\AppSettings;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Mail;
-use Tests\TestCase;
+use Illuminate\Support\Facades\Schema;
+use Tests\Support\SecurityTestCase;
 
-final class AuthenticatorTwoFactorTest extends TestCase
+final class AuthenticatorTwoFactorTest extends SecurityTestCase
 {
-    use RefreshDatabase;
-
     private const SECRET = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Schema::table('users',function(Blueprint $table): void {
+            $table->boolean('two_factor_enabled')->default(false);
+            $table->string('two_factor_method',20)->default('email');
+            $table->text('two_factor_secret')->nullable();
+            $table->timestamp('two_factor_confirmed_at')->nullable();
+            $table->string('google_id')->nullable();
+            $table->decimal('balance',12,2)->default(0);
+        });
+        (require database_path('migrations/2026_09_16_000100_create_settings_table.php'))->up();
+    }
 
     public function test_setup_modal_remains_available_until_the_pending_secret_expires(): void
     {
-        $user=User::factory()->create();
+        $user=$this->user();
 
         $this->actingAs($user)
             ->withSession(['authenticator_setup_secret'=>[
@@ -31,15 +44,10 @@ final class AuthenticatorTwoFactorTest extends TestCase
 
     public function test_switching_to_email_removes_the_old_authenticator_secret(): void
     {
-        $user=User::factory()->create([
-            'two_factor_enabled'=>true,
-            'two_factor_method'=>'authenticator',
-            'two_factor_secret'=>self::SECRET,
-            'two_factor_confirmed_at'=>now(),
-        ]);
+        $user=$this->authenticatorUser();
 
         $this->actingAs($user)->put(route('customer.profile.two-factor'),[
-            'password'=>'password',
+            'password'=>'A-strong-test-password-123!',
             'enabled'=>true,
         ])->assertRedirect();
 
@@ -51,22 +59,17 @@ final class AuthenticatorTwoFactorTest extends TestCase
 
     public function test_removing_authenticator_requires_its_current_code(): void
     {
-        $user=User::factory()->create([
-            'two_factor_enabled'=>true,
-            'two_factor_method'=>'authenticator',
-            'two_factor_secret'=>self::SECRET,
-            'two_factor_confirmed_at'=>now(),
-        ]);
+        $user=$this->authenticatorUser();
 
         $this->actingAs($user)->from(route('customer.profile'))->delete(route('customer.profile.authenticator.remove'),[
-            'password'=>'password',
+            'password'=>'A-strong-test-password-123!',
             'code'=>'000000',
         ])->assertRedirect(route('customer.profile'))->assertSessionHasErrors('code');
 
         $this->assertSame('authenticator',$user->fresh()->two_factor_method);
 
         $this->actingAs($user)->delete(route('customer.profile.authenticator.remove'),[
-            'password'=>'password',
+            'password'=>'A-strong-test-password-123!',
             'code'=>$this->currentCode(self::SECRET),
         ])->assertRedirect();
 
@@ -81,15 +84,10 @@ final class AuthenticatorTwoFactorTest extends TestCase
         app(AppSettings::class)->putMany('general',[
             'general.two_factor_enabled'=>['value'=>true,'type'=>'boolean'],
         ]);
-        $user=User::factory()->create([
-            'two_factor_enabled'=>true,
-            'two_factor_method'=>'authenticator',
-            'two_factor_secret'=>self::SECRET,
-            'two_factor_confirmed_at'=>now(),
-        ]);
+        $user=$this->authenticatorUser();
 
         $this->actingAs($user)->delete(route('customer.profile.authenticator.remove'),[
-            'password'=>'password',
+            'password'=>'A-strong-test-password-123!',
             'code'=>$this->currentCode(self::SECRET),
         ])->assertRedirect();
 
@@ -99,17 +97,11 @@ final class AuthenticatorTwoFactorTest extends TestCase
     public function test_login_uses_authenticator_without_sending_an_email_code(): void
     {
         Mail::fake();
-        $user=User::factory()->create([
-            'username'=>'auth-user',
-            'two_factor_enabled'=>true,
-            'two_factor_method'=>'authenticator',
-            'two_factor_secret'=>self::SECRET,
-            'two_factor_confirmed_at'=>now(),
-        ]);
+        $user=$this->authenticatorUser();
 
         $this->post(route('login'),[
-            'login'=>'auth-user',
-            'password'=>'password',
+            'login'=>$user->username,
+            'password'=>'A-strong-test-password-123!',
         ])->assertRedirect(route('two-factor.challenge'))
             ->assertSessionHas('two_factor.method','authenticator');
 
@@ -140,5 +132,17 @@ final class AuthenticatorTwoFactorTest extends TestCase
         $offset=ord($hash[19])&15;
         $value=((ord($hash[$offset])&127)<<24)|((ord($hash[$offset+1])&255)<<16)|((ord($hash[$offset+2])&255)<<8)|(ord($hash[$offset+3])&255);
         return str_pad((string)($value%1000000),6,'0',STR_PAD_LEFT);
+    }
+
+    private function authenticatorUser(): User
+    {
+        $user=$this->user();
+        $user->forceFill([
+            'two_factor_enabled'=>true,
+            'two_factor_method'=>'authenticator',
+            'two_factor_secret'=>self::SECRET,
+            'two_factor_confirmed_at'=>now(),
+        ])->save();
+        return $user;
     }
 }
