@@ -11,4 +11,6 @@ test('public navbar remains visible alongside Tailwind collapse utilities', () =
   assert.match(layout, /data-bs-target="#siteNav"/);
   assert.match(layout, /route\('site\.services'\)/);
   assert.match(layout, /route\('site\.store'\)/);
+  assert.match(layout, /route\('site\.resellers'\)/);
+  assert.match(layout, /general\.registration_enabled/);
 });

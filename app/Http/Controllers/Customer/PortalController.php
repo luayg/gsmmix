@@ -27,6 +27,7 @@ use App\Models\Group;
 use App\Models\ServiceGroupPrice;
 use App\Services\Catalog\ServicePriceMatrix;
 use App\Support\ProductService;
+use App\Models\Reseller;
 
 final class PortalController extends Controller
 {
@@ -62,7 +63,8 @@ final class PortalController extends Controller
         return view('customer.services',compact('services','q','selectedType','types'));
     }
     public function store() { $settings=app(AppSettings::class); abort_unless((bool)$settings->get('general.store_enabled',true),404); $groupId=auth()->user()?->group_id; $products=Product::query()->where('active',true)->with(['category','groupPrices'=>fn($q)=>$q->when($groupId,fn($x)=>$x->where('group_id',$groupId))])->orderByDesc('hot')->orderBy('ordering')->paginate(20); $schemas=[]; foreach($products as $product){if($product->source_type==='service'&&$product->service_type&&$product->service_id){$service=\App\Support\ProductService::find($product->service_type,(int)$product->service_id,true);if($service)$schemas[$product->id]=\App\Support\ProductService::inputSchema($product->service_type,$service);}} $showPrices=auth()->check()||(bool)$settings->get('general.show_prices_to_guests',false); return view('customer.store',compact('products','schemas','showPrices')); }
-    public function downloads() { return view('customer.downloads',['downloads'=>Download::query()->where('active',true)->with('category')->orderByDesc('created_at')->paginate(20)]); }
+    public function downloads(Request $request) { $user=$request->user();$downloads=Download::query()->where('active',true)->where('visibility','!=','hidden')->where(fn($q)=>$q->whereNull('expires_at')->orWhere('expires_at','>',now()))->with('category')->when($user,fn($q)=>$q->withExists(['purchases as purchased'=>fn($p)=>$p->where('user_id',$user->id)]))->orderByDesc('created_at')->paginate(20);return view('customer.downloads',compact('downloads')); }
+    public function resellers() { return view('site.resellers',['resellers'=>Reseller::query()->where('active',true)->orderBy('ordering')->orderBy('name')->get()]); }
     public function profile(Request $request, Totp $totp)
     {
         $setup=$request->session()->get('authenticator_setup_secret');

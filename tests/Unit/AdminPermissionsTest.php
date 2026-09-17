@@ -40,6 +40,7 @@ class AdminPermissionsTest extends TestCase
         yield 'upload' => ['admin.uploads.summernote', 'POST', '', null, ['uploads.create']];
         yield 'mail test' => ['admin.settings.mail.test', 'POST', '', null, ['settings.edit']];
         yield 'mail test wrong method' => ['admin.settings.mail.test', 'GET', '', null, null];
+        yield 'reseller settings' => ['admin.settings.resellers', 'GET', '', null, ['settings.view']];
         yield 'unknown module' => ['admin.unknown.index', 'GET', '', null, null];
         yield 'unknown action' => ['admin.users.backdoor', 'GET', '', null, null];
         yield 'unnamed mutation' => [null, 'POST', 'admin', null, null];
