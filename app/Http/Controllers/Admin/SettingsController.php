@@ -53,7 +53,8 @@ final class SettingsController extends Controller
             $values['general.'.$key] = ['value' => array_key_exists($key, $data) ? $data[$key] : ($current['general.'.$key] ?? $this->generalDefaults()['general.'.$key])];
         }
         foreach (['registration_enabled', 'email_verification_enabled', 'show_prices_to_guests', 'show_original_prices', 'allow_credit_transfers', 'use_24_hour_time', 'session_expire_on_close', 'service_imei_enabled', 'service_server_enabled', 'service_file_enabled', 'service_smm_enabled', 'store_enabled', 'two_factor_enabled', 'google_login_enabled'] as $key) {
-            $values['general.'.$key] = ['value' => $request->boolean($key), 'type' => 'boolean'];
+            $value = $request->has($key) ? $request->boolean($key) : (bool) ($current['general.'.$key] ?? $this->generalDefaults()['general.'.$key]);
+            $values['general.'.$key] = ['value' => $value, 'type' => 'boolean'];
         }
         foreach (['default_group_id', 'session_lifetime'] as $key) $values['general.'.$key] = ['value' => $data[$key] ?? ($current['general.'.$key] ?? $this->generalDefaults()['general.'.$key]), 'type' => 'integer'];
         foreach (['default_overdraft', 'api_low_balance_threshold'] as $key) $values['general.'.$key] = ['value' => $data[$key] ?? ($current['general.'.$key] ?? '0'), 'type' => 'decimal'];
