@@ -18,20 +18,23 @@ final class DownloadController extends Controller
     {
         $this->available($download);
         abort_unless($download->visibility === 'paid', 422);
-        $purchase = DB::transaction(function () use ($request, $download) {
-            $existing = DownloadPurchase::query()->where('download_id', $download->id)->where('user_id', $request->user()->id)->first();
-            if ($existing) return $existing;
+        $result = DB::transaction(function () use ($request, $download) {
             $user = User::query()->lockForUpdate()->findOrFail($request->user()->id);
-            $price = bcadd((string)$download->price, '0', 4);
+            $lockedDownload = Download::query()->lockForUpdate()->findOrFail($download->id);
+            abort_unless($lockedDownload->active && $lockedDownload->visibility === 'paid' && (!$lockedDownload->expires_at || $lockedDownload->expires_at->isFuture()), 404);
+            $existing = DownloadPurchase::query()->where('download_id', $download->id)->where('user_id', $request->user()->id)->first();
+            if ($existing) return ['purchase'=>$existing,'charged'=>false];
+            $price = bcadd((string)$lockedDownload->price, '0', 4);
             $before = bcadd((string)$user->balance, '0', 4);
             if (bccomp($before, $price, 4) < 0) throw ValidationException::withMessages(['balance' => 'Your balance is insufficient. Add funds to purchase this download.']);
             $after = bcsub($before, $price, 4);
             $user->forceFill(['balance' => $after])->save();
             $purchase = DownloadPurchase::create(['download_id'=>$download->id,'user_id'=>$user->id,'price'=>$price,'balance_before'=>$before,'balance_after'=>$after]);
-            FinanceTransaction::create(['user_id'=>$user->id,'kind'=>'credit_remove','direction'=>'expense','paid'=>false,'amount'=>$price,'reference'=>'download:'.$download->id,'note'=>'Purchased download: '.$download->name,'balance_before'=>$before,'balance_after'=>$after,'source_type'=>DownloadPurchase::class,'source_id'=>$purchase->id]);
-            return $purchase;
+            FinanceTransaction::create(['user_id'=>$user->id,'kind'=>'credit_remove','direction'=>'expense','paid'=>false,'amount'=>$price,'reference'=>'download:'.$lockedDownload->id,'note'=>'Purchased download: '.$lockedDownload->name,'balance_before'=>$before,'balance_after'=>$after,'source_type'=>DownloadPurchase::class,'source_id'=>$purchase->id]);
+            return ['purchase'=>$purchase,'charged'=>true];
         }, 3);
-        return response()->json(['ok'=>true,'download_url'=>route('customer.downloads.download',$download),'balance'=>$request->user()->fresh()->balance,'purchase_id'=>$purchase->id]);
+        $purchase=$result['purchase'];
+        return response()->json(['ok'=>true,'charged'=>$result['charged'],'download_url'=>route('customer.downloads.download',$download),'balance'=>$request->user()->fresh()->balance,'balance_before'=>$purchase->balance_before,'amount'=>$purchase->price,'purchase_id'=>$purchase->id]);
     }
 
     public function download(Request $request, Download $download)

@@ -20,6 +20,16 @@ test('paid downloads use authenticated purchase and delivery endpoints', () => {
   assert.match(controller, /kind'=>'credit_remove'/);
 });
 
+test('download purchase uses project modal and exposes the account statement', () => {
+  const downloadView = readFileSync('resources/views/customer/downloads.blade.php', 'utf8');
+  const statementView = readFileSync('resources/views/customer/payments/index.blade.php', 'utf8');
+  assert.doesNotMatch(downloadView, /\bconfirm\(/);
+  assert.match(downloadView, /id="downloadPurchaseModal"/);
+  assert.match(downloadView, /data\.charged/);
+  assert.match(statementView, /Account statement/);
+  assert.match(statementView, /customer\.payments\.statement\.print/);
+});
+
 test('public navigation exposes resellers and suppresses legacy pricing and support links', () => {
   const publicLayout = readFileSync('resources/views/layouts/site.blade.php', 'utf8');
   const customerLayout = readFileSync('resources/views/layouts/customer.blade.php', 'utf8');

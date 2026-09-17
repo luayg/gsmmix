@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Currency;
 use App\Models\PaymentGateway;
 use App\Models\PaymentTransaction;
+use App\Models\FinanceTransaction;
 use App\Services\Payments\PayPalGateway;
 use App\Services\Payments\PaymentInitiator;
 use App\Services\Payments\PaymentQuote;
@@ -19,7 +20,22 @@ final class PaymentController extends Controller
 {
     public function index(Request $request)
     {
-        return view('customer.payments.index',['transactions'=>PaymentTransaction::query()->where('user_id',$request->user()->id)->with('gateway')->latest()->paginate(20)]);
+        $data=$request->validate(['from'=>'nullable|date','to'=>'nullable|date|after_or_equal:from']);
+        $base=FinanceTransaction::query()->where('user_id',$request->user()->id);
+        $opening=(clone $base)->when($data['from']??null,fn($q,$v)=>$q->whereDate('created_at','<',$v))->latest('id')->value('balance_after') ?? 0;
+        $ledger=$base->when($data['from']??null,fn($q,$v)=>$q->whereDate('created_at','>=',$v))->when($data['to']??null,fn($q,$v)=>$q->whereDate('created_at','<=',$v));
+        $summary=['income'=>(clone $ledger)->where('direction','income')->sum('amount'),'expense'=>(clone $ledger)->where('direction','expense')->sum('amount'),'refund'=>(clone $ledger)->where('kind','order_release')->sum('amount')];
+        return view('customer.payments.index',['transactions'=>(clone $ledger)->latest('id')->paginate(30)->withQueryString(),'payments'=>PaymentTransaction::query()->where('user_id',$request->user()->id)->with('gateway')->latest()->limit(20)->get(),'summary'=>$summary,'opening'=>$opening]);
+    }
+
+    public function printStatement(Request $request)
+    {
+        $data=$request->validate(['from'=>'nullable|date','to'=>'nullable|date|after_or_equal:from']);
+        $base=FinanceTransaction::query()->where('user_id',$request->user()->id);
+        $opening=(clone $base)->when($data['from']??null,fn($q,$v)=>$q->whereDate('created_at','<',$v))->latest('id')->value('balance_after') ?? 0;
+        $transactions=$base->when($data['from']??null,fn($q,$v)=>$q->whereDate('created_at','>=',$v))->when($data['to']??null,fn($q,$v)=>$q->whereDate('created_at','<=',$v))->oldest('id')->get();
+        $summary=['income'=>$transactions->where('direction','income')->sum('amount'),'expense'=>$transactions->where('direction','expense')->sum('amount'),'refund'=>$transactions->where('kind','order_release')->sum('amount')];
+        return view('customer.payments.print',compact('transactions','summary','opening'));
     }
     public function create()
     {
