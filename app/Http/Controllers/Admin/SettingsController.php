@@ -52,7 +52,7 @@ final class SettingsController extends Controller
         foreach (['site_name', 'site_tagline', 'contact_email', 'contact_phone', 'contact_address', 'facebook_url', 'instagram_url', 'x_url', 'linkedin_url', 'telegram_url', 'meta_title', 'meta_description', 'meta_keywords', 'timezone', 'date_format', 'registration_activation'] as $key) {
             $values['general.'.$key] = ['value' => array_key_exists($key, $data) ? $data[$key] : ($current['general.'.$key] ?? $this->generalDefaults()['general.'.$key])];
         }
-        foreach (['registration_enabled', 'show_prices_to_guests', 'show_original_prices', 'allow_credit_transfers', 'use_24_hour_time', 'session_expire_on_close', 'service_imei_enabled', 'service_server_enabled', 'service_file_enabled', 'service_smm_enabled', 'store_enabled', 'two_factor_enabled', 'google_login_enabled'] as $key) {
+        foreach (['registration_enabled', 'email_verification_enabled', 'show_prices_to_guests', 'show_original_prices', 'allow_credit_transfers', 'use_24_hour_time', 'session_expire_on_close', 'service_imei_enabled', 'service_server_enabled', 'service_file_enabled', 'service_smm_enabled', 'store_enabled', 'two_factor_enabled', 'google_login_enabled'] as $key) {
             $values['general.'.$key] = ['value' => $request->boolean($key), 'type' => 'boolean'];
         }
         foreach (['default_group_id', 'session_lifetime'] as $key) $values['general.'.$key] = ['value' => $data[$key] ?? ($current['general.'.$key] ?? $this->generalDefaults()['general.'.$key]), 'type' => 'integer'];
@@ -196,7 +196,8 @@ final class SettingsController extends Controller
             'general.x_url' => '', 'general.linkedin_url' => '', 'general.telegram_url' => '',
             'general.meta_title' => '', 'general.meta_description' => '', 'general.meta_keywords' => '',
             'general.timezone' => config('app.timezone', 'UTC'), 'general.date_format' => 'Y-m-d',
-            'general.registration_enabled' => false, 'general.registration_activation' => 'email',
+            'general.registration_enabled' => false, 'general.registration_activation' => 'automatic',
+            'general.email_verification_enabled' => false,
             'general.default_group_id' => null, 'general.default_overdraft' => '0',
             'general.show_prices_to_guests' => false, 'general.show_original_prices' => false,
             'general.allow_credit_transfers' => false, 'general.use_24_hour_time' => true,
