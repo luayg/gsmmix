@@ -149,12 +149,14 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/{user}',    [UserController::class, 'show'])->name('show');
         Route::put('/{user}',    [UserController::class, 'update'])->name('update');
         Route::delete('/{user}', [UserController::class, 'destroy'])->name('destroy');
+        Route::post('/{user}/reset-verification', [UserController::class, 'resetVerification'])->middleware('throttle:10,1')->name('reset_verification');
 
         // Modals
         Route::get('/modal/create',          [UserController::class, 'modalCreate'])->name('modal.create');
         Route::get('/{user}/modal/view',     [UserController::class, 'modalView'])->name('modal.view');
         Route::get('/{user}/modal/edit',     [UserController::class, 'modalEdit'])->name('modal.edit');
         Route::get('/{user}/modal/delete',   [UserController::class, 'modalDelete'])->name('modal.delete');
+        Route::get('/{user}/modal/reset-verification', [UserController::class, 'modalResetVerification'])->name('modal.reset_verification');
         Route::get('/{user}/modal/services', [UserController::class, 'modalServices'])->name('modal.services');
 
         // Roles attach

@@ -83,6 +83,7 @@ class UserController extends Controller
                   </div>';
 
                 $editBtn = '<button type="button" class="btn btn-warning btn-sm js-open-modal" data-url="/admin/users/'.$u->id.'/modal/edit"><i class="fas fa-edit"></i> Edit</button>';
+                $resetVerificationBtn = '<button type="button" class="btn btn-outline-danger btn-sm js-open-modal" data-url="'.route('admin.users.modal.reset_verification',$u).'"><i class="fas fa-shield-halved"></i> Reset verification</button>';
                 $delBtn  = '<button type="button" class="btn btn-danger btn-sm js-open-modal" data-url="/admin/users/'.$u->id.'/modal/delete"><i class="fas fa-trash"></i> Delete</button>';
 
                 return [
@@ -94,7 +95,7 @@ class UserController extends Controller
                     'group'    => optional($u->group)->name ?: '-',
                     'balance'  => number_format((float)$u->balance, 2),
                     'status'   => $u->status,
-                    'actions'  => $viewBtn.' '.$finBtn.' '.$svcBtn.' '.$ordersBtn.' '.$editBtn.' '.$delBtn,
+                    'actions'  => $viewBtn.' '.$finBtn.' '.$svcBtn.' '.$ordersBtn.' '.$editBtn.' '.$resetVerificationBtn.' '.$delBtn,
                 ];
             });
 
@@ -159,6 +160,32 @@ class UserController extends Controller
     {
         $deletionInspection = $guard->inspect($user);
         return view('admin.users.modals.delete', compact('user', 'deletionInspection'));
+    }
+
+    public function modalResetVerification(User $user)
+    {
+        $passkeyCount = Schema::hasTable('passkeys') ? $user->passkeys()->count() : 0;
+        return view('admin.users.modals.reset-verification', compact('user', 'passkeyCount'));
+    }
+
+    public function resetVerification(User $user)
+    {
+        DB::transaction(function () use ($user): void {
+            if (Schema::hasTable('passkeys')) {
+                $user->passkeys()->delete();
+            }
+            $user->forceFill([
+                'two_factor_enabled' => false,
+                'two_factor_method' => 'email',
+                'two_factor_secret' => null,
+                'two_factor_confirmed_at' => null,
+            ])->save();
+        });
+
+        return response()->json([
+            'ok' => true,
+            'msg' => 'All verification methods were reset. The user can configure them again.',
+        ]);
     }
 
     public function modalServices(User $user)
