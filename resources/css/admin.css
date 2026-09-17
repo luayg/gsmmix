@@ -489,3 +489,47 @@ a:hover{color:#7bd2ff}
 @media(max-width:991.98px){
   .content-wrapper{background:linear-gradient(180deg,#071827,var(--admin-bg))}
 }
+
+
+/* Header/sidebar contrast refinements. */
+.navbar.admin-navbar,
+nav.navbar.admin-navbar.bg-dark,
+nav.navbar.fixed-top.bg-dark{
+  background:linear-gradient(90deg,#071a2b 0%,#0a2942 52%,#071a2b 100%)!important;
+  border-bottom:1px solid #1b496b!important;
+  box-shadow:0 8px 26px rgba(0,7,15,.34)!important;
+}
+.admin-navbar #smartSearchBox{
+  color:#e7f3ff;
+  background:#071a2b;
+  border:1px solid #24506f;
+  box-shadow:inset 0 0 18px rgba(39,134,255,.04);
+}
+.admin-navbar #smartSearchBox::placeholder{color:#81a2bb}
+.admin-navbar #smartSearchBox:focus{
+  color:#fff;
+  background:#081f33;
+  border-color:#28d7ff;
+  box-shadow:0 0 0 .2rem rgba(40,215,255,.12);
+}
+.admin-sidebar .nav-link,
+.admin-sidebar a,
+.admin-sidebar .nav-link span{
+  color:#fff!important;
+  opacity:1!important;
+  text-shadow:0 1px 2px rgba(0,0,0,.28);
+}
+.admin-sidebar .nav-link i:not(.fa-chevron-down){
+  color:#58bfff!important;
+}
+.admin-sidebar .nav-link .fa-chevron-down{
+  color:#8bd8ff!important;
+  opacity:1!important;
+}
+.admin-sidebar .collapse .nav-link{
+  color:#eef8ff!important;
+}
+.admin-sidebar .nav-link:hover,
+.admin-sidebar .nav-link.active{
+  color:#fff!important;
+}
