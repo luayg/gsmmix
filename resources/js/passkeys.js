@@ -6,6 +6,15 @@ const message = (element, text, type = 'danger') => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
+    const settingsLink = document.querySelector('.customer-nav a[href$="/account/profile"]');
+    if (settingsLink && !document.querySelector('.customer-nav a[href$="/account/passkeys"]')) {
+        const passkeysLink = document.createElement('a');
+        passkeysLink.href = '/account/passkeys';
+        passkeysLink.innerHTML = '<i class="fas fa-key"></i> Passkeys';
+        if (window.location.pathname === '/account/passkeys') passkeysLink.classList.add('active');
+        settingsLink.before(passkeysLink);
+    }
+
     const loginButton = document.querySelector('[data-passkey-login]');
     const loginMessage = document.querySelector('[data-passkey-login-message]');
     if (loginButton) {
