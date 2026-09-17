@@ -86,18 +86,26 @@ final class SettingsController extends Controller
         $data = $request->validated();
         $values = [
             'mail.mailer' => ['value' => $data['mailer']],
-            'mail.host' => ['value' => $data['host'] ?? null],
-            'mail.port' => ['value' => $data['port'] ?? null, 'type' => 'integer'],
-            'mail.encryption' => ['value' => $data['encryption'] ?? null],
-            'mail.username' => ['value' => $data['username'] ?? null],
             'mail.from_address' => ['value' => $data['from_address']],
             'mail.from_name' => ['value' => $data['from_name']],
             'mail.timeout' => ['value' => $data['timeout'], 'type' => 'integer'],
-            'mail.sendmail_path' => ['value' => $data['sendmail_path'] ?? null],
-            'mail.log_channel' => ['value' => $data['log_channel'] ?? null],
         ];
-        if (filled($data['password'] ?? null)) {
+        if ($data['mailer'] === 'smtp') {
+            $values += [
+                'mail.host' => ['value' => $data['host']],
+                'mail.port' => ['value' => $data['port'], 'type' => 'integer'],
+                'mail.encryption' => ['value' => $data['encryption'] ?? null],
+                'mail.username' => ['value' => $data['username'] ?? null],
+            ];
+        }
+        if ($data['mailer'] === 'smtp' && filled($data['password'] ?? null)) {
             $values['mail.password'] = ['value' => $data['password'], 'encrypted' => true];
+        }
+        if ($data['mailer'] === 'sendmail') {
+            $values['mail.sendmail_path'] = ['value' => $data['sendmail_path']];
+        }
+        if ($data['mailer'] === 'log') {
+            $values['mail.log_channel'] = ['value' => $data['log_channel'] ?? null];
         }
         $this->settings->putMany('mail', $values);
         return back()->with('ok', 'Mail settings updated.');

@@ -39,7 +39,12 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        app(AppSettings::class)->applyRuntimeConfiguration();
+        $appSettings = app(AppSettings::class);
+        $appSettings->applyRuntimeConfiguration();
+
+        View::composer('*', function ($view) use ($appSettings): void {
+            $view->with('siteSettings', $appSettings->group('general'));
+        });
 
         View::composer(['layouts.site','layouts.customer'], function ($view): void {
             if (!Schema::hasTable('pages')) {
