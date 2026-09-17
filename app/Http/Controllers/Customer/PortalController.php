@@ -23,6 +23,9 @@ use App\Services\Settings\AppSettings;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
 use App\Services\Auth\Totp;
+use App\Models\Group;
+use App\Models\ServiceGroupPrice;
+use App\Services\Catalog\ServicePriceMatrix;
 
 final class PortalController extends Controller
 {
@@ -35,19 +38,27 @@ final class PortalController extends Controller
         return view('customer.dashboard',['recentOrders'=>$orders->take(6),'payments'=>$payments,'stats'=>$stats,'financial'=>$financial]);
     }
     public function ordersIndex(Request $request) { return view('customer.orders',['orders'=>$this->orders($request->user()->id)]); }
-    public function services(Request $request)
+    public function services(Request $request, ServicePriceMatrix $priceMatrix)
     {
         $settings=app(AppSettings::class);
         $q=trim((string)$request->input('q'));
         $selectedType=trim((string)$request->input('type'));
         $types=collect(['imei'=>ImeiService::class,'server'=>ServerService::class,'file'=>FileService::class,'smm'=>SmmService::class])->filter(fn($model,$type)=>(bool)$settings->get('general.service_'.$type.'_enabled',true))->all();
         $services=collect();
+        $groups=Group::query()->orderBy('id')->get();
         foreach($types as $type=>$model) {
             if($selectedType!=='' && $selectedType!==$type) continue;
-            $services=$services->concat($model::query()->where('active',true)->when($q,fn($x)=>$x->where('name','like','%'.$q.'%'))->orderBy('name')->limit(75)->get()->map(fn($row)=>['type'=>$type,'id'=>$row->id,'name'=>$row->name_text ?? $row->name,'price'=>$row->price ?? ((float)($row->cost ?? 0)+(float)($row->profit ?? 0)),'delivery'=>$row->delivery_time ?? $row->time_text ?? null]));
+            $rows=$model::query()->where('active',true)->when($q,fn($x)=>$x->where('name','like','%'.$q.'%'))->orderBy('name')->limit(75)->get();
+            $prices=ServiceGroupPrice::query()->where('service_type',$type)->whereIn('service_id',$rows->pluck('id'))->get()->groupBy('service_id');
+            $services=$services->concat($rows->map(fn($row)=>[
+                'type'=>$type,
+                'id'=>$row->id,
+                'name'=>$row->name_text ?? $row->name,
+                'prices'=>$priceMatrix->prices($row,$groups,$prices->get($row->id,collect()),$request->user()),
+                'delivery'=>$row->delivery_time ?? $row->time_text ?? null,
+            ]));
         }
-        $showPrices=auth()->check() || (bool)$settings->get('general.show_prices_to_guests',false);
-        return view('customer.services',compact('services','q','selectedType','types','showPrices'));
+        return view('customer.services',compact('services','q','selectedType','types'));
     }
     public function store() { $settings=app(AppSettings::class); abort_unless((bool)$settings->get('general.store_enabled',true),404); $groupId=auth()->user()?->group_id; $products=Product::query()->where('active',true)->with(['category','groupPrices'=>fn($q)=>$q->when($groupId,fn($x)=>$x->where('group_id',$groupId))])->orderByDesc('hot')->orderBy('ordering')->paginate(20); $schemas=[]; foreach($products as $product){if($product->source_type==='service'&&$product->service_type&&$product->service_id){$service=\App\Support\ProductService::find($product->service_type,(int)$product->service_id,true);if($service)$schemas[$product->id]=\App\Support\ProductService::inputSchema($product->service_type,$service);}} $showPrices=auth()->check()||(bool)$settings->get('general.show_prices_to_guests',false); return view('customer.store',compact('products','schemas','showPrices')); }
     public function downloads() { return view('customer.downloads',['downloads'=>Download::query()->where('active',true)->with('category')->orderByDesc('created_at')->paginate(20)]); }

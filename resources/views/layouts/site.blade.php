@@ -1,12 +1,19 @@
 <!doctype html>
 <html lang="{{ str_replace('_','-',app()->getLocale()) }}" dir="{{ app()->getLocale()==='ar'?'rtl':'ltr' }}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">@include('shared.site-meta')@vite(['resources/css/app.css','resources/js/app.js'])</head>
-<body>
+<body class="public-site-body">
 @php($routeFor=['home'=>'home','services'=>'site.services','store'=>'site.store','downloads'=>'site.downloads','place-order'=>'customer.orders.create','orders'=>'customer.orders','account'=>'customer.dashboard'])
-<nav class="navbar navbar-expand-lg navbar-dark site-nav fixed-top"><div class="container-fluid px-lg-5">
+<nav class="navbar navbar-expand-lg navbar-dark site-nav fixed-top"><div class="site-wide w-100 d-flex flex-wrap align-items-center">
 <a class="brand-mark" href="{{ route('home') }}">@include('shared.brand')</a><button class="navbar-toggler" data-bs-toggle="collapse" data-bs-target="#siteNav"><span class="navbar-toggler-icon"></span></button>
-<div class="collapse navbar-collapse" id="siteNav"><ul class="navbar-nav mx-auto gap-lg-2">@foreach($headerPages as $navPage)@php($target=$routeFor[$navPage->slug]??null)<li class="nav-item"><a class="nav-link" href="{{ $target ? route($target) : route('site.page',$navPage) }}">{{ $navPage->translations->first()?->title ?? ucfirst($navPage->slug) }}</a></li>@endforeach</ul>
-<div class="d-flex gap-2">@auth<a class="btn btn-gsm" href="{{ route('customer.dashboard') }}">Dashboard</a><form method="POST" action="{{ route('logout') }}">@csrf<button class="btn btn-outline-light">Logout</button></form>@else<a class="btn btn-outline-light" href="{{ route('login') }}">Login</a>@if($siteSettings['general.registration_enabled']??false)<a class="btn btn-gsm" href="{{ route('register') }}">Create account</a>@endif @endauth</div></div></div></nav>
+<div class="collapse navbar-collapse" id="siteNav"><ul class="navbar-nav mx-auto gap-lg-2"><li class="nav-item"><a class="nav-link" href="{{ route('home') }}">Home</a></li><li class="nav-item"><a class="nav-link" href="{{ route('site.services') }}">Services</a></li><li class="nav-item"><a class="nav-link" href="{{ route('site.store') }}">Products</a></li><li class="nav-item"><a class="nav-link" href="{{ route('site.downloads') }}">Downloads</a></li>@foreach($headerPages->whereNotIn('slug',['home','services','store','downloads','place-order','orders','account']) as $navPage)<li class="nav-item"><a class="nav-link" href="{{ route('site.page',$navPage) }}">{{ $navPage->translations->first()?->title ?? ucfirst($navPage->slug) }}</a></li>@endforeach</ul>
+<div class="site-auth-actions">
+@auth
+<a class="btn cyber-primary" href="{{ route('customer.dashboard') }}">Dashboard</a><form method="POST" action="{{ route('logout') }}">@csrf<button class="btn cyber-secondary">Logout</button></form>
+@else
+@if($siteSettings['general.registration_enabled']??false)<a class="btn cyber-secondary" href="{{ route('register') }}">Register</a>@endif
+<a class="btn cyber-primary" href="{{ route('login') }}">Log in</a>
+@endauth
+</div></div></div></nav>
 <main>@yield('content')</main>
 <footer class="site-footer py-5"><div class="container"><div class="row g-4"><div class="col-lg-5"><a class="brand-mark" href="{{ route('home') }}">@include('shared.brand')</a><p class="mt-3">{{ $siteSettings['general.site_tagline'] ?? '' }}</p>
 @if($siteSettings['general.contact_email']??null)<div><a href="mailto:{{ $siteSettings['general.contact_email'] }}">{{ $siteSettings['general.contact_email'] }}</a></div>@endif
