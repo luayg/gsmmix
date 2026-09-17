@@ -40,6 +40,11 @@ class User extends Authenticatable
         return $this->belongsTo(\App\Models\Group::class);
     }
 
+    public function passkeys()
+    {
+        return $this->hasMany(Passkey::class);
+    }
+
     protected function casts(): array
     {
         return [

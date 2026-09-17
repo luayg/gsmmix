@@ -6,6 +6,8 @@ import * as bootstrap from 'bootstrap';
 window.bootstrap = bootstrap;
 import QRCode from 'qrcode';
 window.QRCode = QRCode;
+import { Passkeys } from '@laravel/passkeys';
+window.Passkeys = Passkeys;
 import 'summernote/dist/summernote-lite.min.js';
 import 'summernote/dist/summernote-lite.min.css';
 // DataTables (مرة واحدة هنا)
