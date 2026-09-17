@@ -6,6 +6,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>@yield('title','Admin')</title>
   <meta name="csrf-token" content="{{ csrf_token() }}">
+  <script>
+    try {
+      document.documentElement.dataset.adminTheme = localStorage.getItem('admin-theme') === 'light' ? 'light' : 'dark';
+    } catch (_) {
+      document.documentElement.dataset.adminTheme = 'dark';
+    }
+  </script>
 
   {{-- CSS/JS via Vite --}}
   @vite([
