@@ -138,6 +138,12 @@ function hookFormOnce(form) {
       });
 
       // Summernote -> hidden
+      form.querySelectorAll('textarea[data-summernote="1"], textarea[data-editor="summernote"]').forEach((ta) => {
+        if (window.jQuery && window.jQuery(ta).data('summernote')) {
+          ta.value = window.jQuery(ta).summernote('code') || '';
+        }
+      });
+
       const infoTa = form.querySelector('#infoEditor');
       const infoHidden = form.querySelector('#infoHidden');
       if (infoTa && infoHidden && window.jQuery && window.jQuery(infoTa).data('summernote')) {

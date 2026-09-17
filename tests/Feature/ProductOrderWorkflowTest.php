@@ -376,7 +376,7 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->assertSame('1.1234', $this->balance());
     }
 
-    public function test_delivered_result_is_escaped_and_cannot_be_replaced_refunded_or_recycled(): void
+    public function test_delivered_result_can_be_corrected_but_cannot_be_refunded_or_recycled(): void
     {
         $reply = $this->localStock(['reply' => '<script>stockSecret()</script>']);
         $id = $this->postJson(route('admin.orders.product.store'), $this->payload())->assertOk()->json('id');
@@ -384,7 +384,10 @@ class ProductOrderWorkflowTest extends SecurityTestCase
             ->assertSee('&lt;script&gt;stockSecret()&lt;/script&gt;', false)
             ->assertDontSee('<script>stockSecret()</script>', false);
         $this->putJson(route('admin.orders.product.update', $id), ['status' => 'cancelled'])->assertUnprocessable();
-        $this->putJson(route('admin.orders.product.update', $id), ['status' => 'success', 'response' => 'Replace'])->assertUnprocessable();
+        $this->putJson(route('admin.orders.product.update', $id), [
+            'status' => 'success', 'provider_reply_html' => '<p>Corrected reply</p>',
+        ])->assertOk();
+        $this->assertStringContainsString('Corrected reply', ProductOrder::findOrFail($id)->response);
         $this->assertSame('87.7834', $this->balance());
         $this->assertSame($id, (int) $reply->fresh()->used_by_product_order_id);
     }

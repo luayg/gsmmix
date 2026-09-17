@@ -76,8 +76,8 @@ trait HandlesOrderFinanceStatusUpdates
                     }
                 }
 
-                if (!empty($data['provider_reply_html'])) {
-                    $currentResponse['provider_reply_html'] = $data['provider_reply_html'];
+                if (array_key_exists('provider_reply_html', $data)) {
+                    $currentResponse['provider_reply_html'] = (string) ($data['provider_reply_html'] ?? '');
                     $currentResponse['provider_reply_updated_at'] = now()->toDateTimeString();
                 }
 

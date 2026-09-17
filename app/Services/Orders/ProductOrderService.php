@@ -297,8 +297,7 @@ class ProductOrderService
                 && $status !== $oldStatus) {
                 throw ValidationException::withMessages(['status' => 'Historical orders need a financial review before their status can change.']);
             }
-            if ($oldStatus === 'success' && ($status !== 'success'
-                || (array_key_exists('response', $data) && (string) $data['response'] !== (string) $order->response))) {
+            if ($oldStatus === 'success' && $status !== 'success') {
                 throw ValidationException::withMessages(['status' => 'Delivered orders retain their result and charge. Use a separate reviewed financial adjustment if required.']);
             }
             if ($status === 'success' && $oldStatus !== 'success' && ($metadata['source_type'] ?? null) === 'manual') {
@@ -329,14 +328,14 @@ class ProductOrderService
                 $order->status = $status;
                 $order->replied_at = in_array($status, ['success', 'cancelled', 'rejected'], true) ? now() : null;
             }
-            if (array_key_exists('provider_reply_html', $data) && trim((string) $data['provider_reply_html']) !== '') {
+            if (array_key_exists('provider_reply_html', $data)) {
                 $response = $order->response;
                 if (is_string($response)) {
                     $decoded = json_decode($response, true);
                     $response = is_array($decoded) ? $decoded : ['result_text' => $response];
                 }
                 if (!is_array($response)) $response = [];
-                $response['provider_reply_html'] = $data['provider_reply_html'];
+                $response['provider_reply_html'] = (string) ($data['provider_reply_html'] ?? '');
                 $response['provider_reply_updated_at'] = now()->toDateTimeString();
                 $order->response = json_encode($response, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
             } elseif (array_key_exists('response', $data) && trim((string) $data['response']) !== '') {
