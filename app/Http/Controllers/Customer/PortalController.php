@@ -58,7 +58,7 @@ final class PortalController extends Controller
     }
     public function updateTwoFactor(Request $request, AppSettings $settings)
     {
-        abort_unless((bool) $settings->get('general.two_factor_enabled', false), 404);
+        abort_if((bool) $settings->get('general.two_factor_enabled', false), 409, 'Two-step verification is required by the administrator and cannot be disabled.');
         $passwordRules=$request->user()->google_id ? ['nullable','string'] : ['required','current_password:web'];
         $data=$request->validate(['password'=>$passwordRules,'enabled'=>['required','boolean']]);
         $request->user()->forceFill(['two_factor_enabled'=>(bool)$data['enabled']])->save();

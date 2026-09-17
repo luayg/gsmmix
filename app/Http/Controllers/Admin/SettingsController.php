@@ -35,7 +35,6 @@ final class SettingsController extends Controller
         $current = $this->settings->group('general');
         $logo = $current['general.logo'] ?? null;
         $favicon = $current['general.favicon'] ?? null;
-        $homeBanner = $current['general.home_banner'] ?? null;
         if ($request->hasFile('logo')) {
             $newLogo = $request->file('logo')->store('settings', 'public');
             if (is_string($logo) && str_starts_with($logo, 'settings/')) {
@@ -48,20 +47,18 @@ final class SettingsController extends Controller
             if (is_string($favicon) && str_starts_with($favicon, 'settings/')) Storage::disk('public')->delete($favicon);
             $favicon = $newFavicon;
         }
-        if ($request->hasFile('home_banner')) { $new=$request->file('home_banner')->store('settings','public'); if(is_string($homeBanner)&&str_starts_with($homeBanner,'settings/'))Storage::disk('public')->delete($homeBanner); $homeBanner=$new; }
 
         $values = [];
-        foreach (['site_name', 'site_tagline', 'contact_email', 'contact_phone', 'contact_address', 'facebook_url', 'instagram_url', 'x_url', 'linkedin_url', 'telegram_url', 'meta_title', 'meta_description', 'meta_keywords', 'timezone', 'date_format', 'registration_activation','home_banner_title','home_banner_text','home_banner_button','home_banner_url'] as $key) {
+        foreach (['site_name', 'site_tagline', 'contact_email', 'contact_phone', 'contact_address', 'facebook_url', 'instagram_url', 'x_url', 'linkedin_url', 'telegram_url', 'meta_title', 'meta_description', 'meta_keywords', 'timezone', 'date_format', 'registration_activation'] as $key) {
             $values['general.'.$key] = ['value' => array_key_exists($key, $data) ? $data[$key] : ($current['general.'.$key] ?? $this->generalDefaults()['general.'.$key])];
         }
-        foreach (['registration_enabled', 'show_prices_to_guests', 'show_original_prices', 'allow_credit_transfers', 'use_24_hour_time', 'session_expire_on_close', 'service_imei_enabled', 'service_server_enabled', 'service_file_enabled', 'service_smm_enabled', 'store_enabled','home_banner_enabled', 'two_factor_enabled', 'google_login_enabled'] as $key) {
+        foreach (['registration_enabled', 'show_prices_to_guests', 'show_original_prices', 'allow_credit_transfers', 'use_24_hour_time', 'session_expire_on_close', 'service_imei_enabled', 'service_server_enabled', 'service_file_enabled', 'service_smm_enabled', 'store_enabled', 'two_factor_enabled', 'google_login_enabled'] as $key) {
             $values['general.'.$key] = ['value' => $request->boolean($key), 'type' => 'boolean'];
         }
         foreach (['default_group_id', 'session_lifetime'] as $key) $values['general.'.$key] = ['value' => $data[$key] ?? ($current['general.'.$key] ?? $this->generalDefaults()['general.'.$key]), 'type' => 'integer'];
         foreach (['default_overdraft', 'api_low_balance_threshold'] as $key) $values['general.'.$key] = ['value' => $data[$key] ?? ($current['general.'.$key] ?? '0'), 'type' => 'decimal'];
         $values['general.logo'] = ['value' => $logo];
         $values['general.favicon'] = ['value' => $favicon];
-        $values['general.home_banner'] = ['value' => $homeBanner];
         $this->settings->putMany('general', $values);
         $authValues = ['auth.google_client_id' => ['value' => $data['google_client_id'] ?? null]];
         if (filled($data['google_client_secret'] ?? null)) {
