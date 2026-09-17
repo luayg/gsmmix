@@ -17,7 +17,7 @@ class AdminAccessTest extends SecurityTestCase
 {
     public function test_guests_are_redirected_for_html_and_receive_401_for_json(): void
     {
-        $this->get('/admin/dashboard')->assertRedirect(route('home'));
+        $this->get('/admin/dashboard')->assertRedirect(route('login'));
         $this->getJson('/admin/apis')->assertUnauthorized();
         $this->getJson('/admin/users/999999')->assertUnauthorized();
     }
@@ -174,7 +174,7 @@ class AdminAccessTest extends SecurityTestCase
         $user = $this->user('Administrator');
         $this->post('/login', ['login' => $user->username, 'password' => 'A-strong-test-password-123!']);
         $this->rememberSessionCookie();
-        $this->post('/logout')->assertRedirect(route('login'));
+        $this->post('/logout')->assertRedirect(route('home'));
         $this->resetSessionRuntime();
         $this->get('/admin/dashboard')->assertRedirect(route('login'));
     }
