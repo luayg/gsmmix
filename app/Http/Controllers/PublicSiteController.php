@@ -16,14 +16,15 @@ final class PublicSiteController extends Controller
     public function home()
     {
         $page=Schema::hasTable('pages') ? $this->findPage('home') : null;
-        $products=Schema::hasTable('products') ? Product::query()->where('active',true)->orderByDesc('new')->orderBy('ordering')->limit(8)->get() : collect();
-        $counts=[
-            'imei'=>Schema::hasTable('imei_services') ? ImeiService::where('active',true)->count() : 0,
-            'server'=>Schema::hasTable('server_services') ? ServerService::where('active',true)->count() : 0,
-            'file'=>Schema::hasTable('file_services') ? FileService::where('active',true)->count() : 0,
-            'smm'=>Schema::hasTable('smm_services') ? SmmService::where('active',true)->count() : 0,
-        ];
         $homeSettings=Schema::hasTable('settings')?app(AppSettings::class)->group('general'):[];
+        $enabled=fn(string $type)=>(bool)($homeSettings['general.service_'.$type.'_enabled']??true);
+        $products=Schema::hasTable('products') && ($homeSettings['general.store_enabled']??true) ? Product::query()->where('active',true)->orderByDesc('new')->orderBy('ordering')->limit(8)->get() : collect();
+        $counts=[
+            'imei'=>Schema::hasTable('imei_services') && $enabled('imei') ? ImeiService::where('active',true)->count() : null,
+            'server'=>Schema::hasTable('server_services') && $enabled('server') ? ServerService::where('active',true)->count() : null,
+            'file'=>Schema::hasTable('file_services') && $enabled('file') ? FileService::where('active',true)->count() : null,
+            'smm'=>Schema::hasTable('smm_services') && $enabled('smm') ? SmmService::where('active',true)->count() : null,
+        ];
         return view('site.home',compact('page','products','counts','homeSettings'));
     }
     public function page(Page $page)

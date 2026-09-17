@@ -49,6 +49,8 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\PublicSiteController;
 use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\Auth\GoogleController;
+use App\Http\Controllers\Auth\TwoFactorController;
 use App\Http\Controllers\Customer\PortalController;
 use App\Http\Controllers\Customer\PaymentController as CustomerPaymentController;
 use App\Http\Controllers\Customer\OrderController as CustomerOrderController;
@@ -61,6 +63,7 @@ use App\Http\Controllers\Customer\ProductOrderController as CustomerProductOrder
 */
 
 Route::get('/', [PublicSiteController::class,'home'])->name('home');
+Route::get('/register/verify/{user}', [RegisterController::class, 'verify'])->middleware('signed')->name('register.verify');
 Route::post('/payment/webhooks/{slug}', PaymentWebhookController::class)
     ->whereIn('slug', ['paypal', 'binance-pay'])
     ->middleware('throttle:120,1')
@@ -72,6 +75,10 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [LoginController::class, 'store']);
     Route::get('/register', [RegisterController::class, 'create'])->name('register');
     Route::post('/register', [RegisterController::class, 'store'])->middleware('throttle:5,1');
+    Route::get('/auth/google', [GoogleController::class, 'redirect'])->name('auth.google');
+    Route::get('/auth/google/callback', [GoogleController::class, 'callback'])->name('auth.google.callback');
+    Route::get('/two-factor-challenge', [TwoFactorController::class, 'create'])->name('two-factor.challenge');
+    Route::post('/two-factor-challenge', [TwoFactorController::class, 'store'])->middleware('throttle:6,1')->name('two-factor.verify');
 });
 
 Route::middleware('auth')->group(function () {
@@ -93,6 +100,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/payments/{payment}/status', [CustomerPaymentController::class,'status'])->middleware('throttle:60,1')->name('payments.status');
         Route::get('/profile', [PortalController::class,'profile'])->name('profile');
         Route::put('/profile', [PortalController::class,'updateProfile'])->name('profile.update');
+        Route::put('/profile/two-factor', [PortalController::class,'updateTwoFactor'])->middleware('throttle:5,1')->name('profile.two-factor');
     });
 });
 

@@ -1,0 +1,46 @@
+<?php
+
+namespace App\Services\Auth;
+
+use App\Models\User;
+use App\Services\Settings\AppSettings;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
+
+final class LoginFlow
+{
+    public function __construct(private readonly AppSettings $settings) {}
+
+    public function completeOrChallenge(Request $request, User $user, bool $remember = false)
+    {
+        $enabled = (bool) $this->settings->get('general.two_factor_enabled', false);
+        if ($enabled && $user->two_factor_enabled) {
+            Auth::guard('web')->logout();
+            $code = (string) random_int(100000, 999999);
+            $request->session()->put('two_factor', [
+                'user_id' => $user->id,
+                'remember' => $remember,
+                'code' => Hash::make($code),
+                'expires_at' => now()->addMinutes(10)->timestamp,
+                'attempts' => 0,
+            ]);
+            Mail::raw("Your verification code is {$code}. It expires in 10 minutes.", function ($message) use ($user): void {
+                $message->to($user->email)->subject('Your sign-in verification code');
+            });
+            return redirect()->route('two-factor.challenge');
+        }
+
+        return $this->login($request, $user, $remember);
+    }
+
+    public function login(Request $request, User $user, bool $remember = false)
+    {
+        Auth::guard('web')->login($user, $remember);
+        $request->session()->regenerate();
+        $request->session()->put('password_hash_web', $user->getAuthPassword());
+        $destination = $user->can('admin.access') ? route('admin.dashboard') : route('customer.dashboard');
+        return redirect()->intended($destination);
+    }
+}

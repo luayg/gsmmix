@@ -16,11 +16,14 @@ class User extends Authenticatable
     protected $fillable = [
         'name',
         'email',
+        'email_verified_at',
         'username',
         'group_id',
         'status',
         'balance',
         'password',
+        'google_id',
+        'two_factor_enabled',
     ];
 
     protected $hidden = [
@@ -38,6 +41,7 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'two_factor_enabled' => 'boolean',
         ];
     }
 }

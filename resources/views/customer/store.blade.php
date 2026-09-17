@@ -14,7 +14,7 @@
         <div class="product-card-body">
           <div class="d-flex gap-2 mb-2">@if($product->hot)<span class="badge text-bg-danger">Hot</span>@endif @if($product->new)<span class="badge text-bg-primary">New</span>@endif @if($product->sale)<span class="badge text-bg-success">Sale</span>@endif</div>
           <h2 class="h5 fw-bold">{{ $product->name }}</h2><p class="text-muted small">{{ Str::limit(strip_tags($product->description),120) }}</p>
-          <div class="product-meta"><div><small>PRICE</small><strong>${{ number_format($price,2) }}</strong></div><div><small>DELIVERY</small><strong>{{ $product->delivery_time ?: 'Fast delivery' }}</strong></div></div>
+          <div class="product-meta">@if($showPrices)<div><small>PRICE</small><strong>${{ number_format($price,2) }}</strong></div>@endif<div><small>DELIVERY</small><strong>{{ $product->delivery_time ?: 'Fast delivery' }}</strong></div></div>
           @auth
             <button class="btn btn-gsm w-100 mt-3 js-buy-product" type="button" data-id="{{ $product->id }}" data-name="{{ $product->name }}" data-price="{{ $price }}" data-device="{{ $product->device_based ? 1 : 0 }}">Order now</button>
           @else<a class="btn btn-gsm w-100 mt-3" href="{{ route('login') }}">Login to order</a>@endauth

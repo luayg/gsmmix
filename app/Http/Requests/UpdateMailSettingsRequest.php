@@ -24,6 +24,8 @@ final class UpdateMailSettingsRequest extends FormRequest
             'from_address' => ['required', 'email:rfc', 'max:255'],
             'from_name' => ['required', 'string', 'max:120'],
             'timeout' => ['required', 'integer', 'between:1,60'],
+            'sendmail_path' => ['required_if:mailer,sendmail', 'nullable', 'string', 'max:500'],
+            'log_channel' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9_.-]+$/'],
         ];
     }
 
