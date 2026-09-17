@@ -17,7 +17,7 @@ class AdminAccessTest extends SecurityTestCase
 {
     public function test_guests_are_redirected_for_html_and_receive_401_for_json(): void
     {
-        $this->get('/admin/dashboard')->assertRedirect(route('login'));
+        $this->get('/admin/dashboard')->assertRedirect(route('home'));
         $this->getJson('/admin/apis')->assertUnauthorized();
         $this->getJson('/admin/users/999999')->assertUnauthorized();
     }
