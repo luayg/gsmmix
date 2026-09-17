@@ -8,6 +8,7 @@ use App\Services\Auth\LoginFlow;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use App\Services\Auth\Totp;
 
 final class TwoFactorController extends Controller
 {
@@ -17,7 +18,7 @@ final class TwoFactorController extends Controller
         return response()->view('auth.two-factor')->header('Cache-Control', 'no-store, private');
     }
 
-    public function store(Request $request, LoginFlow $flow)
+    public function store(Request $request, LoginFlow $flow, Totp $totp)
     {
         $data = $request->validate(['code' => ['required', 'digits:6']]);
         $challenge = $request->session()->get('two_factor');
@@ -27,10 +28,13 @@ final class TwoFactorController extends Controller
         }
         $challenge['attempts']++;
         $request->session()->put('two_factor', $challenge);
-        if (!Hash::check($data['code'], $challenge['code'])) {
+        $user = User::query()->whereKey($challenge['user_id'])->where('status', 'active')->firstOrFail();
+        $valid=($challenge['method']??'email')==='authenticator'
+            ? filled($user->two_factor_secret) && $totp->verify($user->two_factor_secret,$data['code'])
+            : isset($challenge['code']) && Hash::check($data['code'], $challenge['code']);
+        if (!$valid) {
             throw ValidationException::withMessages(['code' => 'The verification code is incorrect.']);
         }
-        $user = User::query()->whereKey($challenge['user_id'])->where('status', 'active')->firstOrFail();
         $request->session()->forget('two_factor');
         return $flow->login($request, $user, (bool) ($challenge['remember'] ?? false));
     }

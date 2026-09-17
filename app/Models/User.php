@@ -24,11 +24,15 @@ class User extends Authenticatable
         'password',
         'google_id',
         'two_factor_enabled',
+        'two_factor_method',
+        'two_factor_secret',
+        'two_factor_confirmed_at',
     ];
 
     protected $hidden = [
         'password',
         'remember_token',
+        'two_factor_secret',
     ];
 
     public function group()
@@ -42,6 +46,8 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'two_factor_enabled' => 'boolean',
+            'two_factor_secret' => 'encrypted',
+            'two_factor_confirmed_at' => 'datetime',
         ];
     }
 }

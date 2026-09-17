@@ -102,6 +102,9 @@ Route::middleware('auth')->group(function () {
         Route::get('/profile', [PortalController::class,'profile'])->name('profile');
         Route::put('/profile', [PortalController::class,'updateProfile'])->name('profile.update');
         Route::put('/profile/two-factor', [PortalController::class,'updateTwoFactor'])->middleware('throttle:5,1')->name('profile.two-factor');
+        Route::post('/profile/two-factor/authenticator/setup', [PortalController::class,'setupAuthenticator'])->middleware('throttle:5,1')->name('profile.authenticator.setup');
+        Route::post('/profile/two-factor/authenticator/confirm', [PortalController::class,'confirmAuthenticator'])->middleware('throttle:10,1')->name('profile.authenticator.confirm');
+        Route::delete('/profile/two-factor/authenticator', [PortalController::class,'removeAuthenticator'])->middleware('throttle:5,1')->name('profile.authenticator.remove');
     });
 });
 

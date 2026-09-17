@@ -21,6 +21,7 @@ use Illuminate\Validation\Rule;
 use App\Support\CustomerOverview;
 use App\Services\Settings\AppSettings;
 use Illuminate\Support\Facades\Hash;
+use App\Services\Auth\Totp;
 
 final class PortalController extends Controller
 {
@@ -61,8 +62,36 @@ final class PortalController extends Controller
         abort_if((bool) $settings->get('general.two_factor_enabled', false), 409, 'Two-step verification is required by the administrator and cannot be disabled.');
         $passwordRules=$request->user()->google_id ? ['nullable','string'] : ['required','current_password:web'];
         $data=$request->validate(['password'=>$passwordRules,'enabled'=>['required','boolean']]);
-        $request->user()->forceFill(['two_factor_enabled'=>(bool)$data['enabled']])->save();
+        $request->user()->forceFill(['two_factor_enabled'=>(bool)$data['enabled'],'two_factor_method'=>'email'])->save();
         return back()->with('ok', $data['enabled'] ? 'Two-step verification enabled.' : 'Two-step verification disabled.');
+    }
+    public function setupAuthenticator(Request $request, Totp $totp)
+    {
+        $rules=$request->user()->google_id?['nullable','string']:['required','current_password:web'];
+        $request->validate(['password'=>$rules]);
+        $secret=$totp->secret();
+        $request->session()->put('authenticator_setup_secret',['secret'=>$secret,'expires_at'=>now()->addMinutes(10)->timestamp]);
+        return back()->with('authenticator_setup',[
+            'secret'=>$secret,
+            'uri'=>$totp->uri($secret,$request->user()->email,config('app.name','GSM MIX')),
+        ]);
+    }
+    public function confirmAuthenticator(Request $request, Totp $totp)
+    {
+        $data=$request->validate(['code'=>['required','digits:6']]);
+        $setup=$request->session()->get('authenticator_setup_secret');
+        $secret=is_array($setup)?(string)($setup['secret']??''):'';
+        if($secret===''||($setup['expires_at']??0)<now()->timestamp||!$totp->verify($secret,$data['code'])) throw \Illuminate\Validation\ValidationException::withMessages(['code'=>'The authenticator setup expired or the code is incorrect.']);
+        $request->user()->forceFill(['two_factor_enabled'=>true,'two_factor_method'=>'authenticator','two_factor_secret'=>$secret,'two_factor_confirmed_at'=>now()])->save();
+        $request->session()->forget('authenticator_setup_secret');
+        return back()->with('ok','Authenticator app enabled.');
+    }
+    public function removeAuthenticator(Request $request)
+    {
+        $rules=$request->user()->google_id?['nullable','string']:['required','current_password:web'];
+        $request->validate(['password'=>$rules]);
+        $request->user()->forceFill(['two_factor_enabled'=>false,'two_factor_method'=>'email','two_factor_secret'=>null,'two_factor_confirmed_at'=>null])->save();
+        return back()->with('ok','Authenticator app removed.');
     }
     private function orders(int $userId): Collection
     {
