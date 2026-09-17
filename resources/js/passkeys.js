@@ -6,13 +6,20 @@ const message = (element, text, type = 'danger') => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-    const settingsLink = document.querySelector('.customer-nav a[href$="/account/profile"]');
-    if (settingsLink && !document.querySelector('.customer-nav a[href$="/account/passkeys"]')) {
-        const passkeysLink = document.createElement('a');
-        passkeysLink.href = '/account/passkeys';
-        passkeysLink.innerHTML = '<i class="fas fa-key"></i> Passkeys';
-        if (window.location.pathname === '/account/passkeys') passkeysLink.classList.add('active');
-        settingsLink.before(passkeysLink);
+    if (window.location.pathname === '/account/profile') {
+        const column = document.querySelector('.customer-content .col-xl-8');
+        if (column && !document.querySelector('[data-passkey-register-form]')) {
+            column.insertAdjacentHTML('beforeend', `
+                <section class="panel-card mt-4">
+                    <div class="d-flex justify-content-between align-items-start gap-3">
+                        <div><h2 class="h5 fw-bold mb-1">Passkeys</h2><p class="text-muted mb-0">Sign in with Windows Hello, Face ID, Touch ID, or your device screen lock.</p></div>
+                        <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#passkeySetup"><i class="fas fa-key me-2"></i>Add passkey</button>
+                    </div>
+                    <div data-passkey-register-message hidden></div>
+                </section>
+                <div class="modal fade" id="passkeySetup" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h2 class="modal-title h5">Add a passkey</h2><button class="btn-close" data-bs-dismiss="modal"></button></div><form data-passkey-register-form><div class="modal-body"><p class="text-muted">Give this passkey a recognizable name, such as “Office PC” or “My phone”.</p><label class="form-label">Passkey name</label><input class="form-control form-control-lg" name="name" maxlength="120" required autocomplete="off"><div class="small text-muted mt-3"><i class="fas fa-shield-halved me-1"></i>Your fingerprint, face, or device PIN never leaves your device.</div></div><div class="modal-footer"><button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button><button type="submit" class="btn btn-primary">Continue on this device</button></div></form></div></div></div>
+            `);
+        }
     }
 
     const loginButton = document.querySelector('[data-passkey-login]');
