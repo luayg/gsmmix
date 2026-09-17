@@ -22,6 +22,7 @@ use App\Support\CustomerOverview;
 use App\Services\Settings\AppSettings;
 use Illuminate\Support\Facades\Hash;
 use App\Services\Auth\Totp;
+use Illuminate\Support\Facades\Schema;
 
 final class PortalController extends Controller
 {
@@ -60,7 +61,10 @@ final class PortalController extends Controller
             $request->session()->forget('authenticator_setup_secret');
             $authenticatorSetup=null;
         }
-        return view('customer.profile',['user'=>$request->user(),'authenticatorSetup'=>$authenticatorSetup]);
+        $passkeys=Schema::hasTable('passkeys')
+            ? $request->user()->passkeys()->latest()->get()
+            : collect();
+        return view('customer.profile',['user'=>$request->user(),'authenticatorSetup'=>$authenticatorSetup,'passkeys'=>$passkeys]);
     }
     public function updateProfile(Request $request)
     {

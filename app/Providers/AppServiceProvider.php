@@ -29,18 +29,23 @@ use App\Models\Page;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
+use Laravel\Passkeys\Contracts\PasskeyLoginResponse as PasskeyLoginResponseContract;
+use Laravel\Passkeys\Passkeys;
+use App\Http\Responses\PasskeyLoginResponse;
 
 class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        //
+        $this->app->singleton(PasskeyLoginResponseContract::class,PasskeyLoginResponse::class);
     }
 
     public function boot(): void
     {
         $appSettings = app(AppSettings::class);
         $appSettings->applyRuntimeConfiguration();
+
+        Passkeys::authorizeLoginUsing(fn($request,$user,$passkey): bool => $user instanceof User && $user->status==='active');
 
         View::composer('*', function ($view) use ($appSettings): void {
             $view->with('siteSettings', $appSettings->group('general'));
