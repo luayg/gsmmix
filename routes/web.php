@@ -29,6 +29,7 @@ use App\Http\Controllers\Admin\PageController;
 use App\Http\Controllers\Admin\MenuController;
 use App\Http\Controllers\Admin\DownloadController;
 use App\Http\Controllers\Admin\DownloadCategoryController;
+use App\Http\Controllers\Admin\ResellerController;
 use App\Http\Controllers\Admin\LogController;
 use App\Http\Controllers\Admin\SystemController;
 
@@ -57,6 +58,7 @@ use App\Http\Controllers\Customer\PortalController;
 use App\Http\Controllers\Customer\PaymentController as CustomerPaymentController;
 use App\Http\Controllers\Customer\OrderController as CustomerOrderController;
 use App\Http\Controllers\Customer\ProductOrderController as CustomerProductOrderController;
+use App\Http\Controllers\Customer\DownloadController as CustomerDownloadController;
 
 /*
 |--------------------------------------------------------------------------
@@ -111,12 +113,15 @@ Route::middleware('auth')->group(function () {
         Route::get('/profile/passkeys/options', [PasskeyController::class, 'registrationOptions'])->middleware('throttle:10,1')->name('profile.passkeys.options');
         Route::post('/profile/passkeys', [PasskeyController::class, 'store'])->middleware('throttle:10,1')->name('profile.passkeys.store');
         Route::delete('/profile/passkeys/{passkey}', [PasskeyController::class, 'destroy'])->middleware('throttle:10,1')->name('profile.passkeys.destroy');
+        Route::post('/downloads/{download}/purchase', [CustomerDownloadController::class,'purchase'])->middleware('throttle:10,1')->name('downloads.purchase');
+        Route::get('/downloads/{download}/download', [CustomerDownloadController::class,'download'])->middleware('throttle:30,1')->name('downloads.download');
     });
 });
 
 Route::get('/services', [PortalController::class,'services'])->name('site.services');
 Route::get('/store', [PortalController::class,'store'])->name('site.store');
 Route::get('/downloads', [PortalController::class,'downloads'])->name('site.downloads');
+Route::get('/resellers', [PortalController::class,'resellers'])->name('site.resellers');
 
 Route::prefix('admin')->name('admin.')->group(function () {
 
@@ -451,6 +456,10 @@ Route::prefix('admin')->name('admin.')->group(function () {
     Route::prefix('settings')->name('settings.')->group(function () {
         Route::get('/general', [SettingsController::class, 'general'])->name('general');
         Route::put('/general', [SettingsController::class, 'updateGeneral'])->name('general.update');
+        Route::get('/resellers', [ResellerController::class,'index'])->name('resellers');
+        Route::post('/resellers', [ResellerController::class,'store'])->name('resellers.store');
+        Route::put('/resellers/{reseller}', [ResellerController::class,'update'])->name('resellers.update');
+        Route::delete('/resellers/{reseller}', [ResellerController::class,'destroy'])->name('resellers.destroy');
         Route::get('/banners', [HomeBannerController::class, 'index'])->name('banners');
         Route::post('/banners', [HomeBannerController::class, 'store'])->name('banners.store');
         Route::put('/banners/{banner}', [HomeBannerController::class, 'update'])->name('banners.update');
