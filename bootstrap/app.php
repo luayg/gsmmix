@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\ProtectAdminRoutes;
+use App\Http\Middleware\PreventAuthenticatedResponseCaching;
 use App\Http\Middleware\RecordAdminActivity;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -17,7 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->validateCsrfTokens(except: ['payment/webhooks/*']);
         // Never run session authentication in the global, pre-session stack.
-        $middleware->web(append: [AuthenticateSession::class, ProtectAdminRoutes::class, RecordAdminActivity::class]);
+        $middleware->web(append: [AuthenticateSession::class, PreventAuthenticatedResponseCaching::class, ProtectAdminRoutes::class, RecordAdminActivity::class]);
         // Deny unauthorized access before route model binding can disclose records.
         $middleware->prependToPriorityList(SubstituteBindings::class, ProtectAdminRoutes::class);
         $middleware->redirectGuestsTo(fn () => route('login'));
