@@ -13,6 +13,7 @@
 body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--gsm-text);background:var(--gsm-bg)}
 .site-nav{background:rgba(7,20,38,.94);backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,.08)}
 .brand-mark{font-weight:900;letter-spacing:-.04em;font-size:1.55rem;color:#fff;text-decoration:none}.brand-mark span{color:var(--gsm-blue)}
+.site-brand-logo{display:block;max-width:190px;max-height:48px;width:auto;height:auto;object-fit:contain}.customer-sidebar .site-brand-logo{max-width:155px;max-height:52px}
 .hero{background:radial-gradient(circle at 75% 35%,rgba(23,105,255,.36),transparent 32%),linear-gradient(135deg,#061222,#0a2344 72%,#08182c);color:#fff;padding:7.5rem 0 8.5rem;position:relative;overflow:hidden}
 .hero:after{content:"";position:absolute;width:520px;height:520px;border:1px solid rgba(49,200,255,.22);border-radius:50%;right:-120px;top:10px;box-shadow:0 0 120px rgba(23,105,255,.22)}
 .hero h1{font-size:clamp(3rem,6vw,5.8rem);font-weight:900;line-height:.98;letter-spacing:-.06em}.text-gradient{background:linear-gradient(90deg,#fff,#5ea2ff);-webkit-background-clip:text;color:transparent}

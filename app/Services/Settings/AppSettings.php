@@ -61,6 +61,14 @@ final class AppSettings
 
     public function group(string $group): array
     {
+        try {
+            if (!Schema::hasTable('settings')) {
+                return [];
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+            return [];
+        }
         $load = function () use ($group): array {
             return Setting::query()->where('group_name', $group)->get()->mapWithKeys(
                 fn (Setting $setting) => [$setting->setting_key => $this->decode($setting)]
