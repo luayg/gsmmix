@@ -40,7 +40,7 @@
   </style>
 </head>
 
-<body class="bg-light">
+<body class="bg-light @yield('bodyClass')">
   {{-- Navbar + Sidebar --}}
   @include('partials.navbar')
   @include('partials.sidebar')
