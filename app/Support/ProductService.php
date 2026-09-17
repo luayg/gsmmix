@@ -52,18 +52,21 @@ final class ProductService
 
     public static function displayName(Model $service): string
     {
-        $name = $service->name ?? '';
-        if ($name instanceof \Illuminate\Support\Collection) {
-            $name = $name->all();
+        return self::displayText($service->name ?? '');
+    }
+
+    public static function displayText(mixed $value): string
+    {
+        if ($value instanceof \Illuminate\Support\Collection) {
+            $value = $value->all();
         }
-        if (is_array($name)) {
-            return trim((string) ($name['en'] ?? $name['fallback'] ?? reset($name) ?: ''));
+        if (is_array($value)) {
+            $locale = app()->getLocale();
+            return trim((string) ($value[$locale] ?? $value['en'] ?? $value['fallback'] ?? reset($value) ?: ''));
         }
-        $raw = trim((string) $name);
+        $raw = trim((string) $value);
         $decoded = json_decode($raw, true);
-        return is_array($decoded)
-            ? trim((string) ($decoded['en'] ?? $decoded['fallback'] ?? reset($decoded) ?: ''))
-            : $raw;
+        return is_array($decoded) ? self::displayText($decoded) : $raw;
     }
 
     public static function options(): array
