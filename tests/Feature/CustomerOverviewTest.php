@@ -28,7 +28,7 @@ class CustomerOverviewTest extends TestCase
             Schema::create($name, function (Blueprint $table): void {
                 $table->id(); $table->unsignedBigInteger('user_id'); $table->string('status');
                 $table->decimal('price', 12, 4)->nullable(); $table->decimal('order_price', 12, 4)->nullable();
-                $table->text('request')->nullable(); $table->timestamps();
+                $table->text('request')->nullable(); $table->boolean('processing')->default(false); $table->timestamps();
             });
         }
     }
