@@ -52,6 +52,7 @@ use App\Http\Controllers\PublicSiteController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\TwoFactorController;
+use App\Http\Controllers\Auth\PasskeyController;
 use App\Http\Controllers\Customer\PortalController;
 use App\Http\Controllers\Customer\PaymentController as CustomerPaymentController;
 use App\Http\Controllers\Customer\OrderController as CustomerOrderController;
@@ -80,6 +81,8 @@ Route::middleware('guest')->group(function () {
     Route::get('/auth/google/callback', [GoogleController::class, 'callback'])->name('auth.google.callback');
     Route::get('/two-factor-challenge', [TwoFactorController::class, 'create'])->name('two-factor.challenge');
     Route::post('/two-factor-challenge', [TwoFactorController::class, 'store'])->middleware('throttle:6,1')->name('two-factor.verify');
+    Route::get('/passkeys/login/options', [PasskeyController::class, 'loginOptions'])->middleware('throttle:20,1')->name('passkeys.login.options');
+    Route::post('/passkeys/login', [PasskeyController::class, 'login'])->middleware('throttle:10,1')->name('passkeys.login');
 });
 
 Route::middleware('auth')->group(function () {
@@ -105,6 +108,9 @@ Route::middleware('auth')->group(function () {
         Route::post('/profile/two-factor/authenticator/setup', [PortalController::class,'setupAuthenticator'])->middleware('throttle:5,1')->name('profile.authenticator.setup');
         Route::post('/profile/two-factor/authenticator/confirm', [PortalController::class,'confirmAuthenticator'])->middleware('throttle:10,1')->name('profile.authenticator.confirm');
         Route::delete('/profile/two-factor/authenticator', [PortalController::class,'removeAuthenticator'])->middleware('throttle:5,1')->name('profile.authenticator.remove');
+        Route::get('/profile/passkeys/options', [PasskeyController::class, 'registrationOptions'])->middleware('throttle:10,1')->name('profile.passkeys.options');
+        Route::post('/profile/passkeys', [PasskeyController::class, 'store'])->middleware('throttle:10,1')->name('profile.passkeys.store');
+        Route::delete('/profile/passkeys/{passkey}', [PasskeyController::class, 'destroy'])->middleware('throttle:10,1')->name('profile.passkeys.destroy');
     });
 });
 

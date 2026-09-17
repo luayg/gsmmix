@@ -2,6 +2,7 @@
 @section('title','Account settings')
 @section('content')
 @php($twoFactorRequired=(bool)app(\App\Services\Settings\AppSettings::class)->get('general.two_factor_enabled',false))
+@include('customer.partials.passkeys')
 <div class="row g-4"><div class="col-xl-8">
 <div class="panel-card"><span class="eyebrow">ACCOUNT</span><h1 class="h3 fw-bold">Profile settings</h1><p class="text-muted">Keep your contact and account information current.</p><form method="POST" action="{{ route('customer.profile.update') }}">@csrf @method('PUT')<div class="row g-3"><div class="col-md-6"><label class="form-label">Full name</label><input class="form-control form-control-lg" name="name" value="{{ old('name',$user->name) }}" required></div><div class="col-md-6"><label class="form-label">Username</label><input class="form-control form-control-lg" name="username" value="{{ old('username',$user->username) }}" required></div><div class="col-12"><label class="form-label">Email address</label><input type="email" class="form-control form-control-lg" name="email" value="{{ old('email',$user->email) }}" required></div></div><button class="btn btn-primary btn-lg mt-4 px-4">Save changes</button></form></div>
 <div class="panel-card mt-4"><div class="d-flex justify-content-between align-items-start"><div><h2 class="h5 fw-bold">Two-step verification</h2><p class="text-muted">Choose email codes or an authenticator app.</p></div>@if($twoFactorRequired)<span class="badge bg-primary">Required by administrator</span>@endif</div>
