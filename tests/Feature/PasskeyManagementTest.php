@@ -36,7 +36,7 @@ final class PasskeyManagementTest extends SecurityTestCase
         $this->passkey($user->id,'Office PC','credential-office');
         $this->passkey($other->id,'Other account key','credential-other');
 
-        $this->actingAs($user)->get(route('customer.profile'))
+        $this->actingAs($user)->get(route('customer.passkeys'))
             ->assertOk()
             ->assertSee('Office PC')
             ->assertDontSee('Other account key')
