@@ -82,6 +82,12 @@ final class AdminPermissions
         if ($name === 'admin.finances.invoices.payments.store') {
             return $method === 'POST' ? ['finances.edit'] : null;
         }
+        if ($name === 'admin.users.reset_verification') {
+            return $method === 'POST' ? ['users.edit'] : null;
+        }
+        if ($name === 'admin.users.modal.reset_verification') {
+            return $safe ? ['users.view'] : null;
+        }
         if (in_array($name, ['admin.finances.payment-reviews.approve', 'admin.finances.payment-reviews.reject'], true)) {
             return $method === 'POST' ? ['finances.edit'] : null;
         }
@@ -135,6 +141,7 @@ final class AdminPermissions
         return in_array($name, [
             'admin.users.store', 'admin.users.update', 'admin.users.destroy',
             'admin.users.modal.create', 'admin.users.modal.edit', 'admin.users.modal.delete',
+            'admin.users.reset_verification', 'admin.users.modal.reset_verification',
         ], true);
     }
 }
