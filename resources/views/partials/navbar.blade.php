@@ -1,5 +1,5 @@
 {{-- [انسخ] --}}
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top" style="height: var(--navbar-height)">
+<nav class="navbar admin-navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
   <div class="container-fluid">
     <button id="btnToggleSidebar" class="btn btn-outline-light d-lg-none me-2">
   <i class="fas fa-bars"></i>
