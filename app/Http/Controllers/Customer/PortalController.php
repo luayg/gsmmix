@@ -50,7 +50,18 @@ final class PortalController extends Controller
     }
     public function store() { $settings=app(AppSettings::class); abort_unless((bool)$settings->get('general.store_enabled',true),404); $groupId=auth()->user()?->group_id; $products=Product::query()->where('active',true)->with(['category','groupPrices'=>fn($q)=>$q->when($groupId,fn($x)=>$x->where('group_id',$groupId))])->orderByDesc('hot')->orderBy('ordering')->paginate(20); $schemas=[]; foreach($products as $product){if($product->source_type==='service'&&$product->service_type&&$product->service_id){$service=\App\Support\ProductService::find($product->service_type,(int)$product->service_id,true);if($service)$schemas[$product->id]=\App\Support\ProductService::inputSchema($product->service_type,$service);}} $showPrices=auth()->check()||(bool)$settings->get('general.show_prices_to_guests',false); return view('customer.store',compact('products','schemas','showPrices')); }
     public function downloads() { return view('customer.downloads',['downloads'=>Download::query()->where('active',true)->with('category')->orderByDesc('created_at')->paginate(20)]); }
-    public function profile(Request $request) { return view('customer.profile',['user'=>$request->user()]); }
+    public function profile(Request $request, Totp $totp)
+    {
+        $setup=$request->session()->get('authenticator_setup_secret');
+        if(is_array($setup) && ($setup['expires_at']??0)>=now()->timestamp && filled($setup['secret']??null)) {
+            $secret=(string)$setup['secret'];
+            $authenticatorSetup=['secret'=>$secret,'uri'=>$totp->uri($secret,$request->user()->email,config('app.name','GSM MIX'))];
+        } else {
+            $request->session()->forget('authenticator_setup_secret');
+            $authenticatorSetup=null;
+        }
+        return view('customer.profile',['user'=>$request->user(),'authenticatorSetup'=>$authenticatorSetup]);
+    }
     public function updateProfile(Request $request)
     {
         $user=$request->user();
@@ -62,7 +73,13 @@ final class PortalController extends Controller
         abort_if((bool) $settings->get('general.two_factor_enabled', false), 409, 'Two-step verification is required by the administrator and cannot be disabled.');
         $passwordRules=$request->user()->google_id ? ['nullable','string'] : ['required','current_password:web'];
         $data=$request->validate(['password'=>$passwordRules,'enabled'=>['required','boolean']]);
-        $request->user()->forceFill(['two_factor_enabled'=>(bool)$data['enabled'],'two_factor_method'=>'email'])->save();
+        $request->session()->forget('authenticator_setup_secret');
+        $request->user()->forceFill([
+            'two_factor_enabled'=>(bool)$data['enabled'],
+            'two_factor_method'=>'email',
+            'two_factor_secret'=>null,
+            'two_factor_confirmed_at'=>null,
+        ])->save();
         return back()->with('ok', $data['enabled'] ? 'Two-step verification enabled.' : 'Two-step verification disabled.');
     }
     public function setupAuthenticator(Request $request, Totp $totp)
@@ -71,10 +88,7 @@ final class PortalController extends Controller
         $request->validate(['password'=>$rules]);
         $secret=$totp->secret();
         $request->session()->put('authenticator_setup_secret',['secret'=>$secret,'expires_at'=>now()->addMinutes(10)->timestamp]);
-        return back()->with('authenticator_setup',[
-            'secret'=>$secret,
-            'uri'=>$totp->uri($secret,$request->user()->email,config('app.name','GSM MIX')),
-        ]);
+        return back();
     }
     public function confirmAuthenticator(Request $request, Totp $totp)
     {
@@ -86,11 +100,20 @@ final class PortalController extends Controller
         $request->session()->forget('authenticator_setup_secret');
         return back()->with('ok','Authenticator app enabled.');
     }
-    public function removeAuthenticator(Request $request)
+    public function removeAuthenticator(Request $request, Totp $totp, AppSettings $settings)
     {
         $rules=$request->user()->google_id?['nullable','string']:['required','current_password:web'];
-        $request->validate(['password'=>$rules]);
-        $request->user()->forceFill(['two_factor_enabled'=>false,'two_factor_method'=>'email','two_factor_secret'=>null,'two_factor_confirmed_at'=>null])->save();
+        $data=$request->validate(['password'=>$rules,'code'=>['required','digits:6']]);
+        if(!filled($request->user()->two_factor_secret)||!$totp->verify($request->user()->two_factor_secret,$data['code'])) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['code'=>'The authenticator code is incorrect.']);
+        }
+        $request->session()->forget('authenticator_setup_secret');
+        $request->user()->forceFill([
+            'two_factor_enabled'=>(bool)$settings->get('general.two_factor_enabled',false),
+            'two_factor_method'=>'email',
+            'two_factor_secret'=>null,
+            'two_factor_confirmed_at'=>null,
+        ])->save();
         return back()->with('ok','Authenticator app removed.');
     }
     private function orders(int $userId): Collection
