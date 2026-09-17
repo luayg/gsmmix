@@ -32,6 +32,7 @@ use App\Http\Controllers\Admin\DownloadCategoryController;
 use App\Http\Controllers\Admin\ResellerController;
 use App\Http\Controllers\Admin\LogController;
 use App\Http\Controllers\Admin\SystemController;
+use App\Http\Controllers\Admin\DashboardController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -129,14 +130,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     // Dashboard
     Route::get('/', fn () => redirect()->route('admin.dashboard'));
-    Route::get('/dashboard', fn () => view('admin.dashboard', [
-        'manualPaymentsReview' => \Illuminate\Support\Facades\Schema::hasTable('payment_transactions')
-            && \Illuminate\Support\Facades\Schema::hasTable('payment_gateways')
-            && \Illuminate\Support\Facades\Schema::hasColumn('payment_gateways', 'is_system') ? \App\Models\PaymentTransaction::query()
-            ->where('status', 'review')
-            ->whereHas('gateway', fn ($query) => $query->where('is_system', false))
-            ->count() : 0,
-    ]))->name('dashboard');
+    Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
     // Summernote image upload
     Route::post('/uploads/summernote-image', [UploadController::class, 'summernote'])
@@ -511,6 +505,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
 
     Route::prefix('logs')->name('logs.')->group(function () {
         Route::get('/access',   [LogController::class, 'access'])->name('access');
+        Route::post('/access/blocked-ips', [LogController::class, 'block'])->middleware('throttle:20,1')->name('blocked-ips.store');
+        Route::delete('/access/blocked-ips/{blockedIp}', [LogController::class, 'unblock'])->name('blocked-ips.destroy');
         Route::get('/activity', [LogController::class, 'activity'])->name('activity');
         Route::get('/error',    [LogController::class, 'error'])->name('error');
     });

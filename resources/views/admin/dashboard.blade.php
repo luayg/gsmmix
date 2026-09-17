@@ -1,18 +1,16 @@
-{{-- [انسخ] --}}
 @extends('layouts.admin')
 @section('title','Dashboard')
-
 @section('content')
-<div class="card">
-  <div class="card-body">
-    <h5 class="card-title mb-3"><i class="fas fa-tachometer-alt mr-2"></i>Dashboard</h5>
-    <p class="mb-0">مرحباً بك في لوحة التحكم.</p>
-    @if($manualPaymentsReview > 0)
-      <div class="alert alert-warning d-flex justify-content-between align-items-center mt-4 mb-0">
-        <span><strong>{{ $manualPaymentsReview }}</strong> manual payment {{ $manualPaymentsReview === 1 ? 'is' : 'are' }} waiting for review.</span>
-        <a class="btn btn-warning" href="{{ route('admin.finances.payment-reviews.index') }}">Review payments</a>
-      </div>
-    @endif
-  </div>
+<div class="admin-page-head"><div><span class="admin-kicker">LIVE BUSINESS OVERVIEW</span><h1>Command dashboard</h1><p>Orders, customers, payments and operational alerts in one place.</p></div><div class="text-muted small"><i class="fas fa-clock me-1"></i>{{ now()->format('M d, Y · H:i') }}</div></div>
+<div class="dashboard-metrics">
+@foreach([
+ ['Today orders',$todayOrders,'fa-cart-shopping','blue'],['Today registration',$todayRegistrations,'fa-user-plus','violet'],['Today payments','$'.number_format($todayPayments,2),'fa-wallet','green'],['Online users',$onlineUsers,'fa-signal','cyan']
+] as [$label,$value,$icon,$tone])<div class="metric-card tone-{{ $tone }}"><div class="metric-icon"><i class="fas {{ $icon }}"></i></div><div><span>{{ $label }}</span><strong>{{ $value }}</strong></div></div>@endforeach
 </div>
+<div class="row g-4 mb-4"><div class="col-xl-8"><div class="card admin-panel h-100"><div class="card-body p-4"><div class="d-flex justify-content-between align-items-start mb-4"><div><span class="admin-kicker">THIS MONTH</span><h2 class="h4 fw-bold mb-1">Performance</h2><p class="text-muted mb-0">{{ number_format($monthOrders) }} orders received</p></div><div class="text-end"><div class="text-muted small">Net recorded profit</div><strong class="h3 text-success">${{ number_format($monthProfit,2) }}</strong>@if($profitChange!==null)<div class="small {{ $profitChange>=0?'text-success':'text-danger' }}">{{ $profitChange>=0?'↑':'↓' }} {{ abs($profitChange) }}% vs last month</div>@endif</div></div>
+<div class="rate-grid"><div><div class="rate-head"><span>Acceptance rate</span><strong>{{ $acceptanceRate }}%</strong></div><div class="progress"><div class="progress-bar bg-success" style="width:{{ $acceptanceRate }}%"></div></div></div><div><div class="rate-head"><span>Rejected / cancelled</span><strong>{{ $rejectionRate }}%</strong></div><div class="progress"><div class="progress-bar bg-danger" style="width:{{ $rejectionRate }}%"></div></div></div></div>
+<div class="status-grid mt-4">@foreach(['waiting'=>'Waiting','inprogress'=>'In progress','success'=>'Completed','rejected'=>'Rejected','cancelled'=>'Cancelled'] as $key=>$label)<div><span>{{ $label }}</span><strong>{{ number_format($statuses[$key]) }}</strong></div>@endforeach</div></div></div></div>
+<div class="col-xl-4"><div class="card admin-panel h-100"><div class="card-body p-4"><span class="admin-kicker">ATTENTION</span><h2 class="h4 fw-bold">Action center</h2><a class="action-alert" href="{{ route('admin.finances.payment-reviews.index') }}"><i class="fas fa-money-check-dollar"></i><span><strong>{{ $reviewPayments }} payment reviews</strong><small>Waiting for approval</small></span><i class="fas fa-chevron-right"></i></a><div class="action-alert"><i class="fas fa-users"></i><span><strong>{{ number_format($totalUsers) }} customers</strong><small>{{ $todayRegistrations }} joined today</small></span></div><a class="action-alert" href="{{ route('admin.logs.access') }}"><i class="fas fa-shield-halved"></i><span><strong>Access security</strong><small>Review sessions and block IPs</small></span><i class="fas fa-chevron-right"></i></a></div></div></div></div>
+<div class="row g-4"><div class="col-xl-8"><div class="card admin-panel"><div class="card-body p-0"><div class="panel-title"><div><span class="admin-kicker">QUEUE</span><h2>Orders requiring attention</h2></div></div><div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th>Order</th><th>Type</th><th>User</th><th>Status</th><th>Created</th></tr></thead><tbody>@forelse($pending as $order)<tr><td><strong>#{{ $order->id }}</strong></td><td>{{ strtoupper($order->type) }}</td><td>{{ $order->user_id ?: 'Guest' }}</td><td><span class="badge text-bg-warning">{{ ucfirst($order->status) }}</span></td><td>{{ \Illuminate\Support\Carbon::parse($order->created_at)->diffForHumans() }}</td></tr>@empty<tr><td colspan="5" class="text-center text-muted py-5">No orders require attention.</td></tr>@endforelse</tbody></table></div></div></div>
+<div class="col-xl-4"><div class="card admin-panel"><div class="card-body p-4"><span class="admin-kicker">LAST 5 MINUTES</span><h2 class="h5 fw-bold">Users online now</h2><div class="online-list">@forelse($online as $session)<div><span class="online-pulse"></span><strong>User #{{ $session->user_id }}</strong><code>{{ $session->ip_address }}</code></div>@empty<p class="text-muted mb-0">Online tracking requires the database session driver.</p>@endforelse</div></div></div></div></div>
 @endsection
