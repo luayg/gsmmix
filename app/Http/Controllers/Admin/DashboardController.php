@@ -44,7 +44,7 @@ final class DashboardController extends Controller
             }
 
             $columns = array_values(array_filter(['id', 'user_id', 'status', 'created_at', Schema::hasColumn($table, 'order_price') ? 'order_price' : null]));
-            $decorate = fn ($row) => tap($row, function ($row) use ($type) { $row->type = $type; $row->amount = (float) ($row->order_price ?? 0); });
+            $decorate = fn ($row) => tap($row, function ($row) use ($type) { $row->type = $type; $row->amount = (float) ($row->order_price ?? 0); $row->admin_url = route("admin.orders.{$type}.index"); });
             $pending = $pending->concat((clone $query)->whereIn('status', ['waiting', 'inprogress'])->latest('id')->limit(6)->get($columns)->map($decorate));
             $recentOrders = $recentOrders->concat((clone $query)->latest('id')->limit(6)->get($columns)->map($decorate));
         }
