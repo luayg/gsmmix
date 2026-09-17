@@ -19,7 +19,7 @@ final class PublicSiteController extends Controller
         $page=Schema::hasTable('pages') ? $this->findPage('home') : null;
         $homeSettings=Schema::hasTable('settings')?app(AppSettings::class)->group('general'):[];
         $enabled=fn(string $type)=>(bool)($homeSettings['general.service_'.$type.'_enabled']??true);
-        $products=Schema::hasTable('products') && ($homeSettings['general.store_enabled']??true) ? Product::query()->where('active',true)->orderByDesc('new')->orderBy('ordering')->limit(8)->get() : collect();
+        $products=Schema::hasTable('products') && ($homeSettings['general.store_enabled']??true) ? Product::query()->where('active',true)->with('category')->orderByDesc('new')->orderBy('ordering')->limit(8)->get() : collect();
         $counts=[
             'imei'=>Schema::hasTable('imei_services') && $enabled('imei') ? ImeiService::where('active',true)->count() : null,
             'server'=>Schema::hasTable('server_services') && $enabled('server') ? ServerService::where('active',true)->count() : null,
