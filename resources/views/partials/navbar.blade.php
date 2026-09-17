@@ -26,6 +26,14 @@
         </a>
       </li>
 
+      <li class="nav-item mr-2">
+        <button type="button" class="btn btn-outline-light admin-theme-toggle" id="adminThemeToggle"
+                aria-label="Switch to light mode" title="Switch to light mode">
+          <i class="fas fa-sun" aria-hidden="true"></i>
+          <span class="d-none d-xl-inline ms-1">Light</span>
+        </button>
+      </li>
+
       <li class="nav-item dropdown mr-2">
         <a class="btn btn-outline-light dropdown-toggle" href="#" id="userMenu" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
           Administrator

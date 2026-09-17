@@ -382,3 +382,38 @@ if (btnRepos) {
 }
 
 window.addEventListener('show-toast-reposition', positionToastStack);
+
+/* =================================================================
+ * Admin light / dark color mode
+ * ================================================================= */
+document.addEventListener('DOMContentLoaded', () => {
+  const toggle = document.getElementById('adminThemeToggle');
+  if (!toggle) return;
+
+  const root = document.documentElement;
+  const icon = toggle.querySelector('i');
+  const label = toggle.querySelector('span');
+
+  const updateToggle = () => {
+    const isLight = root.dataset.adminTheme === 'light';
+    icon?.classList.toggle('fa-sun', !isLight);
+    icon?.classList.toggle('fa-moon', isLight);
+    if (label) label.textContent = isLight ? 'Dark' : 'Light';
+    const nextMode = isLight ? 'dark' : 'light';
+    toggle.title = `Switch to ${nextMode} mode`;
+    toggle.setAttribute('aria-label', `Switch to ${nextMode} mode`);
+    toggle.setAttribute('aria-pressed', String(isLight));
+  };
+
+  updateToggle();
+
+  toggle.addEventListener('click', () => {
+    const nextMode = root.dataset.adminTheme === 'light' ? 'dark' : 'light';
+    root.dataset.adminTheme = nextMode;
+    try {
+      localStorage.setItem('admin-theme', nextMode);
+    } catch (_) {}
+    updateToggle();
+    window.dispatchEvent(new CustomEvent('admin-theme-changed', { detail: { theme: nextMode } }));
+  });
+});
