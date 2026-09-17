@@ -73,8 +73,16 @@ final class AppSettings
 
     public function get(string $key, mixed $default = null): mixed
     {
-        $setting = Setting::query()->where('setting_key', $key)->first();
-        return $setting ? $this->decode($setting) : $default;
+        try {
+            if (!Schema::hasTable('settings')) {
+                return $default;
+            }
+            $setting = Setting::query()->where('setting_key', $key)->first();
+            return $setting ? $this->decode($setting) : $default;
+        } catch (Throwable $exception) {
+            report($exception);
+            return $default;
+        }
     }
 
     /** @param array<string, array{value:mixed,type?:string,encrypted?:bool}> $values */
