@@ -99,6 +99,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/orders/{type}', [CustomerOrderController::class,'index'])->whereIn('type',['imei','server','file','smm','product'])->name('orders.type');
         Route::get('/orders/{type}/{order}', [CustomerOrderController::class,'show'])->whereIn('type',['imei','server','file','smm','product'])->whereNumber('order')->name('orders.show');
         Route::get('/payments', [CustomerPaymentController::class,'index'])->name('payments.index');
+        Route::get('/payments/statement/print', [CustomerPaymentController::class,'printStatement'])->name('payments.statement.print');
         Route::get('/add-funds', [CustomerPaymentController::class,'create'])->name('payments.create');
         Route::post('/add-funds', [CustomerPaymentController::class,'store'])->middleware('throttle:10,1')->name('payments.store');
         Route::get('/payments/paypal/return', [CustomerPaymentController::class,'paypalReturn'])->name('payments.paypal.return');
