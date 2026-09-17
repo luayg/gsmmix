@@ -67,7 +67,8 @@ use App\Http\Controllers\Customer\DownloadController as CustomerDownloadControll
 */
 
 Route::get('/', [PublicSiteController::class,'home'])->name('home');
-Route::get('/register/verify/{user}', [RegisterController::class, 'verify'])->middleware('signed')->name('register.verify');
+Route::get('/register/verify', [RegisterController::class, 'verificationForm'])->name('register.verify');
+Route::post('/register/verify', [RegisterController::class, 'verify'])->middleware('throttle:8,1')->name('register.verify.submit');
 Route::post('/payment/webhooks/{slug}', PaymentWebhookController::class)
     ->whereIn('slug', ['paypal', 'binance-pay'])
     ->middleware('throttle:120,1')

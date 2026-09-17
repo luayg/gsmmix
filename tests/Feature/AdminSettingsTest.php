@@ -36,11 +36,12 @@ final class AdminSettingsTest extends SecurityTestCase
     {
         $this->actingAs($this->user('Administrator'));
         $this->put(route('admin.settings.general.update'), $this->generalPayload([
-            'site_name' => 'GSM JO', 'registration_enabled' => '1', 'service_smm_enabled' => '0',
+            'site_name' => 'GSM JO', 'registration_enabled' => '1', 'email_verification_enabled' => '1', 'service_smm_enabled' => '0',
         ]))->assertRedirect()->assertSessionHas('ok');
         $settings = app(AppSettings::class)->group('general');
         $this->assertSame('GSM JO', $settings['general.site_name']);
         $this->assertTrue($settings['general.registration_enabled']);
+        $this->assertTrue($settings['general.email_verification_enabled']);
         $this->assertFalse($settings['general.service_smm_enabled']);
         $this->assertSame('Asia/Amman', $settings['general.timezone']);
     }
@@ -88,7 +89,7 @@ final class AdminSettingsTest extends SecurityTestCase
         return array_replace([
             'site_name' => 'GSM Mix', 'site_tagline' => '', 'contact_email' => 'admin@example.test',
             'contact_phone' => '+962700000000', 'timezone' => 'Asia/Amman', 'date_format' => 'Y-m-d',
-            'registration_enabled' => '0', 'service_imei_enabled' => '1', 'service_server_enabled' => '1',
+            'registration_enabled' => '0', 'email_verification_enabled' => '0', 'service_imei_enabled' => '1', 'service_server_enabled' => '1',
             'service_file_enabled' => '1', 'service_smm_enabled' => '1', 'store_enabled' => '1',
         ], $overrides);
     }

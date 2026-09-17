@@ -174,7 +174,7 @@ class AdminAccessTest extends SecurityTestCase
         $user = $this->user('Administrator');
         $this->post('/login', ['login' => $user->username, 'password' => 'A-strong-test-password-123!']);
         $this->rememberSessionCookie();
-        $this->post('/logout')->assertRedirect(route('login'));
+        $this->post('/logout')->assertRedirect(route('home'));
         $this->resetSessionRuntime();
         $this->get('/admin/dashboard')->assertRedirect(route('login'));
     }
