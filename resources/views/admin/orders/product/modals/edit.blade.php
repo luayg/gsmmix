@@ -30,7 +30,7 @@
         <div class="border rounded p-3 mb-3 bg-white" style="min-height:100px">{!! $replyHtml ?: '<span class="text-muted">Awaiting result</span>' !!}</div>
         @if($providerError)<div class="alert alert-warning"><strong>Provider error:</strong> {{ $providerError }}</div>@endif
         <label class="form-label fw-semibold">Reply HTML</label>
-        <textarea name="provider_reply_html" class="form-control" rows="10" data-editor="summernote" data-summernote-height="260" @disabled($locked)>{!! $replyHtml !!}</textarea>
+        <textarea name="provider_reply_html" class="form-control" rows="10" data-editor="summernote" data-summernote-height="260">{!! $replyHtml !!}</textarea>
         @if($sourceType === 'manual' && !$locked)<div class="form-text">A delivery result is required when a manual product is marked Success.</div>@endif
         <label class="form-label fw-semibold mt-3">Status</label>
         <select name="status" class="form-select" required @disabled($locked)>
@@ -38,7 +38,7 @@
             <option value="{{ $value }}" @selected($order->status === $value)>{{ $label }}</option>
           @endforeach
         </select>
-        @if($locked)<input type="hidden" name="status" value="success"><div class="form-text">Delivered orders are locked to preserve the delivered result and financial history.</div>@endif
+        @if($locked)<input type="hidden" name="status" value="success"><div class="form-text">The status and financial history stay locked, but the reply can be corrected and saved again.</div>@endif
         <label class="form-label fw-semibold mt-3">Comments</label>
         <textarea name="comments" class="form-control" rows="3" maxlength="5000">{{ $order->comments }}</textarea>
       </div></div></div>

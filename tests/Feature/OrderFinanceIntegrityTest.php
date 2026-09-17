@@ -254,6 +254,29 @@ class OrderFinanceIntegrityTest extends TestCase
         $this->assertSame('refunded', data_get($order->fresh()->request, 'financial_state'));
     }
 
+    public function test_admin_can_replace_or_clear_a_success_reply_without_changing_finances(): void
+    {
+        $user = $this->user('80.00');
+        $order = $this->order($user, 'success', 'charged', '20.00');
+
+        $this->post("/_finance-test/orders/{$order->id}", [
+            'status' => 'success', 'provider_reply_html' => '<p>First reply</p>',
+        ])->assertRedirect(route('admin.orders.imei.index'));
+        $this->assertSame('<p>First reply</p>', data_get($order->fresh()->response, 'provider_reply_html'));
+
+        $this->post("/_finance-test/orders/{$order->id}", [
+            'status' => 'success', 'provider_reply_html' => '<p>Corrected reply</p>',
+        ])->assertRedirect(route('admin.orders.imei.index'));
+        $this->assertSame('<p>Corrected reply</p>', data_get($order->fresh()->response, 'provider_reply_html'));
+
+        $this->post("/_finance-test/orders/{$order->id}", [
+            'status' => 'success', 'provider_reply_html' => '',
+        ])->assertRedirect(route('admin.orders.imei.index'));
+        $this->assertSame('', data_get($order->fresh()->response, 'provider_reply_html'));
+        $this->assertSame('80.00', number_format((float)$user->fresh()->balance, 2, '.', ''));
+        $this->assertSame('charged', data_get($order->fresh()->request, 'financial_state'));
+    }
+
     public function test_audit_reports_financial_state_counts_without_identifiers_or_secret_payloads(): void
     {
         $user = $this->user('100.00');

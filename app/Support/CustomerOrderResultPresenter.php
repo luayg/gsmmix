@@ -6,12 +6,11 @@ final class CustomerOrderResultPresenter
 {
     public static function present(mixed $response, ?string $orderType = null, ?string $orderStatus = null): array
     {
-        if (strtolower((string) $orderType) === 'smm') {
-            return self::presentSmm($response, $orderStatus);
-        }
+        $isSmm = strtolower((string) $orderType) === 'smm';
         if (is_string($response)) {
             $decoded = json_decode($response, true);
             if (!is_array($decoded)) {
+                if ($isSmm) return self::presentSmm($response, $orderStatus);
                 $text = trim($response);
                 $items = self::parseItems($text);
                 return ['image' => null, 'items' => $items, 'text' => $items === [] ? $text : null];
@@ -19,6 +18,13 @@ final class CustomerOrderResultPresenter
             $response = $decoded;
         }
         if (!is_array($response)) return ['image' => null, 'items' => [], 'text' => null];
+        $adminReply = self::htmlText($response['provider_reply_html'] ?? null);
+        if ($adminReply !== '') {
+            return ['image' => null, 'items' => [], 'text' => $adminReply];
+        }
+        if ($isSmm) {
+            return self::presentSmm($response, $orderStatus);
+        }
         $image = self::safeImage($response['result_image'] ?? null);
         $items = collect($response['result_items'] ?? [])->filter(fn ($item) => is_array($item))->map(fn ($item) => [
             'label' => trim((string) ($item['label'] ?? '')), 'value' => self::stringValue($item['value'] ?? ''),
@@ -79,5 +85,14 @@ final class CustomerOrderResultPresenter
     private static function stringValue(mixed $value): string
     {
         return is_scalar($value) || $value === null ? trim((string) $value) : (string) json_encode($value, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    private static function htmlText(mixed $value): string
+    {
+        if (!is_string($value)) return '';
+        $value = preg_replace('/<\s*br\s*\/?>/i', "\n", $value) ?? $value;
+        $value = preg_replace('/<\/(?:p|div|li|tr|h[1-6])>/i', "\n", $value) ?? $value;
+        $value = html_entity_decode(strip_tags($value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        return trim((string) preg_replace("/[ \t]+\n|\n{3,}/", "\n", $value));
     }
 }
