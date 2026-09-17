@@ -26,6 +26,7 @@ use App\Services\Auth\Totp;
 use App\Models\Group;
 use App\Models\ServiceGroupPrice;
 use App\Services\Catalog\ServicePriceMatrix;
+use App\Support\ProductService;
 
 final class PortalController extends Controller
 {
@@ -53,9 +54,9 @@ final class PortalController extends Controller
             $services=$services->concat($rows->map(fn($row)=>[
                 'type'=>$type,
                 'id'=>$row->id,
-                'name'=>$row->name_text ?? $row->name,
+                'name'=>ProductService::displayName($row),
                 'prices'=>$priceMatrix->prices($row,$groups,$prices->get($row->id,collect()),$request->user()),
-                'delivery'=>$row->delivery_time ?? $row->time_text ?? null,
+                'delivery'=>ProductService::displayText($row->delivery_time ?? $row->time ?? ''),
             ]));
         }
         return view('customer.services',compact('services','q','selectedType','types'));
