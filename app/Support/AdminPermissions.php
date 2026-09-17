@@ -117,7 +117,7 @@ final class AdminPermissions
             'index', 'data', 'options', 'show', 'view', 'json', 'roles', 'groups',
             'summary', 'statement', 'modal', 'services', 'perms', 'imei', 'server',
             'file', 'smm', 'provider_services', 'services_json', 'users', 'products',
-            'access', 'activity', 'error', 'general', 'banners', 'mail', 'payment', 'languages',
+            'access', 'activity', 'error', 'general', 'banners', 'resellers', 'mail', 'payment', 'languages',
             'currencies', 'filemanager', 'update', 'maintenance', 'backups',
             'translations', 'preview', 'export',
             'print',
