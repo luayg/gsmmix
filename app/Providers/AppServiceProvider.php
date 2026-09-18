@@ -51,9 +51,9 @@ class AppServiceProvider extends ServiceProvider
                 $translator->get($key, app()->getLocale(), $fallback),
                 collect($replace)->mapWithKeys(fn ($value, $name) => [':'.$name => (string) $value])->all()
             ));
-            $languages = Schema::hasTable('languages')
+            $languages = once(fn () => Schema::hasTable('languages')
                 ? Language::query()->where('active', true)->orderBy('ordering')->orderBy('id')->get()
-                : collect();
+                : collect());
             $view->with('activeLanguages', $languages);
             $view->with('currentLanguage', $languages->firstWhere('locale', app()->getLocale()));
         });
