@@ -67,7 +67,7 @@ final class SettingsController extends Controller
         }
         $this->settings->putMany('auth', $authValues);
 
-        return back()->with('ok', 'General settings updated.');
+        return back()->with('ok', 'admin.general.saved');
     }
 
     public function mail()
