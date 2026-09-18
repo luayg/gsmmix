@@ -12,7 +12,6 @@ use App\Services\Settings\AppSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -23,7 +22,7 @@ final class InvoiceController extends Controller
     {
         $payments=PaymentTransaction::query()->with(['user','gateway','invoice'])->where('status','paid')->when($request->filled('q'),fn($q)=>$q->where(fn($q)=>$q->where('uuid','like','%'.$request->string('q').'%')->orWhere('external_id','like','%'.$request->string('q').'%')->orWhereHas('invoice',fn($i)=>$i->where('number','like','%'.$request->string('q').'%'))->orWhereHas('user',fn($u)=>$u->where('name','like','%'.$request->string('q').'%')->orWhere('email','like','%'.$request->string('q').'%'))))->when($request->integer('user_id'),fn($q,$id)=>$q->where('user_id',$id))->when($request->integer('gateway_id'),fn($q,$id)=>$q->where('payment_gateway_id',$id))->when($request->filled('from'),fn($q)=>$q->whereDate(DB::raw('COALESCE(paid_at, created_at)'),'>=',$request->input('from')))->when($request->filled('to'),fn($q)=>$q->whereDate(DB::raw('COALESCE(paid_at, created_at)'),'<=',$request->input('to')))->orderByDesc(DB::raw('COALESCE(paid_at, created_at)'))->paginate(25)->withQueryString();
         $users=User::query()->orderBy('name')->get(['id','name','email']);
-        $gateways=Schema::hasTable('payment_gateways')?PaymentGateway::query()->orderBy('name')->get(['id','name']):collect();
+        $gateways=PaymentGateway::query()->orderBy('name')->get(['id','name']);
         return view('admin.finances.invoices.index',compact('payments','users','gateways'));
     }
     public function create(){ return view('admin.finances.invoices.form',['invoice'=>null,'users'=>User::query()->orderBy('name')->get(['id','name','email']),'currencies'=>Currency::query()->where('active',true)->orderBy('ordering')->get()]); }

@@ -1,4 +1,4 @@
-@extends('admin.layout')
+@extends('layouts.admin')
 @section('title','Statements')
 @section('content')
 <div class="admin-page-head"><div><span class="admin-kicker">FINANCE</span><h1>Statements</h1><p>Global ledger of payments, orders, deductions, releases and refunds with the balance after every movement.</p></div></div>
