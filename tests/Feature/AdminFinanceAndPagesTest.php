@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Invoice;
 use App\Models\Page;
+use App\Models\PageTheme;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -20,6 +21,7 @@ class AdminFinanceAndPagesTest extends SecurityTestCase
         (require database_path('migrations/2026_09_16_000200_create_languages_and_currencies_tables.php'))->up();
         Schema::create('payment_transactions', function(Blueprint $t){ $t->id(); });
         (require database_path('migrations/2026_09_16_000500_create_invoices_and_content_pages.php'))->up();
+        (require database_path('migrations/2026_09_19_000100_add_page_themes_and_styles.php'))->up();
     }
 
     public function test_transaction_filters_statement_and_exports_are_read_only(): void
@@ -63,5 +65,18 @@ class AdminFinanceAndPagesTest extends SecurityTestCase
         $staff=$this->user(); $staff->givePermissionTo(['admin.access','pages.view','finances.view']); $this->actingAs($staff);
         $this->get(route('admin.pages.index'))->assertOk(); $this->get(route('admin.finances.invoices.index'))->assertOk();
         $this->post(route('admin.pages.store'),[])->assertForbidden(); $this->post(route('admin.finances.invoices.store'),[])->assertForbidden();
+    }
+
+    public function test_core_page_content_is_locked_and_saved_themes_can_be_activated(): void
+    {
+        $admin=$this->user('Administrator'); $this->actingAs($admin); $language=DB::table('languages')->first();
+        $page=Page::create(['slug'=>'home','status'=>'published','placement'=>'home','system'=>true,'ordering'=>1]);
+        $page->translations()->create(['language_id'=>$language->id,'title'=>'Original home','content'=>'<p>Original</p>']);
+        $this->put(route('admin.pages.update',$page),['status'=>'published','style_background'=>'#112233','style_text'=>'#ffffff','style_accent'=>'#00ccff','style_font_size'=>18,'style_heading_scale'=>1.2,'style_content_width'=>1280,'translations'=>[['language_id'=>$language->id,'title'=>'Changed','content'=>'Changed']]])->assertRedirect();
+        $this->assertSame('Original home',$page->translations()->first()->title); $this->assertSame('#112233',$page->fresh()->style['background']);
+        $one=PageTheme::create(['name'=>'One','active'=>true,'settings'=>['primary'=>'#111111']]); $two=PageTheme::create(['name'=>'Two','active'=>false,'settings'=>['primary'=>'#222222']]);
+        $this->post(route('admin.pages.themes.activate',$two))->assertRedirect();
+        $this->assertFalse($one->fresh()->active); $this->assertTrue($two->fresh()->active);
+        $this->delete(route('admin.pages.themes.destroy',$two))->assertSessionHasErrors('theme');
     }
 }
