@@ -18,8 +18,9 @@ final class InvoiceController extends Controller
 {
     public function index(Request $request)
     {
-        $invoices=Invoice::query()->with('user')->when($request->filled('q'),fn($q)=>$q->where(fn($q)=>$q->where('number','like','%'.$request->string('q').'%')->orWhereHas('user',fn($u)=>$u->where('name','like','%'.$request->string('q').'%')->orWhere('email','like','%'.$request->string('q').'%'))))->when($request->filled('status'),fn($q)=>$q->where('status',$request->input('status')))->orderByDesc('id')->paginate(25)->withQueryString();
-        return view('admin.finances.invoices.index',compact('invoices'));
+        $invoices=Invoice::query()->with('user')->when($request->filled('q'),fn($q)=>$q->where(fn($q)=>$q->where('number','like','%'.$request->string('q').'%')->orWhereHas('user',fn($u)=>$u->where('name','like','%'.$request->string('q').'%')->orWhere('email','like','%'.$request->string('q').'%'))))->when($request->integer('user_id'),fn($q,$id)=>$q->where('user_id',$id))->when($request->filled('status'),fn($q)=>$q->where('status',$request->input('status')))->when($request->filled('from'),fn($q)=>$q->whereDate('created_at','>=',$request->input('from')))->when($request->filled('to'),fn($q)=>$q->whereDate('created_at','<=',$request->input('to')))->orderByDesc('id')->paginate(25)->withQueryString();
+        $users=User::query()->orderBy('name')->get(['id','name','email']);
+        return view('admin.finances.invoices.index',compact('invoices','users'));
     }
     public function create(){ return view('admin.finances.invoices.form',['invoice'=>null,'users'=>User::query()->orderBy('name')->get(['id','name','email']),'currencies'=>Currency::query()->where('active',true)->orderBy('ordering')->get()]); }
     public function store(Request $request, AppSettings $settings): RedirectResponse

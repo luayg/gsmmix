@@ -12,7 +12,7 @@ final class StatementController extends Controller
 {
     public function index(Request $request)
     {
-        $accounts = FinanceAccount::query()->with('user')->when($request->integer('user_id'),fn($q,$id)=>$q->where('user_id',$id))->orderBy('user_id')->paginate(30)->withQueryString();
+        $accounts = FinanceAccount::query()->with('user')->when($request->integer('user_id'),fn($q,$id)=>$q->where('user_id',$id))->when($request->filled('q'),fn($q)=>$q->whereHas('user',fn($u)=>$u->where('name','like','%'.$request->string('q').'%')->orWhere('email','like','%'.$request->string('q').'%')))->orderBy('user_id')->paginate(30)->withQueryString();
         return view('admin.finances.statements.index', compact('accounts'));
     }
 

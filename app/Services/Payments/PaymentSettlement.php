@@ -5,6 +5,8 @@ namespace App\Services\Payments;
 use App\Models\FinanceAccount;
 use App\Models\FinanceTransaction;
 use App\Models\PaymentTransaction;
+use App\Models\Invoice;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -42,7 +44,7 @@ final class PaymentSettlement
                 'approved_by' => data_get($providerMetadata, 'manual_review.reviewed_by', $locked->approved_by),
             ])->save();
 
-            FinanceTransaction::create([
+            $financeTransaction = FinanceTransaction::create([
                 'user_id'=>$user->id, 'kind'=>'payment', 'direction'=>'income', 'paid'=>true,
                 'amount'=>$credit, 'currency_code'=>$locked->currency_code,
                 'original_amount'=>$locked->payable_currency, 'exchange_rate'=>$locked->exchange_rate,
@@ -53,6 +55,23 @@ final class PaymentSettlement
                 'balance_before'=>$before, 'balance_after'=>$after,
                 'source_type'=>PaymentTransaction::class, 'source_id'=>$locked->id,
             ]);
+
+            $invoice = Invoice::firstOrCreate(
+                ['source_type' => PaymentTransaction::class, 'source_id' => $locked->id],
+                [
+                    'number' => 'PAY-'.now()->format('Ymd').'-'.str_pad((string)$locked->id, 6, '0', STR_PAD_LEFT),
+                    'user_id' => $user->id, 'status' => 'paid', 'currency_code' => $locked->currency_code,
+                    'exchange_rate' => $locked->exchange_rate, 'customer_snapshot' => ['name'=>$user->name,'email'=>$user->email,'username'=>$user->username],
+                    'company_snapshot' => ['name'=>Setting::where('setting_key','general.site_name')->value('value') ?: config('app.name'),'email'=>Setting::where('setting_key','general.email')->value('value')],
+                    'subtotal' => $locked->amount_base, 'fee_total' => $locked->fee_base, 'total' => $locked->payable_base,
+                    'paid_total' => $locked->payable_base, 'issued_at' => now()->toDateString(), 'due_at' => now()->toDateString(), 'paid_at' => now(),
+                    'notes' => 'Payment received via '.($locked->gateway?->name ?: 'payment gateway'),
+                ]
+            );
+            if ($invoice->wasRecentlyCreated) {
+                $invoice->items()->create(['description'=>'Account balance payment','quantity'=>1,'unit_price'=>$locked->amount_base,'discount'=>0,'tax_rate'=>0,'line_total'=>$locked->amount_base,'ordering'=>0]);
+                $invoice->payments()->create(['payment_transaction_id'=>$locked->id,'finance_transaction_id'=>$financeTransaction->id,'amount'=>$locked->payable_base,'currency_code'=>$locked->currency_code,'exchange_rate'=>$locked->exchange_rate,'reference'=>$externalId,'paid_at'=>now()]);
+            }
             return $locked;
         });
     }

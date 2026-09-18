@@ -95,10 +95,13 @@ final class ManualPaymentReviewTest extends SecurityTestCase
         $this->assertSame(25.0, (float) $customer->fresh()->balance);
         $this->assertDatabaseHas('payment_transactions', ['id' => $payment->id, 'status' => 'paid', 'approved_by' => $admin->id]);
         $this->assertDatabaseCount('finance_transactions', 1);
+        $this->assertDatabaseHas('invoices', ['source_type' => PaymentTransaction::class, 'source_id' => $payment->id, 'status' => 'paid', 'total' => 25]);
+        $this->assertDatabaseCount('invoice_payments', 1);
 
         $this->post(route('admin.finances.payment-reviews.approve', $payment));
         $this->assertSame(25.0, (float) $customer->fresh()->balance);
         $this->assertDatabaseCount('finance_transactions', 1);
+        $this->assertDatabaseCount('invoices', 1);
     }
 
     public function test_rejection_preserves_balance_and_shows_reason_to_customer(): void
