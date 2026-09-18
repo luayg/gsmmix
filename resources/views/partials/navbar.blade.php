@@ -1,32 +1,26 @@
-{{-- [انسخ] --}}
 <nav class="navbar admin-navbar navbar-expand-lg navbar-dark bg-dark fixed-top">
   <div class="container-fluid">
-    <button id="btnToggleSidebar" class="btn btn-outline-light d-lg-none me-2">
-  <i class="fas fa-bars"></i>
-</button>
+    <button id="btnToggleSidebar" class="btn btn-outline-light d-lg-none me-2" type="button" aria-label="Toggle sidebar">
+      <i class="fas fa-bars"></i>
+    </button>
 
-
-    
-
-    <a class="navbar-brand d-flex align-items-center" href="{{ route('admin.dashboard') }}">
-      
-      <span>GSM MIX</span>
+    <a class="navbar-brand admin-brand d-flex align-items-center" href="{{ route('admin.dashboard') }}">
+      @include('shared.brand')
     </a>
 
-    <div id="smartSearchWrapper" class="mx-auto d-none d-lg-block" style="position:relative; width:40%;">
+    <div id="smartSearchWrapper" class="mx-auto d-none d-lg-block" style="position:relative;width:40%">
       <input id="smartSearchBox" type="text" class="form-control" placeholder="Smart search">
       <div id="smartSearchResults" class="dropdown-menu w-100"></div>
     </div>
 
-    <ul class="navbar-nav ml-auto align-items-center">
-      <li class="nav-item mr-2">
-        <a class="btn btn-outline-light position-relative" href="javascript:void(0)" aria-label="Notifications">
+    <ul class="navbar-nav ms-auto flex-row align-items-center gap-2">
+      <li class="nav-item">
+        <a class="btn btn-outline-light position-relative" href="{{ route('admin.logs.activity') }}" aria-label="Notifications" title="Activity">
           <i class="far fa-bell"></i>
-          <span class="badge badge-danger position-absolute" style="top:-6px; right:-6px;">4</span>
         </a>
       </li>
 
-      <li class="nav-item mr-2">
+      <li class="nav-item">
         <button type="button" class="btn btn-outline-light admin-theme-toggle" id="adminThemeToggle"
                 aria-label="Switch to light mode" title="Switch to light mode">
           <i class="fas fa-sun" aria-hidden="true"></i>
@@ -34,24 +28,37 @@
         </button>
       </li>
 
-      <li class="nav-item dropdown mr-2">
-        <a class="btn btn-outline-light dropdown-toggle" href="#" id="userMenu" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-          Administrator
-        </a>
-        <div class="dropdown-menu dropdown-menu-right" aria-labelledby="userMenu">
-          <a class="dropdown-item" href="#">Profile</a>
-          <a class="dropdown-item" href="#">Account Settings</a>
-          <div class="dropdown-divider"></div>
-          <a class="dropdown-item text-danger" href="#">Logout</a>
-        </div>
+      <li class="nav-item dropdown">
+        <button class="btn btn-outline-light dropdown-toggle" type="button" id="userMenu"
+                data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="fas fa-user-shield me-1"></i>{{ auth()->user()->name ?? 'Administrator' }}
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
+          <li><a class="dropdown-item" href="{{ route('customer.profile') }}"><i class="fas fa-user me-2"></i>My profile</a></li>
+          <li><a class="dropdown-item" href="{{ route('customer.profile') }}#password"><i class="fas fa-key me-2"></i>Change password</a></li>
+          @can('settings.view')
+          <li><a class="dropdown-item" href="{{ route('admin.settings.general') }}"><i class="fas fa-sliders-h me-2"></i>General settings</a></li>
+          @endcan
+          <li><a class="dropdown-item" href="{{ route('customer.profile') }}"><i class="fas fa-shield-halved me-2"></i>Security & two-factor</a></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><form method="POST" action="{{ route('logout') }}">@csrf<button class="dropdown-item text-danger" type="submit"><i class="fas fa-right-from-bracket me-2"></i>Logout</button></form></li>
+        </ul>
       </li>
 
       <li class="nav-item dropdown">
-        <a class="btn btn-outline-light dropdown-toggle" href="#" id="langMenu" data-toggle="dropdown">EN</a>
-        <div class="dropdown-menu dropdown-menu-right" aria-labelledby="langMenu">
-          <a class="dropdown-item" href="#">EN</a>
-          <a class="dropdown-item" href="#">AR</a>
-        </div>
+        <button class="btn btn-outline-light dropdown-toggle" type="button" id="langMenu"
+                data-bs-toggle="dropdown" aria-expanded="false">
+          <span class="me-1">{{ $currentLanguage?->flag }}</span>{{ strtoupper($currentLanguage?->code ?? 'EN') }}
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end language-menu" aria-labelledby="langMenu">
+          @foreach($activeLanguages as $language)
+          <li><form method="POST" action="{{ route('locale.update', $language->code) }}">@csrf<button type="submit" class="dropdown-item d-flex align-items-center gap-2 {{ app()->getLocale()===$language->locale?'active':'' }}"><span>{{ $language->flag }}</span><span>{{ $language->native_name }}</span></button></form></li>
+          @endforeach
+          @can('settings.view')
+          <li><hr class="dropdown-divider"></li>
+          <li><a class="dropdown-item" href="{{ route('admin.settings.languages') }}"><i class="fas fa-language me-2"></i>Manage languages</a></li>
+          @endcan
+        </ul>
       </li>
     </ul>
   </div>
