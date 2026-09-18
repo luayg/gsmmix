@@ -823,3 +823,9 @@ html[data-admin-theme="light"] .modal-body{scrollbar-color:#9bb8cc #edf4f8}
 html[dir="rtl"] .admin-navbar .dropdown-menu .dropdown-item{text-align:right}
 html[dir="rtl"] .admin-sidebar .nav-link{border-left:0;border-right:3px solid transparent;border-radius:8px 0 0 8px;margin:.08rem 0 .08rem .45rem}
 html[dir="rtl"] .admin-sidebar .nav-link.active{border-right-color:var(--admin-cyan)}
+
+.account-security-row{display:flex;align-items:center;justify-content:space-between;gap:1rem;padding:1rem 0;border-bottom:1px solid var(--admin-line)}
+.account-security-row:last-of-type{border-bottom:0}
+.account-security-row span{display:flex;align-items:center;gap:.7rem;color:var(--admin-muted)}
+.account-security-row span i{width:22px;text-align:center;color:var(--admin-cyan)}
+.account-security-row b{font-size:.82rem;text-align:end}
