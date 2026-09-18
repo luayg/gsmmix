@@ -1,4 +1,4 @@
-@extends('layouts.admin')
+@extends('admin.layout')
 @section('title','Payment invoices')
 @section('content')
 <div class="admin-page-head"><div><span class="admin-kicker">FINANCE</span><h1>Payment invoices</h1><p>Every completed balance payment, including historical transactions.</p></div><a class="btn btn-primary" href="{{ route('admin.finances.invoices.create') }}"><i class="fas fa-plus me-1"></i>Create invoice</a></div>
