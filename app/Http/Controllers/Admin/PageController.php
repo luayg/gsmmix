@@ -20,7 +20,8 @@ final class PageController extends Controller
         $pages=Page::query()->with(['translations.language','parent'])->when($request->filled('q'),fn($q)=>$q->where(fn($q)=>$q->where('slug','like','%'.$request->string('q').'%')->orWhereHas('translations',fn($t)=>$t->where('title','like','%'.$request->string('q').'%'))))->when($request->filled('status'),fn($q)=>$q->where('status',$request->input('status')))->when($request->filled('placement'),fn($q)=>$q->where('placement',$request->input('placement')))->orderBy('ordering')->orderBy('id')->paginate(25)->withQueryString();
         $menus=Menu::query()->with(['items.page.translations'])->orderBy('location')->get();
         $themes=PageTheme::query()->orderByDesc('active')->orderByDesc('updated_at')->get();
-        return view('admin.pages.index',compact('pages','menus','themes'));
+        $originalThemeActive=!$themes->contains('active',true);
+        return view('admin.pages.index',compact('pages','menus','themes','originalThemeActive'));
     }
     public function create(){ return $this->form(); }
     public function store(Request $request, HtmlSanitizer $sanitizer): RedirectResponse { $data=$this->validated($request); $page=DB::transaction(function()use($data,$sanitizer){ $page=Page::create($this->pagePayload($data)); $this->replaceTranslations($page,$data['translations'],$sanitizer); return $page; }); return redirect()->route('admin.pages.edit',$page)->with('ok','Page created.'); }
