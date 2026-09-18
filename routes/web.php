@@ -310,6 +310,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/imei', [ImeiOrdersController::class, 'index'])->name('imei.index');
         Route::post('/imei', [ImeiOrdersController::class, 'store'])->name('imei.store');
         Route::post('/imei/{id}', [ImeiOrdersController::class, 'update'])->name('imei.update');
+        Route::post('/imei/{id}/approve', [ImeiOrdersController::class, 'approve'])->name('imei.approve');
+        Route::post('/imei/{id}/reject', [ImeiOrdersController::class, 'reject'])->name('imei.reject');
         Route::get('/imei/modal/create', [ImeiOrdersController::class, 'modalCreate'])->name('imei.modal.create');
         Route::get('/imei/{id}/modal/view', [ImeiOrdersController::class, 'modalView'])->name('imei.modal.view');
         Route::get('/imei/{id}/modal/edit', [ImeiOrdersController::class, 'modalEdit'])->name('imei.modal.edit');
@@ -318,6 +320,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/server', [ServerOrdersController::class, 'index'])->name('server.index');
         Route::post('/server', [ServerOrdersController::class, 'store'])->name('server.store');
         Route::post('/server/{id}', [ServerOrdersController::class, 'update'])->name('server.update');
+        Route::post('/server/{id}/approve', [ServerOrdersController::class, 'approve'])->name('server.approve');
+        Route::post('/server/{id}/reject', [ServerOrdersController::class, 'reject'])->name('server.reject');
         Route::get('/server/modal/create', [ServerOrdersController::class, 'modalCreate'])->name('server.modal.create');
         Route::get('/server/{id}/modal/view', [ServerOrdersController::class, 'modalView'])->name('server.modal.view');
         Route::get('/server/{id}/modal/edit', [ServerOrdersController::class, 'modalEdit'])->name('server.modal.edit');
@@ -326,6 +330,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/file', [FileOrdersController::class, 'index'])->name('file.index');
         Route::post('/file', [FileOrdersController::class, 'store'])->name('file.store');
         Route::post('/file/{id}', [FileOrdersController::class, 'update'])->name('file.update');
+        Route::post('/file/{id}/approve', [FileOrdersController::class, 'approve'])->name('file.approve');
+        Route::post('/file/{id}/reject', [FileOrdersController::class, 'reject'])->name('file.reject');
         Route::get('/file/modal/create', [FileOrdersController::class, 'modalCreate'])->name('file.modal.create');
         Route::get('/file/{id}/modal/view', [FileOrdersController::class, 'modalView'])->name('file.modal.view');
         Route::get('/file/{id}/modal/edit', [FileOrdersController::class, 'modalEdit'])->name('file.modal.edit');
@@ -334,6 +340,8 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::get('/smm', [SmmOrdersController::class, 'index'])->name('smm.index');
         Route::post('/smm', [SmmOrdersController::class, 'store'])->name('smm.store');
         Route::post('/smm/{id}', [SmmOrdersController::class, 'update'])->name('smm.update');
+        Route::post('/smm/{id}/approve', [SmmOrdersController::class, 'approve'])->name('smm.approve');
+        Route::post('/smm/{id}/reject', [SmmOrdersController::class, 'reject'])->name('smm.reject');
         Route::get('/smm/modal/create', [SmmOrdersController::class, 'modalCreate'])->name('smm.modal.create');
         Route::get('/smm/{id}/modal/view', [SmmOrdersController::class, 'modalView'])->name('smm.modal.view');
         Route::get('/smm/{id}/modal/edit', [SmmOrdersController::class, 'modalEdit'])->name('smm.modal.edit');
