@@ -42,6 +42,7 @@ class AdminPermissionsTest extends TestCase
         yield 'mail test wrong method' => ['admin.settings.mail.test', 'GET', '', null, null];
         yield 'order approval' => ['admin.orders.imei.approve', 'POST', 'admin/orders/imei/42/approve', null, ['orders.edit']];
         yield 'restore original theme' => ['admin.pages.themes.restore', 'POST', 'admin/pages/themes/restore-original', null, ['pages.edit']];
+        yield 'reorder menu tree' => ['admin.pages.menus.reorder', 'POST', 'admin/pages/menus/1/reorder', null, ['pages.edit']];
         yield 'order rejection' => ['admin.orders.smm.reject', 'POST', 'admin/orders/smm/42/reject', null, ['orders.edit']];
         yield 'reseller settings' => ['admin.settings.resellers', 'GET', '', null, ['settings.view']];
         yield 'unknown module' => ['admin.unknown.index', 'GET', '', null, null];

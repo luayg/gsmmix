@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Invoice;
 use App\Models\Page;
 use App\Models\PageTheme;
+use App\Models\Menu;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -22,6 +23,7 @@ class AdminFinanceAndPagesTest extends SecurityTestCase
         Schema::create('payment_transactions', function(Blueprint $t){ $t->id(); });
         (require database_path('migrations/2026_09_16_000500_create_invoices_and_content_pages.php'))->up();
         (require database_path('migrations/2026_09_19_000100_add_page_themes_and_styles.php'))->up();
+        (require database_path('migrations/2026_09_19_000300_seed_default_header_menu.php'))->up();
     }
 
     public function test_transaction_filters_statement_and_exports_are_read_only(): void
@@ -95,6 +97,23 @@ class AdminFinanceAndPagesTest extends SecurityTestCase
         $this->assertSame('privacy',$page->slug); $this->assertSame('footer',$page->placement); $this->assertTrue($page->authenticated_only);
         $this->assertSame('Privacy & data',$page->translations()->first()->title);
         $this->assertStringNotContainsString('script',$page->translations()->first()->content);
+    }
+
+    public function test_main_menu_can_be_reordered_into_a_safe_tree(): void
+    {
+        $admin=$this->user('Administrator'); $this->actingAs($admin);
+        $menu=Menu::where('location','header-primary')->firstOrFail();
+        $parent=$menu->items()->create(['label'=>'Services','ordering'=>10]);
+        $child=$menu->items()->create(['label'=>'IMEI','url'=>'/imei','ordering'=>20]);
+        $this->postJson(route('admin.pages.menus.reorder',$menu),['items'=>[
+            ['id'=>$parent->id,'parent_id'=>null,'ordering'=>10],
+            ['id'=>$child->id,'parent_id'=>$parent->id,'ordering'=>10],
+        ]])->assertOk()->assertJson(['ok'=>true]);
+        $this->assertSame($parent->id,$child->fresh()->parent_id);
+        $this->postJson(route('admin.pages.menus.reorder',$menu),['items'=>[
+            ['id'=>$parent->id,'parent_id'=>$child->id,'ordering'=>10],
+            ['id'=>$child->id,'parent_id'=>$parent->id,'ordering'=>10],
+        ]])->assertStatus(422);
     }
 
 }

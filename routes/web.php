@@ -433,7 +433,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::put('/menus/{menu}', [MenuController::class, 'update'])->name('menus.update');
         Route::delete('/menus/{menu}', [MenuController::class, 'destroy'])->name('menus.destroy');
         Route::post('/menus/{menu}/items', [MenuController::class, 'storeItem'])->name('menus.items.store');
+        Route::put('/menus/{menu}/items/{item}', [MenuController::class, 'updateItem'])->name('menus.items.update');
         Route::delete('/menus/{menu}/items/{item}', [MenuController::class, 'destroyItem'])->name('menus.items.destroy');
+        Route::post('/menus/{menu}/reorder', [MenuController::class, 'reorder'])->name('menus.reorder');
     });
 
     Route::prefix('sources')->name('sources.')->group(function () {
