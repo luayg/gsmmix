@@ -31,8 +31,9 @@ final class PublicSiteController extends Controller
     }
     public function page(Page $page)
     {
-        abort_unless($page->status==='published' && (!$page->published_at || $page->published_at->isPast()),404);
-        if($page->authenticated_only && !auth()->check()) return redirect()->guest(route('login'));
+        $adminPreview=request()->integer('page_preview')===$page->id && request()->user()?->can('admin.access');
+        abort_unless($adminPreview || ($page->status==='published' && (!$page->published_at || $page->published_at->isPast())),404);
+        if(!$adminPreview && $page->authenticated_only && !auth()->check()) return redirect()->guest(route('login'));
         $page->load('translations.language');
         return view('site.page',compact('page'));
     }
