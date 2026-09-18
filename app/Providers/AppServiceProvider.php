@@ -26,6 +26,8 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Schema;
 use App\Models\Page;
+use App\Models\Language;
+use App\Services\Settings\ContentTranslator;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
 use Spatie\Permission\Middleware\RoleOrPermissionMiddleware;
@@ -44,6 +46,16 @@ class AppServiceProvider extends ServiceProvider
 
         View::composer('*', function ($view) use ($appSettings): void {
             $view->with('siteSettings', $appSettings->group('general'));
+            $translator = app(ContentTranslator::class);
+            $view->with('t', fn (string $key, ?string $fallback = null, array $replace = []): string => strtr(
+                $translator->get($key, app()->getLocale(), $fallback),
+                collect($replace)->mapWithKeys(fn ($value, $name) => [':'.$name => (string) $value])->all()
+            ));
+            $languages = Schema::hasTable('languages')
+                ? Language::query()->where('active', true)->orderBy('ordering')->orderBy('id')->get()
+                : collect();
+            $view->with('activeLanguages', $languages);
+            $view->with('currentLanguage', $languages->firstWhere('locale', app()->getLocale()));
         });
 
         View::composer(['layouts.site','layouts.customer'], function ($view): void {
