@@ -5,5 +5,5 @@ final class Menu extends Model
 {
     protected $fillable=['name','location','active'];
     protected function casts(): array { return ['active'=>'boolean']; }
-    public function items(){ return $this->hasMany(MenuItem::class)->orderBy('ordering'); }
+    public function items(){ return $this->hasMany(MenuItem::class)->orderBy('ordering')->orderBy('id'); }
 }
