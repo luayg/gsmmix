@@ -28,6 +28,7 @@ use Illuminate\Support\Facades\Schema;
 use App\Models\Page;
 use App\Models\PageTheme;
 use App\Models\Language;
+use App\Models\Menu;
 use App\Services\Settings\ContentTranslator;
 use Spatie\Permission\Middleware\PermissionMiddleware;
 use Spatie\Permission\Middleware\RoleMiddleware;
@@ -65,7 +66,7 @@ class AppServiceProvider extends ServiceProvider
                 $preview=request()->integer('theme_preview');
                 $theme=$preview && request()->user()?->can('admin.access') ? PageTheme::find($preview) : PageTheme::query()->where('active',true)->first();
             }
-            $view->with('activePageTheme',$theme);
+            $view->with('activePageTheme',$theme)->with('mainMenu',null);
             if (!Schema::hasTable('pages')) {
                 $view->with('headerPages', collect())->with('footerPages', collect());
                 return;
@@ -73,6 +74,8 @@ class AppServiceProvider extends ServiceProvider
             $pages = Page::query()->where('status','published')->where(function($q){$q->whereNull('published_at')->orWhere('published_at','<=',now());})
                 ->when(!auth()->check(),fn($q)=>$q->where('authenticated_only',false))->with('translations')->orderBy('ordering')->get();
             $view->with('headerPages',$pages->where('placement','header'))->with('footerPages',$pages->where('placement','footer'));
+            $mainMenu = Schema::hasTable('menus') ? Menu::query()->where('active',true)->whereIn('location',['header-primary','public-desktop'])->with(['items.page.translations'])->first() : null;
+            $view->with('mainMenu',$mainMenu);
         });
 
         Route::aliasMiddleware('role', RoleMiddleware::class);
