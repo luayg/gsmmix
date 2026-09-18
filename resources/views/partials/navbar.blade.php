@@ -34,14 +34,14 @@
           <i class="fas fa-user-shield me-1"></i>{{ auth()->user()->name ?? 'Administrator' }}
         </button>
         <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="userMenu">
-          <li><a class="dropdown-item" href="{{ route('customer.profile') }}"><i class="fas fa-user me-2"></i>My profile</a></li>
-          <li><a class="dropdown-item" href="{{ route('customer.profile') }}#password"><i class="fas fa-key me-2"></i>Change password</a></li>
+          <li><a class="dropdown-item" href="{{ route('admin.account.edit') }}"><i class="fas fa-user me-2"></i>{{ $t('admin.menu.profile','My profile') }}</a></li>
+          <li><a class="dropdown-item" href="{{ route('admin.account.edit') }}#password"><i class="fas fa-key me-2"></i>{{ $t('admin.menu.password','Change password') }}</a></li>
           @can('settings.view')
-          <li><a class="dropdown-item" href="{{ route('admin.settings.general') }}"><i class="fas fa-sliders-h me-2"></i>General settings</a></li>
+          <li><a class="dropdown-item" href="{{ route('admin.settings.general') }}"><i class="fas fa-sliders-h me-2"></i>{{ $t('admin.menu.general_settings','General settings') }}</a></li>
           @endcan
-          <li><a class="dropdown-item" href="{{ route('customer.profile') }}"><i class="fas fa-shield-halved me-2"></i>Security & two-factor</a></li>
+          <li><a class="dropdown-item" href="{{ route('admin.account.edit') }}"><i class="fas fa-shield-halved me-2"></i>{{ $t('admin.menu.security','Security') }}</a></li>
           <li><hr class="dropdown-divider"></li>
-          <li><form method="POST" action="{{ route('logout') }}">@csrf<button class="dropdown-item text-danger" type="submit"><i class="fas fa-right-from-bracket me-2"></i>Logout</button></form></li>
+          <li><form method="POST" action="{{ route('logout') }}">@csrf<button class="dropdown-item text-danger" type="submit"><i class="fas fa-right-from-bracket me-2"></i>{{ $t('nav.logout','Logout') }}</button></form></li>
         </ul>
       </li>
 
@@ -56,7 +56,7 @@
           @endforeach
           @can('settings.view')
           <li><hr class="dropdown-divider"></li>
-          <li><a class="dropdown-item" href="{{ route('admin.settings.languages') }}"><i class="fas fa-language me-2"></i>Manage languages</a></li>
+          <li><a class="dropdown-item" href="{{ route('admin.settings.languages') }}"><i class="fas fa-language me-2"></i>{{ $t('admin.menu.manage_languages','Manage languages') }}</a></li>
           @endcan
         </ul>
       </li>
