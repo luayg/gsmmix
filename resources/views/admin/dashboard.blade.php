@@ -10,7 +10,7 @@
 
   <section class="command-kpis">
     @foreach([
-      [$t('admin.dashboard.today_orders','Today Orders'),$todayOrders,'fa-cart-shopping','cyan'],[$t('admin.dashboard.today_registrations','Today Registrations'),$todayRegistrations,'fa-user-plus','blue'],[$t('admin.dashboard.today_payments','Today Payments'),'$'.number_format($todayPayments,2),'fa-credit-card','violet'],[$t('admin.dashboard.today_profit','Today Profit'),'$'.number_format($todayProfit,2),'fa-chart-column','green'],[$t('admin.dashboard.online_users','{{ $t('admin.dashboard.online_users','Online Users') }}'),$onlineUsers,'fa-users','blue']
+      [$t('admin.dashboard.today_orders','Today Orders'),$todayOrders,'fa-cart-shopping','cyan'],[$t('admin.dashboard.today_registrations','Today Registrations'),$todayRegistrations,'fa-user-plus','blue'],[$t('admin.dashboard.today_payments','Today Payments'),'$'.number_format($todayPayments,2),'fa-credit-card','violet'],[$t('admin.dashboard.today_profit','Today Profit'),'$'.number_format($todayProfit,2),'fa-chart-column','green'],[$t('admin.dashboard.online_users','Online Users'),$onlineUsers,'fa-users','blue']
     ] as [$label,$value,$icon,$tone])
       <article class="command-card kpi-card tone-{{ $tone }}"><span class="kpi-icon"><i class="fas {{ $icon }}"></i></span><div><span>{{ $label }}</span><strong>{{ $value }}</strong><small><i class="fas fa-arrow-trend-up"></i> {{ $t('admin.dashboard.live_total','Live total') }}</small></div><svg class="spark" viewBox="0 0 80 28" aria-hidden="true"><polyline points="0,24 10,18 20,21 31,11 41,15 52,7 64,12 80,3"/></svg></article>
     @endforeach
