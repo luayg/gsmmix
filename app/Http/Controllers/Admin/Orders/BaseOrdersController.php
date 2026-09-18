@@ -560,7 +560,8 @@ abstract class BaseOrdersController extends Controller
         }
 
         $meta = $this->serviceMainFieldMeta($service);
-        $bulk = (bool)$request->boolean('bulk');
+        $bulk = (bool)$request->boolean('bulk')
+            && trim((string)$request->input('devices', '')) !== '';
         $deviceBased = (bool)($service->device_based ?? false);
 
         $cleanDevices = [];
