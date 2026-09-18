@@ -812,3 +812,14 @@ html[data-admin-theme="light"] .year-chip{color:#4f6f86;border-color:#b9d0e1;bac
 html[data-admin-theme="light"] .admin-sidebar,
 html[data-admin-theme="light"] .table-responsive,
 html[data-admin-theme="light"] .modal-body{scrollbar-color:#9bb8cc #edf4f8}
+
+
+/* Functional admin brand, account and language menus. */
+.admin-brand .site-brand-logo{display:block;max-width:150px;max-height:38px;width:auto;height:auto;object-fit:contain}
+.admin-brand>span{font-weight:800;letter-spacing:.04em;color:inherit}
+.admin-navbar .dropdown-menu form{margin:0}
+.admin-navbar .dropdown-menu .dropdown-item{width:100%;border:0;text-align:start}
+.admin-navbar .language-menu{min-width:190px}
+html[dir="rtl"] .admin-navbar .dropdown-menu .dropdown-item{text-align:right}
+html[dir="rtl"] .admin-sidebar .nav-link{border-left:0;border-right:3px solid transparent;border-radius:8px 0 0 8px;margin:.08rem 0 .08rem .45rem}
+html[dir="rtl"] .admin-sidebar .nav-link.active{border-right-color:var(--admin-cyan)}
