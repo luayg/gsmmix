@@ -9,6 +9,7 @@ use App\Models\Invoice;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 
 final class PaymentSettlement
@@ -62,7 +63,7 @@ final class PaymentSettlement
                     'number' => 'PAY-'.now()->format('Ymd').'-'.str_pad((string)$locked->id, 6, '0', STR_PAD_LEFT),
                     'user_id' => $user->id, 'status' => 'paid', 'currency_code' => $locked->currency_code,
                     'exchange_rate' => $locked->exchange_rate, 'customer_snapshot' => ['name'=>$user->name,'email'=>$user->email,'username'=>$user->username],
-                    'company_snapshot' => ['name'=>Setting::where('setting_key','general.site_name')->value('value') ?: config('app.name'),'email'=>Setting::where('setting_key','general.email')->value('value')],
+                    'company_snapshot' => ['name'=>Schema::hasTable('settings')?(Setting::where('setting_key','general.site_name')->value('value') ?: config('app.name')):config('app.name'),'email'=>Schema::hasTable('settings')?Setting::where('setting_key','general.email')->value('value'):null],
                     'subtotal' => $locked->amount_base, 'fee_total' => $locked->fee_base, 'total' => $locked->payable_base,
                     'paid_total' => $locked->payable_base, 'issued_at' => now()->toDateString(), 'due_at' => now()->toDateString(), 'paid_at' => now(),
                     'notes' => 'Payment received via '.($locked->gateway?->name ?: 'payment gateway'),
