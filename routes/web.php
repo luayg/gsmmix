@@ -51,6 +51,7 @@ use App\Http\Controllers\Admin\Orders\ProductOrdersController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\PaymentWebhookController;
 use App\Http\Controllers\PublicSiteController;
+use App\Http\Controllers\LocaleController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\GoogleController;
 use App\Http\Controllers\Auth\TwoFactorController;
@@ -68,6 +69,7 @@ use App\Http\Controllers\Customer\DownloadController as CustomerDownloadControll
 */
 
 Route::get('/', [PublicSiteController::class,'home'])->name('home');
+Route::post('/locale/{language}', LocaleController::class)->where('language', '[a-z]{2,3}')->name('locale.update');
 Route::get('/register/verify', [RegisterController::class, 'verificationForm'])->name('register.verify');
 Route::post('/register/verify', [RegisterController::class, 'verify'])->middleware('throttle:8,1')->name('register.verify.submit');
 Route::post('/payment/webhooks/{slug}', PaymentWebhookController::class)
@@ -109,6 +111,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/payments/{payment}/status', [CustomerPaymentController::class,'status'])->middleware('throttle:60,1')->name('payments.status');
         Route::get('/profile', [PortalController::class,'profile'])->name('profile');
         Route::put('/profile', [PortalController::class,'updateProfile'])->name('profile.update');
+        Route::put('/profile/password', [PortalController::class,'updatePassword'])->middleware('throttle:5,1')->name('profile.password');
         Route::put('/profile/two-factor', [PortalController::class,'updateTwoFactor'])->middleware('throttle:5,1')->name('profile.two-factor');
         Route::post('/profile/two-factor/authenticator/setup', [PortalController::class,'setupAuthenticator'])->middleware('throttle:5,1')->name('profile.authenticator.setup');
         Route::post('/profile/two-factor/authenticator/confirm', [PortalController::class,'confirmAuthenticator'])->middleware('throttle:10,1')->name('profile.authenticator.confirm');

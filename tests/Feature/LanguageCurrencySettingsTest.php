@@ -35,6 +35,21 @@ final class LanguageCurrencySettingsTest extends SecurityTestCase
         $this->assertDatabaseHas('languages', ['code' => 'en', 'is_default' => 0]);
     }
 
+    public function test_active_language_can_be_selected_and_persisted_in_session(): void
+    {
+        Language::query()->create([
+            'name' => 'Arabic', 'native_name' => 'العربية', 'code' => 'ar', 'locale' => 'ar',
+            'direction' => 'rtl', 'flag' => '🇯🇴', 'active' => true, 'is_default' => false, 'ordering' => 1,
+        ]);
+
+        $this->from(route('home'))->post(route('locale.update', 'ar'))
+            ->assertRedirect(route('home'))
+            ->assertSessionHas('locale', 'ar');
+
+        Language::query()->where('code', 'ar')->update(['active' => false]);
+        $this->post(route('locale.update', 'ar'))->assertNotFound();
+    }
+
     public function test_default_language_cannot_be_demoted_or_deleted(): void
     {
         $english = Language::query()->where('code', 'en')->firstOrFail();

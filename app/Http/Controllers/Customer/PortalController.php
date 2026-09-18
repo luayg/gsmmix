@@ -85,6 +85,19 @@ final class PortalController extends Controller
         $data=$request->validate(['name'=>'required|string|max:120','email'=>['required','email:rfc','max:255',Rule::unique('users')->ignore($user)],'username'=>['required','alpha_dash','min:3','max:60',Rule::unique('users')->ignore($user)]]);
         $user->update($data); return back()->with('ok','Profile updated.');
     }
+    public function updatePassword(Request $request)
+    {
+        $user = $request->user();
+        $currentRules = $user->google_id ? ['nullable', 'string'] : ['required', 'current_password:web'];
+        $data = $request->validate([
+            'current_password' => $currentRules,
+            'password' => ['required', 'string', 'min:12', 'confirmed'],
+        ]);
+        $user->forceFill(['password' => Hash::make($data['password'])])->save();
+        $request->session()->regenerate();
+        return back()->with('ok', 'Password updated securely.');
+    }
+
     public function updateTwoFactor(Request $request, AppSettings $settings)
     {
         abort_if((bool) $settings->get('general.two_factor_enabled', false), 409, 'Two-step verification is required by the administrator and cannot be disabled.');

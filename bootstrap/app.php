@@ -4,6 +4,7 @@ use App\Http\Middleware\ProtectAdminRoutes;
 use App\Http\Middleware\PreventAuthenticatedResponseCaching;
 use App\Http\Middleware\RejectBlockedIp;
 use App\Http\Middleware\RecordAdminActivity;
+use App\Http\Middleware\SetRequestLocale;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -19,7 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->validateCsrfTokens(except: ['payment/webhooks/*']);
         // Never run session authentication in the global, pre-session stack.
-        $middleware->web(append: [RejectBlockedIp::class, AuthenticateSession::class, PreventAuthenticatedResponseCaching::class, ProtectAdminRoutes::class, RecordAdminActivity::class]);
+        $middleware->web(append: [SetRequestLocale::class, RejectBlockedIp::class, AuthenticateSession::class, PreventAuthenticatedResponseCaching::class, ProtectAdminRoutes::class, RecordAdminActivity::class]);
         // Deny unauthorized access before route model binding can disclose records.
         $middleware->prependToPriorityList(SubstituteBindings::class, ProtectAdminRoutes::class);
         $middleware->redirectGuestsTo(fn () => route('login'));
