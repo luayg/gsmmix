@@ -116,4 +116,41 @@ class AdminFinanceAndPagesTest extends SecurityTestCase
         ]])->assertStatus(422);
     }
 
+    public function test_published_pages_can_be_added_to_menu_without_sending_a_label(): void
+    {
+        $admin=$this->user('Administrator'); $this->actingAs($admin);
+        $language=DB::table('languages')->first();
+        $menu=Menu::where('location','header-primary')->firstOrFail();
+
+        $privacy=Page::create(['slug'=>'privacy','status'=>'published','placement'=>'footer','system'=>true,'ordering'=>80]);
+        $privacy->translations()->create(['language_id'=>$language->id,'title'=>'Privacy Policy','content'=>'Privacy']);
+        $terms=Page::create(['slug'=>'terms','status'=>'published','placement'=>'footer','system'=>true,'ordering'=>90]);
+        $terms->translations()->create(['language_id'=>$language->id,'title'=>'Terms & Conditions','content'=>'Terms']);
+        $withoutTranslation=Page::create(['slug'=>'shipping-policy','status'=>'published','placement'=>'footer','ordering'=>100]);
+
+        foreach([$privacy,$terms,$withoutTranslation] as $page){
+            $this->post(route('admin.pages.menus.items.store',$menu),['page_id'=>$page->id])
+                ->assertRedirect()
+                ->assertSessionHas('ok');
+        }
+
+        $this->assertDatabaseHas('menu_items',['menu_id'=>$menu->id,'page_id'=>$privacy->id,'label'=>'Privacy Policy','url'=>null]);
+        $this->assertDatabaseHas('menu_items',['menu_id'=>$menu->id,'page_id'=>$terms->id,'label'=>'Terms & Conditions','url'=>null]);
+        $this->assertDatabaseHas('menu_items',['menu_id'=>$menu->id,'page_id'=>$withoutTranslation->id,'label'=>'Shipping Policy','url'=>null]);
+    }
+
+    public function test_custom_links_and_label_only_branches_can_be_added_to_menu(): void
+    {
+        $admin=$this->user('Administrator'); $this->actingAs($admin);
+        $menu=Menu::where('location','header-primary')->firstOrFail();
+
+        $this->post(route('admin.pages.menus.items.store',$menu),['label'=>'Company'])
+            ->assertRedirect()->assertSessionHas('ok');
+        $this->post(route('admin.pages.menus.items.store',$menu),['label'=>'Support','url'=>'/support'])
+            ->assertRedirect()->assertSessionHas('ok');
+
+        $this->assertDatabaseHas('menu_items',['menu_id'=>$menu->id,'label'=>'Company','url'=>null]);
+        $this->assertDatabaseHas('menu_items',['menu_id'=>$menu->id,'label'=>'Support','url'=>'/support']);
+    }
+
 }
