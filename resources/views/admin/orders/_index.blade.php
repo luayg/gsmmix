@@ -230,6 +230,18 @@
               @endif
 
               <td class="text-nowrap">
+                @if((bool)($o->service?->needs_approval ?? false) && !(bool)($o->approved ?? false) && $st === 'waiting' && empty($o->remote_id))
+                  <form class="d-inline" method="POST" action="{{ route($routePrefix.'.approve', $o->id) }}">
+                    @csrf
+                    <button class="btn btn-sm btn-success" type="submit"><i class="fas fa-check me-1"></i>Approve</button>
+                  </form>
+                  <form class="d-inline" method="POST" action="{{ route($routePrefix.'.reject', $o->id) }}" onsubmit="return confirm('Reject this order and refund the eligible charge?')">
+                    @csrf
+                    <button class="btn btn-sm btn-outline-danger" type="submit"><i class="fas fa-xmark me-1"></i>Reject</button>
+                  </form>
+                @elseif((bool)($o->service?->needs_approval ?? false) && (bool)($o->approved ?? false))
+                  <span class="badge bg-info text-dark me-1">APPROVED</span>
+                @endif
                 <a class="btn btn-sm btn-primary js-open-modal"
                    data-url="{{ route($routePrefix . '.modal.view', $o->id) }}">View</a>
 

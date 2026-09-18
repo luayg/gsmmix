@@ -560,12 +560,17 @@ abstract class BaseOrdersController extends Controller
         }
 
         $meta = $this->serviceMainFieldMeta($service);
-        $bulk = (bool)$request->boolean('bulk')
+        $bulkRequested = (bool)$request->boolean('bulk')
             && trim((string)$request->input('devices', '')) !== '';
+        $bulk = (bool)($service->allow_bulk ?? false) && $bulkRequested;
         $deviceBased = (bool)($service->device_based ?? false);
 
         $cleanDevices = [];
         $errors = [];
+
+        if ($bulkRequested && !(bool)($service->allow_bulk ?? false)) {
+            return [[], ['devices' => 'Bulk ordering is not enabled for this service.']];
+        }
 
         if (!$deviceBased) {
             $one = trim((string)$request->input('device', ''));
@@ -601,6 +606,11 @@ abstract class BaseOrdersController extends Controller
                     return [[], $errors];
                 }
                 $cleanDevices[] = $line;
+            }
+
+            if (!(bool)($service->allow_duplicates ?? false)
+                && count(array_unique($cleanDevices)) !== count($cleanDevices)) {
+                return [[], ['devices' => 'Duplicate bulk entries are not allowed for this service.']];
             }
 
             return [$cleanDevices, []];
@@ -1008,6 +1018,81 @@ abstract class BaseOrdersController extends Controller
             'row'         => $row,
             'order'       => $row,
         ]);
+    }
+
+    public function approve(Request $request, int $id)
+    {
+        $approved = DB::transaction(function () use ($request, $id): bool {
+            $row = ($this->orderModel)::query()->with('service')->lockForUpdate()->findOrFail($id);
+
+            if (!(bool)($row->service?->needs_approval ?? false)) {
+                return false;
+            }
+
+            if ((bool)($row->approved ?? false)) {
+                return true;
+            }
+
+            if (strtolower(trim((string)$row->status)) !== 'waiting'
+                || (bool)($row->processing ?? false)
+                || trim((string)($row->remote_id ?? '')) !== '') {
+                return false;
+            }
+
+            $meta = is_array($row->request) ? $row->request : [];
+            $meta['approved_at'] = now()->toDateTimeString();
+            $meta['approved_by'] = (int)$request->user()->id;
+            unset($meta['rejected_by_admin_at'], $meta['rejected_by_admin_id']);
+
+            $row->approved = true;
+            $row->processing = false;
+            $row->request = $meta;
+            $row->save();
+
+            return true;
+        });
+
+        return redirect()->route("{$this->routePrefix}.index")
+            ->with($approved ? 'ok' : 'error', $approved
+                ? 'Order approved. It is now eligible for provider dispatch.'
+                : 'This order cannot be approved in its current state.');
+    }
+
+    public function reject(Request $request, int $id)
+    {
+        $row = DB::transaction(function () use ($request, $id) {
+            $order = ($this->orderModel)::query()->with('service')->lockForUpdate()->findOrFail($id);
+
+            if (!(bool)($order->service?->needs_approval ?? false)
+                || (bool)($order->approved ?? false)
+                || strtolower(trim((string)$order->status)) !== 'waiting'
+                || (bool)($order->processing ?? false)
+                || trim((string)($order->remote_id ?? '')) !== '') {
+                return null;
+            }
+
+            $meta = is_array($order->request) ? $order->request : [];
+            $meta['rejected_by_admin_at'] = now()->toDateTimeString();
+            $meta['rejected_by_admin_id'] = (int)$request->user()->id;
+
+            $order->approved = false;
+            $order->processing = false;
+            $order->status = 'rejected';
+            $order->request = $meta;
+            $order->save();
+
+            return $order;
+        });
+
+        if (!$row) {
+            return redirect()->route("{$this->routePrefix}.index")
+                ->with('error', 'This order cannot be rejected in its current state.');
+        }
+
+        $this->finance()->refundOrderIfNeeded($row, 'approval_rejected');
+
+        return redirect()->route("{$this->routePrefix}.index")
+            ->with('ok', 'Order rejected and the eligible charge was refunded.');
     }
 
     // =========================

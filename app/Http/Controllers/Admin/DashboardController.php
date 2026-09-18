@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Schema;
 final class DashboardController extends Controller
 {
     private const ORDERS = ['imei' => 'imei_orders', 'server' => 'server_orders', 'file' => 'file_orders', 'smm' => 'smm_orders', 'product' => 'product_orders'];
+    private const SERVICES = ['imei' => 'imei_services', 'server' => 'server_services', 'file' => 'file_services', 'smm' => 'smm_services'];
     private const ORDER_ROUTES = ['imei' => 'admin.orders.imei.index', 'server' => 'admin.orders.server.index', 'file' => 'admin.orders.file.index', 'smm' => 'admin.orders.smm.index', 'product' => 'admin.orders.product.index'];
 
     public function __invoke()
@@ -46,7 +47,20 @@ final class DashboardController extends Controller
 
             $columns = array_values(array_filter(['id', 'user_id', 'status', 'created_at', Schema::hasColumn($table, 'order_price') ? 'order_price' : null]));
             $decorate = fn ($row) => tap($row, function ($row) use ($type) { $row->type = $type; $row->amount = (float) ($row->order_price ?? 0); $row->admin_url = route(self::ORDER_ROUTES[$type]); });
-            $pending = $pending->concat((clone $query)->whereIn('status', ['waiting', 'inprogress'])->latest('id')->limit(6)->get($columns)->map($decorate));
+            $serviceTable = self::SERVICES[$type] ?? null;
+            if ($serviceTable && Schema::hasTable($serviceTable)
+                && Schema::hasColumn($table, 'approved') && Schema::hasColumn($table, 'service_id')
+                && Schema::hasColumn($serviceTable, 'needs_approval')) {
+                $pendingQuery = (clone $query)
+                    ->where('status', 'waiting')
+                    ->where('approved', 0)
+                    ->whereExists(function ($approval) use ($table, $serviceTable) {
+                        $approval->selectRaw('1')->from($serviceTable)
+                            ->whereColumn("{$serviceTable}.id", "{$table}.service_id")
+                            ->where("{$serviceTable}.needs_approval", 1);
+                    });
+                $pending = $pending->concat($pendingQuery->latest('id')->limit(6)->get($columns)->map($decorate));
+            }
             $recentOrders = $recentOrders->concat((clone $query)->latest('id')->limit(6)->get($columns)->map($decorate));
         }
 
