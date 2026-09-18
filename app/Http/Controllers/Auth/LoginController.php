@@ -45,6 +45,7 @@ class LoginController extends Controller
                 'status' => 'active',
             ], $request->boolean('remember'))) {
                 RateLimiter::clear($key);
+                RateLimiter::clear($ipKey);
                 $this->logAccess($request,'login',true,$login,Auth::guard('web')->id());
                 $user = Auth::guard('web')->user();
                 return $flow->completeOrChallenge($request, $user, $request->boolean('remember'));

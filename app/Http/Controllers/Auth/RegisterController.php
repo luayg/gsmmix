@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class RegisterController extends Controller
 {
@@ -66,10 +67,22 @@ final class RegisterController extends Controller
             $code = (string) random_int(100000, 999999);
             Cache::put($this->verificationKey($user), Hash::make($code), now()->addMinutes(15));
             $request->session()->put('registration_verification_user_id', $user->id);
-            Mail::raw(
-                "Your email verification code is: {$code}\n\nThis code expires in 15 minutes.",
-                fn ($message) => $message->to($user->email)->subject('Your verification code')
-            );
+            try {
+                Mail::raw(
+                    "Your email verification code is: {$code}\n\nThis code expires in 15 minutes.",
+                    fn ($message) => $message->to($user->email)->subject('Your verification code')
+                );
+            } catch (Throwable $exception) {
+                report($exception);
+                Cache::forget($this->verificationKey($user));
+                $request->session()->forget('registration_verification_user_id');
+                // A failed delivery must not leave a permanently unusable account
+                // that prevents the visitor from registering again after SMTP is fixed.
+                $user->delete();
+                throw ValidationException::withMessages([
+                    'email' => $this->mailUnavailableMessage(),
+                ]);
+            }
             return redirect()->route('register.verify');
         }
 
@@ -118,5 +131,17 @@ final class RegisterController extends Controller
     {
         [$name, $domain] = array_pad(explode('@', $email, 2), 2, '');
         return mb_substr($name, 0, 2).str_repeat('•', max(2, mb_strlen($name) - 2)).'@'.$domain;
+    }
+
+    private function mailUnavailableMessage(): string
+    {
+        return match (app()->getLocale()) {
+            'ar' => 'تعذّر إرسال رمز التحقق حاليًا. يرجى المحاولة مرة أخرى بعد قليل أو التواصل مع الإدارة.',
+            'fr' => 'Le code de vérification ne peut pas être envoyé pour le moment. Réessayez plus tard ou contactez l’administration.',
+            'es' => 'No se pudo enviar el código de verificación. Inténtalo más tarde o contacta con la administración.',
+            'de' => 'Der Bestätigungscode konnte momentan nicht gesendet werden. Bitte später erneut versuchen oder den Administrator kontaktieren.',
+            'tr' => 'Doğrulama kodu şu anda gönderilemedi. Lütfen daha sonra tekrar deneyin veya yöneticiyle iletişime geçin.',
+            default => 'The verification code could not be sent right now. Please try again later or contact the administrator.',
+        };
     }
 }

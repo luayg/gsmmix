@@ -19,19 +19,25 @@ final class PaymentWebhookController extends Controller
         $gateway = PaymentGateway::query()->where('slug', $slug)->where('is_system', true)->where('active', true)->firstOrFail();
         $payload = $request->json()->all();
         $eventId = (string) ($payload['id'] ?? data_get($payload, 'bizId') ?? hash('sha256', $request->getContent()));
+
+        // Never persist an event identifier before authenticating the request. An
+        // attacker could otherwise submit a guessed provider event ID first and
+        // make the later, legitimate webhook look like an already handled replay.
+        $verified = match ($gateway->driver) {
+            'paypal' => $paypal->verifyWebhook($gateway, $request),
+            'binance_pay' => $binance->verifyWebhook($gateway, $request),
+            default => false,
+        };
+        abort_unless($verified, 401, 'Invalid payment webhook signature.');
+
         $event = PaymentWebhookEvent::firstOrCreate(
             ['payment_gateway_id'=>$gateway->id, 'event_id'=>$eventId],
             ['payload_hash'=>hash('sha256', $request->getContent()), 'status'=>'received']
         );
-        if (!$event->wasRecentlyCreated || $event->status === 'processed') return response()->json(['ok'=>true]);
+        if (in_array($event->status, ['processed', 'ignored'], true)) return response()->json(['ok'=>true]);
+        if (!$event->wasRecentlyCreated) $event->update(['status'=>'received','error'=>null,'processed_at'=>null]);
 
         try {
-            $verified = match ($gateway->driver) {
-                'paypal' => $paypal->verifyWebhook($gateway, $request),
-                'binance_pay' => $binance->verifyWebhook($gateway, $request),
-                default => false,
-            };
-            abort_unless($verified, 401, 'Invalid payment webhook signature.');
             [$reference, $externalId, $paid] = $this->details($gateway->driver, $payload);
             if (!$paid || !$reference) {
                 $event->update(['status'=>'ignored','processed_at'=>now()]);
