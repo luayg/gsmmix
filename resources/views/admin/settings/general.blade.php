@@ -3,7 +3,7 @@
 @section('content')
 @php($v = fn($key, $default = '') => old($key, $settings['general.'.$key] ?? $default))
 @php($emailVerification = old('email_verification_enabled', ($settings['general.email_verification_enabled'] ?? false) || (($settings['general.registration_activation'] ?? '') === 'email')))
-@if(session('ok'))<div class="alert alert-success">{{ session('ok') }}</div>@endif
+@if(session('ok'))<div class="alert alert-success">{{ $t(session('ok'), session('ok')) }}</div>@endif
 @if($errors->any())<div class="alert alert-danger"><ul class="mb-0">@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 <form method="POST" action="{{ route('admin.settings.general.update') }}" enctype="multipart/form-data">@csrf @method('PUT')
 <div class="row g-4"><div class="col-xl-6">
