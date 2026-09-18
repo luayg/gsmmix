@@ -3,30 +3,45 @@
   @push('styles')
 <style>
   #serviceModal .modal-dialog{width:96vw;max-width:min(1400px,96vw);margin:1rem auto}
-  #serviceModal .modal-content{display:flex;flex-direction:column;max-height:96dvh;border-radius:.6rem;overflow:hidden}
-  #serviceModal .modal-header{background:#3bb37a;color:#fff;padding:.75rem 1rem;border:0}
+  #serviceModal .modal-content{display:flex;flex-direction:column;max-height:96dvh;border-radius:.6rem;overflow:hidden;background:#071827;color:#e7f3ff;border:1px solid #24506f}
+  #serviceModal .modal-header{background:linear-gradient(90deg,#0b2740,#0d3858);color:#fff;padding:.75rem 1rem;border:0;border-bottom:1px solid #2877a8}
   #serviceModal .modal-title{font-weight:600}
-  #serviceModal .modal-body{flex:1 1 auto;overflow:auto;padding:1rem;background:#fff}
+  #serviceModal .modal-body{flex:1 1 auto;overflow:auto;padding:1rem;background:#071827;color:#e7f3ff}
   #serviceModal .tabs-top{display:flex;gap:.5rem;margin-left:auto}
-  #serviceModal .tabs-top button{border:0;background:#ffffff22;color:#fff;padding:.35rem .8rem;border-radius:.35rem}
-  #serviceModal .tabs-top button.active{background:#fff;color:#000}
+  #serviceModal .tabs-top button{border:1px solid #315675;background:#0b2740;color:#b9d3e7;padding:.35rem .8rem;border-radius:.35rem}
+  #serviceModal .tabs-top button:hover{color:#fff;border-color:#28d7ff}
+  #serviceModal .tabs-top button.active{background:#1976df;color:#fff;border-color:#48a1ff}
   #serviceModal .badge-box{display:flex;gap:.4rem;align-items:center;margin-left:1rem}
   #serviceModal .badge-box .badge{background:#111;color:#fff;padding:.35rem .55rem;border-radius:.35rem;font-size:.75rem}
   #serviceModal .tab-pane{display:none}
   #serviceModal .tab-pane.active{display:block}
-  #serviceModal .pricing-row{border-bottom:1px solid #eee}
-  #serviceModal .pricing-title{background:#f3f3f3;padding:.55rem .75rem;font-weight:600}
+  #serviceModal .pricing-row{border-bottom:1px solid #24506f}
+  #serviceModal .pricing-title{background:#0b2740;color:#eaf5ff;padding:.55rem .75rem;font-weight:600}
   #serviceModal .pricing-inputs{display:grid;grid-template-columns:1fr 1fr;gap:.75rem;padding:.65rem .75rem}
   .api-box{border:1px solid #e9e9e9;border-radius:.5rem;padding:.75rem;margin-top:.5rem;background:#fafafa;}
   #serviceModal .info-line{margin:0 0 .28rem;line-height:1.45}
-  #serviceModal .info-label{font-weight:600;color:#334155}
-  #serviceModal .info-value{color:#111827}
+  #serviceModal .info-label{font-weight:600;color:#b9d3e7}
+  #serviceModal .info-value{color:#e7f3ff}
   #serviceModal .info-badge{display:inline-block;padding:.12rem .52rem;border-radius:999px;font-size:.62rem;font-weight:700;line-height:1;color:#fff;vertical-align:middle;letter-spacing:.2px;text-transform:uppercase}
   #serviceModal .info-badge--green{background:#4caf50}
   #serviceModal .info-badge--red{background:#ef4444}
   #serviceModal .info-badge--amber{background:#f59e0b}
   #serviceModal .info-badge--gray{background:#6b7280}
-  #serviceModal .info-image{display:block;max-width:220px;max-height:220px;object-fit:contain;border:1px solid #e5e7eb;border-radius:.5rem;background:#fff;padding:.25rem;margin:.35rem 0}
+  #serviceModal .info-image{display:block;max-width:220px;max-height:220px;object-fit:contain;border:1px solid #24506f;border-radius:.5rem;background:#081d30;padding:.25rem;margin:.35rem 0}
+  #serviceModal .form-label,#serviceModal small,#serviceModal .form-text{color:#b9d3e7!important}
+  #serviceModal .border,#serviceModal .bg-light,#serviceModal .bg-light-subtle{border-color:#24506f!important;background:#0b2740!important;color:#e7f3ff!important}
+  html[data-admin-theme="light"] #serviceModal .modal-content,
+  html[data-admin-theme="light"] #serviceModal .modal-body{background:#fff;color:#17364e;border-color:#c9dcea}
+  html[data-admin-theme="light"] #serviceModal .modal-header{background:#176fca;border-bottom-color:#9fc7e2}
+  html[data-admin-theme="light"] #serviceModal .tabs-top button{background:#e7f2fa;color:#31566f;border-color:#b8d2e3}
+  html[data-admin-theme="light"] #serviceModal .tabs-top button.active{background:#fff;color:#104f7f;border-color:#fff}
+  html[data-admin-theme="light"] #serviceModal .pricing-row{border-color:#d5e3ed}
+  html[data-admin-theme="light"] #serviceModal .pricing-title{background:#edf5fb;color:#17364e}
+  html[data-admin-theme="light"] #serviceModal .info-label{color:#294b64}
+  html[data-admin-theme="light"] #serviceModal .info-value{color:#17364e}
+  html[data-admin-theme="light"] #serviceModal .form-label,
+  html[data-admin-theme="light"] #serviceModal small,
+  html[data-admin-theme="light"] #serviceModal .form-text{color:#5e778b!important}
 </style>
   @endpush
 
