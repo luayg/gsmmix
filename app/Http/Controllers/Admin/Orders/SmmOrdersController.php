@@ -7,14 +7,12 @@ use App\Models\ApiProvider;
 use App\Models\SmmOrder;
 use App\Models\SmmService;
 use App\Models\User;
-use App\Services\Orders\OrderDispatcher;
 use App\Services\Orders\SmmOrderInputValidator;
 use App\Services\Orders\SmmPricingException;
 use App\Services\Orders\SmmPricingService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 
 class SmmOrdersController extends BaseOrdersController
 {
@@ -100,7 +98,12 @@ class SmmOrdersController extends BaseOrdersController
 
             $supplierId = (int)($service->supplier_id ?? 0);
             $provider = $supplierId > 0 ? ApiProvider::find($supplierId) : null;
-            $isApi = $provider && (int)$provider->active === 1 && trim((string)$service->remote_id) !== '';
+            // Provider availability is intentionally not part of this decision.
+            // API orders remain queued while a provider is offline/misconfigured
+            // and the scheduler submits them automatically after it is repaired.
+            $isApi = (int)($service->source ?? 0) === 2
+                || $supplierId > 0
+                || trim((string)$service->remote_id) !== '';
 
             $chargedAmount = (string)$quote['sell_total'];
             $displayTarget = $this->firstTarget($fields, $device);
@@ -167,35 +170,6 @@ class SmmOrdersController extends BaseOrdersController
                 return $order;
             });
 
-            if ($isApi) {
-                try {
-                    $order->processing = true;
-                    $order->status = 'inprogress';
-                    $order->save();
-
-                    app(OrderDispatcher::class)->send('smm', (int)$order->id);
-                } catch (\Throwable $e) {
-                    Log::error('SMM auto dispatch failed', [
-                        'id' => $order->id,
-                        'err' => $e->getMessage(),
-                    ]);
-
-                    $order->refresh();
-                    if (trim((string)$order->remote_id) === '') {
-                        $status = strtolower(trim((string)$order->status));
-                        if (in_array($status, ['waiting', 'inprogress'], true)) {
-                            $order->processing = false;
-                            $order->status = 'waiting';
-                            $order->replied_at = null;
-                            $meta = (array)($order->request ?? []);
-                            $meta['dispatch_failed_at'] = now()->toDateTimeString();
-                            $meta['dispatch_error'] = 'Unexpected local dispatch failure; retry allowed.';
-                            $order->request = $meta;
-                            $order->save();
-                        }
-                    }
-                }
-            }
         } catch (\RuntimeException $e) {
             Cache::forget($submitLockKey);
 

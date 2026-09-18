@@ -13,7 +13,6 @@ use App\Support\ProductService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 
@@ -21,8 +20,7 @@ class ProductOrderService
 {
     public function create(array $data, int $actorId): ProductOrder
     {
-        $dispatch = null;
-        $order = DB::transaction(function () use ($data, $actorId, &$dispatch): ProductOrder {
+        $order = DB::transaction(function () use ($data, $actorId): ProductOrder {
             // Serializes retries for one customer, including before the order exists.
             $user = User::query()->lockForUpdate()->findOrFail($data['user_id']);
             $device = trim((string) ($data['device'] ?? ''));
@@ -118,35 +116,18 @@ class ProductOrderService
             $user->save();
 
             if ($sourceType === 'service') {
-                [$serviceOrder, $shouldDispatch] = $this->createLinkedServiceOrder($order, $product, $service, $data);
+                $serviceOrder = $this->createLinkedServiceOrder($order, $product, $service, $data);
                 $order->service_order_type = $serviceType;
                 $order->service_order_id = $serviceOrder->getKey();
                 $metadata = (array) $order->request;
                 $metadata['service_order_id'] = (int) $serviceOrder->getKey();
                 $order->request = $metadata;
                 $order->save();
-                if ($shouldDispatch) {
-                    $dispatch = [$serviceType, (int) $serviceOrder->getKey()];
-                }
             } elseif ($reply) {
                 $reply->update(['used_by_product_order_id' => $order->id, 'used_at' => now()]);
             }
             return $order;
         }, 3);
-
-        if ($dispatch) {
-            try {
-                app(OrderDispatcher::class)->send($dispatch[0], $dispatch[1]);
-            } catch (\Throwable $exception) {
-                Log::error('Product-linked service dispatch failed', [
-                    'product_order_id' => $order->id,
-                    'service_order_type' => $dispatch[0],
-                    'service_order_id' => $dispatch[1],
-                    'error' => $exception->getMessage(),
-                ]);
-            }
-            $this->syncFromLinkedOrder($order);
-        }
 
         return $order->fresh();
     }
@@ -186,14 +167,12 @@ class ProductOrderService
         Product $product,
         Model $service,
         array $data
-    ): array {
+    ): Model {
         $type = (string) $product->service_type;
         $orderModel = ProductService::orderModel($type);
         $provider = $service->supplier_id ? ApiProvider::find((int) $service->supplier_id) : null;
         $hasRemote = trim((string) $service->remote_id) !== '';
         $isApi = (int) ($service->source ?? 0) === 2 || (int) ($service->supplier_id ?? 0) > 0 || $hasRemote;
-        $shouldDispatch = $isApi && $provider && (int) $provider->active === 1
-            && $hasRemote && !(bool) ($service->needs_approval ?? false);
         $quantity = in_array($type, ['server', 'smm'], true) ? max(1, (int) ($data['quantity'] ?? 1)) : 1;
         $sellPrice = (string) $productOrder->order_price;
         $cost = number_format(max(0, (float) ($service->cost ?? 0)) * $quantity, 4, '.', '');
@@ -202,8 +181,8 @@ class ProductOrderService
         $serviceOrder = new $orderModel();
         $serviceOrder->forceFill([
             'device' => trim((string) ($data['device'] ?? '')),
-            'status' => $shouldDispatch ? 'inprogress' : 'waiting',
-            'processing' => $shouldDispatch,
+            'status' => 'waiting',
+            'processing' => false,
             'api_order' => $isApi,
             'price' => $sellPrice,
             'order_price' => $cost,
@@ -240,7 +219,7 @@ class ProductOrderService
         }
         $serviceOrder->save();
 
-        return [$serviceOrder, (bool) $shouldDispatch];
+        return $serviceOrder;
     }
 
     private function syncFromLinkedOrder(ProductOrder $productOrder): void

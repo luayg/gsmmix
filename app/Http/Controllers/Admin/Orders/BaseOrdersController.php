@@ -796,9 +796,6 @@ abstract class BaseOrdersController extends Controller
 
             $hasRemote = !empty($service->remote_id);
             $isApi = (int)($service->source ?? 0) === 2 || $supplierId > 0 || $hasRemote;
-            $shouldDispatch = $isApi && $provider && (int)$provider->active === 1
-                && $hasRemote && !(bool)($service->needs_approval ?? false);
-
             $sellPrice = (float)$this->calcServiceSellPriceForUser($service, $user);
             $costPrice = (float)($service->cost ?? $service->order_price ?? $service->provider_price ?? 0);
             $profitOne = $sellPrice - $costPrice;
@@ -837,7 +834,7 @@ abstract class BaseOrdersController extends Controller
             $totalCharge = $sellPrice * $countOrders;
 
             DB::transaction(function () use (
-                $request, $data, $userId, $service, $provider, $isApi, $shouldDispatch,
+                $request, $data, $userId, $service, $provider, $isApi,
                 $sellPrice, $costPrice, $profitOne, $params, $devices, $totalCharge, $requestUid
             ) {
                 $u = User::query()->lockForUpdate()->findOrFail($userId);
@@ -853,7 +850,7 @@ abstract class BaseOrdersController extends Controller
                 }
 
                 $createOne = function (string $deviceValue = '') use (
-                    $request, $data, $u, $service, $provider, $isApi, $shouldDispatch,
+                    $request, $data, $u, $service, $provider, $isApi,
                     $sellPrice, $costPrice, $profitOne, $params, $requestUid
                 ) {
                     /** @var Model $order */
@@ -898,42 +895,6 @@ abstract class BaseOrdersController extends Controller
                     }
 
                     $order->save();
-
-                    if ($shouldDispatch) {
-                        try {
-                            $order->processing = 1;
-                            $order->status = 'inprogress';
-                            $order->save();
-
-                            if (class_exists(\App\Services\Orders\OrderDispatcher::class)) {
-                                $dispatcher = app(\App\Services\Orders\OrderDispatcher::class);
-                                $dispatcher->send($this->kind, (int)$order->id);
-                            } else {
-                                $order->status = 'waiting';
-                                $order->processing = 0;
-                                $order->save();
-                            }
-                        } catch (\Throwable $e) {
-                            Log::error('Auto dispatch failed', ['id' => $order->id, 'err' => $e->getMessage()]);
-
-                            $order->processing = 0;
-                            $order->status = 'waiting';
-                            $order->replied_at = null;
-
-                            $order->request = array_merge((array)($order->request ?? []), [
-                                'dispatch_failed_at' => now()->toDateTimeString(),
-                                'dispatch_error'     => $e->getMessage(),
-                                'dispatch_retry'     => ((int) data_get($order->request, 'dispatch_retry', 0)) + 1,
-                            ]);
-
-                            $order->response = [
-                                'type'    => 'info',
-                                'message' => 'Provider is unreachable. Will retry automatically.',
-                            ];
-
-                            $order->save();
-                        }
-                    }
 
                     return $order;
                 };

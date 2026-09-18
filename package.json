@@ -6,7 +6,8 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5174",
     "dev:php": "php artisan serve",
-    "dev:all": "concurrently -k -n VITE,PHP -c \"bgBlue.bold.white\",\"bgGreen.bold.white\" \"npm:dev\" \"npm:dev:php\"",
+    "dev:scheduler": "php artisan schedule:work",
+    "dev:all": "concurrently -k -n VITE,PHP,SCHEDULER -c \"bgBlue.bold.white\",\"bgGreen.bold.white\",\"bgMagenta.bold.white\" \"npm:dev\" \"npm:dev:php\" \"npm:dev:scheduler\"",
     "clean": "php artisan optimize:clear"
   },
   "devDependencies": {
