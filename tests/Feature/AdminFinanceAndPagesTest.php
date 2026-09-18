@@ -56,7 +56,7 @@ class AdminFinanceAndPagesTest extends SecurityTestCase
         $response=$this->post(route('admin.pages.store'),['slug'=>'about-us','status'=>'published','placement'=>'footer','ordering'=>2,'translations'=>[['language_id'=>$language->id,'title'=>'About','content'=>'<p onclick="bad()">Safe</p><script>alert(1)</script>','seo_title'=>'About us','seo_description'=>'Company profile']]]);
         $page=Page::firstOrFail(); $response->assertRedirect(route('admin.pages.edit',$page));
         $this->assertStringNotContainsString('script',$page->translations()->first()->content); $this->assertStringNotContainsString('onclick',$page->translations()->first()->content);
-        $this->get(route('admin.pages.preview',$page))->assertOk()->assertSee('Safe');
+        $this->followingRedirects()->get(route('admin.pages.preview',$page))->assertOk()->assertSee('Safe');
         $page->update(['system'=>true]); $this->delete(route('admin.pages.destroy',$page))->assertSessionHasErrors('page');
     }
 
@@ -81,4 +81,20 @@ class AdminFinanceAndPagesTest extends SecurityTestCase
         $this->post(route('admin.pages.themes.restore'))->assertRedirect()->assertSessionHas('ok');
         $this->assertFalse($two->fresh()->active); $this->assertSame(2,PageTheme::count());
     }
+
+    public function test_privacy_and_terms_keep_their_routes_but_allow_safe_content_and_access_updates(): void
+    {
+        $admin=$this->user('Administrator'); $this->actingAs($admin); $language=DB::table('languages')->first();
+        $page=Page::create(['slug'=>'privacy','status'=>'published','placement'=>'footer','system'=>true,'ordering'=>80]);
+        $page->translations()->create(['language_id'=>$language->id,'title'=>'Privacy policy','content'=>'Old']);
+        $this->put(route('admin.pages.update',$page),[
+            'status'=>'published','authenticated_only'=>'1','open_new_window'=>'0',
+            'translations'=>[['language_id'=>$language->id,'title'=>'Privacy & data','content'=>'<h2>Safe</h2><script>bad()</script>','seo_title'=>'Privacy','seo_description'=>'Privacy information']],
+        ])->assertRedirect()->assertSessionHas('ok');
+        $page->refresh();
+        $this->assertSame('privacy',$page->slug); $this->assertSame('footer',$page->placement); $this->assertTrue($page->authenticated_only);
+        $this->assertSame('Privacy & data',$page->translations()->first()->title);
+        $this->assertStringNotContainsString('script',$page->translations()->first()->content);
+    }
+
 }
