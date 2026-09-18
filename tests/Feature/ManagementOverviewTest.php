@@ -43,7 +43,7 @@ class ManagementOverviewTest extends SecurityTestCase
     {
         $before = DB::table('users')->pluck('balance', 'id')->all();
         $this->get(route('admin.finances.index'))->assertOk()->assertSee('33.1234');
-        $this->get(route('admin.finances.statements.index'))->assertOk()->assertSee('33.1234')->assertSee('200.00')->assertSee('100.00');
+        $this->get(route('admin.finances.statements.index'))->assertOk()->assertSee('33.1200')->assertSee('synthetic-adjustment');
         $this->get(route('admin.finances.transactions.index'))->assertOk()->assertSee('synthetic-adjustment');
         $this->get(route('admin.finances.transactions.index', ['direction' => 'expense']))->assertOk()->assertSee('No records match');
         $this->assertSame($before, DB::table('users')->pluck('balance', 'id')->all());

@@ -17,6 +17,7 @@ final class CustomerMaintenanceMode
             return $next($request);
         }
 
+        // Administrators may preview the customer storefront while maintenance is enabled.
         if ($request->user()?->can('admin.access')) {
             return $next($request);
         }

@@ -3,7 +3,6 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use App\Models\FinanceAccount;
 use App\Models\FinanceTransaction;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -12,8 +11,10 @@ final class StatementController extends Controller
 {
     public function index(Request $request)
     {
-        $accounts = FinanceAccount::query()->with('user')->when($request->integer('user_id'),fn($q,$id)=>$q->where('user_id',$id))->when($request->filled('q'),fn($q)=>$q->whereHas('user',fn($u)=>$u->where('name','like','%'.$request->string('q').'%')->orWhere('email','like','%'.$request->string('q').'%')))->orderBy('user_id')->paginate(30)->withQueryString();
-        return view('admin.finances.statements.index', compact('accounts'));
+        $transactions=FinanceTransaction::query()->with('user')->when($request->integer('user_id'),fn($q,$id)=>$q->where('user_id',$id))->when($request->filled('q'),fn($q)=>$q->where(fn($q)=>$q->where('reference','like','%'.$request->string('q').'%')->orWhere('note','like','%'.$request->string('q').'%')->orWhereHas('user',fn($u)=>$u->where('name','like','%'.$request->string('q').'%')->orWhere('email','like','%'.$request->string('q').'%'))))->when($request->filled('direction'),fn($q)=>$q->where('direction',$request->input('direction')))->when($request->filled('kind'),fn($q)=>$q->where('kind',$request->input('kind')))->when($request->filled('from'),fn($q)=>$q->whereDate('created_at','>=',$request->input('from')))->when($request->filled('to'),fn($q)=>$q->whereDate('created_at','<=',$request->input('to')))->orderByDesc('id')->paginate(50)->withQueryString();
+        $users=User::query()->orderBy('name')->get(['id','name','email']);
+        $kinds=FinanceTransaction::query()->select('kind')->distinct()->orderBy('kind')->pluck('kind');
+        return view('admin.finances.statements.index',compact('transactions','users','kinds'));
     }
 
     public function show(Request $request, User $user)

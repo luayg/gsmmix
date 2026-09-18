@@ -15,4 +15,5 @@ final class PaymentTransaction extends Model
     public function gateway() { return $this->belongsTo(PaymentGateway::class, 'payment_gateway_id'); }
     public function currency() { return $this->belongsTo(Currency::class); }
     public function approver() { return $this->belongsTo(User::class, 'approved_by'); }
+    public function invoice() { return $this->morphOne(Invoice::class, 'source'); }
 }
