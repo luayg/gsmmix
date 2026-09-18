@@ -21,7 +21,13 @@ final class MenuController extends Controller
             'open_new_window'=>'nullable|boolean','ordering'=>'nullable|integer|min:0|max:100000',
         ]);
         if(($data['parent_id']??null)&&!$menu->items()->whereKey($data['parent_id'])->exists()) abort(422,'Parent item must belong to the same menu.');
-        if(!empty($data['page_id'])){$page=\App\Models\Page::with('translations')->findOrFail($data['page_id']);$data['label']=$data['label']?:($page->translations->first()?->title??ucfirst($page->slug));$data['url']=null;}
+        if(!empty($data['page_id'])){
+            $page=\App\Models\Page::with('translations')->findOrFail($data['page_id']);
+            $data['label']=filled($data['label']??null)
+                ? $data['label']
+                : ($page->translations->first()?->title??str($page->slug)->replace('-',' ')->title()->toString());
+            $data['url']=null;
+        }
         $data['ordering']=(int)($data['ordering']??(($menu->items()->max('ordering')??0)+10));
         $menu->items()->create([...$data,'open_new_window'=>$request->boolean('open_new_window')]);
         return back()->with('ok','Menu item added.');
