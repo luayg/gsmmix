@@ -32,6 +32,16 @@ class AdminSessionRegressionTest extends SecurityTestCase
         $this->assertGuest('web');
     }
 
+    public function test_disabled_customer_session_is_rejected_outside_admin_routes(): void
+    {
+        $user = $this->user('Basic');
+        $this->actingAs($user);
+        $user->update(['status' => 'inactive']);
+
+        $this->getJson('/')->assertUnauthorized();
+        $this->assertGuest('web');
+    }
+
     public function test_json_cookie_session_is_rejected_after_password_changes(): void
     {
         $user = $this->authenticatedJsonSession();

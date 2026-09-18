@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class LoginFlow
 {
@@ -29,9 +31,16 @@ final class LoginFlow
             if(!$authenticator){
                 $code = (string) random_int(100000, 999999);
                 $challenge['code']=Hash::make($code);
-                Mail::raw("Your verification code is {$code}. It expires in 10 minutes.", function ($message) use ($user): void {
-                    $message->to($user->email)->subject('Your sign-in verification code');
-                });
+                try {
+                    Mail::raw("Your verification code is {$code}. It expires in 10 minutes.", function ($message) use ($user): void {
+                        $message->to($user->email)->subject('Your sign-in verification code');
+                    });
+                } catch (Throwable $exception) {
+                    report($exception);
+                    throw ValidationException::withMessages([
+                        'login' => 'The sign-in verification code could not be sent. Please try again later or contact the administrator.',
+                    ]);
+                }
             }
             $request->session()->put('two_factor',$challenge);
             return redirect()->route('two-factor.challenge');
@@ -42,6 +51,9 @@ final class LoginFlow
 
     public function login(Request $request, User $user, bool $remember = false)
     {
+        if ($user->status !== 'active') {
+            throw ValidationException::withMessages(['login' => 'This account is not active.']);
+        }
         Auth::guard('web')->login($user, $remember);
         $request->session()->regenerate();
         $request->session()->put('password_hash_web', $user->getAuthPassword());
