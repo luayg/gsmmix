@@ -486,6 +486,58 @@ a:hover{color:#7bd2ff}
 .admin-sidebar::-webkit-scrollbar-thumb,.table-responsive::-webkit-scrollbar-thumb,.modal-body::-webkit-scrollbar-thumb{background:#285b7f}
 .admin-sidebar::-webkit-scrollbar-track,.table-responsive::-webkit-scrollbar-track,.modal-body::-webkit-scrollbar-track{background:#071725}
 
+
+/* Keep dynamically loaded administration modals readable in dark mode.
+   Several legacy view/edit partials ship light inline surfaces; the explicit
+   dark-theme overrides below prevent pale text from being rendered on white. */
+html:not([data-admin-theme="light"]) .modal-body{
+  color:var(--admin-text);
+  background:#071827;
+}
+html:not([data-admin-theme="light"]) .modal .card,
+html:not([data-admin-theme="light"]) .modal .order-view-card,
+html:not([data-admin-theme="light"]) .modal .order-result-box,
+html:not([data-admin-theme="light"]) .modal .order-edit-card,
+html:not([data-admin-theme="light"]) .modal .order-edit-preview,
+html:not([data-admin-theme="light"]) .modal .order-view-img-wrap,
+html:not([data-admin-theme="light"]) .modal .bg-light,
+html:not([data-admin-theme="light"]) .modal .bg-light-subtle,
+html:not([data-admin-theme="light"]) .modal .bg-white{
+  color:var(--admin-text)!important;
+  background:#081d30!important;
+  border-color:var(--admin-line)!important;
+}
+html:not([data-admin-theme="light"]) .modal .card-header,
+html:not([data-admin-theme="light"]) .modal .card-footer,
+html:not([data-admin-theme="light"]) .modal .order-view-label,
+html:not([data-admin-theme="light"]) .modal .order-result-header,
+html:not([data-admin-theme="light"]) .modal .order-edit-card-header,
+html:not([data-admin-theme="light"]) .modal .order-meta-badge,
+html:not([data-admin-theme="light"]) .modal .order-edit-meta,
+html:not([data-admin-theme="light"]) .modal .order-debug-pre{
+  color:#eaf5ff!important;
+  background:#0b2740!important;
+  border-color:#24506f!important;
+}
+html:not([data-admin-theme="light"]) .modal .table,
+html:not([data-admin-theme="light"]) .modal .table th,
+html:not([data-admin-theme="light"]) .modal .table td{
+  color:#e3f0fb!important;
+  background-color:transparent!important;
+  border-color:#24506f!important;
+}
+html:not([data-admin-theme="light"]) .modal .table th{color:#b9d3e7!important}
+html:not([data-admin-theme="light"]) .modal p,
+html:not([data-admin-theme="light"]) .modal label,
+html:not([data-admin-theme="light"]) .modal dt,
+html:not([data-admin-theme="light"]) .modal dd,
+html:not([data-admin-theme="light"]) .modal summary{color:inherit}
+html:not([data-admin-theme="light"]) .modal pre:not(.bg-dark){
+  color:#dcecff!important;
+  background:#061522!important;
+  border-color:#24506f!important;
+}
+
 @media(max-width:991.98px){
   .content-wrapper{background:linear-gradient(180deg,#071827,var(--admin-bg))}
 }
