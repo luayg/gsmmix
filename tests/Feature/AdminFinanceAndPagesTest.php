@@ -78,5 +78,7 @@ class AdminFinanceAndPagesTest extends SecurityTestCase
         $this->post(route('admin.pages.themes.activate',$two))->assertRedirect();
         $this->assertFalse($one->fresh()->active); $this->assertTrue($two->fresh()->active);
         $this->delete(route('admin.pages.themes.destroy',$two))->assertSessionHasErrors('theme');
+        $this->post(route('admin.pages.themes.restore'))->assertRedirect()->assertSessionHas('ok');
+        $this->assertFalse($two->fresh()->active); $this->assertSame(2,PageTheme::count());
     }
 }

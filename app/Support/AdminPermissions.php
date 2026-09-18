@@ -115,7 +115,7 @@ final class AdminPermissions
             return [$module . '.edit'];
         }
         if (!$safe) {
-            return in_array($action, ['update', 'import', 'toggle', 'activate', 'sync', 'syncFields', 'set_overdraft', 'add_remove', 'add_payment', 'cancel', 'cache', 'approve', 'reject'], true)
+            return in_array($action, ['update', 'import', 'toggle', 'activate', 'restore', 'sync', 'syncFields', 'set_overdraft', 'add_remove', 'add_payment', 'cancel', 'cache', 'approve', 'reject'], true)
                 ? [$module . '.edit']
                 : null;
         }

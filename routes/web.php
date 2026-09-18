@@ -420,6 +420,7 @@ Route::prefix('admin')->name('admin.')->group(function () {
         Route::post('/', [PageController::class, 'store'])->name('store');
         Route::get('/themes/create', [PageThemeController::class, 'create'])->name('themes.create');
         Route::post('/themes', [PageThemeController::class, 'store'])->name('themes.store');
+        Route::post('/themes/restore-original', [PageThemeController::class, 'restoreOriginal'])->name('themes.restore');
         Route::get('/themes/{theme}/edit', [PageThemeController::class, 'edit'])->name('themes.edit');
         Route::put('/themes/{theme}', [PageThemeController::class, 'update'])->name('themes.update');
         Route::post('/themes/{theme}/activate', [PageThemeController::class, 'activate'])->name('themes.activate');
