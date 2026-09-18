@@ -13,9 +13,14 @@
     .svc-filter-grid{display:grid;grid-template-columns:repeat(4,minmax(160px,1fr));gap:.75rem;align-items:end}
     .svc-filter-grid .form-control,.svc-filter-grid .form-select{min-width:0}
     .svc-table th,.svc-table td{vertical-align:middle;padding:.55rem .65rem}
-    .svc-table tbody tr:nth-child(odd){background:#f7f7f7}
-    .svc-table tbody tr:nth-child(even){background:#ffffff}
-    .svc-table tbody tr.svc-row-selected{background:#dbeafe !important}
+    .svc-table tbody tr:nth-child(odd){background:rgba(11,39,64,.72)}
+    .svc-table tbody tr:nth-child(even){background:rgba(8,29,48,.82)}
+    .svc-table tbody tr.svc-row-selected{background:#123f78 !important}
+    .svc-table tbody td{color:#e3f0fb!important;border-color:#24506f!important}
+    html[data-admin-theme="light"] .svc-table tbody tr:nth-child(odd){background:#f3f7fb}
+    html[data-admin-theme="light"] .svc-table tbody tr:nth-child(even){background:#fff}
+    html[data-admin-theme="light"] .svc-table tbody tr.svc-row-selected{background:#dbeafe!important}
+    html[data-admin-theme="light"] .svc-table tbody td{color:#17364e!important;border-color:#d5e3ed!important}
     .svc-row-select-cell{width:42px}
     .svc-bulk-toolbar{display:none;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.75rem}
     .svc-bulk-toolbar.is-visible{display:flex}
