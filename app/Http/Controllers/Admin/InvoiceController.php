@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Currency;
 use App\Models\Invoice;
+use App\Models\PaymentGateway;
+use App\Models\PaymentTransaction;
 use App\Models\User;
 use App\Services\Settings\AppSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -18,9 +21,11 @@ final class InvoiceController extends Controller
 {
     public function index(Request $request)
     {
-        $invoices=Invoice::query()->with('user')->when($request->filled('q'),fn($q)=>$q->where(fn($q)=>$q->where('number','like','%'.$request->string('q').'%')->orWhereHas('user',fn($u)=>$u->where('name','like','%'.$request->string('q').'%')->orWhere('email','like','%'.$request->string('q').'%'))))->when($request->integer('user_id'),fn($q,$id)=>$q->where('user_id',$id))->when($request->filled('status'),fn($q)=>$q->where('status',$request->input('status')))->when($request->filled('from'),fn($q)=>$q->whereDate('created_at','>=',$request->input('from')))->when($request->filled('to'),fn($q)=>$q->whereDate('created_at','<=',$request->input('to')))->orderByDesc('id')->paginate(25)->withQueryString();
+        $relations=['user','invoice']; if(Schema::hasTable('payment_gateways'))$relations[]='gateway';
+        $payments=PaymentTransaction::query()->with($relations)->where('status','paid')->when($request->filled('q'),fn($q)=>$q->where(fn($q)=>$q->where('uuid','like','%'.$request->string('q').'%')->orWhere('external_id','like','%'.$request->string('q').'%')->orWhereHas('invoice',fn($i)=>$i->where('number','like','%'.$request->string('q').'%'))->orWhereHas('user',fn($u)=>$u->where('name','like','%'.$request->string('q').'%')->orWhere('email','like','%'.$request->string('q').'%'))))->when($request->integer('user_id'),fn($q,$id)=>$q->where('user_id',$id))->when($request->integer('gateway_id'),fn($q,$id)=>$q->where('payment_gateway_id',$id))->when($request->filled('from'),fn($q)=>$q->whereDate(DB::raw('COALESCE(paid_at, created_at)'),'>=',$request->input('from')))->when($request->filled('to'),fn($q)=>$q->whereDate(DB::raw('COALESCE(paid_at, created_at)'),'<=',$request->input('to')))->orderByDesc(DB::raw('COALESCE(paid_at, created_at)'))->paginate(25)->withQueryString();
         $users=User::query()->orderBy('name')->get(['id','name','email']);
-        return view('admin.finances.invoices.index',compact('invoices','users'));
+        $gateways=Schema::hasTable('payment_gateways')?PaymentGateway::query()->orderBy('name')->get(['id','name']):collect();
+        return view('admin.finances.invoices.index',compact('payments','users','gateways'));
     }
     public function create(){ return view('admin.finances.invoices.form',['invoice'=>null,'users'=>User::query()->orderBy('name')->get(['id','name','email']),'currencies'=>Currency::query()->where('active',true)->orderBy('ordering')->get()]); }
     public function store(Request $request, AppSettings $settings): RedirectResponse
@@ -42,6 +47,7 @@ final class InvoiceController extends Controller
     }
     public function destroy(Invoice $invoice): RedirectResponse { abort_if($invoice->status!=='draft'||$invoice->payments()->exists(),409,'Only unpaid drafts can be deleted.'); $invoice->delete(); return redirect()->route('admin.finances.invoices.index')->with('ok','Draft deleted.'); }
     public function print(Invoice $invoice){ $invoice->load('user','items','payments'); return view('admin.finances.invoices.print',compact('invoice')); }
+    public function printPayment(PaymentTransaction $payment){ $payment->load('user','gateway','invoice'); return view('admin.finances.invoices.payment-print',compact('payment')); }
     public function addPayment(Request $request, Invoice $invoice): RedirectResponse
     {
         $data=$request->validate(['amount'=>'required|decimal:0,4|gt:0','reference'=>'required|string|max:191','paid_at'=>'required|date']);
