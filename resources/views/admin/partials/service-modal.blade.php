@@ -29,6 +29,7 @@
   #serviceModal .info-badge--gray{background:#6b7280}
   #serviceModal .info-image{display:block;max-width:220px;max-height:220px;object-fit:contain;border:1px solid #24506f;border-radius:.5rem;background:#081d30;padding:.25rem;margin:.35rem 0}
   #serviceModal .form-label,#serviceModal small,#serviceModal .form-text{color:#b9d3e7!important}
+  #serviceModal select option,#serviceModal select optgroup{color:#102a3f!important;background:#fff!important}
   #serviceModal .border,#serviceModal .bg-light,#serviceModal .bg-light-subtle{border-color:#24506f!important;background:#0b2740!important;color:#e7f3ff!important}
   html[data-admin-theme="light"] #serviceModal .modal-content,
   html[data-admin-theme="light"] #serviceModal .modal-body{background:#fff;color:#17364e;border-color:#c9dcea}
