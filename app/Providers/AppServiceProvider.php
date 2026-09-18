@@ -26,6 +26,7 @@ use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\Facades\Schema;
 use App\Models\Page;
+use App\Models\PageTheme;
 use App\Models\Language;
 use App\Services\Settings\ContentTranslator;
 use Spatie\Permission\Middleware\PermissionMiddleware;
@@ -59,6 +60,12 @@ class AppServiceProvider extends ServiceProvider
         });
 
         View::composer(['layouts.site','layouts.customer'], function ($view): void {
+            $theme=null;
+            if(Schema::hasTable('page_themes')){
+                $preview=request()->integer('theme_preview');
+                $theme=$preview && request()->user()?->can('admin.access') ? PageTheme::find($preview) : PageTheme::query()->where('active',true)->first();
+            }
+            $view->with('activePageTheme',$theme);
             if (!Schema::hasTable('pages')) {
                 $view->with('headerPages', collect())->with('footerPages', collect());
                 return;
