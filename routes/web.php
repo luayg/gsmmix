@@ -33,6 +33,7 @@ use App\Http\Controllers\Admin\ResellerController;
 use App\Http\Controllers\Admin\LogController;
 use App\Http\Controllers\Admin\SystemController;
 use App\Http\Controllers\Admin\DashboardController;
+use App\Http\Controllers\Admin\AccountController;
 
 // ✅ Service Management
 use App\Http\Controllers\Admin\Services\ServiceGroupController;
@@ -134,6 +135,9 @@ Route::prefix('admin')->name('admin.')->group(function () {
     // Dashboard
     Route::get('/', fn () => redirect()->route('admin.dashboard'));
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
+    Route::get('/account', [AccountController::class, 'edit'])->name('account.edit');
+    Route::put('/account', [AccountController::class, 'update'])->name('account.update');
+    Route::put('/account/password', [AccountController::class, 'password'])->middleware('throttle:5,1')->name('account.password');
 
     // Summernote image upload
     Route::post('/uploads/summernote-image', [UploadController::class, 'summernote'])
