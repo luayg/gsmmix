@@ -53,6 +53,13 @@ final class AdminPermissions
         if ($name === 'admin.dashboard') {
             return $safe ? ['dashboard.view'] : null;
         }
+        if (str_starts_with($name, 'admin.account.')) {
+            return match ($name) {
+                'admin.account.edit' => $safe ? ['admin.access'] : null,
+                'admin.account.update', 'admin.account.password' => $method === 'PUT' ? ['admin.access'] : null,
+                default => null,
+            };
+        }
         if (!str_starts_with($name, 'admin.')) {
             return null;
         }
