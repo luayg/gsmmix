@@ -56,4 +56,24 @@ class CustomerOverviewTest extends TestCase
         $this->assertSame('Clean service', $overview->serviceName($order, 'imei'));
         $this->assertSame(9.29, $overview->orderAmount($order));
     }
+
+    public function test_product_linked_service_order_is_internal_and_never_presented_as_a_second_charge(): void
+    {
+        $linked = new ImeiOrder([
+            'price' => 29.29,
+            'order_price' => 9.29,
+            'request' => ['charged_amount' => 0, 'product_order_id' => 3],
+        ]);
+        $standalone = new ImeiOrder([
+            'price' => 29.29,
+            'order_price' => 9.29,
+            'request' => ['charged_amount' => 29.29],
+        ]);
+        $overview = app(CustomerOverview::class);
+
+        $this->assertTrue($overview->isProductLinkedServiceOrder($linked));
+        $this->assertSame(0.0, $overview->orderAmount($linked));
+        $this->assertFalse($overview->isProductLinkedServiceOrder($standalone));
+        $this->assertSame(29.29, $overview->orderAmount($standalone));
+    }
 }
