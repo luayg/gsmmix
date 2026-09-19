@@ -50,6 +50,20 @@ final class CustomerOverview
 
     public function orderAmount(Model $order): float
     {
+        $request = (array) ($order->request ?? []);
+        if (array_key_exists('charged_amount', $request) && is_numeric($request['charged_amount'])) {
+            return (float) $request['charged_amount'];
+        }
+
         return (float) ($order instanceof ProductOrder ? ($order->order_price ?? 0) : ($order->price ?? $order->order_price ?? 0));
+    }
+
+    public function isProductLinkedServiceOrder(Model $order): bool
+    {
+        if ($order instanceof ProductOrder) {
+            return false;
+        }
+
+        return (int) data_get($order->request, 'product_order_id', 0) > 0;
     }
 }
