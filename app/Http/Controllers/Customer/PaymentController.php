@@ -12,6 +12,7 @@ use App\Services\Payments\PaymentInitiator;
 use App\Services\Payments\PaymentQuote;
 use App\Services\Payments\PaymentSettlement;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use App\Rules\SafeRasterImage;
@@ -43,7 +44,20 @@ final class PaymentController extends Controller
     }
     public function store(Request $request, PaymentInitiator $initiator, PaymentQuote $quote)
     {
-        $data=$request->validate(['amount'=>'required|decimal:0,8|gt:0','gateway_id'=>'required|exists:payment_gateways,id','currency_id'=>'required|exists:currencies,id','proof'=>['nullable','file','max:5120',new SafeRasterImage]]);
+        $proof=$request->file('proof');
+        if($proof instanceof UploadedFile&&!$proof->isValid()){
+            $message=match($proof->getError()){
+                UPLOAD_ERR_INI_SIZE=>'The receipt exceeds the PHP upload_max_filesize limit ('.ini_get('upload_max_filesize').').',
+                UPLOAD_ERR_FORM_SIZE=>'The receipt exceeds the form upload limit.',
+                UPLOAD_ERR_PARTIAL=>'The receipt was only partially uploaded. Please try again.',
+                UPLOAD_ERR_NO_TMP_DIR=>'The PHP temporary upload folder is missing.',
+                UPLOAD_ERR_CANT_WRITE=>'PHP could not write the receipt to its temporary folder.',
+                UPLOAD_ERR_EXTENSION=>'A PHP extension stopped the receipt upload.',
+                default=>'The receipt failed to upload (PHP error '.$proof->getError().').',
+            };
+            throw ValidationException::withMessages(['proof'=>$message]);
+        }
+        $data=$request->validate(['amount'=>'required|decimal:0,8|gt:0','gateway_id'=>'required|exists:payment_gateways,id','currency_id'=>'required|exists:currencies,id','proof'=>['nullable','file','max:5120',new SafeRasterImage]],['proof.uploaded'=>'The receipt failed to upload. The current PHP limit is '.ini_get('upload_max_filesize').'.']);
         $gateway=PaymentGateway::query()->where('active',true)->findOrFail($data['gateway_id']);
         $currency=Currency::query()->where('active',true)->findOrFail($data['currency_id']);
         abort_unless($gateway->currencies()->whereKey($currency->id)->exists(),422,'Currency is not supported by this payment method.');

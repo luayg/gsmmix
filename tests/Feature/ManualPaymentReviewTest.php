@@ -72,6 +72,23 @@ final class ManualPaymentReviewTest extends SecurityTestCase
         $this->assertDatabaseCount('payment_transactions', 0);
     }
 
+    public function test_php_upload_failure_reports_the_actual_server_limit(): void
+    {
+        $path = tempnam(sys_get_temp_dir(), 'failed-proof-');
+        $proof = new UploadedFile($path, 'receipt.jpg', 'image/jpeg', UPLOAD_ERR_INI_SIZE, true);
+
+        $this->actingAs($this->user())->post(route('customer.payments.store'), [
+            'amount' => '25',
+            'gateway_id' => $this->gateway->id,
+            'currency_id' => $this->currency->id,
+            'proof' => $proof,
+        ])->assertSessionHasErrors([
+            'proof' => 'The receipt exceeds the PHP upload_max_filesize limit ('.ini_get('upload_max_filesize').').',
+        ]);
+
+        $this->assertDatabaseCount('payment_transactions', 0);
+    }
+
     public function test_admin_can_view_proof_and_approve_exactly_once(): void
     {
         $customer = $this->user();

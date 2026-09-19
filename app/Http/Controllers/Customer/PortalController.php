@@ -150,8 +150,12 @@ final class PortalController extends Controller
     {
         $overview=app(CustomerOverview::class);
         $sets=[['imei',ImeiOrder::class],['server',ServerOrder::class],['file',FileOrder::class],['smm',SmmOrder::class],['product',ProductOrder::class]];
+        $linkedServiceOrders=ProductOrder::query()->where('user_id',$userId)
+            ->whereNotNull('service_order_type')->whereNotNull('service_order_id')
+            ->get(['service_order_type','service_order_id'])
+            ->mapWithKeys(fn($order)=>[strtolower((string)$order->service_order_type).':'.(int)$order->service_order_id=>true]);
         return collect($sets)->flatMap(fn($set)=>$set[1]::query()->where('user_id',$userId)->latest()->limit(100)->get()
-            ->reject(fn($o)=>$overview->isProductLinkedServiceOrder($o))
+            ->reject(fn($o)=>$overview->isProductLinkedServiceOrder($o)||($set[0]!=='product'&&$linkedServiceOrders->has($set[0].':'.(int)$o->id)))
             ->map(fn($o)=>['id'=>$o->id,'type'=>$set[0],'service'=>$overview->serviceName($o,$set[0]),'device'=>$o->device ?? '—','status'=>$o->status,'amount'=>$overview->orderAmount($o),'created_at'=>$o->created_at]))->sortByDesc('created_at')->values();
     }
 }

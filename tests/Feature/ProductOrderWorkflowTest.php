@@ -175,6 +175,13 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         $this->assertSame(0, $request['charged_amount']);
         $this->assertSame($order->id, $request['product_order_id']);
         $this->assertSame('87.7834', $this->balance());
+
+        auth()->guard('web')->logout();
+        $this->flushSession();
+        $this->resetSessionRuntime();
+        $this->actingAs($this->customer, 'web')->get(route('customer.orders'))->assertOk()
+            ->assertSee('Local product')
+            ->assertDontSee('Imei order');
     }
 
     public function test_admin_can_reject_a_service_product_and_linked_order_from_the_product_editor(): void
