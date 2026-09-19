@@ -179,8 +179,9 @@ class ProductOrderWorkflowTest extends SecurityTestCase
         auth()->guard('web')->logout();
         $this->flushSession();
         $this->resetSessionRuntime();
-        $this->actingAs($this->customer, 'web')->get(route('customer.orders'))->assertOk()
-            ->assertSee('Local product')
+        $this->actingAs($this->customer, 'web')->get(route('customer.orders.type','product'))->assertOk()
+            ->assertSee('Local product');
+        $this->get(route('customer.orders.type','imei'))->assertOk()
             ->assertDontSee('Imei order');
     }
 

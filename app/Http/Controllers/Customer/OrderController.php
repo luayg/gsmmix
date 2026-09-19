@@ -82,10 +82,17 @@ final class OrderController extends Controller
     {
         $type = $type ? $this->type($type) : null;
         $types = $type ? [$type => self::TYPES[$type]] : self::TYPES;
-        $orders = collect($types)->flatMap(function (array $classes, string $kind) use ($request) {
+        $overview=app(\App\Support\CustomerOverview::class);
+        $linkedServiceOrders=ProductOrder::query()->where('user_id',$request->user()->id)
+            ->whereNotNull('service_order_type')->whereNotNull('service_order_id')
+            ->get(['service_order_type','service_order_id'])
+            ->mapWithKeys(fn($order)=>[strtolower((string)$order->service_order_type).':'.(int)$order->service_order_id=>true]);
+        $orders = collect($types)->flatMap(function (array $classes, string $kind) use ($request,$overview,$linkedServiceOrders) {
             $relation=$kind==='product'?'product':'service';
             return $classes[1]::query()->where('user_id', $request->user()->id)->with($relation)
-                ->latest()->limit(250)->get()->map(fn ($order) => $this->row($order, $kind));
+                ->latest()->limit(250)->get()
+                ->reject(fn($order)=>$overview->isProductLinkedServiceOrder($order)||($kind!=='product'&&$linkedServiceOrders->has($kind.':'.(int)$order->id)))
+                ->map(fn ($order) => $this->row($order, $kind));
         })->sortByDesc('created_at')->values();
 
         return view('customer.orders.index', compact('orders', 'type'));
