@@ -20,6 +20,9 @@ return [
 
     'driver' => env('SESSION_DRIVER', 'database'),
 
+    /* Laravel 13's safer format; application session payloads are JSON-safe. */
+    'serialization' => env('SESSION_SERIALIZATION', 'json'),
+
     /*
     |--------------------------------------------------------------------------
     | Session Lifetime
